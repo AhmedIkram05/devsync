@@ -5,7 +5,6 @@ import sys
 from dotenv import load_dotenv
 
 from flask_swagger_ui import get_swaggerui_blueprint
-import yaml 
 
 # Add the backend directory to the Python path
 backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
@@ -26,19 +25,13 @@ else:
     from .socketio_server import init_socketio
 
 from datetime import timedelta
-from flask import Flask, request, jsonify, make_response, send_file
+from flask import Flask, request, jsonify, make_response, send_file, abort
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
 
 # Load environment variables
-load_dotenv()
-
-def log_routes(app):
-    """Print all registered routes for debugging"""
-    print("\nRegistered Routes:")
-    for rule in app.url_map.iter_rules():
-        print(f"Route: {rule.rule}, Methods: {rule.methods}")
+load_dotenv(override=True)
 
 def create_app(config_class=None):
     app = Flask(__name__)
@@ -73,8 +66,7 @@ def create_app(config_class=None):
         except Exception as e:
             return jsonify({"error": f"Could not load Swagger file: {str(e)}"}), 500
     
-    # Configure database
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///devsync.db')
+    # Configure database using the selected config class/environment.
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     # Configure JWT
@@ -124,8 +116,10 @@ def create_app(config_class=None):
 
     # Simplify options handler to prevent duplicate headers
     @app.route('/', methods=['OPTIONS'])
-    @app.route('/<path:path>', methods=['OPTIONS'])
+    @app.route('/<path:path>', methods=['OPTIONS', 'GET'])
     def options_handler(path=None):
+        if request.method == 'GET':
+            abort(404)
         response = make_response()
         # We don't add CORS headers here, the after_request will handle it
         return response
@@ -175,15 +169,10 @@ def create_app(config_class=None):
     # Middleware to remove Flask-JWT auth requirements for public routes
     @app.before_request
     def handle_auth_exemptions():
-        endpoint = request.endpoint
         path = request.path
-        
-        # Debug logging for route access
-        print(f"Request to path: {path}, endpoint: {endpoint}")
-        
+
         # Skip JWT verification for OPTIONS requests and public routes
         if request.method == 'OPTIONS' or any(path.startswith(route) for route in public_routes):
-            print(f"Skipping auth for: {path}")
             return None
     
     # Initialize API routes (including auth routes)
@@ -191,10 +180,6 @@ def create_app(config_class=None):
     
     # Setup middlewares (error handlers, logging, rate limiting)
     setup_middlewares(app)
-    
-    # Log all routes (replacement for before_first_request)
-    with app.app_context():
-        log_routes(app)
     
     # Initialize Socket.IO
     socketio = init_socketio(app)

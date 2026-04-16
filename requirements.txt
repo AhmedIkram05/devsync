@@ -1,9 +1,8 @@
 # Required packages for the backend
 
 # Database dependencies
-psycopg2cffi==2.9.0
 python-dotenv==1.0.0
-psycopg2-binary==2.9.1
+psycopg2-binary>=2.9.9
 
 # Web framework
 fastapi==0.104.1
@@ -11,7 +10,7 @@ uvicorn==0.24.0
 Flask==2.3.3
 flask-socketio==5.3.1
 Flask-SQLAlchemy==3.1.1
-SQLAlchemy==2.0.27
+SQLAlchemy>=2.0.30
 Flask-Migrate==4.0.5
 flask-cors==5.0.1
 
@@ -44,5 +43,5 @@ gunicorn==21.2.0
 supervisor==4.2.5
 
 # API documentation
-pydantic==2.6.1
+pydantic>=2.9.0
 pyAml==12.12.3

@@ -16,12 +16,14 @@ DevSync streamlines collaboration by connecting your database, GitHub repositori
 ## Installation
 
 ### Prerequisites
+
 - Python 3.8 or higher
 - Node.js 14.x or higher
 - npm 6.x or higher
 - PostgreSQL database (local or cloud-hosted)
 
 ### Step 1: Clone the Repository
+
 ```bash
 git clone https://github.com/AhmedIkram05/DevSync
 cd DevSync
@@ -30,49 +32,60 @@ cd DevSync
 ### Step 2: Setup Python Virtual Environment
 
 #### macOS/Linux
+
 ```bash
-python -m venv venv
-source venv/bin/activate
+python -m venv .venv
+source .venv/bin/activate
 ```
 
 #### Windows
+
 ```bash
-python -m venv venv
-venv\Scripts\activate
+python -m venv .venv
+.venv\Scripts\activate
 ```
 
 ### Step 3: Install Backend Dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
 ### Step 4: Setup Frontend
+
 ```bash
 cd frontend
 npm install
 ```
 
 ## Running The Application
+
 ### Backend Server
+
 ```bash
 source venv/bin/activate  # If not already activated
 cd backend/src
 python app.py
 ```
-The API server will start running on http://localhost:8000
+
+The API server will start running on <http://localhost:8000>
 
 ### Frontend Server
+
 ```bash
 cd frontend
 npm run build
 serve -s build
 ```
-The React app should automatically open in your browser at http://localhost:3000
+
+The React app should automatically open in your browser at <http://localhost:3000>
 
 ## Configuration
 
 ### Environment Variables
+
 Create a `.env` file in the `backend/src` directory and add the following variables:
+
 ```env
 # Flask Application Settings
 FLASK_APP=backend/src/app.py
@@ -94,15 +107,19 @@ FRONTEND_URL=http://localhost:3000
 ```
 
 ### Database Setup
+
 1. Create a PostgreSQL database.
 2. Update the `DATABASE_URL` in your `.env` file with your database connection string.
 3. Run the following command to create the necessary tables and indices:
+
 ```bash
 python backend/src/db/scripts/setup_database.py
 ```
 
 ## Contributing
+
 We welcome contributions! Please follow these steps:
+
 1. Fork the repository.
 2. Create a new branch (`git checkout -b feature/YourFeature`).
 3. Make your changes and commit them (`git commit -m 'Add some feature'`).
@@ -118,4 +135,5 @@ We welcome contributions! Please follow these steps:
 13. Celebrate your contribution to the project!
 
 ### API Documentation
+
 The API documentation is available at `/api/docs` endpoint.
