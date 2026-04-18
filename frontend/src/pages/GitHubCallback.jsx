@@ -27,6 +27,7 @@ const GitHubCallback = () => {
         
         const urlParams = new URLSearchParams(location.search);
         const code = urlParams.get('code');
+        const state = urlParams.get('state');
         
         // Check for explicit GitHub success format first
         const githubSuccess = urlParams.get('github_success');
@@ -93,7 +94,7 @@ const GitHubCallback = () => {
         }
         
         // Exchange the code for an access token via our backend
-        const response = await githubService.completeOAuthFlow(code);
+        const response = await githubService.completeOAuthFlow(code, state);
         
         if (response && (response.success || response.connected)) {
           setStatus('GitHub connected successfully!');

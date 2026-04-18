@@ -1,6 +1,17 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
+const API_BASE_URL = (() => {
+  const configuredBaseUrl = process.env.REACT_APP_API_URL;
+  if (configuredBaseUrl) {
+    return configuredBaseUrl.replace(/\/$/, "");
+  }
+
+  const protocol = window.location.protocol || "http:";
+  const hostname = window.location.hostname || "localhost";
+  return `${protocol}//${hostname}:8000/api/v1`;
+})();
+
 const Register = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
@@ -52,7 +63,7 @@ const Register = () => {
       console.log("Registering user with data:", userData);
       
       // Actual API call to register
-      const response = await fetch('http://127.0.0.1:8000/api/v1/auth/register', {
+      const response = await fetch(`${API_BASE_URL}/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

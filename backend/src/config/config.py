@@ -3,19 +3,37 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
+
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+DEFAULT_SQLITE_DB = os.path.join(BASE_DIR, 'devsync.db')
 
 class Config:
     """Base configuration class for the application"""
     # Database configuration
-    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', '')
-    
-    # Convert postgres:// to postgresql+psycopg2cffi:// for all URIs
-    if SQLALCHEMY_DATABASE_URI:
-        if SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
-            SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql+psycopg2cffi://', 1)
-        elif SQLALCHEMY_DATABASE_URI.startswith('postgresql://'):
-            SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgresql://', 'postgresql+psycopg2cffi://', 1)
+    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', f'sqlite:///{DEFAULT_SQLITE_DB}')
+
+    if SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
+        SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
+
+    # Cloud Postgres providers generally require SSL.
+    if SQLALCHEMY_DATABASE_URI.startswith('postgresql://') and 'sslmode=' not in SQLALCHEMY_DATABASE_URI:
+        sep = '&' if '?' in SQLALCHEMY_DATABASE_URI else '?'
+        SQLALCHEMY_DATABASE_URI += f"{sep}sslmode=require"
+
+    # Normalize sqlite paths so one DB file is used regardless of the working directory.
+    if SQLALCHEMY_DATABASE_URI.startswith('sqlite:///') and not SQLALCHEMY_DATABASE_URI.startswith('sqlite:////'):
+        sqlite_path = SQLALCHEMY_DATABASE_URI.replace('sqlite:///', '', 1)
+        sqlite_query = ''
+
+        if '?' in sqlite_path:
+            sqlite_path, sqlite_query = sqlite_path.split('?', 1)
+            sqlite_query = f'?{sqlite_query}'
+
+        if not os.path.isabs(sqlite_path):
+            sqlite_path = os.path.join(BASE_DIR, sqlite_path)
+
+        SQLALCHEMY_DATABASE_URI = f"sqlite:///{os.path.abspath(sqlite_path)}{sqlite_query}"
     
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'dev-secret-key')

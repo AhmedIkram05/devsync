@@ -151,9 +151,9 @@ function TaskDetailsUser() {
       }
       
       const linkData = {
-        repo_id: selectedRepo,
+        repo_id: Number(selectedRepo),
         repo_name: selectedRepository.full_name,
-        issue_id: issueId,
+        issue_id: Number(issueId),
         issue_number: selectedIssue.number,
         issue_title: selectedIssue.title
       };
@@ -181,7 +181,7 @@ function TaskDetailsUser() {
   const handleRemoveGithubLink = async (linkId) => {
     try {
       setUpdateLoading(true);
-      await githubService.unlinkTaskFromGithub(linkId);
+      await githubService.unlinkTaskFromGithub(id, linkId);
       
       // Remove the link from local state
       setGithubLinks(prevLinks => prevLinks.filter(link => link.id !== linkId));

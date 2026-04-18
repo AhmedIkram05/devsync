@@ -1,4 +1,13 @@
-const API_URL = 'http://localhost:8000/api/v1';
+const API_URL = (() => {
+  const configuredBaseUrl = process.env.REACT_APP_API_URL;
+  if (configuredBaseUrl) {
+    return configuredBaseUrl.replace(/\/$/, '');
+  }
+
+  const protocol = window.location.protocol || 'http:';
+  const hostname = window.location.hostname || 'localhost';
+  return `${protocol}//${hostname}:8000/api/v1`;
+})();
 
 /**
  * Enhanced fetch utility that handles authentication and error handling

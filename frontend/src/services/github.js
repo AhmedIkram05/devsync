@@ -2,7 +2,18 @@
 import { authApi } from './utils/auth';
 
 // Base URL for GitHub integration API endpoints
-const BASE_URL = 'http://127.0.0.1:8000/api/v1/github';
+const API_BASE_URL = (() => {
+  const configuredBaseUrl = process.env.REACT_APP_API_URL;
+  if (configuredBaseUrl) {
+    return configuredBaseUrl.replace(/\/$/, '');
+  }
+
+  const protocol = window.location.protocol || 'http:';
+  const hostname = window.location.hostname || 'localhost';
+  return `${protocol}//${hostname}:8000/api/v1`;
+})();
+
+const BASE_URL = `${API_BASE_URL}/github`;
 
 // Helper function for making fetch requests with auth token and token refresh
 const fetchWithAuth = async (url, options = {}) => {
@@ -199,22 +210,20 @@ export const githubService = {
         throw new Error('User ID is required for GitHub connection. Please log in again.');
       }
 
-      // Create a state parameter to verify the callback
-      const state = githubService.createStateParam(user.id);
-      
-      // Enhanced payload with additional data to help backend process the request
+      // Ask backend to build the OAuth URL and canonical state token.
       const response = await fetchWithAuth(`${BASE_URL}/connect`, {
         method: 'POST',
         body: JSON.stringify({
-          userId: user.id,
-          state: state
+          userId: user.id
         })
       });
       
       // If we get an authorization URL, redirect to it
       if (response && response.authorization_url) {
-        // Store the state in localStorage for verification on callback
-        localStorage.setItem('github_oauth_state', state);
+        const stateFromResponse = response.state || new URL(response.authorization_url).searchParams.get('state');
+        if (stateFromResponse) {
+          localStorage.setItem('github_oauth_state', stateFromResponse);
+        }
         // Return the URL for the component to handle the redirect
         return response.authorization_url;
       }
@@ -239,7 +248,13 @@ export const githubService = {
       
       // Verify the state parameter matches what we stored
       const storedState = localStorage.getItem('github_oauth_state');
-      if (!state || state !== storedState) {
+      const effectiveState = state || storedState;
+
+      if (!effectiveState) {
+        throw new Error('Security validation failed. Please try connecting to GitHub again.');
+      }
+
+      if (state && storedState && state !== storedState) {
         console.error('OAuth state mismatch - potential CSRF attack');
         throw new Error('Security validation failed. Please try connecting to GitHub again.');
       }
@@ -249,7 +264,7 @@ export const githubService = {
         method: 'POST',
         body: JSON.stringify({ 
           code,
-          state
+          state: effectiveState
         })
       });
       
@@ -279,7 +294,7 @@ export const githubService = {
       return data.repositories || data;
     } catch (error) {
       console.error('Error fetching GitHub repositories:', error);
-      return { repositories: [], error: error.message };
+      return [];
     }
   },
 
@@ -295,7 +310,7 @@ export const githubService = {
       return data.repositories || data;
     } catch (error) {
       console.error('Error fetching GitHub repositories:', error);
-      return { repositories: [], error: error.message };
+      return [];
     }
   },
   
@@ -313,7 +328,7 @@ export const githubService = {
       return data.issues || data;
     } catch (error) {
       console.error(`Error fetching issues for repository ${repoId}:`, error);
-      return { issues: [], error: error.message };
+      return [];
     }
   },
   
@@ -331,7 +346,7 @@ export const githubService = {
       return data.pull_requests || data;
     } catch (error) {
       console.error(`Error fetching pull requests for repository ${repoId}:`, error);
-      return { pull_requests: [], error: error.message };
+      return [];
     }
   },
   
@@ -370,7 +385,7 @@ export const githubService = {
       return data.links || data;
     } catch (error) {
       console.error(`Error fetching GitHub links for task ${taskId}:`, error);
-      return { links: [], error: error.message };
+      return [];
     }
   },
   
@@ -385,6 +400,17 @@ export const githubService = {
       console.error(`Error deleting GitHub link ${linkId} from task ${taskId}:`, error);
       throw error;
     }
+  },
+
+  // Backward-compatible aliases used by existing pages/components.
+  getIssues: async (repoId, options = {}) => githubService.getRepositoryIssues(repoId, options),
+  getPullRequests: async (repoId, options = {}) => githubService.getRepositoryPulls(repoId, options),
+  linkTaskToGithub: async (taskId, linkData) => githubService.linkTaskWithGitHub(taskId, linkData),
+  unlinkTaskFromGithub: async (taskId, linkId) => {
+    if (typeof linkId === 'undefined') {
+      throw new Error('Task ID and link ID are required to unlink GitHub issue');
+    }
+    return githubService.deleteTaskGitHubLink(taskId, linkId);
   },
   
   // Disconnect GitHub account

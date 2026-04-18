@@ -159,7 +159,16 @@ export const NotificationProvider = ({ children }) => {
       
       try {
         // Create socket connection with sensible defaults
-        const socketUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+        const configuredApiUrl = process.env.REACT_APP_API_URL;
+        const socketUrl = configuredApiUrl
+          ? (() => {
+              try {
+                return new URL(configuredApiUrl).origin;
+              } catch (error) {
+                return configuredApiUrl.replace(/\/api\/v1\/?$/, '');
+              }
+            })()
+          : `${window.location.protocol}//${window.location.hostname}:8000`;
         socketConnection = io(socketUrl, {
           auth: {
             token: currentUser.token

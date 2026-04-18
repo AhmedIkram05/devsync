@@ -139,13 +139,13 @@ const GitHubIntegration = () => {
   }, [setCurrentUser, connectionStatus.connected]);
   
   // Function to handle the OAuth callback code
-  const handleOAuthCallback = useCallback(async (code) => {
+  const handleOAuthCallback = useCallback(async (code, state) => {
     try {
       console.log("Processing GitHub OAuth callback with code:", code.substring(0, 5) + "...");
       setIsConnecting(true);
       
       // Send the code to your backend
-      const result = await githubService.completeOAuthFlow(code);
+      const result = await githubService.completeOAuthFlow(code, state);
       console.log("OAuth flow completion result:", result);
       
       // Check the connection status now that we've authorized
@@ -185,12 +185,13 @@ const GitHubIntegration = () => {
   useEffect(() => {
     const urlParams = new URLSearchParams(location.search);
     const code = urlParams.get('code');
+    const state = urlParams.get('state');
     const error = urlParams.get('error');
     
     // If there's a code parameter, we're returning from GitHub authorization
     if (code) {
       console.log("GitHub OAuth code detected in URL, handling callback...");
-      handleOAuthCallback(code);
+      handleOAuthCallback(code, state);
     }
     
     // Handle GitHub OAuth errors

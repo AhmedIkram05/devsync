@@ -1,7 +1,9 @@
 # This file is the entry point for the Flask application.
 
 import os
+import re
 import sys
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 from flask_swagger_ui import get_swaggerui_blueprint
@@ -87,12 +89,41 @@ def create_app(config_class=None):
     db.init_app(app)
     migrate = Migrate(app, db)
     jwt = JWTManager(app)
+
+    explicit_allowed_origins = {
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    }
+
+    frontend_url = app.config.get('FRONTEND_URL') or os.getenv('FRONTEND_URL')
+    if frontend_url:
+        parsed_frontend_url = urlparse(frontend_url)
+        if parsed_frontend_url.scheme and parsed_frontend_url.netloc:
+            explicit_allowed_origins.add(f"{parsed_frontend_url.scheme}://{parsed_frontend_url.netloc}")
+
+    extra_origins = os.getenv('CORS_ALLOWED_ORIGINS', '')
+    if extra_origins:
+        explicit_allowed_origins.update(
+            origin.strip() for origin in extra_origins.split(',') if origin.strip()
+        )
+
+    allowed_origin_patterns = (
+        r'^https?://192\.168\.\d+\.\d+(:\d+)?$',
+        r'^https?://10\.\d+\.\d+\.\d+(:\d+)?$',
+        r'^https?://172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+(:\d+)?$',
+    )
+
+    def is_allowed_origin(origin):
+        return (
+            origin in explicit_allowed_origins or
+            any(re.match(pattern, origin) for pattern in allowed_origin_patterns)
+        )
     
     CORS(app, 
          supports_credentials=True,
          allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
          methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-         origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+         origins=list(explicit_allowed_origins) + list(allowed_origin_patterns),
          expose_headers=["Content-Type", "Authorization"],
          max_age=600)
     
@@ -100,7 +131,7 @@ def create_app(config_class=None):
     def add_cors_headers(response):
         # Only add headers if they don't already exist
         origin = request.headers.get('Origin')
-        if origin in ["http://localhost:3000", "http://127.0.0.1:3000"]:
+        if origin and is_allowed_origin(origin):
             # Check if header already exists (added by Flask-CORS)
             if 'Access-Control-Allow-Origin' not in response.headers:
                 response.headers.add('Access-Control-Allow-Origin', origin)

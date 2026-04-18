@@ -52,6 +52,9 @@ def setup_database():
                 logger.info("No tables found. Creating tables...")
                 db.create_all()
                 logger.info("Tables created successfully!")
+                # Refresh inspector/tables after create_all so subsequent checks are accurate.
+                inspector = inspect(db.engine)
+                tables = inspector.get_table_names()
             else:
                 logger.info(f"Existing tables found: {', '.join(tables)}")
             
@@ -130,38 +133,31 @@ def setup_database():
                 if create_index_safely(conn, "idx_task_github_links_task_id", "task_github_links", "task_id"):
                     indices_created += 1
                 
-                # Add unique constraint for github_repositories with proper error handling
+                # Ensure github_repositories.repo_url stays unique across supported DB engines.
                 try:
-                    # First check if it already exists
-                    result = conn.execute(text("""
-                        SELECT constraint_name 
-                        FROM information_schema.table_constraints 
-                        WHERE table_name = 'github_repositories' 
-                        AND constraint_type = 'UNIQUE'
-                        AND constraint_name = 'github_repositories_repo_url_key'
-                    """))
-                    
-                    constraints = list(result)
-                    if not constraints:
-                        # Drop any existing constraint with the same name
+                    unique_on_repo_url = False
+
+                    for constraint in inspector.get_unique_constraints("github_repositories"):
+                        column_names = constraint.get("column_names") or []
+                        if column_names == ["repo_url"]:
+                            unique_on_repo_url = True
+                            break
+
+                    if not unique_on_repo_url:
+                        for index in inspector.get_indexes("github_repositories"):
+                            column_names = index.get("column_names") or []
+                            if index.get("unique") and column_names == ["repo_url"]:
+                                unique_on_repo_url = True
+                                break
+
+                    if not unique_on_repo_url:
                         conn.execute(text("""
-                            DO $$
-                            BEGIN
-                                BEGIN
-                                    ALTER TABLE github_repositories DROP CONSTRAINT IF EXISTS github_repositories_repo_url_key;
-                                EXCEPTION
-                                    WHEN OTHERS THEN
-                                END;
-                            END $$;
+                            CREATE UNIQUE INDEX IF NOT EXISTS idx_github_repositories_repo_url_unique
+                            ON github_repositories (repo_url);
                         """))
-                        
-                        # Create the constraint
-                        conn.execute(text("""
-                            ALTER TABLE github_repositories ADD CONSTRAINT github_repositories_repo_url_key UNIQUE (repo_url);
-                        """))
-                        logger.info("Created unique constraint on github_repositories.repo_url")
+                        logger.info("Created unique index on github_repositories(repo_url)")
                     else:
-                        logger.info("Unique constraint on github_repositories.repo_url already exists")
+                        logger.info("Unique constraint/index on github_repositories.repo_url already exists")
                 except Exception as e:
                     logger.error(f"Error handling unique constraint: {e}")
                 
@@ -189,45 +185,33 @@ def verify_database_indices():
             tables = inspector.get_table_names()
             logger.info(f"Found tables: {', '.join(tables)}")
             
-            # Use direct SQL to check indices which is more reliable
+            # Use inspector-based checks so verification works for SQLite and PostgreSQL.
             with db.engine.connect() as conn:
-                result = conn.execute(text("""
-                    SELECT
-                        t.relname AS table_name,
-                        i.relname AS index_name
-                    FROM
-                        pg_class t,
-                        pg_class i,
-                        pg_index ix
-                    WHERE
-                        t.oid = ix.indrelid
-                        AND i.oid = ix.indexrelid
-                        AND t.relkind = 'r'
-                        AND t.relname NOT LIKE 'pg_%'
-                        AND t.relname NOT LIKE 'sql_%'
-                    ORDER BY
-                        t.relname,
-                        i.relname;
-                """))
-                
-                # Group indices by table
-                indices_by_table = {}
-                for row in result:
-                    table = row[0]  # table name
-                    index = row[1]  # index name
-                    
-                    if table not in indices_by_table:
-                        indices_by_table[table] = []
-                    
-                    indices_by_table[table].append(index)
-                
-                # Print indices by table
-                for table in sorted(indices_by_table.keys()):
-                    logger.info(f"Indices for {table}: {indices_by_table[table]}")
-                
                 # Check for tables without indices
                 for table in tables:
-                    if table not in indices_by_table and table not in ['alembic_version', 'project_members']:
+                    index_names = []
+
+                    for index in inspector.get_indexes(table):
+                        index_name = index.get("name")
+                        if index_name:
+                            index_names.append(index_name)
+
+                    for constraint in inspector.get_unique_constraints(table):
+                        constraint_name = constraint.get("name")
+                        if constraint_name:
+                            index_names.append(constraint_name)
+
+                    # SQLite fallback in case unique index metadata isn't exposed via inspector.
+                    if not index_names and db.engine.dialect.name == "sqlite":
+                        pragma_result = conn.execute(text(f"PRAGMA index_list('{table}')"))
+                        for row in pragma_result:
+                            if len(row) > 1 and row[1]:
+                                index_names.append(row[1])
+
+                    unique_index_names = sorted(set(index_names))
+                    if unique_index_names:
+                        logger.info(f"Indices for {table}: {unique_index_names}")
+                    elif table not in ['alembic_version', 'project_members']:
                         logger.warning(f"No indices found for {table}")
         
         return True

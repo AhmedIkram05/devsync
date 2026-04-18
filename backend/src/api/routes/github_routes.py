@@ -1,27 +1,34 @@
 """GitHub integration API routes"""
 
-from flask import request, jsonify, current_app, redirect
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from urllib.parse import urlencode
+
+from flask import current_app, jsonify, request
+from flask_jwt_extended import get_jwt_identity, jwt_required
+
 from ..controllers.github_controller import (
-    initiate_github_auth,
-    github_callback,
-    get_github_repositories,
     add_github_repository,
+    check_github_config,
+    disconnect_github_account,
+    get_github_repositories,
     get_repository_issues,
     get_repository_pulls,
-    link_task_with_github,
     get_task_github_links,
+    github_callback,
+    initiate_github_auth,
+    link_task_with_github,
+    oauth_states,
     delete_task_github_link,
-    check_github_config
 )
 from ..middlewares.validation_middleware import validate_json
-from ..middlewares import role_required
-from ...auth.rbac import Role
 from ...db.models import db, User, GitHubToken
 from ...services.github_client import GitHubClient
 
 def register_routes(bp):
     """Register all GitHub integration routes with the provided Blueprint"""
+
+    def _extract_user_id():
+        identity = get_jwt_identity()
+        return identity['user_id'] if isinstance(identity, dict) else identity
     
     @bp.route('/github/config-check', methods=['GET'])
     def github_config_check():
@@ -37,132 +44,86 @@ def register_routes(bp):
     @bp.route('/github/callback', methods=['GET', 'POST'])
     def github_oauth_callback():
         """Route to handle GitHub OAuth callback"""
-        # For GET requests (coming from GitHub redirect)
         if request.method == 'GET':
-            code = request.args.get('code')
-            state = request.args.get('state')
-            print(f"GitHub callback GET request received with code: {code[:10]}... and state: {state[:10]}...")
-        # For POST requests (from frontend)
-        else:
-            data = request.get_json() or {}
-            code = data.get('code')
-            state = data.get('state')
-            print(f"GitHub callback POST request received with code: {code[:10] if code else 'None'}... and state: {state[:10] if state else 'None'}...")
+            return github_callback()
+
+        data = request.get_json() or {}
+        code = data.get('code')
+        state = data.get('state')
         
         if not code or not state:
-            error_msg = 'Missing required parameters'
-            print(f"Error in GitHub callback: {error_msg}")
-            return jsonify({'error': error_msg}), 400
+            return jsonify({'error': 'Missing required parameters'}), 400
             
         try:
-            # Parse state to get user_id
-            import base64
-            import json
-            
+            user_id = GitHubClient.parse_state_param(state)
+            if not user_id and state in oauth_states:
+                user_id = oauth_states[state]['user_id']
+                del oauth_states[state]
+
             try:
-                decoded_state = json.loads(base64.b64decode(state).decode('utf-8'))
-                user_id = decoded_state.get('userId')
-                print(f"Decoded state successfully. User ID: {user_id}")
-            except Exception as e:
-                print(f"Error decoding state: {str(e)}")
-                return jsonify({'error': 'Invalid state parameter format'}), 400
+                user_id = int(user_id)
+            except (TypeError, ValueError):
+                user_id = None
             
             if not user_id:
-                print("User ID not found in state")
                 return jsonify({'error': 'Invalid state parameter - missing user ID'}), 400
             
             # Exchange the code for an access token
-            print(f"Exchanging code for token...")
             token_data = GitHubClient.exchange_code_for_token(code)
             
             if not token_data or 'access_token' not in token_data:
-                print("Failed to obtain access token")
                 return jsonify({'error': 'Failed to obtain access token'}), 400
-            
-            print(f"Token obtained successfully")
             
             # Create GitHub client with new token
             github_client = GitHubClient(token_data['access_token'])
             
             # Fetch user profile to get GitHub username
-            print("Fetching GitHub user profile")
             github_profile = github_client.get_user_profile()
             
             if not github_profile:
-                print("Failed to fetch GitHub profile")
                 return jsonify({'error': 'Failed to fetch GitHub profile'}), 400
-            
-            print(f"GitHub profile fetched: {github_profile.get('login')}")
             
             # Find the user
             user = User.query.get(user_id)
             if not user:
-                print(f"User with ID {user_id} not found")
                 return jsonify({'error': 'User not found'}), 404
-            
-            print(f"Found user: {user.email}")
             
             # Check if user already has a GitHub token
             existing_token = GitHubToken.query.filter_by(user_id=user_id).first()
             
             if existing_token:
-                print("Updating existing GitHub token")
                 existing_token.access_token = token_data['access_token']
-                existing_token.scope = token_data.get('scope', '')
-                existing_token.token_type = token_data.get('token_type', 'bearer')
+                existing_token.refresh_token = token_data.get('refresh_token')
+                existing_token.token_expires_at = token_data.get('token_expires_at')
             else:
-                print("Creating new GitHub token record")
                 # Create a new token record
                 github_token = GitHubToken(
                     user_id=user_id,
                     access_token=token_data['access_token'],
-                    scope=token_data.get('scope', ''),
-                    token_type=token_data.get('token_type', 'bearer')
+                    refresh_token=token_data.get('refresh_token'),
+                    token_expires_at=token_data.get('token_expires_at'),
                 )
                 db.session.add(github_token)
             
             # Update user's GitHub username if available
             if github_profile and 'login' in github_profile:
-                print(f"Updating user's GitHub username to {github_profile['login']}")
                 user.github_username = github_profile['login']
-                user.github_connected = True
             
             db.session.commit()
-            print("Database updated successfully")
-            
-            # For GET requests (GitHub redirect), redirect back to frontend
-            if request.method == 'GET':
-                # Redirect back to frontend with success parameters
-                frontend_url = current_app.config.get('FRONTEND_URL', 'http://localhost:3000')
-                redirect_url = (f"{frontend_url}/github/callback?github_success=true"
-                               f"&github_username={github_profile.get('login')}"
-                               f"&user_id={user_id}")
-                
-                print(f"Redirecting to: {redirect_url}")
-                return redirect(redirect_url)
-            # For POST requests (from frontend), return JSON response
-            else:
-                return jsonify({
-                    'success': True,
-                    'github_username': github_profile.get('login'),
-                    'message': 'GitHub account connected successfully'
-                })
+            return jsonify({
+                'success': True,
+                'github_username': github_profile.get('login'),
+                'message': 'GitHub account connected successfully'
+            })
         
         except Exception as e:
             db.session.rollback()
-            print(f"Error processing GitHub callback: {str(e)}")
             current_app.logger.error(f"Error processing GitHub callback: {str(e)}")
-            
-            # Depending on request type, respond accordingly
-            if request.method == 'GET':
-                # Redirect to frontend with error information
-                frontend_url = current_app.config.get('FRONTEND_URL', 'http://localhost:3000')
-                return redirect(f"{frontend_url}/github/callback?error=GitHub+connection+failed")
-            else:
-                return jsonify({
-                    'success': False,
-                    'message': f'Error processing GitHub callback: {str(e)}'
-                }), 500
+
+            return jsonify({
+                'success': False,
+                'message': f'Error processing GitHub callback: {str(e)}'
+            }), 500
     
     @bp.route('/github/repositories', methods=['GET'])
     @jwt_required()
@@ -219,11 +180,15 @@ def register_routes(bp):
             
         try:
             # Parse state to get user_id
-            import base64
-            import json
-            
-            decoded_state = json.loads(base64.b64decode(state).decode('utf-8'))
-            user_id = decoded_state.get('userId')
+            user_id = GitHubClient.parse_state_param(state)
+            if not user_id and state in oauth_states:
+                user_id = oauth_states[state]['user_id']
+                del oauth_states[state]
+
+            try:
+                user_id = int(user_id)
+            except (TypeError, ValueError):
+                user_id = None
             
             if not user_id:
                 return jsonify({'success': False, 'message': 'Invalid state parameter'}), 400
@@ -253,22 +218,21 @@ def register_routes(bp):
             
             if existing_token:
                 existing_token.access_token = token_data['access_token']
-                existing_token.scope = token_data.get('scope', '')
-                existing_token.token_type = token_data.get('token_type', 'bearer')
+                existing_token.refresh_token = token_data.get('refresh_token')
+                existing_token.token_expires_at = token_data.get('token_expires_at')
             else:
                 # Create a new token record
                 github_token = GitHubToken(
                     user_id=user_id,
                     access_token=token_data['access_token'],
-                    scope=token_data.get('scope', ''),
-                    token_type=token_data.get('token_type', 'bearer')
+                    refresh_token=token_data.get('refresh_token'),
+                    token_expires_at=token_data.get('token_expires_at'),
                 )
                 db.session.add(github_token)
                 
             # Update user's GitHub username if available
             if github_profile and 'login' in github_profile:
                 user.github_username = github_profile['login']
-                user.github_connected = True
                 
             db.session.commit()
             
@@ -297,6 +261,18 @@ def register_routes(bp):
         
         if not user_id:
             return jsonify({'error': 'User ID is required'}), 400
+
+        try:
+            user_id = int(user_id)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'User ID is invalid'}), 400
+
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+
+        if not state:
+            state = GitHubClient.create_state_param(user_id)
         
         # Directly redirect to GitHub OAuth
         client_id = current_app.config.get('GITHUB_CLIENT_ID')
@@ -307,20 +283,41 @@ def register_routes(bp):
         if not client_id:
             return jsonify({'error': 'GitHub OAuth configuration is incomplete'}), 500
         
-        oauth_url = f"https://github.com/login/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&scope=user:email&state={state}"
+        oauth_query = urlencode(
+            {
+                'client_id': client_id,
+                'redirect_uri': redirect_uri,
+                'scope': 'repo,user:email',
+                'state': state,
+            }
+        )
+        oauth_url = f"https://github.com/login/oauth/authorize?{oauth_query}"
         
         # Return the URL instead of redirecting
-        return {'authorization_url': oauth_url}, 200
+        return {'authorization_url': oauth_url, 'state': state}, 200
 
     @bp.route('/github/status', methods=['GET'])
     @jwt_required()
     def github_status():
         """Return the GitHub connection status for the authenticated user"""
-        user_id = get_jwt_identity()
+        user_id = _extract_user_id()
+        try:
+            user_id = int(user_id)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Invalid user identity'}), 401
+
         user = User.query.get(user_id)
         if user:
+            token = GitHubToken.query.filter_by(user_id=user_id).first()
+            connected = token is not None
             return jsonify({
-                'connected': bool(user.github_connected),
-                'username': user.github_username if user.github_connected else ''
+                'connected': connected,
+                'username': user.github_username if connected else ''
             })
         return jsonify({'error': 'User not found'}), 404
+
+    @bp.route('/github/disconnect', methods=['POST'])
+    @jwt_required()
+    def disconnect_github():
+        """Disconnect the authenticated user's GitHub account"""
+        return disconnect_github_account()

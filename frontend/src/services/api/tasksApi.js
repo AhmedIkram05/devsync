@@ -1,6 +1,17 @@
 import { authApi } from '../utils/auth';
 
-const BASE_URL = 'http://127.0.0.1:8000/api/v1/tasks'; // Adjust according to your API endpoint
+const API_BASE_URL = (() => {
+  const configuredBaseUrl = process.env.REACT_APP_API_URL;
+  if (configuredBaseUrl) {
+    return configuredBaseUrl.replace(/\/$/, '');
+  }
+
+  const protocol = window.location.protocol || 'http:';
+  const hostname = window.location.hostname || 'localhost';
+  return `${protocol}//${hostname}:8000/api/v1`;
+})();
+
+const BASE_URL = `${API_BASE_URL}/tasks`;
 
 // Helper function for making authenticated fetch requests
 const fetchWithAuth = async (url, options = {}) => {

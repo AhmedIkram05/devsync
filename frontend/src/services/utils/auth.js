@@ -1,5 +1,16 @@
-const API_URL = 'http://127.0.0.1:8000/api/v1/auth';  // Updated to port 8000 to match backend
-const GITHUB_OAUTH_URL = 'http://127.0.0.1:8000/api/v1/github/auth'; // GitHub OAuth URL
+const API_BASE_URL = (() => {
+  const configuredBaseUrl = process.env.REACT_APP_API_URL;
+  if (configuredBaseUrl) {
+    return configuredBaseUrl.replace(/\/$/, '');
+  }
+
+  const protocol = window.location.protocol || 'http:';
+  const hostname = window.location.hostname || 'localhost';
+  return `${protocol}//${hostname}:8000/api/v1`;
+})();
+
+const API_URL = `${API_BASE_URL}/auth`;
+const GITHUB_OAUTH_URL = `${API_BASE_URL}/github/auth`;
 
 // Helper function to handle fetch with proper error handling
 const fetchWrapper = async (url, options = {}) => {
