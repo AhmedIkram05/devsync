@@ -12,19 +12,11 @@ import base64
 # Set up proper import paths
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..')))
 
-# Create mocks before importing the modules that use these objects
+# Create shared mocks used by controller-level patchers.
 mock_request = Mock()
 mock_jsonify = Mock()
 mock_jwt = Mock()
 mock_redirect = Mock()
-mock_current_app = Mock()
-
-# Apply patches to Flask objects before importing the target module
-patch('flask.request', mock_request).start()
-patch('flask.jsonify', mock_jsonify).start()
-patch('flask_jwt_extended.get_jwt_identity', mock_jwt).start()
-patch('flask.redirect', mock_redirect).start()
-patch('flask.current_app', mock_current_app).start()
 
 # Now import the functions to test
 from backend.src.api.controllers.github_controller import (
@@ -44,6 +36,15 @@ class TestGitHubController(unittest.TestCase):
         self.app.config['GITHUB_REDIRECT_URI'] = 'http://localhost:5000/api/github/callback'
         self.app_context = self.app.app_context()
         self.app_context.push()
+
+        self.controller_patchers = [
+            patch('backend.src.api.controllers.github_controller.request', mock_request),
+            patch('backend.src.api.controllers.github_controller.jsonify', mock_jsonify),
+            patch('backend.src.api.controllers.github_controller.get_jwt_identity', mock_jwt),
+            patch('backend.src.api.controllers.github_controller.redirect', mock_redirect),
+        ]
+        for patcher in self.controller_patchers:
+            patcher.start()
         
         # Reset mocks for each test
         mock_request.reset_mock()
@@ -55,10 +56,9 @@ class TestGitHubController(unittest.TestCase):
         mock_jwt.return_value = {'user_id': 1}
         mock_jsonify.side_effect = lambda x: x
         
-        # Configure current_app mock to use our app config
-        mock_current_app.config = self.app.config
-        
     def tearDown(self):
+        for patcher in self.controller_patchers:
+            patcher.stop()
         self.app_context.pop()
 
     @patch('backend.src.api.controllers.github_controller.GitHubClient')
@@ -115,13 +115,22 @@ class TestGitHubController(unittest.TestCase):
         self.assertEqual(mock_user.github_username, 'testuser')
         self.assertEqual(mock_user.github_connected, True)
 
+    @patch('backend.src.api.controllers.github_controller.db')
+    @patch('backend.src.api.controllers.github_controller.GitHubRepository')
     @patch('backend.src.api.controllers.github_controller.GitHubToken')
     @patch('backend.src.api.controllers.github_controller.GitHubClient')
-    def test_get_github_repositories(self, mock_github_client, mock_token_class):
+    def test_get_github_repositories(self, mock_github_client, mock_token_class, mock_repo_class, mock_db):
         # Setup mocks
         mock_token = MagicMock()
         mock_token.access_token = 'test-access-token'
         mock_token_class.query.filter_by.return_value.first.return_value = mock_token
+
+        mock_repo_class.query.filter.return_value.all.return_value = []
+        mock_local_repo = MagicMock()
+        mock_local_repo.id = 101
+        mock_local_repo.repo_name = 'user/repo1'
+        mock_local_repo.repo_url = 'https://github.com/user/repo1'
+        mock_repo_class.return_value = mock_local_repo
         
         mock_client_instance = MagicMock()
         mock_github_client.return_value = mock_client_instance
@@ -161,8 +170,11 @@ class TestGitHubController(unittest.TestCase):
         
         # Assertions
         self.assertEqual(len(result['repositories']), 1)
+        self.assertEqual(result['repositories'][0]['id'], 101)
         self.assertEqual(result['repositories'][0]['name'], 'repo1')
         mock_client_instance.get_user_repositories.assert_called_with(page=1, per_page=10)
+        mock_db.session.add.assert_called_once()
+        mock_db.session.commit.assert_called_once()
 
     @patch('backend.src.api.controllers.github_controller.validate_task_github_link')
     @patch('backend.src.api.controllers.github_controller.Task')
@@ -425,7 +437,7 @@ class TestGitHubController(unittest.TestCase):
     @patch('backend.src.api.controllers.github_controller.db')
     @patch('backend.src.api.controllers.github_controller.GitHubToken')
     @patch('backend.src.api.controllers.github_controller.User')
-    @patch('backend.src.api.controllers.github_controller.current_app')
+    @patch('backend.src.api.controllers.github_controller.current_app', new_callable=MagicMock)
     def test_github_callback_redirection(self, mock_current_app, mock_user_class, mock_token_class,
                                 mock_db, mock_oauth_states, mock_github_client):
         """Test github_callback's redirection to frontend"""

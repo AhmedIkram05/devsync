@@ -17,7 +17,7 @@ def validate_user_data(data):
     
     # Validate role if provided
     if 'role' in data:
-        valid_roles = ['developer', 'team_lead', 'admin']
+        valid_roles = ['developer', 'team_lead', 'client', 'admin']
         if data['role'] not in valid_roles:
             return jsonify({'message': f'Role must be one of: {", ".join(valid_roles)}'}), 400
     

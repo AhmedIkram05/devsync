@@ -27,12 +27,31 @@ def admin_required():
 
 def role_required(allowed_roles):
     """Middleware to ensure the user has one of the allowed roles"""
+    def _normalize_allowed_roles(value):
+        if isinstance(value, (Role, str)):
+            values = [value]
+        else:
+            values = list(value)
+
+        normalized = set()
+        for role in values:
+            role_value = role.value if isinstance(role, Role) else role
+            normalized.add(role_value)
+
+            # Keep route checks backward compatible with both legacy and new role names.
+            if role_value in (Role.CLIENT.value, Role.DEVELOPER.value, Role.TEAM_LEAD.value):
+                normalized.update({Role.CLIENT.value, Role.DEVELOPER.value, Role.TEAM_LEAD.value})
+
+        return normalized
+
+    normalized_allowed_roles = _normalize_allowed_roles(allowed_roles)
+
     def wrapper(fn):
         @wraps(fn)
         def decorator(*args, **kwargs):
             verify_jwt_in_request()
             claims = get_jwt()
-            if claims["role"] not in [role.value for role in allowed_roles]:
+            if claims["role"] not in normalized_allowed_roles:
                 return jsonify({'message': 'Insufficient permissions'}), 403
             return fn(*args, **kwargs)
         return decorator

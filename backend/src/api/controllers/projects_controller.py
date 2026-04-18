@@ -43,7 +43,7 @@ def get_project_by_id(project_id):
     project = Project.query.get_or_404(project_id)
     
     # Check if user has access to this project
-    if user_role == Role.DEVELOPER.value:
+    if user_role in [Role.DEVELOPER.value, Role.CLIENT.value]:
         # Check if developer is assigned to this project
         user = User.query.get(user_id)
         if project not in user.projects:
@@ -177,7 +177,7 @@ def get_project_tasks(project_id):
     project = Project.query.get_or_404(project_id)
     
     # Check if user has access to this project
-    if user_role == Role.DEVELOPER.value:
+    if user_role in [Role.DEVELOPER.value, Role.CLIENT.value]:
         # Check if developer is assigned to this project
         user = User.query.get(user_id)
         if project not in user.projects:

@@ -22,14 +22,13 @@ class GitHubClient:
     AUTH_URL = "https://github.com/login/oauth/authorize"
     TOKEN_URL = "https://github.com/login/oauth/access_token"
     
-    # Cache storage
-    _cache = {}
-    _cache_expiry = {}
-    
     def __init__(self, access_token=None):
         self.access_token = access_token
         self.remaining_rate_limit = None
         self.rate_limit_reset = None
+        # Keep cache scoped to a client instance so tests/requests do not cross-contaminate.
+        self._cache = {}
+        self._cache_expiry = {}
     
     @staticmethod
     def create_state_param(user_id):
@@ -82,7 +81,7 @@ class GitHubClient:
         logger.info(f"Creating GitHub auth URL with client_id: {client_id}, redirect_uri: {redirect_uri}")
         
         # Include required scopes for your app
-        scopes = "repo,user:email"
+        scopes = "repo user"
         
         return (
             f"{GitHubClient.AUTH_URL}?"
@@ -225,12 +224,18 @@ class GitHubClient:
             retry_count += 1
             
             try:
-                response = requests.request(
-                    method,
-                    url,
-                    headers=self.get_headers(),
-                    **kwargs
-                )
+                method_upper = method.upper()
+                request_kwargs = {
+                    'headers': self.get_headers(),
+                    **kwargs,
+                }
+
+                if method_upper == 'GET':
+                    response = requests.get(url, **request_kwargs)
+                elif method_upper == 'POST':
+                    response = requests.post(url, **request_kwargs)
+                else:
+                    response = requests.request(method_upper, url, **request_kwargs)
                 
                 # Handle rate limits
                 if self._handle_rate_limit(response):
@@ -248,10 +253,13 @@ class GitHubClient:
                         pass  # If parsing fails, just return the response normally
                 
                 # Return appropriate data based on status code
-                if response.status_code == 200:
-                    return response.json()
-                elif response.status_code == 204:  # No content
-                    return True
+                if 200 <= response.status_code < 300:
+                    if response.status_code == 204:  # No content
+                        return True
+                    try:
+                        return response.json()
+                    except Exception:
+                        return True
                 else:
                     logger.error(f"GitHub API error: {response.status_code} - {response.text}")
                     return None

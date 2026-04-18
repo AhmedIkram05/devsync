@@ -25,7 +25,8 @@ def get_tasks_due_soon(user_id):
         today = datetime.now().date()
         week_later = today + timedelta(days=7)
         return Task.query.filter_by(assigned_to=user_id)\
-            .filter(Task.deadline >= today, Task.deadline <= week_later)\
+            .filter(Task.deadline.isnot(None))\
+            .filter(Task.deadline.between(today, week_later))\
             .filter(Task.status != 'done').all()
     except Exception as e:
         logger.error(f"Error fetching tasks due soon: {str(e)}")
@@ -56,7 +57,8 @@ def get_project_tasks_due_soon(project_id):
         today = datetime.now().date()
         week_later = today + timedelta(days=7)
         return Task.query.filter_by(project_id=project_id)\
-            .filter(Task.deadline >= today, Task.deadline <= week_later)\
+            .filter(Task.deadline.isnot(None))\
+            .filter(Task.deadline.between(today, week_later))\
             .filter(Task.status != 'done').all()
     except Exception as e:
         logger.error(f"Error fetching project tasks due soon: {str(e)}")

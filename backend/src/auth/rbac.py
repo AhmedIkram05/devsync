@@ -7,12 +7,28 @@ from flask import jsonify
 
 class Role(Enum):
     """User roles with hierarchical permissions"""
-    CLIENT = 'client'  # Replaces both Developer and Team Lead
-    ADMIN = 'admin'    # Project Manager role
+    DEVELOPER = 'developer'
+    TEAM_LEAD = 'team_lead'
+    CLIENT = 'client'
+    ADMIN = 'admin'
 
 
 # Define permissions for each role
 ROLE_PERMISSIONS = {
+    Role.DEVELOPER.value: [
+        'can_view_tasks',
+        'can_update_assigned_tasks',
+        'can_comment_on_tasks',
+        'can_view_github_repos',
+        'can_link_github_commits',
+    ],
+    Role.TEAM_LEAD.value: [
+        'can_view_tasks',
+        'can_update_assigned_tasks',
+        'can_comment_on_tasks',
+        'can_view_github_repos',
+        'can_link_github_commits',
+    ],
     Role.CLIENT.value: [
         'can_view_tasks',
         'can_update_assigned_tasks',
@@ -44,8 +60,9 @@ def require_role(role):
         def wrapper(*args, **kwargs):
             claims = get_jwt()
             user_role = claims.get('role')
+            expected_role = role.value if isinstance(role, Role) else role
             
-            if not user_role or user_role != role:
+            if not user_role or user_role != expected_role:
                 return jsonify({'message': 'Insufficient role permissions'}), 403
             
             return fn(*args, **kwargs)

@@ -6,6 +6,12 @@ from ...db.models import db, Task, User  # Changed to relative import
 from ...auth.rbac import Role  # Changed to relative import
 from ..validators.task_validator import validate_task_data  # Changed to relative import
 
+MEMBER_ROLES = {
+    Role.CLIENT.value,
+    Role.DEVELOPER.value,
+    Role.TEAM_LEAD.value,
+}
+
 def get_all_tasks():
     """Controller function to get all tasks based on user role and filters"""
     user_id = get_jwt_identity()['user_id']
@@ -63,7 +69,7 @@ def get_task_by_id(task_id):
     task = Task.query.get_or_404(task_id)
     
     # Apply role-based access control
-    if (user_role == Role.CLIENT.value and 
+    if (user_role in MEMBER_ROLES and 
         task.assigned_to != user_id and task.created_by != user_id):
         return jsonify({'message': 'You do not have permission to view this task'}), 403
     
@@ -137,7 +143,7 @@ def update_task_by_id(task_id):
     task = Task.query.get_or_404(task_id)
     
     # Check if user has permission to update this task
-    if user_role == Role.CLIENT.value and task.assigned_to != user_id:
+    if user_role in MEMBER_ROLES and task.assigned_to != user_id:
         return jsonify({'message': 'You can only update tasks assigned to you'}), 403
     
     # Update allowed fields

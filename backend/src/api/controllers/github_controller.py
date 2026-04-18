@@ -1,15 +1,22 @@
 """Controller for GitHub integration with DevSync."""
 
-import os
-import uuid
 import logging
+import uuid
 from datetime import datetime
-from flask import jsonify, request, url_for, current_app, redirect, session
-from flask_jwt_extended import get_jwt_identity, jwt_required
 
-from ...db.models import db, User, GitHubToken, GitHubRepository, TaskGitHubLink, Task, Notification
-from ...services.github_client import GitHubClient  # Make sure this points to the correct location
-from ..validators.github_validator import validate_github_auth, validate_github_repo_data, validate_task_github_link
+from flask import current_app, jsonify, redirect, request
+from flask_jwt_extended import get_jwt_identity
+
+from ...db.models import (
+    GitHubRepository,
+    GitHubToken,
+    Task,
+    TaskGitHubLink,
+    User,
+    db,
+)
+from ...services.github_client import GitHubClient
+from ..validators.github_validator import validate_github_repo_data, validate_task_github_link
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +113,11 @@ def github_callback():
     except Exception as e:
         logger.error(f"Error processing state parameter: {str(e)}")
         return jsonify({'error': 'Invalid state parameter format - processing error'}), 400
+
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid state parameter format - userId must be an integer'}), 400
     
     # Exchange code for access token
     token_data = GitHubClient.exchange_code_for_token(code)
@@ -143,7 +155,6 @@ def github_callback():
     user = User.query.get(user_id)
     if user and github_profile and 'login' in github_profile:
         user.github_username = github_profile['login']
-        # Mark the user as GitHub connected
         user.github_connected = True
         
         logger.info(f"Updated user {user_id} with GitHub username: {user.github_username}")
@@ -173,12 +184,37 @@ def get_github_repositories():
     per_page = request.args.get('per_page', 30, type=int)
     
     repositories = github_client.get_user_repositories(page=page, per_page=per_page)
-    
-    # Format repository data
+
+    # Keep a local mapping so downstream endpoints can reference stable local repository IDs.
+    github_ids = [repo['id'] for repo in repositories]
+    existing_repos = {}
+    if github_ids:
+        stored_repos = GitHubRepository.query.filter(GitHubRepository.github_id.in_(github_ids)).all()
+        existing_repos = {stored_repo.github_id: stored_repo for stored_repo in stored_repos}
+
     formatted_repos = []
+    should_commit = False
     for repo in repositories:
+        local_repo = existing_repos.get(repo['id'])
+        if not local_repo:
+            local_repo = GitHubRepository(
+                repo_name=repo['full_name'],
+                repo_url=repo['html_url'],
+                github_id=repo['id'],
+            )
+            db.session.add(local_repo)
+            db.session.flush()
+            should_commit = True
+        else:
+            # Keep local metadata up to date when repository names/URLs change.
+            if local_repo.repo_name != repo['full_name'] or local_repo.repo_url != repo['html_url']:
+                local_repo.repo_name = repo['full_name']
+                local_repo.repo_url = repo['html_url']
+                should_commit = True
+
         formatted_repos.append({
-            'id': repo['id'],
+            'id': local_repo.id,
+            'github_id': repo['id'],
             'name': repo['name'],
             'full_name': repo['full_name'],
             'owner': repo['owner']['login'],
@@ -191,8 +227,13 @@ def get_github_repositories():
             'pushed_at': repo['pushed_at'],
             'language': repo['language'],
             'default_branch': repo['default_branch'],
-            'open_issues_count': repo['open_issues_count']
+            'open_issues_count': repo['open_issues_count'],
+            'stargazers_count': repo.get('stargazers_count', 0),
+            'forks_count': repo.get('forks_count', 0),
         })
+
+    if should_commit:
+        db.session.commit()
     
     return jsonify({
         'repositories': formatted_repos
@@ -376,9 +417,15 @@ def get_repository_pulls(repo_id):
 
 def link_task_with_github(task_id):
     """Link a task with a GitHub issue or PR"""
-    data = request.get_json()
+    data = request.get_json() or {}
     user_id = get_jwt_identity()['user_id']
     
+    # Normalize request payload for validator/controller compatibility.
+    data['task_id'] = task_id
+    for int_field in ('repo_id', 'issue_number', 'pull_request_number'):
+        if int_field in data and isinstance(data[int_field], str) and data[int_field].isdigit():
+            data[int_field] = int(data[int_field])
+
     # Validate link data
     validation_result = validate_task_github_link(data)
     if validation_result:
@@ -488,3 +535,25 @@ def delete_task_github_link(task_id, link_id):
     db.session.commit()
     
     return jsonify({'message': 'GitHub link removed from task'})
+
+
+def disconnect_github_account():
+    """Disconnect the authenticated user's GitHub account."""
+    identity = get_jwt_identity()
+    user_id = identity['user_id'] if isinstance(identity, dict) else identity
+
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return jsonify({'message': 'Invalid user identity'}), 401
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+
+    GitHubToken.query.filter_by(user_id=user_id).delete()
+    user.github_username = None
+    user.github_connected = False
+    db.session.commit()
+
+    return jsonify({'message': 'GitHub account disconnected successfully'})
