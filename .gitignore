@@ -30,6 +30,7 @@ ENV/
 .vscode/
 *.swp
 *.swo
+/.github
 
 # Database
 *.sqlite3
