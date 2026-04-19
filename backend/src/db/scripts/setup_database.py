@@ -1,5 +1,5 @@
 """
-Database setup script with comprehensive index creation and error handling.
+Database setup script with cross-dialect index creation and error handling.
 """
 import os
 import sys
