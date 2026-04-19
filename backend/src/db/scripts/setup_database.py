@@ -122,6 +122,16 @@ def setup_database():
                 for idx_name, columns in comment_indices:
                     if create_index_safely(conn, idx_name, "comments", columns):
                         indices_created += 1
+
+                # Projects indices
+                project_indices = [
+                    ("idx_projects_created_by", "created_by"),
+                    ("idx_projects_status", "status"),
+                    ("idx_projects_updated_at", "updated_at"),
+                ]
+                for idx_name, columns in project_indices:
+                    if create_index_safely(conn, idx_name, "projects", columns):
+                        indices_created += 1
                 
                 # Other tables indices
                 if create_index_safely(conn, "idx_github_repositories_name", "github_repositories", "repo_name"):
