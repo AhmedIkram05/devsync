@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+load_dotenv()
 
 DEFAULT_LOCAL_POSTGRES_URL = "postgresql://devsync:devsync@localhost:5432/devsync"
 LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "db", "postgres"}
@@ -28,7 +28,7 @@ def _is_local_database_host(hostname):
 
     try:
         parsed_ip = ip_address(lowered_hostname)
-        return parsed_ip.is_loopback or parsed_ip.is_private
+        return parsed_ip.is_loopback
     except ValueError:
         return False
 

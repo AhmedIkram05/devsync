@@ -17,6 +17,11 @@ from src.db.models import db
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+def _quote_sqlite_identifier(identifier):
+    """Quote SQLite identifiers for PRAGMA statements."""
+    return '"' + identifier.replace('"', '""') + '"'
+
 def inspect_database():
     """Inspect database schema in detail"""
     try:
@@ -53,7 +58,8 @@ def inspect_database():
 
                     # SQLite fallback where unique constraints can appear only in PRAGMA output.
                     if not index_names and dialect == "sqlite":
-                        pragma_result = conn.execute(text(f"PRAGMA index_list('{table}')"))
+                        quoted_table = _quote_sqlite_identifier(table)
+                        pragma_result = conn.execute(text(f"PRAGMA index_list({quoted_table})"))
                         for row in pragma_result:
                             if len(row) > 1 and row[1]:
                                 index_names.append(row[1])
