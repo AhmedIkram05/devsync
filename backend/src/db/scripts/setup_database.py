@@ -1,5 +1,5 @@
 """
-Database setup script with comprehensive index creation and error handling.
+Database setup script with cross-dialect index creation and error handling.
 """
 import os
 import sys
@@ -17,6 +17,11 @@ from src.db.models.models import *
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _quote_sqlite_identifier(identifier):
+    """Quote SQLite identifiers for PRAGMA statements."""
+    return '"' + identifier.replace('"', '""') + '"'
 
 def create_index_safely(conn, index_name, table, columns):
     """Create an index with proper error handling"""
@@ -122,6 +127,19 @@ def setup_database():
                 for idx_name, columns in comment_indices:
                     if create_index_safely(conn, idx_name, "comments", columns):
                         indices_created += 1
+
+                # Projects indices
+                if "projects" in tables:
+                    project_indices = [
+                        ("idx_projects_created_by", "created_by"),
+                        ("idx_projects_status", "status"),
+                        ("idx_projects_updated_at", "updated_at"),
+                    ]
+                    for idx_name, columns in project_indices:
+                        if create_index_safely(conn, idx_name, "projects", columns):
+                            indices_created += 1
+                else:
+                    logger.info("Skipping project index creation because 'projects' table does not exist")
                 
                 # Other tables indices
                 if create_index_safely(conn, "idx_github_repositories_name", "github_repositories", "repo_name"):
@@ -203,7 +221,8 @@ def verify_database_indices():
 
                     # SQLite fallback in case unique index metadata isn't exposed via inspector.
                     if not index_names and db.engine.dialect.name == "sqlite":
-                        pragma_result = conn.execute(text(f"PRAGMA index_list('{table}')"))
+                        quoted_table = _quote_sqlite_identifier(table)
+                        pragma_result = conn.execute(text(f"PRAGMA index_list({quoted_table})"))
                         for row in pragma_result:
                             if len(row) > 1 and row[1]:
                                 index_names.append(row[1])

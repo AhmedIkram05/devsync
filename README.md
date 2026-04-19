@@ -20,7 +20,8 @@ DevSync streamlines collaboration by connecting your database, GitHub repositori
 - Python 3.8 or higher
 - Node.js 14.x or higher
 - npm 6.x or higher
-- PostgreSQL database (local or cloud-hosted)
+- Docker Engine (or Docker Desktop)
+- Docker Compose plugin (`docker compose`)
 
 ### Step 1: Clone the Repository
 
@@ -63,7 +64,7 @@ npm install
 ### Backend Server
 
 ```bash
-source venv/bin/activate  # If not already activated
+source .venv/bin/activate  # If not already activated
 cd backend/src
 python app.py
 ```
@@ -84,15 +85,20 @@ The React app should automatically open in your browser at <http://localhost:300
 
 ### Environment Variables
 
-Create a `.env` file in the `backend/src` directory and add the following variables:
+Create a `.env` file at the repository root (or copy from `.env.example`) and add the following variables:
+
+```bash
+cp .env.example .env
+```
 
 ```env
 # Flask Application Settings
 FLASK_APP=backend/src/app.py
 FLASK_ENV=development
 
-# Database Configuration
-DATABASE_URL=your_database_connection_string
+# Local PostgreSQL (Docker)
+POSTGRES_PASSWORD=your_local_postgres_password
+DATABASE_URL=postgresql://devsync:your_local_postgres_password@localhost:5432/devsync?sslmode=disable
 
 # Authentication
 JWT_SECRET_KEY=your_secure_secret_key
@@ -108,12 +114,47 @@ FRONTEND_URL=http://localhost:3000
 
 ### Database Setup
 
-1. Create a PostgreSQL database.
-2. Update the `DATABASE_URL` in your `.env` file with your database connection string.
-3. Run the following command to create the necessary tables and indices:
+ 1. Start local PostgreSQL with Docker:
 
 ```bash
+docker compose -f docker-compose.local-postgres.yml up -d
+```
+
+1. Bootstrap tables and indexes:
+
+```bash
+source .venv/bin/activate
 python backend/src/db/scripts/setup_database.py
+```
+
+1. (Optional) Inspect schema details:
+
+```bash
+source .venv/bin/activate
+python backend/src/db/scripts/inspect_database.py
+```
+
+### Local Database Reset
+
+Reset your local PostgreSQL database to a clean state:
+
+```bash
+docker compose -f docker-compose.local-postgres.yml down -v
+docker compose -f docker-compose.local-postgres.yml up -d
+source .venv/bin/activate
+python backend/src/db/scripts/setup_database.py
+```
+
+### Database Shortcuts (Makefile)
+
+Use these commands from the repository root:
+
+```bash
+make db-up
+make db-setup
+make db-inspect
+make db-reset
+make db-down
 ```
 
 ## Contributing

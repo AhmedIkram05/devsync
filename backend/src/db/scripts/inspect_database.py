@@ -4,7 +4,7 @@ Database inspection script for seeing details about schema, tables, and indices.
 import os
 import sys
 import logging
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 # Add the backend directory to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
@@ -17,6 +17,11 @@ from src.db.models import db
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+def _quote_sqlite_identifier(identifier):
+    """Quote SQLite identifiers for PRAGMA statements."""
+    return '"' + identifier.replace('"', '""') + '"'
+
 def inspect_database():
     """Inspect database schema in detail"""
     try:
@@ -25,62 +30,47 @@ def inspect_database():
         db.init_app(app)
         
         with app.app_context():
+            inspector = inspect(db.engine)
+            dialect = db.engine.dialect.name
+
             with db.engine.connect() as conn:
-                # List tables
-                result = conn.execute(text("""
-                    SELECT tablename 
-                    FROM pg_catalog.pg_tables 
-                    WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema';
-                """))
-                tables = [row[0] for row in result]
+                tables = inspector.get_table_names()
+
+                print(f"== Database Dialect: {dialect} ==")
                 print(f"== Tables ({len(tables)}) ==")
                 for table in sorted(tables):
                     print(f"  - {table}")
                 print()
-                
-                # List indices
-                result = conn.execute(text("""
-                    SELECT
-                        t.relname AS table_name,
-                        i.relname AS index_name,
-                        a.attname AS column_name
-                    FROM
-                        pg_class t,
-                        pg_class i,
-                        pg_index ix,
-                        pg_attribute a
-                    WHERE
-                        t.oid = ix.indrelid
-                        AND i.oid = ix.indexrelid
-                        AND a.attrelid = t.oid
-                        AND a.attnum = ANY(ix.indkey)
-                        AND t.relkind = 'r'
-                        AND t.relname NOT LIKE 'pg_%'
-                        AND t.relname NOT LIKE 'sql_%'
-                    ORDER BY
-                        t.relname,
-                        i.relname;
-                """))
-                
-                indices_by_table = {}
-                for row in result:
-                    table = row[0]
-                    index = row[1]
-                    column = row[2]
-                    
-                    if table not in indices_by_table:
-                        indices_by_table[table] = {}
-                    
-                    if index not in indices_by_table[table]:
-                        indices_by_table[table][index] = []
-                    
-                    indices_by_table[table][index].append(column)
-                
+
                 print(f"== Indices by Table ==")
-                for table in sorted(indices_by_table.keys()):
+                for table in sorted(tables):
+                    index_names = []
+
+                    for index in inspector.get_indexes(table):
+                        index_name = index.get("name")
+                        if index_name:
+                            index_names.append(index_name)
+
+                    for constraint in inspector.get_unique_constraints(table):
+                        constraint_name = constraint.get("name")
+                        if constraint_name:
+                            index_names.append(constraint_name)
+
+                    # SQLite fallback where unique constraints can appear only in PRAGMA output.
+                    if not index_names and dialect == "sqlite":
+                        quoted_table = _quote_sqlite_identifier(table)
+                        pragma_result = conn.execute(text(f"PRAGMA index_list({quoted_table})"))
+                        for row in pragma_result:
+                            if len(row) > 1 and row[1]:
+                                index_names.append(row[1])
+
+                    unique_index_names = sorted(set(index_names))
                     print(f"  Table: {table}")
-                    for index, columns in indices_by_table[table].items():
-                        print(f"    - {index}: {', '.join(columns)}")
+                    if unique_index_names:
+                        for index_name in unique_index_names:
+                            print(f"    - {index_name}")
+                    else:
+                        print("    - (no indices found)")
                     print()
                 
         return True

@@ -179,6 +179,12 @@ class Project(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index('idx_projects_created_by', 'created_by'),
+        Index('idx_projects_status', 'status'),
+        Index('idx_projects_updated_at', 'updated_at'),
+    )
     
     # Relationships
     tasks = db.relationship('Task', backref='project', lazy=True)
