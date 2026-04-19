@@ -97,7 +97,8 @@ FLASK_APP=backend/src/app.py
 FLASK_ENV=development
 
 # Local PostgreSQL (Docker)
-DATABASE_URL=postgresql://devsync:devsync@localhost:5432/devsync?sslmode=disable
+POSTGRES_PASSWORD=your_local_postgres_password
+DATABASE_URL=postgresql://devsync:your_local_postgres_password@localhost:5432/devsync?sslmode=disable
 
 # Authentication
 JWT_SECRET_KEY=your_secure_secret_key

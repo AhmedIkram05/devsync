@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DEFAULT_LOCAL_POSTGRES_URL = "postgresql://devsync:devsync@localhost:5432/devsync"
+POSTGRES_URL_EXAMPLE = "postgresql://<db_user>:<db_password>@localhost:5432/devsync"
 LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "db", "postgres"}
 
 
@@ -48,20 +48,27 @@ def _resolve_database_uri(env):
     if env == "testing":
         return "sqlite:///:memory:"
 
-    database_url = os.getenv("DATABASE_URL", DEFAULT_LOCAL_POSTGRES_URL)
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise ValueError(
+            "DATABASE_URL is required for non-testing environments. "
+            f"Set DATABASE_URL to a PostgreSQL connection string, for example: "
+            f"{POSTGRES_URL_EXAMPLE}"
+        )
+
     database_url = _normalize_postgres_scheme(database_url)
 
     if database_url.startswith("sqlite:"):
         raise ValueError(
             "SQLite is not supported for non-testing environments. "
             f"Set DATABASE_URL to a PostgreSQL connection string, for example: "
-            f"{DEFAULT_LOCAL_POSTGRES_URL}"
+            f"{POSTGRES_URL_EXAMPLE}"
         )
 
     if not database_url.startswith("postgresql://"):
         raise ValueError(
             "Unsupported DATABASE_URL scheme. "
-            f"Use a postgresql:// connection string, for example: {DEFAULT_LOCAL_POSTGRES_URL}"
+            f"Use a postgresql:// connection string, for example: {POSTGRES_URL_EXAMPLE}"
         )
 
     return _append_default_sslmode(database_url)

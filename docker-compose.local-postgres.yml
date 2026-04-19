@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: devsync
       POSTGRES_USER: devsync
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devsync}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
     ports:
       - "5432:5432"
     volumes:
