@@ -144,6 +144,18 @@ source .venv/bin/activate
 python backend/src/db/scripts/setup_database.py
 ```
 
+### Database Shortcuts (Makefile)
+
+Use these commands from the repository root:
+
+```bash
+make db-up
+make db-setup
+make db-inspect
+make db-reset
+make db-down
+```
+
 ## Contributing
 
 We welcome contributions! Please follow these steps:
