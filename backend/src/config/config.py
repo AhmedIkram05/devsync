@@ -54,12 +54,14 @@ def _resolve_database_uri(env):
     if database_url.startswith("sqlite:"):
         raise ValueError(
             "SQLite is not supported for non-testing environments. "
-            "Use local PostgreSQL (Docker) via DATABASE_URL."
+            f"Set DATABASE_URL to a PostgreSQL connection string, for example: "
+            f"{DEFAULT_LOCAL_POSTGRES_URL}"
         )
 
     if not database_url.startswith("postgresql://"):
         raise ValueError(
-            "Unsupported DATABASE_URL scheme. Use postgresql:// for local development."
+            "Unsupported DATABASE_URL scheme. "
+            f"Use a postgresql:// connection string, for example: {DEFAULT_LOCAL_POSTGRES_URL}"
         )
 
     return _append_default_sslmode(database_url)
