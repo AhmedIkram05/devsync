@@ -1,52 +1,86 @@
-# This file is the configuration file for the Flask application.
+"""Application configuration for DevSync."""
 
 import os
+from ipaddress import ip_address
+from urllib.parse import urlparse
+
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-DEFAULT_SQLITE_DB = os.path.join(BASE_DIR, 'devsync.db')
+DEFAULT_LOCAL_POSTGRES_URL = "postgresql://devsync:devsync@localhost:5432/devsync"
+LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "db", "postgres"}
+
+
+def _normalize_postgres_scheme(database_url):
+    if database_url.startswith("postgres://"):
+        return database_url.replace("postgres://", "postgresql://", 1)
+    return database_url
+
+
+def _is_local_database_host(hostname):
+    if not hostname:
+        return False
+
+    lowered_hostname = hostname.strip().lower()
+    if lowered_hostname in LOCAL_DB_HOSTS or lowered_hostname.endswith(".local"):
+        return True
+
+    try:
+        parsed_ip = ip_address(lowered_hostname)
+        return parsed_ip.is_loopback or parsed_ip.is_private
+    except ValueError:
+        return False
+
+
+def _append_default_sslmode(database_url):
+    """Default sslmode to match local Docker and cloud Postgres setups."""
+    if not database_url.startswith("postgresql://") or "sslmode=" in database_url:
+        return database_url
+
+    parsed_url = urlparse(database_url)
+    sslmode = "disable" if _is_local_database_host(parsed_url.hostname) else "require"
+    separator = "&" if parsed_url.query else "?"
+    return f"{database_url}{separator}sslmode={sslmode}"
+
+
+def _resolve_database_uri(env):
+    if env == "testing":
+        return "sqlite:///:memory:"
+
+    database_url = os.getenv("DATABASE_URL", DEFAULT_LOCAL_POSTGRES_URL)
+    database_url = _normalize_postgres_scheme(database_url)
+
+    if database_url.startswith("sqlite:"):
+        raise ValueError(
+            "SQLite is not supported for non-testing environments. "
+            "Use local PostgreSQL (Docker) via DATABASE_URL."
+        )
+
+    if not database_url.startswith("postgresql://"):
+        raise ValueError(
+            "Unsupported DATABASE_URL scheme. Use postgresql:// for local development."
+        )
+
+    return _append_default_sslmode(database_url)
+
 
 class Config:
-    """Base configuration class for the application"""
-    # Database configuration
-    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', f'sqlite:///{DEFAULT_SQLITE_DB}')
+    """Base configuration class for the application."""
 
-    if SQLALCHEMY_DATABASE_URI.startswith('postgres://'):
-        SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace('postgres://', 'postgresql://', 1)
-
-    # Cloud Postgres providers generally require SSL.
-    if SQLALCHEMY_DATABASE_URI.startswith('postgresql://') and 'sslmode=' not in SQLALCHEMY_DATABASE_URI:
-        sep = '&' if '?' in SQLALCHEMY_DATABASE_URI else '?'
-        SQLALCHEMY_DATABASE_URI += f"{sep}sslmode=require"
-
-    # Normalize sqlite paths so one DB file is used regardless of the working directory.
-    if SQLALCHEMY_DATABASE_URI.startswith('sqlite:///') and not SQLALCHEMY_DATABASE_URI.startswith('sqlite:////'):
-        sqlite_path = SQLALCHEMY_DATABASE_URI.replace('sqlite:///', '', 1)
-        sqlite_query = ''
-
-        if '?' in sqlite_path:
-            sqlite_path, sqlite_query = sqlite_path.split('?', 1)
-            sqlite_query = f'?{sqlite_query}'
-
-        if not os.path.isabs(sqlite_path):
-            sqlite_path = os.path.join(BASE_DIR, sqlite_path)
-
-        SQLALCHEMY_DATABASE_URI = f"sqlite:///{os.path.abspath(sqlite_path)}{sqlite_query}"
-    
+    SQLALCHEMY_DATABASE_URI = _resolve_database_uri(os.getenv("FLASK_ENV", "development").lower())
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'dev-secret-key')
-    
+    SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key")
+
     # JWT Configuration
-    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'dev-secret-key')
-    JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')
-    ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', 30))
-    
+    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key")
+    JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+    ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+
     # GitHub OAuth Configuration
-    GITHUB_CLIENT_ID = os.getenv('GITHUB_CLIENT_ID', '')
-    GITHUB_CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET', '')
-    GITHUB_REDIRECT_URI = os.getenv('GITHUB_REDIRECT_URI', '')
+    GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
+    GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
+    GITHUB_REDIRECT_URI = os.getenv("GITHUB_REDIRECT_URI", "")
 
 class DevelopmentConfig(Config):
     """Development configuration"""
@@ -64,7 +98,7 @@ class TestingConfig(Config):
 
 def get_config():
     """Returns the appropriate configuration class based on the environment"""
-    env = os.environ.get('FLASK_ENV', 'development')
+    env = os.environ.get('FLASK_ENV', 'development').lower()
     
     if env == 'production':
         return ProductionConfig
