@@ -10,7 +10,6 @@ const API_BASE_URL = (() => {
 })();
 
 const API_URL = `${API_BASE_URL}/auth`;
-const GITHUB_OAUTH_URL = `${API_BASE_URL}/github/auth`;
 
 // Helper function to handle fetch with proper error handling
 const fetchWrapper = async (url, options = {}) => {
@@ -83,13 +82,6 @@ export const authApi = {
         
         localStorage.setItem('user', JSON.stringify(userToStore));
 
-        // Redirect to GitHub OAuth if not connected
-        if (!userToStore.github_connected) {
-          console.log("Redirecting to GitHub OAuth...");
-          window.location.href = GITHUB_OAUTH_URL;
-          return; // Stop further execution
-        }
-
         return { ...data, user: userToStore };
       } else {
         console.error("Login response doesn't contain user data:", data);
@@ -150,23 +142,27 @@ export const authApi = {
     try {
       console.log("Attempting to refresh auth token...");
       
-      const data = await fetchWrapper(`${API_URL}/refresh-token`, {
+      const data = await fetchWrapper(`${API_URL}/refresh`, {
         method: 'POST',
       });
       
-      if (data.token) {
-        const currentUser = authApi.getCurrentUser();
-        if (currentUser) {
-          // Update the user data with the new token
-          const updatedUser = {
-            ...currentUser,
-            token: data.token
-          };
-          
-          console.log("Token refreshed successfully, updating user data");
-          localStorage.setItem('user', JSON.stringify(updatedUser));
-          return updatedUser;
-        }
+      const refreshedToken = data.token || data.access_token;
+      const currentUser = authApi.getCurrentUser();
+      if (!currentUser) {
+        throw new Error("Failed to refresh token - no authenticated user in storage");
+      }
+
+      // Update user token only when backend returned one; otherwise keep existing token.
+      const updatedUser = {
+        ...currentUser,
+        token: refreshedToken || currentUser.token
+      };
+
+      console.log("Token refresh endpoint succeeded, updating user data");
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+
+      if (refreshedToken || updatedUser.token) {
+        return updatedUser;
       }
       
       throw new Error("Failed to refresh token - no token in response");

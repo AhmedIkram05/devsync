@@ -23,7 +23,8 @@ def authenticated_only(f):
         try:
             token = auth_header.split(' ')[1]
             decoded_token = decode_token(token)
-            user_id = decoded_token.get('sub')
+            identity = decoded_token.get('identity', decoded_token.get('sub'))
+            user_id = identity.get('user_id') if isinstance(identity, dict) else identity
             if not user_id:
                 disconnect()
                 return False

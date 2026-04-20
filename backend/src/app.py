@@ -8,6 +8,11 @@ from dotenv import load_dotenv
 
 from flask_swagger_ui import get_swaggerui_blueprint
 
+# Load .env before importing config-dependent modules.
+# In local/dev contexts, this ensures .env values override stale exported shell vars.
+dotenv_override = os.getenv('FLASK_ENV', 'development').lower() != 'production'
+load_dotenv(override=dotenv_override)
+
 # Add the backend directory to the Python path
 backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
 sys.path.insert(0, backend_dir)
@@ -32,12 +37,10 @@ from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
 
-# Load environment variables
-load_dotenv(override=True)
-
 def create_app(config_class=None):
     app = Flask(__name__)
     app.config.from_object(config_class or get_config())
+    app_env = os.getenv('FLASK_ENV', 'development').lower()
     
     # Set up Swagger UI with the correct file path
     SWAGGER_URL = '/api/docs'  # URL for exposing Swagger UI
@@ -76,10 +79,11 @@ def create_app(config_class=None):
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")))
     app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
     app.config["JWT_TOKEN_LOCATION"] = ["cookies", "headers"]
+    app.config["JWT_IDENTITY_CLAIM"] = "identity"
     
-    app.config["JWT_COOKIE_SECURE"] = True
+    app.config["JWT_COOKIE_SECURE"] = app_env == 'production'
     app.config["JWT_COOKIE_CSRF_PROTECT"] = False
-    app.config["JWT_COOKIE_SAMESITE"] = None
+    app.config["JWT_COOKIE_SAMESITE"] = 'None' if app.config["JWT_COOKIE_SECURE"] else 'Lax'
     
     # Apply any override configurations
     if config_class:
