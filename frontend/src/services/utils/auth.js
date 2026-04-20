@@ -140,18 +140,20 @@ export const authApi = {
         throw new Error("Failed to refresh token - no authenticated user in storage");
       }
 
-      // Update user token only when backend returned one; otherwise keep existing token.
+      if (!refreshedToken) {
+        console.warn("Refresh response did not include a new token, clearing user data");
+        localStorage.removeItem('user');
+        throw new Error("Failed to refresh token - no token in response");
+      }
+
       const updatedUser = {
         ...currentUser,
-        token: refreshedToken || currentUser.token
+        token: refreshedToken
       };
       localStorage.setItem('user', JSON.stringify(updatedUser));
 
-      if (refreshedToken || updatedUser.token) {
-        return updatedUser;
-      }
+      return updatedUser;
       
-      throw new Error("Failed to refresh token - no token in response");
     } catch (error) {
       console.error("Token refresh error:", error);
       
