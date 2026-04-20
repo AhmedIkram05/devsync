@@ -140,7 +140,7 @@ const DeveloperProgress = () => {
                     <div className="space-y-2">
                       {developer.recent_tasks.slice(0, 3).map(task => (
                         <Link 
-                          to={`/TaskDetailUser/${task.id}`}
+                          to={`/tasks/${task.id}`}
                           key={task.id} 
                           className="block text-sm p-2 border rounded hover:bg-gray-50"
                         >

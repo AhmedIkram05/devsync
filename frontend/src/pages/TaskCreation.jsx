@@ -49,7 +49,7 @@ const TaskCreation = () => {
       const response = await taskService.createTask(taskData);
       
       // Navigate to the task details page or back to the task list
-      navigate(`/TaskDetailUser/${response.task.id}`, { 
+      navigate(`/tasks/${response.task.id}`, {
         state: { message: 'Task created successfully!' }
       });
     } catch (err) {

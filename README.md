@@ -114,35 +114,24 @@ FRONTEND_URL=http://localhost:3000
 
 ### Database Setup
 
- 1. Start local PostgreSQL with Docker:
+Start local PostgreSQL with Docker:
 
 ```bash
 docker compose -f docker-compose.local-postgres.yml up -d
 ```
 
-1. Bootstrap tables and indexes:
+Bootstrap tables and indexes:
 
 ```bash
 source .venv/bin/activate
 python backend/src/db/scripts/setup_database.py
 ```
 
-1. (Optional) Inspect schema details:
+(Optional) Inspect schema details:
 
 ```bash
 source .venv/bin/activate
 python backend/src/db/scripts/inspect_database.py
-```
-
-### Local Database Reset
-
-Reset your local PostgreSQL database to a clean state:
-
-```bash
-docker compose -f docker-compose.local-postgres.yml down -v
-docker compose -f docker-compose.local-postgres.yml up -d
-source .venv/bin/activate
-python backend/src/db/scripts/setup_database.py
 ```
 
 ### Database Shortcuts (Makefile)
@@ -156,24 +145,6 @@ make db-inspect
 make db-reset
 make db-down
 ```
-
-## Contributing
-
-We welcome contributions! Please follow these steps:
-
-1. Fork the repository.
-2. Create a new branch (`git checkout -b feature/YourFeature`).
-3. Make your changes and commit them (`git commit -m 'Add some feature'`).
-4. Push to the branch (`git push origin feature/YourFeature`).
-5. Open a pull request.
-6. Ensure your code adheres to the project's coding standards and passes all tests.
-7. Add tests for any new features or bug fixes.
-8. Update the documentation as necessary.
-9. Ensure all existing tests pass.
-10. Review the pull request and address any feedback.
-11. Merge the pull request once approved.
-12. Delete the branch after merging to keep the repository clean.
-13. Celebrate your contribution to the project!
 
 ### API Documentation
 

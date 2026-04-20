@@ -24,11 +24,7 @@ const fetchWithAuth = async (endpoint, options = {}) => {
         user = JSON.parse(userStr);
         token = user?.token;
         
-        // Debug log to help identify token issues
-        if (token) {
-          const tokenPreview = token.substring(0, 10) + '...';
-          console.debug(`Using auth token for ${endpoint}: ${tokenPreview}`);
-        } else {
+        if (!token) {
           console.warn(`No token found for authenticated request to ${endpoint}`);
         }
       }
@@ -47,7 +43,6 @@ const fetchWithAuth = async (endpoint, options = {}) => {
     // Add auth token if available - use token from options first, then fallback to localStorage
     if (options.headers?.Authorization) {
       // Use the token provided in options (used in github.js)
-      console.debug(`Using explicit Authorization header for ${endpoint}`);
     } else if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
@@ -194,7 +189,9 @@ const fetchWithAuth = async (endpoint, options = {}) => {
 const taskService = {
   getAllTasks: async () => {
     try {
-      return await fetchWithAuth('tasks');
+      const response = await fetchWithAuth('tasks');
+      const tasks = response?.tasks ?? response;
+      return Array.isArray(tasks) ? tasks : [];
     } catch (error) {
       console.error("Failed to fetch tasks:", error);
       return [];
@@ -203,7 +200,8 @@ const taskService = {
   
   getTaskById: async (taskId) => {
     try {
-      return await fetchWithAuth(`tasks/${taskId}`);
+      const response = await fetchWithAuth(`tasks/${taskId}`);
+      return response?.task ?? response ?? null;
     } catch (error) {
       console.error(`Failed to fetch task ${taskId}:`, error);
       return null;
@@ -232,7 +230,9 @@ const taskService = {
   
   getTaskComments: async (taskId) => {
     try {
-      return await fetchWithAuth(`tasks/${taskId}/comments`);
+      const response = await fetchWithAuth(`tasks/${taskId}/comments`);
+      const comments = response?.comments ?? response;
+      return Array.isArray(comments) ? comments : [];
     } catch (error) {
       console.error(`Failed to fetch comments for task ${taskId}:`, error);
       return [];
@@ -240,11 +240,152 @@ const taskService = {
   },
   
   addTaskComment: async (taskId, commentData) => {
-    return await fetchWithAuth(`tasks/${taskId}/comments`, {
+    const response = await fetchWithAuth(`tasks/${taskId}/comments`, {
       method: 'POST',
       body: JSON.stringify(commentData)
     });
+
+    return response?.comment ?? response;
+  },
+
+  getUsers: async () => {
+    try {
+      const response = await fetchWithAuth('users');
+      const users = response?.users ?? response;
+      return Array.isArray(users) ? users : [];
+    } catch (error) {
+      console.error('Failed to fetch users for task creation:', error);
+      return [];
+    }
+  },
+
+  getProjects: async () => {
+    try {
+      const response = await fetchWithAuth('projects');
+      const projects = response?.projects ?? response;
+      return Array.isArray(projects) ? projects : [];
+    } catch (error) {
+      console.error('Failed to fetch projects for task creation:', error);
+      return [];
+    }
   }
+};
+
+const projectService = {
+  getAllProjects: async () => {
+    try {
+      const response = await fetchWithAuth('projects');
+      const projects = response?.projects ?? response;
+      return Array.isArray(projects) ? projects : [];
+    } catch (error) {
+      console.error('Failed to fetch projects:', error);
+      return [];
+    }
+  },
+
+  getProjectById: async (projectId) => {
+    try {
+      const response = await fetchWithAuth(`projects/${projectId}`);
+      return response?.project ?? response ?? null;
+    } catch (error) {
+      console.error(`Failed to fetch project ${projectId}:`, error);
+      return null;
+    }
+  },
+
+  getProjectTasks: async (projectId) => {
+    try {
+      const response = await fetchWithAuth(`projects/${projectId}/tasks`);
+      const tasks = response?.tasks ?? response;
+      return Array.isArray(tasks) ? tasks : [];
+    } catch (error) {
+      console.error(`Failed to fetch tasks for project ${projectId}:`, error);
+      return [];
+    }
+  }
+};
+
+const getDateRangeStart = (dateRange) => {
+  const now = new Date();
+
+  switch (dateRange) {
+    case 'month':
+      return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    case 'quarter':
+      return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    case 'year':
+      return new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+    case 'week':
+    default:
+      return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  }
+};
+
+const isWithinDateRange = (isoDate, rangeStart) => {
+  if (!isoDate) {
+    return true;
+  }
+
+  const parsedDate = new Date(isoDate);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return true;
+  }
+
+  return parsedDate >= rangeStart;
+};
+
+
+const normalizeTaskStatus = (status) => {
+  if (status === 'completed') {
+    return 'done';
+  }
+
+  return status;
+};
+
+const buildDeveloperProgress = (users, tasks) => {
+  const progressTrackingRoles = new Set(['client', 'developer', 'team_lead']);
+  const tasksByAssignee = new Map();
+
+  tasks.forEach((task) => {
+    if (task?.assigned_to === null || task?.assigned_to === undefined) {
+      return;
+    }
+
+    const assigneeKey = String(task.assigned_to);
+    if (!tasksByAssignee.has(assigneeKey)) {
+      tasksByAssignee.set(assigneeKey, []);
+    }
+
+    tasksByAssignee.get(assigneeKey).push(task);
+  });
+
+  return users
+    .filter((user) => progressTrackingRoles.has(user.role))
+    .map((user) => {
+      const userTasks = tasksByAssignee.get(String(user.id)) || [];
+      let completedCount = 0;
+
+      userTasks.forEach((task) => {
+        if (normalizeTaskStatus(task.status) === 'done') {
+          completedCount += 1;
+        }
+      });
+
+      const recentTasks = [...userTasks]
+        .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))
+        .slice(0, 5);
+
+      return {
+        id: user.id,
+        name: user.name,
+        role: user.role,
+        total_tasks: userTasks.length,
+        completed_tasks: completedCount,
+        active_tasks: userTasks.length - completedCount,
+        recent_tasks: recentTasks
+      };
+    });
 };
 
 // Dashboard service for admin and client dashboards
@@ -274,6 +415,96 @@ const dashboardService = {
         tasks: { active: 0, completed: 0 },
         repositories: [],
         recentActivity: []
+      };
+    }
+  },
+
+  getDeveloperProgressStats: async () => {
+    try {
+      const [usersResponse, tasks] = await Promise.all([
+        fetchWithAuth('users'),
+        taskService.getAllTasks()
+      ]);
+
+      const users = Array.isArray(usersResponse?.users) ? usersResponse.users : [];
+      const allTasks = Array.isArray(tasks) ? tasks : [];
+
+      return buildDeveloperProgress(users, allTasks);
+    } catch (error) {
+      console.error('Failed to fetch developer progress stats:', error);
+      return [];
+    }
+  },
+
+  getReportData: async (reportType = 'tasks', dateRange = 'week') => {
+    try {
+      const rangeStart = getDateRangeStart(dateRange);
+      const [tasks, usersResponse] = await Promise.all([
+        taskService.getAllTasks(),
+        fetchWithAuth('users').catch(() => ({ users: [] }))
+      ]);
+
+      const users = Array.isArray(usersResponse?.users) ? usersResponse.users : [];
+      const scopedTasks = tasks.filter((task) => isWithinDateRange(task.created_at, rangeStart));
+
+      if (reportType === 'developers') {
+        const developers = buildDeveloperProgress(users, tasks);
+        const totalTasks = developers.reduce((sum, developer) => sum + (developer.total_tasks || 0), 0);
+        const completedTasks = developers.reduce((sum, developer) => sum + (developer.completed_tasks || 0), 0);
+        const avgCompletion = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+        return {
+          summary: {
+            developers: developers.length,
+            avg_tasks: developers.length > 0 ? Math.round(totalTasks / developers.length) : 0,
+            avg_completion: avgCompletion,
+            active_devs: developers.filter((developer) => developer.active_tasks > 0).length
+          },
+          details: developers
+        };
+      }
+
+      if (reportType === 'github') {
+        const githubStatus = await fetchWithAuth('github/status').catch(() => ({ connected: false }));
+        const connected = Boolean(githubStatus?.connected);
+        const repositories = connected ? await githubService.getUserRepos() : [];
+
+        return {
+          summary: {
+            repos: repositories.length,
+            open_issues: 0,
+            open_prs: 0,
+            linked_tasks: 0
+          },
+          details: repositories
+        };
+      }
+
+      const completed = scopedTasks.filter((task) => normalizeTaskStatus(task.status) === 'done').length;
+      const inProgress = scopedTasks.filter((task) => normalizeTaskStatus(task.status) === 'in_progress').length;
+      const overdue = scopedTasks.filter((task) => {
+        if (!task.deadline) {
+          return false;
+        }
+
+        return new Date(task.deadline) < new Date() && normalizeTaskStatus(task.status) !== 'done';
+      }).length;
+
+      return {
+        summary: {
+          total: scopedTasks.length,
+          completed,
+          in_progress: inProgress,
+          overdue,
+          team_members: users.length
+        },
+        details: scopedTasks
+      };
+    } catch (error) {
+      console.error('Failed to fetch report data:', error);
+      return {
+        summary: {},
+        details: []
       };
     }
   }
@@ -380,8 +611,6 @@ const githubService = {
   handleRateLimitError: (error) => {
     // Check if error is related to rate limiting
     if (error?.status === 403 && error?.data?.message?.includes('rate limit')) {
-      console.log('GitHub API rate limit error detected', error.data);
-      
       // Extract rate limit information if available
       const rateLimitInfo = {
         title: 'GitHub API Rate Limit Exceeded',
@@ -468,6 +697,7 @@ const notificationService = {
 export {
   fetchWithAuth,
   taskService,
+  projectService,
   githubService,
   userService,
   dashboardService,

@@ -24,9 +24,7 @@ const fetchWithAuth = async (url, options = {}) => {
     // Check if token needs refresh
     if (user && authApi.isTokenExpired()) {
       try {
-        console.log('Token appears expired, attempting to refresh...');
         user = await authApi.refreshToken();
-        console.log('Token refreshed successfully');
       } catch (refreshError) {
         console.error('Failed to refresh token:', refreshError);
         // Continue with the current token - the request will likely fail with 401
@@ -43,7 +41,6 @@ const fetchWithAuth = async (url, options = {}) => {
     // Add token if available
     if (user && user.token) {
       headers['Authorization'] = `Bearer ${user.token}`;
-      console.log(`Using auth token for GitHub request: ${user.token.substring(0, 10)}...`);
     } else {
       console.warn('No authentication token available for GitHub request');
     }
@@ -55,40 +52,18 @@ const fetchWithAuth = async (url, options = {}) => {
       credentials: 'include' // Include cookies
     };
 
-    // Log the full request details (without sensitive info)
-    console.log(`GitHub API Request: ${options.method || 'GET'} ${url}`);
-    if (options.body) {
-      try {
-        const bodyObj = JSON.parse(options.body);
-        console.log('Request body:', {
-          ...bodyObj,
-          code: bodyObj.code ? `${bodyObj.code.substring(0, 5)}...` : undefined,
-          user_id: bodyObj.user_id ? `${String(bodyObj.user_id)}` : undefined
-        });
-      } catch (e) {
-        console.log('Non-JSON body');
-      }
-    }
-
     // Make the request
-    console.log(`Fetching ${url} with authenticated request`);
     const response = await fetch(url, fetchOptions);
-
-    // Log response status
-    console.log(`GitHub API Response: ${response.status} ${response.statusText}`);
     
     // Handle 401 Unauthorized - could be expired token
     if (response.status === 401) {
-      console.log('Authentication failed (401). Token may be expired or invalid.');
       
       // Try to refresh the token if not already attempted
       if (!options.__tokenRefreshAttempted) {
         try {
-          console.log('Attempting token refresh after 401...');
           const refreshedUser = await authApi.refreshToken();
           
           if (refreshedUser && refreshedUser.token) {
-            console.log('Token refreshed after 401. Retrying original request...');
             
             // Retry the original request with new token
             return fetchWithAuth(url, {
@@ -174,7 +149,6 @@ export const githubService = {
   // Check GitHub connection status
   checkConnectionStatus: async () => {
     try {
-      console.log('Checking GitHub connection status...');
       const data = await fetchWithAuth(`${BASE_URL}/status`);
       return data;
     } catch (error) {
@@ -238,7 +212,6 @@ export const githubService = {
   // Complete GitHub OAuth flow with the code from callback
   completeOAuthFlow: async (code, state) => {
     try {
-      console.log('Completing GitHub OAuth flow with code...');
       const user = authApi.getCurrentUser();
       
       if (!user || !user.id) {
@@ -430,8 +403,6 @@ export const githubService = {
   handleRateLimitError: (error) => {
     // Check if error is related to rate limiting
     if (error?.status === 403 && error?.data?.message?.includes('rate limit')) {
-      console.log('GitHub API rate limit error detected', error.data);
-      
       // Extract rate limit information if available
       const rateLimitInfo = {
         title: 'GitHub API Rate Limit Exceeded',

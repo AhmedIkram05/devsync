@@ -124,7 +124,10 @@ def refresh():
     access_token = create_access_token(identity=current_user)
     
     # Create response
-    resp = jsonify({'message': 'Token refreshed successfully'})
+    resp = jsonify({
+        'message': 'Token refreshed successfully',
+        'token': access_token
+    })
     
     # Set new access cookie
     set_access_cookies(resp, access_token)
@@ -223,7 +226,10 @@ def refresh_token():
     access_token = create_access_token(identity=current_user)
     
     # Create response
-    resp = jsonify({'message': 'Token refreshed successfully'})
+    resp = jsonify({
+        'message': 'Token refreshed successfully',
+        'token': access_token
+    })
     
     # Set new access cookie
     set_access_cookies(resp, access_token)

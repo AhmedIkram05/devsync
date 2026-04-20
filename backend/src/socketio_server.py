@@ -1,7 +1,7 @@
 import functools
 from flask import request
 from flask_socketio import SocketIO, emit, join_room, leave_room, disconnect
-from flask_jwt_extended import decode_token, verify_jwt_in_request
+from flask_jwt_extended import decode_token
 from jwt.exceptions import InvalidTokenError
 
 # Initialize SocketIO
@@ -23,15 +23,15 @@ def authenticated_only(f):
         try:
             token = auth_header.split(' ')[1]
             decoded_token = decode_token(token)
-            user_id = decoded_token.get('sub')
-            if not user_id:
-                disconnect()
-                return False
+            identity = decoded_token.get('identity', decoded_token.get('sub'))
+            user_id = identity.get('user_id') if isinstance(identity, dict) else identity
+            if not isinstance(user_id, (int, str)) or user_id in ('', None):
+                raise ValueError('Invalid user identity in token')
             
             # Add user_id to the kwargs so event handlers can use it
             kwargs['user_id'] = user_id
             return f(*args, **kwargs)
-        except InvalidTokenError:
+        except (InvalidTokenError, TypeError, ValueError):
             disconnect()
             return False
     return wrapped

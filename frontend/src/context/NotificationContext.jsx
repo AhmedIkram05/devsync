@@ -169,11 +169,20 @@ export const NotificationProvider = ({ children }) => {
               }
             })()
           : `${window.location.protocol}//${window.location.hostname}:8000`;
+
+        const configuredTransport = (process.env.REACT_APP_SOCKET_TRANSPORT || 'polling').toLowerCase();
+        const transportMap = {
+          polling: ['polling'],
+          websocket: ['websocket'],
+          both: ['polling', 'websocket']
+        };
+        const socketTransports = transportMap[configuredTransport] || transportMap.polling;
         socketConnection = io(socketUrl, {
           auth: {
             token: currentUser.token
           },
-          transports: ['websocket'],
+          transports: socketTransports,
+          upgrade: socketTransports.length > 1,
           reconnection: true,
           reconnectionAttempts: maxReconnectAttempts,
           reconnectionDelay: 1000,

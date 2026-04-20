@@ -16,7 +16,7 @@ def get_all_users():
         'email': user.email,
         'role': user.role,
         'github_username': user.github_username,
-        'avatar': user.avatar,
+        'avatar': getattr(user, 'avatar', None),
         'created_at': user.created_at.isoformat() if user.created_at else None
     } for user in users]
     
@@ -32,7 +32,7 @@ def get_user_by_id(user_id):
         'email': user.email,
         'role': user.role,
         'github_username': user.github_username,
-        'avatar': user.avatar,
+        'avatar': getattr(user, 'avatar', None),
         'created_at': user.created_at.isoformat() if user.created_at else None
     }
     
@@ -64,7 +64,7 @@ def update_user(user_id):
         user.password = hash_password(data['password'])
     if 'github_username' in data:
         user.github_username = data['github_username']
-    if 'avatar' in data:
+    if 'avatar' in data and hasattr(user, 'avatar'):
         user.avatar = data['avatar']
     
     db.session.commit()
@@ -99,7 +99,7 @@ def get_current_user_profile():
         'email': user.email,
         'role': user.role,
         'github_username': user.github_username,
-        'avatar': user.avatar,
+        'avatar': getattr(user, 'avatar', None),
         'created_at': user.created_at.isoformat() if user.created_at else None
     }
     
@@ -128,7 +128,7 @@ def update_current_user_profile():
         user.email = data['email']
     if 'github_username' in data:
         user.github_username = data['github_username']
-    if 'avatar' in data:
+    if 'avatar' in data and hasattr(user, 'avatar'):
         user.avatar = data['avatar']
     if 'current_password' in data and 'new_password' in data:
         # Verify current password

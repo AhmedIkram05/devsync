@@ -8,6 +8,14 @@ from dotenv import load_dotenv
 
 from flask_swagger_ui import get_swaggerui_blueprint
 
+# Load .env before importing config-dependent modules.
+# We intentionally allow .env to override existing variables only outside production:
+# in local/dev, this prevents stale exported shell vars from surprising developers,
+# while in production the deployment-provided environment must take precedence over
+# any .env file that may be present on disk.
+dotenv_override = os.getenv('FLASK_ENV', 'development').lower() != 'production'
+load_dotenv(override=dotenv_override)
+
 # Add the backend directory to the Python path
 backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
 sys.path.insert(0, backend_dir)
@@ -32,12 +40,10 @@ from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
 
-# Load environment variables
-load_dotenv(override=True)
-
 def create_app(config_class=None):
     app = Flask(__name__)
     app.config.from_object(config_class or get_config())
+    app_env = os.getenv('FLASK_ENV', 'development').lower()
     
     # Set up Swagger UI with the correct file path
     SWAGGER_URL = '/api/docs'  # URL for exposing Swagger UI
@@ -76,10 +82,41 @@ def create_app(config_class=None):
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")))
     app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
     app.config["JWT_TOKEN_LOCATION"] = ["cookies", "headers"]
-    
-    app.config["JWT_COOKIE_SECURE"] = True
+    app.config["JWT_IDENTITY_CLAIM"] = "identity"
+    configured_secure = app.config.get("JWT_COOKIE_SECURE")
+    if configured_secure is None:
+        configured_secure = os.getenv("JWT_COOKIE_SECURE")
+
+    if isinstance(configured_secure, str):
+        jwt_cookie_secure = configured_secure.strip().lower() in {"1", "true", "yes", "on"}
+    elif isinstance(configured_secure, bool):
+        jwt_cookie_secure = configured_secure
+    elif configured_secure is None:
+        jwt_cookie_secure = app_env == 'production'
+    else:
+        jwt_cookie_secure = bool(configured_secure)
+
+    app.config["JWT_COOKIE_SECURE"] = jwt_cookie_secure
+
+    configured_samesite = app.config.get("JWT_COOKIE_SAMESITE")
+    if configured_samesite is None:
+        configured_samesite = os.getenv("JWT_COOKIE_SAMESITE")
+
+    if configured_samesite:
+        normalized_samesite = str(configured_samesite).strip().lower()
+        if normalized_samesite == "none":
+            app.config["JWT_COOKIE_SAMESITE"] = "None"
+        elif normalized_samesite == "strict":
+            app.config["JWT_COOKIE_SAMESITE"] = "Strict"
+        else:
+            app.config["JWT_COOKIE_SAMESITE"] = "Lax"
+    else:
+        app.config["JWT_COOKIE_SAMESITE"] = "None" if jwt_cookie_secure else "Lax"
+
+    if app.config["JWT_COOKIE_SAMESITE"] == "None" and not app.config["JWT_COOKIE_SECURE"]:
+        raise ValueError('JWT_COOKIE_SAMESITE="None" requires JWT_COOKIE_SECURE to be True')
+
     app.config["JWT_COOKIE_CSRF_PROTECT"] = False
-    app.config["JWT_COOKIE_SAMESITE"] = None
     
     # Apply any override configurations
     if config_class:
