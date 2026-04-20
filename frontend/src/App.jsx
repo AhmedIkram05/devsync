@@ -1,11 +1,12 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import TaskList from "./pages/TaskList";
-import TaskDetails from "./pages/TaskDetails";
 import GitHubIntegration from "./pages/GitHubIntegration";
 import AdminDashboard from "./pages/AdminDashboard";
 import TaskCreation from "./pages/TaskCreation";
 import DeveloperProgress from "./pages/DeveloperProgress";
 import Reports from "./pages/Reports";
+import AdminProjects from "./pages/AdminProjects";
+import ProjectDetails from "./pages/ProjectDetails";
 import Login from "./pages/Login";
 import Navbar from "./components/Navbar";
 import GitHubConnectPrompt from "./components/GitHubConnectPrompt";
@@ -120,7 +121,7 @@ function AppRoutes() {
         
         <Route path="/tasks/:id" element={
           <ProtectedRoute allowedRoles={['client', 'admin']}>
-            <TaskDetails />
+            <TaskDetailsUser />
           </ProtectedRoute>
         } />
         
@@ -175,6 +176,18 @@ function AppRoutes() {
         <Route path="/admin/reports" element={
           <ProtectedRoute allowedRoles={['admin']}>
             <Reports />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/admin/projects" element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminProjects />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/projects/:id" element={
+          <ProtectedRoute allowedRoles={['client', 'admin']}>
+            <ProjectDetails />
           </ProtectedRoute>
         } />
         
