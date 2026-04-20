@@ -24,11 +24,7 @@ const fetchWithAuth = async (endpoint, options = {}) => {
         user = JSON.parse(userStr);
         token = user?.token;
         
-        // Debug log to help identify token issues
-        if (token) {
-          const tokenPreview = token.substring(0, 10) + '...';
-          console.debug(`Using auth token for ${endpoint}: ${tokenPreview}`);
-        } else {
+        if (!token) {
           console.warn(`No token found for authenticated request to ${endpoint}`);
         }
       }
@@ -47,7 +43,6 @@ const fetchWithAuth = async (endpoint, options = {}) => {
     // Add auth token if available - use token from options first, then fallback to localStorage
     if (options.headers?.Authorization) {
       // Use the token provided in options (used in github.js)
-      console.debug(`Using explicit Authorization header for ${endpoint}`);
     } else if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
@@ -380,8 +375,6 @@ const githubService = {
   handleRateLimitError: (error) => {
     // Check if error is related to rate limiting
     if (error?.status === 403 && error?.data?.message?.includes('rate limit')) {
-      console.log('GitHub API rate limit error detected', error.data);
-      
       // Extract rate limit information if available
       const rateLimitInfo = {
         title: 'GitHub API Rate Limit Exceeded',

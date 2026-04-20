@@ -62,9 +62,6 @@ export const authApi = {
         body: JSON.stringify(credentials),
       });
       
-      // Log the actual API response to help debug
-      console.log("Login API response:", data);
-      
       // Ensure token is available by checking both standard places
       const token = data.token || (data.user && data.user.token);
       
@@ -76,9 +73,6 @@ export const authApi = {
           github_connected: data.user.github_connected || false,
           github_username: data.user.github_username || ''
         };
-        
-        // Log the user object we're storing to help debug
-        console.log("Storing user in localStorage:", userToStore);
         
         localStorage.setItem('user', JSON.stringify(userToStore));
 
@@ -113,7 +107,6 @@ export const authApi = {
     try {
       const userJson = localStorage.getItem('user');
       if (!userJson) {
-        console.log("No user data found in localStorage");
         return null;
       }
       
@@ -124,9 +117,6 @@ export const authApi = {
         console.warn("Incomplete user data in localStorage - missing required fields");
         return null;
       }
-      
-      // Log user object when retrieving to help debug
-      console.log("Retrieved user from localStorage:", user);
       
       return user;
     } catch (error) {
@@ -140,8 +130,6 @@ export const authApi = {
   // New method to refresh the authentication token
   refreshToken: async () => {
     try {
-      console.log("Attempting to refresh auth token...");
-      
       const data = await fetchWrapper(`${API_URL}/refresh`, {
         method: 'POST',
       });
@@ -157,8 +145,6 @@ export const authApi = {
         ...currentUser,
         token: refreshedToken || currentUser.token
       };
-
-      console.log("Token refresh endpoint succeeded, updating user data");
       localStorage.setItem('user', JSON.stringify(updatedUser));
 
       if (refreshedToken || updatedUser.token) {
@@ -202,7 +188,6 @@ export const authApi = {
   
   // Improved method to update GitHub connection status in local storage
   updateGitHubStatus: (connected, username = '') => {
-    console.log(`Updating GitHub status: connected=${connected}, username=${username}`);
     const user = authApi.getCurrentUser();
     
     if (user) {
@@ -215,7 +200,6 @@ export const authApi = {
       
       // Store the updated user in localStorage
       localStorage.setItem('user', JSON.stringify(updatedUser));
-      console.log("Updated user with GitHub status:", updatedUser);
       
       return updatedUser;
     } else {
