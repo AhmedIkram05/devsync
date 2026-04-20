@@ -343,6 +343,51 @@ const normalizeTaskStatus = (status) => {
   return status;
 };
 
+const buildDeveloperProgress = (users, tasks) => {
+  const progressTrackingRoles = new Set(['client', 'developer', 'team_lead']);
+  const tasksByAssignee = new Map();
+
+  tasks.forEach((task) => {
+    if (task?.assigned_to === null || task?.assigned_to === undefined) {
+      return;
+    }
+
+    const assigneeKey = String(task.assigned_to);
+    if (!tasksByAssignee.has(assigneeKey)) {
+      tasksByAssignee.set(assigneeKey, []);
+    }
+
+    tasksByAssignee.get(assigneeKey).push(task);
+  });
+
+  return users
+    .filter((user) => progressTrackingRoles.has(user.role))
+    .map((user) => {
+      const userTasks = tasksByAssignee.get(String(user.id)) || [];
+      let completedCount = 0;
+
+      userTasks.forEach((task) => {
+        if (normalizeTaskStatus(task.status) === 'done') {
+          completedCount += 1;
+        }
+      });
+
+      const recentTasks = [...userTasks]
+        .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))
+        .slice(0, 5);
+
+      return {
+        id: user.id,
+        name: user.name,
+        role: user.role,
+        total_tasks: userTasks.length,
+        completed_tasks: completedCount,
+        active_tasks: userTasks.length - completedCount,
+        recent_tasks: recentTasks
+      };
+    });
+};
+
 // Dashboard service for admin and client dashboards
 const dashboardService = {
   getAdminDashboardStats: async (timeRange = 'week') => {
@@ -382,36 +427,9 @@ const dashboardService = {
       ]);
 
       const users = Array.isArray(usersResponse?.users) ? usersResponse.users : [];
-      const progressTrackingRoles = new Set(['client', 'developer', 'team_lead']);
+      const allTasks = Array.isArray(tasks) ? tasks : [];
 
-      return users
-        .filter((user) => progressTrackingRoles.has(user.role))
-        .map((user) => {
-          const userTasks = tasks.filter((task) => task.assigned_to === user.id);
-          const completedTasks = userTasks.filter(
-            (task) => normalizeTaskStatus(task.status) === 'done'
-          );
-          const activeTasks = userTasks.filter(
-            (task) => normalizeTaskStatus(task.status) !== 'done'
-          );
-          const recentTasks = [...userTasks]
-            .sort(
-              (a, b) =>
-                new Date(b.updated_at || b.created_at || 0) -
-                new Date(a.updated_at || a.created_at || 0)
-            )
-            .slice(0, 5);
-
-          return {
-            id: user.id,
-            name: user.name,
-            role: user.role,
-            total_tasks: userTasks.length,
-            completed_tasks: completedTasks.length,
-            active_tasks: activeTasks.length,
-            recent_tasks: recentTasks
-          };
-        });
+      return buildDeveloperProgress(users, allTasks);
     } catch (error) {
       console.error('Failed to fetch developer progress stats:', error);
       return [];
@@ -430,7 +448,7 @@ const dashboardService = {
       const scopedTasks = tasks.filter((task) => isWithinDateRange(task.created_at, rangeStart));
 
       if (reportType === 'developers') {
-        const developers = await dashboardService.getDeveloperProgressStats();
+        const developers = buildDeveloperProgress(users, tasks);
         const totalTasks = developers.reduce((sum, developer) => sum + (developer.total_tasks || 0), 0);
         const completedTasks = developers.reduce((sum, developer) => sum + (developer.completed_tasks || 0), 0);
         const avgCompletion = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
