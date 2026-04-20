@@ -1,108 +1,101 @@
-import sys
 import os
+import sys
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import patch
-from flask import Flask, Blueprint, request
+from flask import Blueprint, Flask
+
+from backend.src.api.routes import tasks_routes
 
 # Set up proper import paths
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..')))
 
+
+def passthrough_decorator(*_args, **_kwargs):
+    def _decorator(fn):
+        return fn
+
+    return _decorator
+
+
 @pytest.fixture
-def app():
+def app(monkeypatch):
     app = Flask(__name__)
     app.config['TESTING'] = True
     app.config['SECRET_KEY'] = 'test-secret-key'
     app.config['JWT_SECRET_KEY'] = 'test-secret-key'
-    
-    # Register mock routes for testing
-    @app.route('/api/tasks', methods=['GET'])
-    def get_tasks():
-        return {'tasks': []}, 200
-        
-    @app.route('/api/tasks', methods=['POST'])
-    def create_task():
-        if request.json and 'title' in request.json and 'description' in request.json and 'status' in request.json:
-            return {'message': 'Task created', 'task': {'title': request.json['title']}}, 201
-        else:
-            return {'message': 'Missing required fields'}, 400
-        
-    @app.route('/api/tasks/<int:task_id>', methods=['GET'])
-    def get_task(task_id):
-        return {'task': {'id': task_id, 'title': 'Test Task'}}, 200
-        
-    @app.route('/api/tasks/<int:task_id>', methods=['PUT'])
-    def update_task(task_id):
-        if not request.json:
-            return {'message': 'No data provided'}, 400
-        return {'message': 'Task updated', 'task': {'id': task_id, 'title': request.json.get('title', 'Updated')}}, 200
-        
-    @app.route('/api/tasks/<int:task_id>', methods=['DELETE'])
-    def delete_task(task_id):
-        return '', 204
-    
-    yield app
+
+    monkeypatch.setattr(tasks_routes, 'jwt_required', passthrough_decorator)
+    monkeypatch.setattr(tasks_routes, 'validate_json', passthrough_decorator)
+    monkeypatch.setattr(tasks_routes, 'role_required', passthrough_decorator)
+
+    bp = Blueprint('api', __name__, url_prefix='/api/v1')
+    tasks_routes.register_routes(bp)
+    app.register_blueprint(bp)
+
+    return app
+
 
 @pytest.fixture
 def client(app):
     return app.test_client()
 
-# Patch JWT required decorator to avoid authentication issues
-@pytest.fixture(autouse=True)
-def mock_jwt_required():
-    with patch('backend.src.api.routes.tasks_routes.jwt_required', lambda: lambda f: f):
-        yield
 
-# Patch role_required decorator
-@pytest.fixture(autouse=True)
-def mock_role_required():
-    with patch('backend.src.api.routes.tasks_routes.role_required', lambda roles: lambda f: f):
-        yield
+def test_task_routes_registered(app):
+    rules = {rule.rule for rule in app.url_map.iter_rules()}
+    assert '/api/v1/tasks' in rules
+    assert '/api/v1/tasks/<int:task_id>' in rules
 
-@pytest.mark.parametrize('endpoint,method,data,expected_status', [
-    ('/api/tasks', 'get', None, 200),
-    ('/api/tasks', 'post', {'title': 'New Task', 'description': 'Task description', 'status': 'todo'}, 201),
-    ('/api/tasks', 'post', {'title': 'New Task'}, 400),  # Missing required fields
-    ('/api/tasks/1', 'get', None, 200),
-    ('/api/tasks/1', 'put', {'title': 'Updated Task'}, 200),
-    ('/api/tasks/1', 'put', {}, 400),  # Changed from None to empty dict
-    ('/api/tasks/1', 'delete', None, 204),
-])
-def test_tasks_routes(client, endpoint, method, data, expected_status):
-    """Test all task routes with parameterized inputs"""
-    
-    if method == 'get':
-        response = client.get(endpoint)
-    elif method == 'post':
-        response = client.post(endpoint, json=data)
-    elif method == 'put':
-        response = client.put(endpoint, json=data if data is not None else {})
-    elif method == 'delete':
-        response = client.delete(endpoint)
-    
-    assert response.status_code == expected_status
 
-def test_create_task_success(client):
-    """Test successful task creation with all required fields"""
-    data = {
-        'title': 'New Test Task', 
-        'description': 'Task description', 
-        'status': 'todo',
-        'progress': 0,
-        'assigned_to': 2
-    }
-    response = client.post('/api/tasks', json=data)
-    assert response.status_code == 201
-    assert 'task' in response.get_json()
-    assert response.get_json()['task']['title'] == 'New Test Task'
+def test_get_all_tasks_route_calls_controller(monkeypatch, client):
+    handler = MagicMock(return_value=({'tasks': []}, 200))
+    monkeypatch.setattr(tasks_routes, 'get_all_tasks', handler)
 
-def test_update_task_success(client):
-    """Test successful task update"""
-    data = {'title': 'Updated Title', 'status': 'in_progress', 'progress': 50}
-    response = client.put('/api/tasks/1', json=data)
+    response = client.get('/api/v1/tasks')
+
     assert response.status_code == 200
-    assert response.get_json()['task']['title'] == 'Updated Title'
+    assert response.get_json() == {'tasks': []}
+    handler.assert_called_once_with()
 
-def test_delete_task(client):
-    """Test task deletion"""
-    response = client.delete('/api/tasks/1')
+
+def test_create_task_route_calls_controller(monkeypatch, client):
+    handler = MagicMock(return_value=({'message': 'Task created'}, 201))
+    monkeypatch.setattr(tasks_routes, 'create_new_task', handler)
+
+    response = client.post('/api/v1/tasks', json={'title': 'Task', 'description': 'Desc', 'status': 'todo'})
+
+    assert response.status_code == 201
+    assert response.get_json()['message'] == 'Task created'
+    handler.assert_called_once_with()
+
+
+def test_get_task_route_calls_controller(monkeypatch, client):
+    handler = MagicMock(return_value=({'task': {'id': 1}}, 200))
+    monkeypatch.setattr(tasks_routes, 'get_task_by_id', handler)
+
+    response = client.get('/api/v1/tasks/1')
+
+    assert response.status_code == 200
+    assert response.get_json()['task']['id'] == 1
+    handler.assert_called_once_with(1)
+
+
+def test_update_task_route_calls_controller(monkeypatch, client):
+    handler = MagicMock(return_value=({'message': 'Task updated'}, 200))
+    monkeypatch.setattr(tasks_routes, 'update_task_by_id', handler)
+
+    response = client.put('/api/v1/tasks/1', json={'title': 'Updated'})
+
+    assert response.status_code == 200
+    assert response.get_json()['message'] == 'Task updated'
+    handler.assert_called_once_with(1)
+
+
+def test_delete_task_route_calls_controller(monkeypatch, client):
+    handler = MagicMock(return_value=('', 204))
+    monkeypatch.setattr(tasks_routes, 'delete_task_by_id', handler)
+
+    response = client.delete('/api/v1/tasks/1')
+
     assert response.status_code == 204
+    handler.assert_called_once_with(1)
