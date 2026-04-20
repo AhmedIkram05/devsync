@@ -75,8 +75,8 @@ function TaskDetailsUser() {
       if (newProgress === 100) {
         const shouldComplete = window.confirm('Would you like to mark this task as completed?');
         if (shouldComplete) {
-          await taskService.updateTask(id, { status: 'completed', completed_date: new Date().toISOString() });
-          setTask(prev => ({ ...prev, status: 'completed', completed_date: new Date().toISOString() }));
+          await taskService.updateTask(id, { status: 'done', completed_date: new Date().toISOString() });
+          setTask(prev => ({ ...prev, status: 'done', completed_date: new Date().toISOString() }));
         }
       }
     } catch (err) {
@@ -252,13 +252,13 @@ function TaskDetailsUser() {
             </div>
             <span 
               className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                task.status === 'completed' ? 'bg-green-100 text-green-800' : 
+                (task.status === 'completed' || task.status === 'done') ? 'bg-green-100 text-green-800' : 
                 task.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' : 
                 'bg-gray-100 text-gray-800'
               }`}
             >
               {task.status === 'in_progress' ? 'In Progress' : 
-               task.status === 'completed' ? 'Completed' : 
+               (task.status === 'completed' || task.status === 'done') ? 'Completed' : 
                task.status === 'todo' ? 'To Do' : 
                task.status === 'backlog' ? 'Backlog' : 
                task.status}
@@ -295,7 +295,7 @@ function TaskDetailsUser() {
           </div>
           
           {/* Progress Update (if task is not completed) */}
-          {task.status !== 'completed' && (
+          {task.status !== 'completed' && task.status !== 'done' && (
             <div className="mb-8">
               <h2 className="text-xl font-semibold mb-4">Update Progress</h2>
               <div className="bg-gray-50 rounded-lg p-4">

@@ -27,7 +27,7 @@ const TaskList = () => {
     try {
       setLoading(true);
       const tasksData = await taskService.getAllTasks();
-      setTasks(tasksData || []);
+      setTasks(Array.isArray(tasksData) ? tasksData : []);
       setError(null);
     } catch (err) {
       console.error('Failed to fetch tasks:', err);
@@ -57,7 +57,7 @@ const TaskList = () => {
   };
 
   const handleViewDetails = (taskId) => {
-    navigate(`/TaskDetailUser/${taskId}`);
+    navigate(`/tasks/${taskId}`);
   };
 
   // Format date to be more readable
