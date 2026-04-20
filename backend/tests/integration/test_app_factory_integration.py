@@ -1,12 +1,16 @@
 import os
 import sys
+from unittest.mock import MagicMock
 
 import pytest
+from flask_jwt_extended import create_access_token
 
 # Add backend directory to import src.* modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 from src.app import create_app
+from src.api.routes import github_routes
+from src.socketio_server import connected_users, project_rooms
 
 
 @pytest.fixture
@@ -16,7 +20,7 @@ def app_and_socket(monkeypatch):
     app, socketio = create_app({
         'TESTING': True,
         'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
-        'JWT_SECRET_KEY': 'test-secret-key',
+        'JWT_SECRET_KEY': 'test-secret-key-for-integration-suite-32',
         'JWT_COOKIE_SECURE': False,
         'JWT_COOKIE_SAMESITE': 'Lax',
     })
@@ -92,3 +96,76 @@ def test_public_github_connect_route_does_not_require_token(client):
     assert response.status_code == 400
     payload = response.get_json()
     assert payload['error'] == 'User ID is required'
+
+
+def test_socket_register_accepts_valid_bearer_token(app_and_socket):
+    app, socketio = app_and_socket
+
+    connected_users.clear()
+    project_rooms.clear()
+
+    with app.app_context():
+        token = create_access_token(identity={'user_id': 88}, additional_claims={'role': 'client'})
+
+    ws_client = socketio.test_client(app, headers={'Authorization': f'Bearer {token}'})
+    assert ws_client.is_connected()
+
+    ack = ws_client.emit('register', {}, callback=True)
+    assert ack['status'] == 'success'
+    assert 88 in connected_users
+
+    ws_client.disconnect()
+    assert 88 not in connected_users
+
+
+def test_github_callback_post_success_updates_user_and_returns_contract(client, monkeypatch):
+    parse_state = MagicMock(return_value='1')
+    exchange_code = MagicMock(return_value={'access_token': 'token-abc'})
+    get_profile = MagicMock(return_value={'login': 'octocat'})
+
+    class StubUser:
+        github_username = None
+
+    user = StubUser()
+
+    class StubUserModel:
+        query = MagicMock()
+
+    class StubGitHubToken:
+        query = MagicMock()
+
+        def __init__(self, user_id, access_token, refresh_token=None, token_expires_at=None):
+            self.user_id = user_id
+            self.access_token = access_token
+            self.refresh_token = refresh_token
+            self.token_expires_at = token_expires_at
+
+    StubUserModel.query.get.return_value = user
+    token_filter = MagicMock()
+    token_filter.first.return_value = None
+    StubGitHubToken.query.filter_by.return_value = token_filter
+    session = MagicMock()
+
+    monkeypatch.setattr(github_routes.GitHubClient, 'parse_state_param', parse_state)
+    monkeypatch.setattr(github_routes.GitHubClient, 'exchange_code_for_token', exchange_code)
+    monkeypatch.setattr(github_routes.GitHubClient, 'get_user_profile', get_profile)
+    monkeypatch.setattr(github_routes, 'User', StubUserModel)
+    monkeypatch.setattr(github_routes, 'GitHubToken', StubGitHubToken)
+    monkeypatch.setattr(github_routes.db, 'session', session, raising=False)
+    github_routes.oauth_states.clear()
+
+    response = client.post(
+        '/api/v1/github/callback',
+        json={'code': 'valid-code', 'state': 'valid-state'},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['success'] is True
+    assert payload['github_username'] == 'octocat'
+    assert user.github_username == 'octocat'
+
+    parse_state.assert_called_once_with('valid-state')
+    exchange_code.assert_called_once_with('valid-code')
+    session.add.assert_called_once()
+    session.commit.assert_called_once_with()
