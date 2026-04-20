@@ -221,13 +221,6 @@ const taskService = {
       body: JSON.stringify(taskData)
     });
   },
-
-  updateTaskProgress: async (taskId, taskData) => {
-    return await fetchWithAuth(`tasks/${taskId}`, {
-      method: 'PUT',
-      body: JSON.stringify(taskData)
-    });
-  },
   
   deleteTask: async (taskId) => {
     return await fetchWithAuth(`tasks/${taskId}`, {
@@ -341,6 +334,7 @@ const isWithinDateRange = (isoDate, rangeStart) => {
   return parsedDate >= rangeStart;
 };
 
+
 const normalizeTaskStatus = (status) => {
   if (status === 'completed') {
     return 'done';
@@ -388,17 +382,24 @@ const dashboardService = {
       ]);
 
       const users = Array.isArray(usersResponse?.users) ? usersResponse.users : [];
-      const developerRoles = new Set(['client', 'developer', 'team_lead']);
+      const progressTrackingRoles = new Set(['client', 'developer', 'team_lead']);
 
       return users
-        .filter((user) => developerRoles.has(user.role))
+        .filter((user) => progressTrackingRoles.has(user.role))
         .map((user) => {
           const userTasks = tasks.filter((task) => task.assigned_to === user.id);
-          const completedTasks = userTasks.filter((task) => normalizeTaskStatus(task.status) === 'done');
-          const activeTasks = userTasks.filter((task) => normalizeTaskStatus(task.status) !== 'done');
-
+          const completedTasks = userTasks.filter(
+            (task) => normalizeTaskStatus(task.status) === 'done'
+          );
+          const activeTasks = userTasks.filter(
+            (task) => normalizeTaskStatus(task.status) !== 'done'
+          );
           const recentTasks = [...userTasks]
-            .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))
+            .sort(
+              (a, b) =>
+                new Date(b.updated_at || b.created_at || 0) -
+                new Date(a.updated_at || a.created_at || 0)
+            )
             .slice(0, 5);
 
           return {

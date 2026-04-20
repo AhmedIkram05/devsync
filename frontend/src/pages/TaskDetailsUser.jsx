@@ -68,7 +68,7 @@ function TaskDetailsUser() {
   const handleProgressUpdate = async (newProgress) => {
     try {
       setUpdateLoading(true);
-      await taskService.updateTaskProgress(id, { progress: newProgress });
+      await taskService.updateTask(id, { progress: newProgress });
       setTask(prev => ({ ...prev, progress: newProgress }));
       
       // If progress is 100%, ask if user wants to mark task as completed
