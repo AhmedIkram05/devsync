@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import Flask
 
 # Fix imports to use the correct path
@@ -23,7 +23,7 @@ def mock_notification():
     notification.is_read = False
     notification.task_id = 2
     notification.user_id = 1
-    notification.created_at = datetime.utcnow()
+    notification.created_at = datetime.now(timezone.utc)
     return notification
 
 @pytest.fixture
@@ -48,7 +48,7 @@ def test_get_user_notifications(mock_get_jwt_identity, mock_db_session, app_cont
         notification.content = "Test notification"
         notification.is_read = False
         notification.task_id = 2
-        notification.created_at = datetime.utcnow()
+        notification.created_at = datetime.now(timezone.utc)
         
         mock_order.all.return_value = [notification]
         

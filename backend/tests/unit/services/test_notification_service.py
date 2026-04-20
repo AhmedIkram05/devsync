@@ -1,7 +1,7 @@
 import src.services.notification_service  # force module registration
 import pytest
 from unittest.mock import patch, MagicMock, call
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import Flask
 
 @pytest.fixture
@@ -45,7 +45,7 @@ def test_send_to_user(mock_db_session, mock_emit, mock_connected_users, notifica
     # Create a mock notification instance
     mock_notification = MagicMock()
     mock_notification.id = 1
-    mock_notification.created_at = datetime.utcnow()
+    mock_notification.created_at = datetime.now(timezone.utc)
     
     # Setup the db.session.add to set the id on the notification
     def mock_add(notification):
