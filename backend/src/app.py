@@ -9,7 +9,10 @@ from dotenv import load_dotenv
 from flask_swagger_ui import get_swaggerui_blueprint
 
 # Load .env before importing config-dependent modules.
-# In local/dev contexts, this ensures .env values override stale exported shell vars.
+# We intentionally allow .env to override existing variables only outside production:
+# in local/dev, this prevents stale exported shell vars from surprising developers,
+# while in production the deployment-provided environment must take precedence over
+# any .env file that may be present on disk.
 dotenv_override = os.getenv('FLASK_ENV', 'development').lower() != 'production'
 load_dotenv(override=dotenv_override)
 
@@ -80,7 +83,20 @@ def create_app(config_class=None):
     app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
     app.config["JWT_TOKEN_LOCATION"] = ["cookies", "headers"]
     app.config["JWT_IDENTITY_CLAIM"] = "identity"
-    
+    configured_samesite = app.config.get("JWT_COOKIE_SAMESITE") or os.getenv("JWT_COOKIE_SAMESITE")
+    if configured_samesite:
+        normalized_samesite = configured_samesite.strip().lower()
+        if normalized_samesite == "none":
+            app.config["JWT_COOKIE_SAMESITE"] = "None"
+        elif normalized_samesite == "strict":
+            app.config["JWT_COOKIE_SAMESITE"] = "Strict"
+        else:
+            app.config["JWT_COOKIE_SAMESITE"] = "Lax"
+    else:
+        app.config["JWT_COOKIE_SAMESITE"] = "Lax"
+
+    if app.config["JWT_COOKIE_SAMESITE"] == "None" and not app.config["JWT_COOKIE_SECURE"]:
+        raise ValueError('JWT_COOKIE_SAMESITE="None" requires JWT_COOKIE_SECURE to be True')
     app.config["JWT_COOKIE_SECURE"] = app_env == 'production'
     app.config["JWT_COOKIE_CSRF_PROTECT"] = False
     app.config["JWT_COOKIE_SAMESITE"] = 'None' if app.config["JWT_COOKIE_SECURE"] else 'Lax'
