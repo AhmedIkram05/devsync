@@ -83,9 +83,27 @@ def create_app(config_class=None):
     app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
     app.config["JWT_TOKEN_LOCATION"] = ["cookies", "headers"]
     app.config["JWT_IDENTITY_CLAIM"] = "identity"
-    configured_samesite = app.config.get("JWT_COOKIE_SAMESITE") or os.getenv("JWT_COOKIE_SAMESITE")
+    configured_secure = app.config.get("JWT_COOKIE_SECURE")
+    if configured_secure is None:
+        configured_secure = os.getenv("JWT_COOKIE_SECURE")
+
+    if isinstance(configured_secure, str):
+        jwt_cookie_secure = configured_secure.strip().lower() in {"1", "true", "yes", "on"}
+    elif isinstance(configured_secure, bool):
+        jwt_cookie_secure = configured_secure
+    elif configured_secure is None:
+        jwt_cookie_secure = app_env == 'production'
+    else:
+        jwt_cookie_secure = bool(configured_secure)
+
+    app.config["JWT_COOKIE_SECURE"] = jwt_cookie_secure
+
+    configured_samesite = app.config.get("JWT_COOKIE_SAMESITE")
+    if configured_samesite is None:
+        configured_samesite = os.getenv("JWT_COOKIE_SAMESITE")
+
     if configured_samesite:
-        normalized_samesite = configured_samesite.strip().lower()
+        normalized_samesite = str(configured_samesite).strip().lower()
         if normalized_samesite == "none":
             app.config["JWT_COOKIE_SAMESITE"] = "None"
         elif normalized_samesite == "strict":
@@ -93,13 +111,12 @@ def create_app(config_class=None):
         else:
             app.config["JWT_COOKIE_SAMESITE"] = "Lax"
     else:
-        app.config["JWT_COOKIE_SAMESITE"] = "Lax"
+        app.config["JWT_COOKIE_SAMESITE"] = "None" if jwt_cookie_secure else "Lax"
 
     if app.config["JWT_COOKIE_SAMESITE"] == "None" and not app.config["JWT_COOKIE_SECURE"]:
         raise ValueError('JWT_COOKIE_SAMESITE="None" requires JWT_COOKIE_SECURE to be True')
-    app.config["JWT_COOKIE_SECURE"] = app_env == 'production'
+
     app.config["JWT_COOKIE_CSRF_PROTECT"] = False
-    app.config["JWT_COOKIE_SAMESITE"] = 'None' if app.config["JWT_COOKIE_SECURE"] else 'Lax'
     
     # Apply any override configurations
     if config_class:
