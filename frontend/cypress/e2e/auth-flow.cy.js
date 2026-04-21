@@ -51,4 +51,53 @@ describe('Auth flow pages', () => {
     cy.wait('@registerRequest');
     cy.contains('Registration successful! Redirecting to login...').should('be.visible');
   });
+
+  it('completes the full login cycle, validates token persistence, and logs out', () => {
+    // 1. Setup mock for login success
+    cy.intercept('POST', '**/api/v1/auth/login', {
+      statusCode: 200,
+      body: {
+        token: 'fake-jwt-token-777',
+        user: { id: 7, name: 'Login User', email: 'login@example.com', role: 'client', github_connected: false }
+      }
+    }).as('loginReq');
+
+    // Mocks for dashboard entry
+    cy.intercept('GET', '**/api/v1/dashboard/client', { statusCode: 200, body: { tasks: { total: 0 }, repositories: [] } });
+    cy.intercept('GET', '**/api/v1/github/status', { statusCode: 200, body: { connected: false } });
+
+    // 2. Perform Login
+    cy.visit('/login');
+    cy.get('input[name="email"]').type('login@example.com');
+    cy.get('input[name="password"]').type('password123');
+    cy.contains('button', 'Sign In').click();
+
+    // 3. Wait for API and routing
+    cy.wait('@loginReq');
+    cy.url().should('include', 'dashboard');
+
+    // 4. Verify LocalStorage Token Persistence
+    cy.window().then((win) => {
+      const user = JSON.parse(win.localStorage.getItem('user'));
+      expect(user).to.have.property('token', 'fake-jwt-token-777');
+    });
+
+    // Handle initial github prompt modal if it appears
+    cy.get('body').then(($body) => {
+      if ($body.find('button:contains("Skip for now")').length > 0) {
+        cy.contains('button', 'Skip for now').click();
+      }
+    });
+
+    // 5. Perform Logout
+    cy.intercept('POST', '**/api/v1/auth/logout', { statusCode: 200, body: { message: 'Logged out' } }).as('logoutReq');
+    cy.contains('Logout').click();
+
+    // 6. Verify clear and redirect
+    cy.wait('@logoutReq');
+    cy.url().should('include', '/login');
+    cy.window().then((win) => {
+      expect(win.localStorage.getItem('user')).to.be.null;
+    });
+  });
 });
