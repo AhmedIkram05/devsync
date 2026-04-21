@@ -106,7 +106,9 @@ describe('Notifications component', () => {
       expect(notificationService.markAsRead).toHaveBeenCalledWith(11);
     });
 
-    expect(onNotificationUpdate).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(onNotificationUpdate).toHaveBeenCalled();
+    });
   });
 
   test('handles mark-as-read failure gracefully', async () => {

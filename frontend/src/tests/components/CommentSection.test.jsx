@@ -58,7 +58,7 @@ describe('CommentSection component', () => {
     expect(screen.getByText('Alice')).toBeInTheDocument();
     expect(screen.getByText('Looks good to me')).toBeInTheDocument();
     expect(screen.getByText('Need more tests')).toBeInTheDocument();
-    expect(screen.getByText('Invalid date')).toBeInTheDocument();
+    expect(screen.getByText('Invalid Date')).toBeInTheDocument();
 
     rerender(<CommentSection taskId={1} comments={[]} />);
 
@@ -93,7 +93,9 @@ describe('CommentSection component', () => {
       });
     });
 
-    expect(onCommentAdded).toHaveBeenCalledWith({ id: 500, content: 'New comment' });
+    await waitFor(() => {
+      expect(onCommentAdded).toHaveBeenCalledWith({ id: 500, content: 'New comment' });
+    });
     expect(screen.getByPlaceholderText(/add your comment/i)).toHaveValue('');
   });
 

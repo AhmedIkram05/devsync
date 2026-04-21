@@ -76,7 +76,7 @@ describe('Navbar component', () => {
 
     const { container } = renderNavbar();
 
-    expect(container.firstChild).toBeNull();
+    expect(container).toBeEmptyDOMElement();
   });
 
   test('requests browser notification permission on mount when permission is default', () => {
@@ -98,9 +98,9 @@ describe('Navbar component', () => {
   });
 
   test('opens notification panel, refreshes notifications, and marks all as read', async () => {
-    const { container } = renderNavbar();
+    renderNavbar();
 
-    const notificationButton = container.querySelector('button.hover\\:text-gray-300');
+    const notificationButton = screen.getByRole('button', { name: /notifications?/i });
     fireEvent.click(notificationButton);
 
     await waitFor(() => {
@@ -125,11 +125,11 @@ describe('Navbar component', () => {
       logout: mockLogout,
     });
 
-    const { container } = renderNavbar();
+    renderNavbar();
 
     expect(screen.getAllByText('Logout')).toHaveLength(1);
 
-    const mobileToggle = container.querySelector('button[class*="md:hidden"]');
+    const mobileToggle = screen.getByRole('button', { name: /menu/i });
     fireEvent.click(mobileToggle);
 
     await waitFor(() => {
