@@ -173,3 +173,42 @@ def test_disconnect_github_route_calls_controller(monkeypatch, client):
     assert response.status_code == 200
     assert response.get_json()['success'] is True
     handler.assert_called_once_with()
+
+
+def test_github_route_missing_or_malformed_token_returns_401():
+    from flask import Flask, Blueprint
+    from flask_jwt_extended import JWTManager, jwt_required
+    from backend.src.api.routes import github_routes
+
+    # Create a fresh app with real JWT configuration
+    app_jwt = Flask(__name__)
+    app_jwt.config['TESTING'] = True
+    app_jwt.config['JWT_SECRET_KEY'] = 'test-secret-key-for-jwt'
+    JWTManager(app_jwt)
+
+    # Temporarily restore the real jwt_required behavior
+    old_jwt = getattr(github_routes, 'jwt_required', None)
+    github_routes.jwt_required = jwt_required
+
+    try:
+        bp = Blueprint('api_jwt_test', __name__, url_prefix='/api/v1')
+        github_routes.register_routes(bp)
+        app_jwt.register_blueprint(bp)
+
+        client = app_jwt.test_client()
+
+        # Test missing token
+        response_missing = client.get('/api/v1/github/auth')
+        assert response_missing.status_code == 401
+        assert 'msg' in response_missing.get_json() or 'message' in response_missing.get_json() or 'error' in response_missing.get_json()
+
+        # Test malformed authorization header
+        response_malformed = client.get(
+            '/api/v1/github/auth',
+            headers={'Authorization': 'Bearer invalid.token.signature'}
+        )
+        assert response_malformed.status_code in [401, 422]
+    finally:
+        # Restore the mocked jwt_required for other tests
+        if old_jwt:
+            github_routes.jwt_required = old_jwt

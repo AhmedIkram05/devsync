@@ -178,5 +178,44 @@ class TestGitHubClient(unittest.TestCase):
             headers=self.client.get_headers()
         )
 
+    def test_parse_state_param_invalid(self):
+        # Mismatched/malformed state should safely return None
+        result = GitHubClient.parse_state_param("invalid_base64_###")
+        self.assertIsNone(result)
+
+    @patch('backend.src.services.github_client.time.time')
+    @patch('backend.src.services.github_client.time.sleep')
+    def test_handle_rate_limit_sleep_and_retry(self, mock_sleep, mock_time):
+        mock_time.return_value = 1000
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_response.text = 'Rate limit exceeded'
+        mock_response.headers = {
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': '1100'  # 100 seconds from now
+        }
+        
+        result = self.client._handle_rate_limit(mock_response)
+        
+        # It should sleep for 100 seconds and return True (retry)
+        mock_sleep.assert_called_with(100)
+        self.assertTrue(result)
+
+    @patch('backend.src.services.github_client.time.time')
+    def test_handle_rate_limit_exceeded_throws(self, mock_time):
+        mock_time.return_value = 1000
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_response.text = 'Rate limit exceeded'
+        mock_response.headers = {
+            'X-RateLimit-Remaining': '0',
+            'X-RateLimit-Reset': '2000'  # 1000 seconds > 300
+        }
+        
+        with self.assertRaises(Exception) as context:
+            self.client._handle_rate_limit(mock_response)
+            
+        self.assertIn('GitHub API rate limit exceeded', str(context.exception))
+
 if __name__ == '__main__':
     unittest.main()

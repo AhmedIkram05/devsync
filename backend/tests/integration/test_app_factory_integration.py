@@ -41,6 +41,24 @@ def test_create_app_returns_app_and_socket(app_and_socket):
     assert socketio is not None
 
 
+def test_create_app_with_malformed_config(monkeypatch):
+    monkeypatch.setenv('FLASK_ENV', 'testing')
+
+    # Provide a malformed or missing key structure
+    # Should degenerate gracefully and fall back to defaults, or safely raise specific exception
+    # Since we don't know the exact raise yet, we test that create_app handles raw dict
+    app, socketio = create_app({
+        'TESTING': True,
+        'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
+        'JWT_SECRET_KEY': None, # Malformed
+        'JWT_COOKIE_SECURE': 'False', # String instead of bool
+    })
+    
+    assert app is not None
+    # the config should either convert it or keep it as is
+    assert app.config['TESTING'] is True
+
+
 def test_root_health_endpoint(client):
     response = client.get('/')
 

@@ -32,13 +32,26 @@ def get_tasks_due_soon(user_id):
         logger.error(f"Error fetching tasks due soon: {str(e)}")
         return []
 
-def get_recent_completed_tasks(user_id):
-    """Helper function to get recent completed tasks for a user"""
+def get_recent_completed_tasks(user_id, timeframe='month'):
+    """Helper function to get recent completed tasks for a user, bounding extreme date filters."""
     try:
         today = datetime.now().date()
-        month_ago = today - timedelta(days=30)
+        days_map = {
+            'week': 7,
+            'month': 30,
+            'quarter': 90,
+            'year': 365,
+            'century': 36500
+        }
+        days = days_map.get(timeframe, 30)
+        
+        # Boundary fallback: default to 30 days if the timeframe exceeds 5 years (e.g. century)
+        if days > 1825:
+            days = 30
+
+        time_ago = today - timedelta(days=days)
         return Task.query.filter_by(assigned_to=user_id, status='done')\
-            .filter(Task.updated_at >= month_ago).all()
+            .filter(Task.updated_at >= time_ago).all()
     except Exception as e:
         logger.error(f"Error fetching completed tasks: {str(e)}")
         return []
