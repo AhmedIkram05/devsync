@@ -327,12 +327,8 @@ class TestDashboardController(unittest.TestCase):
         mock_filter_by.filter.return_value = mock_filter
         mock_filter.all.return_value = []
         
-        # Define a safe SQLAlchemy synthetic column bypassing MagicMock's >= typing bounds
-        class SQLAlchemyColumnMock(MagicMock):
-            def __ge__(self, other):
-                return True
-                
-        mock_task.updated_at = SQLAlchemyColumnMock()
+        # Configure the mock column to support the >= operator for SQLAlchemy-style comparisons
+        mock_task.updated_at.__ge__.return_value = MagicMock(name="BinaryExpressionMock")
 
         # Test quarter (90 days)
         get_recent_completed_tasks(user_id=1, timeframe='quarter')
@@ -372,12 +368,8 @@ class TestDashboardController(unittest.TestCase):
         mock_filter_by.filter.return_value = mock_filter
         mock_filter.all.return_value = []
 
-        # Define a safe SQLAlchemy synthetic column bypassing MagicMock's >= typing bounds
-        class SQLAlchemyColumnMock(MagicMock):
-            def __ge__(self, other):
-                return True
-                
-        mock_task.updated_at = SQLAlchemyColumnMock()
+        # Configure the mock column to support the >= operator for SQLAlchemy-style comparisons
+        mock_task.updated_at.__ge__.return_value = MagicMock(name="BinaryExpressionMock")
 
         get_recent_completed_tasks(user_id=1, timeframe='ludicrous_speed')
         self.assertEqual(mock_filter.all.call_count, 1)
