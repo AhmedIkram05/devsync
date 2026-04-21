@@ -100,6 +100,7 @@ const Navbar = () => {
           <div className="relative">
             <button 
               onClick={toggleNotifications}
+              aria-label="Notifications"
               className="hover:text-gray-300 transition focus:outline-none"
             >
               <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -156,6 +157,7 @@ const Navbar = () => {
         {/* Mobile Menu Button */}
         <button 
           onClick={toggleMobileMenu} 
+          aria-label={showMobileMenu ? 'Close menu' : 'Open menu'}
           className="md:hidden focus:outline-none"
         >
           <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
