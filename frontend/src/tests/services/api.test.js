@@ -291,4 +291,244 @@ describe('api utilities', () => {
     expect(notificationsWhenErrored).toEqual([]);
     expect(notificationsNormal).toEqual([{ id: 1 }]);
   });
+
+  test('getDateRangeStart covers month, quarter, year, and default week arms', async () => {
+    // Exercise via getReportData which calls getDateRangeStart internally
+    const makeTasksResp = (tasks) => buildResponse({ tasks });
+    const makeUsersResp = () => buildResponse({ users: [] });
+    const singleTask = [{ id: 1, assigned_to: null, status: 'todo', created_at: new Date().toISOString() }];
+
+    for (const dateRange of ['month', 'quarter', 'year', 'week']) {
+      global.fetch.mockResolvedValueOnce(makeTasksResp(singleTask));
+      global.fetch.mockResolvedValueOnce(makeUsersResp());
+      const result = await dashboardService.getReportData('tasks', dateRange);
+      expect(result).toHaveProperty('summary');
+    }
+  });
+
+  test('isWithinDateRange returns true for null and invalid dates', async () => {
+    // tasks with null/bad created_at should not be filtered out
+    global.fetch.mockResolvedValueOnce(
+      buildResponse({ tasks: [
+        { id: 1, assigned_to: null, status: 'todo', created_at: null },
+        { id: 2, assigned_to: null, status: 'todo', created_at: 'not-a-date' },
+      ] })
+    );
+    global.fetch.mockResolvedValueOnce(buildResponse({ users: [] }));
+
+    const result = await dashboardService.getReportData('tasks', 'month');
+    expect(result.summary.total).toBe(2);
+  });
+
+  test('getReportData counts overdue tasks (past deadline and not done)', async () => {
+    const pastDeadline = '2000-01-01T00:00:00.000Z';
+    const futureDeadline = '2099-01-01T00:00:00.000Z';
+    global.fetch.mockResolvedValueOnce(
+      buildResponse({ tasks: [
+        { id: 1, assigned_to: null, status: 'in_progress', created_at: new Date().toISOString(), deadline: pastDeadline },
+        { id: 2, assigned_to: null, status: 'done', created_at: new Date().toISOString(), deadline: pastDeadline },
+        { id: 3, assigned_to: null, status: 'todo', created_at: new Date().toISOString(), deadline: futureDeadline },
+        { id: 4, assigned_to: null, status: 'todo', created_at: new Date().toISOString(), deadline: null },
+      ] })
+    );
+    global.fetch.mockResolvedValueOnce(buildResponse({ users: [] }));
+
+    const result = await dashboardService.getReportData('tasks', 'year');
+    expect(result.summary.overdue).toBe(1);
+    expect(result.summary.completed).toBe(1);
+    expect(result.summary.in_progress).toBe(1);
+  });
+
+  test('getReportData github branch when connected returns repos', async () => {
+    global.fetch
+      .mockResolvedValueOnce(buildResponse({ tasks: [] }))
+      .mockResolvedValueOnce(buildResponse({ users: [] }))
+      .mockResolvedValueOnce(buildResponse({ connected: true }))
+      .mockResolvedValueOnce(buildResponse({ repositories: [{ id: 1, full_name: 'org/r' }] }));
+
+    const report = await dashboardService.getReportData('github', 'week');
+    expect(report.summary.repos).toBe(1);
+  });
+
+  test('buildDeveloperProgress: task with no assigned_to is skipped', async () => {
+    global.fetch.mockResolvedValueOnce(
+      buildResponse({ users: [{ id: 1, name: 'Dev', role: 'developer' }] })
+    );
+    global.fetch.mockResolvedValueOnce(
+      buildResponse({ tasks: [
+        { id: 10, assigned_to: undefined, status: 'done' },
+        { id: 11, assigned_to: null, status: 'done' },
+        { id: 12, assigned_to: 1, status: 'done', updated_at: '2099-01-01T00:00:00.000Z' },
+      ] })
+    );
+
+    const progress = await dashboardService.getDeveloperProgressStats();
+    const dev = progress.find((p) => p.id === 1);
+    expect(dev.completed_tasks).toBe(1);
+    expect(dev.total_tasks).toBe(1);
+  });
+
+  test('buildDeveloperProgress: admin role is excluded, team_lead included', async () => {
+    global.fetch.mockResolvedValueOnce(
+      buildResponse({ users: [
+        { id: 1, name: 'Admin', role: 'admin' },
+        { id: 2, name: 'Lead', role: 'team_lead' },
+      ] })
+    );
+    global.fetch.mockResolvedValueOnce(buildResponse({ tasks: [] }));
+
+    const progress = await dashboardService.getDeveloperProgressStats();
+    expect(progress.find((p) => p.id === 1)).toBeUndefined();
+    expect(progress.find((p) => p.id === 2)).toBeDefined();
+  });
+
+  test('projectService.getProjectTasks normalizes and handles errors', async () => {
+    global.fetch.mockResolvedValueOnce(buildResponse({ tasks: [{ id: 1 }] }));
+    global.fetch.mockRejectedValueOnce(new Error('network error'));
+
+    const tasks = await projectService.getProjectTasks(5);
+    const tasksOnError = await projectService.getProjectTasks(6);
+
+    expect(tasks).toEqual([{ id: 1 }]);
+    expect(tasksOnError).toEqual([]);
+  });
+
+  test('taskService.getUsers normalizes and handles errors', async () => {
+    global.fetch.mockResolvedValueOnce(buildResponse({ users: [{ id: 1 }] }));
+    global.fetch.mockRejectedValueOnce(new Error('users down'));
+
+    const users = await taskService.getUsers();
+    const usersOnError = await taskService.getUsers();
+
+    expect(users).toEqual([{ id: 1 }]);
+    expect(usersOnError).toEqual([]);
+  });
+
+  test('taskService.getProjects normalizes and handles errors', async () => {
+    global.fetch.mockResolvedValueOnce(buildResponse({ projects: [{ id: 3 }] }));
+    global.fetch.mockRejectedValueOnce(new Error('projects down'));
+
+    const projects = await taskService.getProjects();
+    const projectsOnError = await taskService.getProjects();
+
+    expect(projects).toEqual([{ id: 3 }]);
+    expect(projectsOnError).toEqual([]);
+  });
+
+  test('taskService.addTaskComment falls back to raw response when no comment key', async () => {
+    global.fetch.mockResolvedValueOnce(buildResponse({ id: 99, content: 'direct' }));
+
+    const result = await taskService.addTaskComment(7, { content: 'direct' });
+    expect(result).toEqual({ id: 99, content: 'direct' });
+  });
+
+  test('fetchWithAuth throws non-connection errors from the catch block', async () => {
+    const err = new Error('unexpected boom');
+    global.fetch.mockRejectedValue(err);
+
+    await expect(fetchWithAuth('dashboard/admin')).rejects.toThrow('unexpected boom');
+  });
+
+  test('fetchWithAuth parses GitHub 400 error body even when json throws', async () => {
+    global.fetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      headers: { get: (h) => h === 'content-type' ? 'application/json' : null },
+      json: jest.fn().mockRejectedValue(new Error('bad json')),
+    });
+
+    await expect(fetchWithAuth('github/callback')).rejects.toMatchObject({
+      status: 400,
+      isGitHubError: true,
+    });
+  });
+
+  test('fetchWithAuth handles non-critical 401 for github/status endpoint', async () => {
+    global.fetch.mockResolvedValue(buildResponse({ message: 'unauthorized' }, 401));
+
+    const response = await fetchWithAuth('github/status');
+    expect(response.isAuthError).toBe(true);
+  });
+
+  test('dashboardService.getAdminDashboardStats returns fallback on error', async () => {
+    global.fetch.mockRejectedValue(new Error('admin down'));
+
+    const stats = await dashboardService.getAdminDashboardStats('month');
+    expect(stats.projects.total).toBe(0);
+    expect(stats.tasks.active).toBe(0);
+  });
+
+  test('dashboardService.getClientDashboardStats returns fallback on error', async () => {
+    global.fetch.mockRejectedValue(new Error('client down'));
+
+    const stats = await dashboardService.getClientDashboardStats();
+    expect(stats.tasks.active).toBe(0);
+    expect(stats.repositories).toEqual([]);
+  });
+
+  test('dashboardService.getDeveloperProgressStats returns empty array on error', async () => {
+    global.fetch.mockRejectedValue(new Error('users down'));
+
+    const stats = await dashboardService.getDeveloperProgressStats();
+    expect(stats).toEqual([]);
+  });
+
+  test('dashboardService.getReportData returns zero-filled summary when services return empty data', async () => {
+    // getAllTasks catches errors internally and returns []; users fetch .catch returns { users: [] }
+    // so the outer catch is never triggered — we get a valid but empty computed summary
+    global.fetch.mockRejectedValue(new Error('boom'));
+
+    const result = await dashboardService.getReportData('tasks', 'week');
+    expect(result.summary.total).toBe(0);
+    expect(result.summary.completed).toBe(0);
+    expect(result.summary.overdue).toBe(0);
+    expect(result.details).toEqual([]);
+  });
+
+  test('githubService.getIssues normalizes response and handles errors', async () => {
+    global.fetch.mockResolvedValueOnce(buildResponse({ issues: [{ id: 1 }] }));
+    global.fetch.mockRejectedValueOnce(new Error('issues down'));
+
+    const issues = await githubService.getIssues(10);
+    const issuesOnError = await githubService.getIssues(11);
+
+    expect(issues).toEqual([{ id: 1 }]);
+    expect(issuesOnError).toEqual([]);
+  });
+
+  test('githubService.getPullRequests normalizes response and handles errors', async () => {
+    global.fetch.mockResolvedValueOnce(buildResponse({ pulls: [{ id: 2 }] }));
+    global.fetch.mockRejectedValueOnce(new Error('prs down'));
+
+    const prs = await githubService.getPullRequests(10);
+    const prsOnError = await githubService.getPullRequests(11);
+
+    expect(prs).toEqual([{ id: 2 }]);
+    expect(prsOnError).toEqual([]);
+  });
+
+  test('githubService.getUserRepos returns repositories array from response', async () => {
+    global.fetch.mockResolvedValueOnce(buildResponse({ repositories: [{ id: 5 }] }));
+
+    const repos = await githubService.getUserRepos();
+    expect(repos).toEqual([{ id: 5 }]);
+  });
+
+  test('userService.getDeveloperProgress returns null on error', async () => {
+    global.fetch.mockRejectedValue(new Error('progress down'));
+
+    const result = await userService.getDeveloperProgress(42);
+    expect(result).toBeNull();
+  });
+
+  test('fetchWithAuth timeout causes connection-like re-throw', async () => {
+    jest.useFakeTimers();
+    global.fetch.mockImplementation(() => new Promise(() => {})); // never resolves
+
+    const promise = fetchWithAuth('tasks');
+    jest.advanceTimersByTime(8001);
+
+    await expect(promise).rejects.toThrow('Request timeout');
+    jest.useRealTimers();
+  });
 });

@@ -178,4 +178,176 @@ describe('TaskDetailsUser page', () => {
     fireEvent.click(screen.getByRole('button', { name: /back to tasks/i }));
     expect(mockNavigate).toHaveBeenCalledWith('/tasks');
   });
+
+  test('shows "Task not found" when getTaskById returns null', async () => {
+    taskService.getTaskById.mockResolvedValue(null);
+    taskService.getTaskComments.mockResolvedValue([]);
+    githubService.getUserRepos.mockResolvedValue([]);
+
+    render(<TaskDetailsUser />);
+
+    expect(await screen.findByText('Task not found')).toBeInTheDocument();
+  });
+
+  test('completed task hides the progress update section', async () => {
+    taskService.getTaskById.mockResolvedValue({ ...baseTask, status: 'done', github_links: [] });
+    taskService.getTaskComments.mockResolvedValue([]);
+    githubService.getUserRepos.mockResolvedValue([]);
+
+    render(<TaskDetailsUser />);
+
+    await screen.findByText('Implement notifications');
+    expect(screen.queryByText('Update Progress')).not.toBeInTheDocument();
+  });
+
+  test('"completed" status also hides progress section', async () => {
+    taskService.getTaskById.mockResolvedValue({ ...baseTask, status: 'completed', github_links: [] });
+    taskService.getTaskComments.mockResolvedValue([]);
+    githubService.getUserRepos.mockResolvedValue([]);
+
+    render(<TaskDetailsUser />);
+
+    await screen.findByText('Implement notifications');
+    expect(screen.queryByText('Update Progress')).not.toBeInTheDocument();
+  });
+
+  test('shows existing github links and unlinks them', async () => {
+    const linkedTask = {
+      ...baseTask,
+      status: 'in_progress',
+      github_links: [{ id: 42, repo_name: 'org/repo', issue_number: 7, issue_title: 'Fix bug' }],
+    };
+    taskService.getTaskById.mockResolvedValue(linkedTask);
+    taskService.getTaskComments.mockResolvedValue([]);
+    githubService.getUserRepos.mockResolvedValue([]);
+    githubService.unlinkTaskFromGithub.mockResolvedValue({ success: true });
+
+    render(<TaskDetailsUser />);
+
+    expect(await screen.findByText(/Fix bug/i)).toBeInTheDocument();
+    expect(screen.getByText('#7 - Fix bug')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /unlink/i }));
+
+    await waitFor(() => {
+      expect(githubService.unlinkTaskFromGithub).toHaveBeenCalledWith('1', 42);
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('#7 - Fix bug')).not.toBeInTheDocument();
+    });
+  });
+
+  test('clears issues when empty repo value is selected', async () => {
+    githubService.getUserRepos.mockResolvedValue([{ id: 10, full_name: 'org/r' }]);
+    githubService.getIssues.mockResolvedValue([{ id: 50, number: 1, title: 'Issue one' }]);
+
+    render(<TaskDetailsUser />);
+    await screen.findByText('Implement notifications');
+
+    const selects = await screen.findAllByRole('combobox');
+    fireEvent.change(selects[0], { target: { value: '10' } });
+    await waitFor(() => expect(githubService.getIssues).toHaveBeenCalledWith('10'));
+
+    // Select empty again
+    fireEvent.change(selects[0], { target: { value: '' } });
+    await waitFor(() => expect(screen.queryByText(/Issue one/i)).not.toBeInTheDocument());
+  });
+
+  test('post comment button disabled when textarea is empty', async () => {
+    taskService.getTaskComments.mockResolvedValue([]);
+    githubService.getUserRepos.mockResolvedValue([]);
+
+    render(<TaskDetailsUser />);
+    await screen.findByText('Implement notifications');
+
+    const submitBtn = screen.getByRole('button', { name: /post comment/i });
+    expect(submitBtn).toBeDisabled();
+  });
+
+  test('progress sets to 100 and confirms completion', async () => {
+    window.confirm = jest.fn(() => true);
+    taskService.getTaskComments.mockResolvedValue([]);
+    githubService.getUserRepos.mockResolvedValue([]);
+
+    render(<TaskDetailsUser />);
+    await screen.findByText('Implement notifications');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set Progress Complete' }));
+
+    await waitFor(() => {
+      expect(taskService.updateTask).toHaveBeenCalledWith('1', { progress: 100 });
+    });
+    await waitFor(() => {
+      expect(taskService.updateTask).toHaveBeenCalledWith(
+        '1',
+        expect.objectContaining({ status: 'done' })
+      );
+    });
+  });
+
+  test('renders high and low priority labels', async () => {
+    taskService.getTaskComments.mockResolvedValue([]);
+    githubService.getUserRepos.mockResolvedValue([]);
+
+    // High priority
+    taskService.getTaskById.mockResolvedValueOnce({ ...baseTask, priority: 'high', github_links: [] });
+    const { unmount } = render(<TaskDetailsUser />);
+    expect(await screen.findByText('High')).toBeInTheDocument();
+    unmount();
+
+    // Low priority
+    taskService.getTaskById.mockResolvedValueOnce({ ...baseTask, priority: 'low', github_links: [] });
+    taskService.getTaskComments.mockResolvedValue([]);
+    githubService.getUserRepos.mockResolvedValue([]);
+    render(<TaskDetailsUser />);
+    expect(await screen.findByText('Low')).toBeInTheDocument();
+  });
+
+  test('renders status badges for todo and backlog tasks', async () => {
+    taskService.getTaskComments.mockResolvedValue([]);
+    githubService.getUserRepos.mockResolvedValue([]);
+
+    taskService.getTaskById.mockResolvedValueOnce({ ...baseTask, status: 'todo', github_links: [] });
+    const { unmount } = render(<TaskDetailsUser />);
+    expect(await screen.findByText('To Do')).toBeInTheDocument();
+    unmount();
+
+    taskService.getTaskById.mockResolvedValueOnce({ ...baseTask, status: 'backlog', github_links: [] });
+    taskService.getTaskComments.mockResolvedValue([]);
+    githubService.getUserRepos.mockResolvedValue([]);
+    render(<TaskDetailsUser />);
+    expect(await screen.findByText('Backlog')).toBeInTheDocument();
+  });
+
+  test('formatDate handles null created_at and renders Invalid Date for bad deadline', async () => {
+    taskService.getTaskById.mockResolvedValue({
+      ...baseTask,
+      created_at: null,
+      deadline: 'not-a-date', // truthy string → deadline span renders, but with "Invalid Date"
+      github_links: [],
+    });
+    taskService.getTaskComments.mockResolvedValue([]);
+    githubService.getUserRepos.mockResolvedValue([]);
+
+    render(<TaskDetailsUser />);
+    await screen.findByText('Implement notifications');
+    // The deadline span is shown because 'not-a-date' is truthy; it contains "Invalid Date"
+    expect(screen.getByText(/Invalid Date/i)).toBeInTheDocument();
+  });
+
+  test('shows No comments yet when task has no comments', async () => {
+    taskService.getTaskComments.mockResolvedValue([]);
+    githubService.getUserRepos.mockResolvedValue([]);
+
+    render(<TaskDetailsUser />);
+    expect(await screen.findByText('No comments yet')).toBeInTheDocument();
+  });
+
+  test('Connect GitHub account link shown when no repos available', async () => {
+    taskService.getTaskComments.mockResolvedValue([]);
+    githubService.getUserRepos.mockResolvedValue([]);
+
+    render(<TaskDetailsUser />);
+    expect(await screen.findByText(/Connect GitHub Account/i)).toBeInTheDocument();
+  });
 });

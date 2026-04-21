@@ -214,4 +214,184 @@ describe('githubService', () => {
     expect(serverInfo.title).toBe('GitHub Integration Server Error');
     expect(githubService.handleServerError({ status: 404 })).toBeNull();
   });
+
+  test('fetchWithAuth refreshes token proactively when isTokenExpired is true', async () => {
+    authApi.isTokenExpired.mockReturnValue(true);
+    authApi.refreshToken.mockResolvedValue({ id: 7, token: 'refreshed-token' });
+    global.fetch.mockResolvedValue(jsonResponse({ connected: true }));
+
+    const result = await githubService.checkConnectionStatus();
+
+    expect(authApi.refreshToken).toHaveBeenCalled();
+    expect(result).toEqual({ connected: true });
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options.headers.Authorization).toBe('Bearer refreshed-token');
+  });
+
+  test('fetchWithAuth logs warning when user has no token', async () => {
+    authApi.getCurrentUser.mockReturnValue({ id: 7 }); // no token
+    global.fetch.mockResolvedValue(jsonResponse({ connected: false }));
+
+    await githubService.checkConnectionStatus();
+
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining('No authentication token available')
+    );
+  });
+
+  test('fetchWithAuth handles 401 when token refresh also fails and method re-throws', async () => {
+    // addRepository propagates errors (unlike checkConnectionStatus which catches them)
+    authApi.refreshToken.mockRejectedValue(new Error('refresh down'));
+    global.fetch
+      .mockResolvedValueOnce(jsonResponse({ message: 'unauthorized' }, 401))
+      .mockResolvedValueOnce(jsonResponse({ message: 'still unauthorized' }, 401));
+
+    await expect(githubService.addRepository({ owner: 'x', repo: 'y' })).rejects.toMatchObject({
+      status: 401,
+      isAuthError: true,
+    });
+  });
+
+  test('fetchWithAuth skips second refresh when __tokenRefreshAttempted already set', async () => {
+    // First call: 401 → triggers refresh → second call also 401 → throws authError (no further refresh)
+    authApi.refreshToken.mockResolvedValue({ id: 7, token: 'tok-2' });
+    global.fetch
+      .mockResolvedValueOnce(jsonResponse({ message: 'unauthorized' }, 401)) // original request
+      .mockResolvedValueOnce(jsonResponse({ message: 'still unauthorized' }, 401)); // retry
+
+    await expect(githubService.addRepository({ owner: 'x', repo: 'y' })).rejects.toMatchObject({
+      status: 401,
+      isAuthError: true,
+    });
+    // refreshToken called exactly once (not again on the retry)
+    expect(authApi.refreshToken).toHaveBeenCalledTimes(1);
+  });
+
+  test('fetchWithAuth handles 403 rate-limit — method that propagates (linkTaskWithGitHub)', async () => {
+    // linkTaskWithGitHub re-throws, unlike getRepositoryIssues which catches
+    global.fetch.mockResolvedValue(
+      jsonResponse({ message: 'GitHub API rate limit exceeded for org' }, 403)
+    );
+
+    await expect(
+      githubService.linkTaskWithGitHub(1, { issue_id: 5 })
+    ).rejects.toMatchObject({
+      status: 403,
+    });
+  });
+
+  test('fetchWithAuth handles 403 non-rate-limit as generic error', async () => {
+    global.fetch.mockResolvedValue(
+      jsonResponse({ message: 'forbidden access' }, 403)
+    );
+
+    // 403 with non-rate-limit message falls through to generic !ok handler
+    await expect(githubService.addRepository({ owner: 'o', repo: 'r' })).rejects.toMatchObject({
+      status: 403,
+    });
+  });
+
+  test('fetchWithAuth returns empty object for 204 No Content response', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 204,
+      json: jest.fn(),
+    });
+
+    const result = await githubService.disconnectAccount();
+    expect(result).toEqual({});
+  });
+
+  test('completeOAuthFlow rejects without user in localStorage', async () => {
+    authApi.getCurrentUser.mockReturnValue(null);
+
+    await expect(githubService.completeOAuthFlow('code', 'state')).rejects.toThrow(
+      'Authentication required. Please log in again before connecting GitHub.'
+    );
+  });
+
+  test('completeOAuthFlow rejects when no state is available at all', async () => {
+    localStorage.removeItem('github_oauth_state');
+
+    await expect(githubService.completeOAuthFlow('code', '')).rejects.toThrow(
+      'Security validation failed. Please try connecting to GitHub again.'
+    );
+  });
+
+  test('completeOAuthFlow handles success=false (no updateGitHubStatus call)', async () => {
+    localStorage.setItem('github_oauth_state', 'state-xyz');
+    global.fetch.mockResolvedValue(jsonResponse({ success: false, error: 'denied' }));
+
+    const result = await githubService.completeOAuthFlow('code', 'state-xyz');
+
+    expect(result.success).toBe(false);
+    expect(authApi.updateGitHubStatus).not.toHaveBeenCalled();
+    expect(localStorage.getItem('github_oauth_state')).toBeNull();
+  });
+
+  test('getTaskGitHubLinks returns links array from response', async () => {
+    global.fetch.mockResolvedValue(jsonResponse({ links: [{ id: 1, issue_id: 5 }] }));
+
+    const links = await githubService.getTaskGitHubLinks(77);
+    expect(links).toEqual([{ id: 1, issue_id: 5 }]);
+  });
+
+  test('getTaskGitHubLinks returns empty array on error', async () => {
+    global.fetch.mockRejectedValue(new Error('links down'));
+
+    const links = await githubService.getTaskGitHubLinks(77);
+    expect(links).toEqual([]);
+  });
+
+  test('deleteTaskGitHubLink returns result from response', async () => {
+    global.fetch.mockResolvedValue(jsonResponse({ success: true }));
+
+    const result = await githubService.deleteTaskGitHubLink(10, 3);
+    expect(result).toEqual({ success: true });
+  });
+
+  test('getRepositoryPulls returns pull_requests array from response', async () => {
+    global.fetch.mockResolvedValue(
+      jsonResponse({ pull_requests: [{ id: 9, number: 55 }] })
+    );
+
+    const prs = await githubService.getRepositoryPulls(42, { state: 'closed', page: 2, perPage: 5 });
+    expect(prs).toEqual([{ id: 9, number: 55 }]);
+    const [url] = global.fetch.mock.calls[0];
+    expect(url).toContain('state=closed');
+    expect(url).toContain('page=2');
+  });
+
+  test('handleRateLimitError uses data.retryAfter as fallback for 429', () => {
+    const info = githubService.handleRateLimitError({
+      status: 429,
+      data: { retryAfter: 120 },
+    });
+    expect(info.retryAfter).toBe(120);
+  });
+
+  test('handleRateLimitError returns null for non-rate-limit error', () => {
+    expect(githubService.handleRateLimitError({ status: 500 })).toBeNull();
+    expect(githubService.handleRateLimitError(null)).toBeNull();
+  });
+
+  test('initiateOAuthFlow throws when server returns no authorization_url', async () => {
+    global.fetch.mockResolvedValue(jsonResponse({ state: 'abc' })); // no authorization_url
+
+    await expect(githubService.initiateOAuthFlow()).rejects.toThrow(
+      'No authorization URL received from server'
+    );
+  });
+
+  test('initiateOAuthFlow stores state from authorization_url query param when response.state is absent', async () => {
+    global.fetch.mockResolvedValue(
+      jsonResponse({
+        authorization_url: 'https://github.com/login/oauth/authorize?state=url-state',
+        // no top-level state key
+      })
+    );
+
+    await githubService.initiateOAuthFlow();
+    expect(localStorage.getItem('github_oauth_state')).toBe('url-state');
+  });
 });
