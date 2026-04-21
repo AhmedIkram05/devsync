@@ -394,4 +394,46 @@ describe('githubService', () => {
     await githubService.initiateOAuthFlow();
     expect(localStorage.getItem('github_oauth_state')).toBe('url-state');
   });
+
+  test('getIssues acts as an alias for getRepositoryIssues', async () => {
+    global.fetch.mockResolvedValue(jsonResponse({ issues: [{ id: 10 }] }));
+    const issues = await githubService.getIssues(101, { page: 3 });
+    expect(issues).toEqual([{ id: 10 }]);
+    const [url] = global.fetch.mock.calls[0];
+    expect(url).toContain('page=3');
+  });
+
+  test('getPullRequests acts as an alias for getRepositoryPulls', async () => {
+    global.fetch.mockResolvedValue(jsonResponse({ pull_requests: [{ id: 20 }] }));
+    const prs = await githubService.getPullRequests(102, { state: 'closed' });
+    expect(prs).toEqual([{ id: 20 }]);
+    const [url] = global.fetch.mock.calls[0];
+    expect(url).toContain('state=closed');
+  });
+
+  test('linkTaskToGithub acts as an alias for linkTaskWithGitHub', async () => {
+    global.fetch.mockResolvedValue(jsonResponse({ success: true }));
+    const res = await githubService.linkTaskToGithub(99, { linkData: true });
+    expect(res).toEqual({ success: true });
+    const [, opts] = global.fetch.mock.calls[0];
+    expect(opts.method).toBe('POST');
+    expect(opts.body).toContain('linkData');
+  });
+
+  test('getRepositoryPulls returns empty array on error catch', async () => {
+    global.fetch.mockRejectedValue(new Error('error pulling'));
+    const prs = await githubService.getRepositoryPulls(102);
+    expect(prs).toEqual([]);
+  });
+
+  test('unlinkTaskFromGithub throws when linkId is undefined', async () => {
+    await expect(githubService.unlinkTaskFromGithub(99, undefined)).rejects.toThrow(
+      'Task ID and link ID are required to unlink GitHub issue'
+    );
+  });
+
+  test('disconnectAccount returns error if fetch fails', async () => {
+    global.fetch.mockRejectedValue(new Error('disconnect failed'));
+    await expect(githubService.disconnectAccount()).rejects.toThrow('disconnect failed');
+  });
 });

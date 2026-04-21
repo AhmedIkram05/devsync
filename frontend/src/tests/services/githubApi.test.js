@@ -117,4 +117,31 @@ describe('githubApi service', () => {
     const [, options] = global.fetch.mock.calls[0];
     expect(options.headers.Authorization).toBeUndefined();
   });
+
+  describe('catch block error propagation', () => {
+    test('initiateAuth propagates fetch errors', async () => {
+      global.fetch.mockRejectedValue(new Error('Network error setup auth'));
+      await expect(githubApi.initiateAuth()).rejects.toThrow('Network error setup auth');
+    });
+
+    test('getRepositories propagates fetch errors', async () => {
+      global.fetch.mockRejectedValue(new Error('Network error repo'));
+      await expect(githubApi.getRepositories()).rejects.toThrow('Network error repo');
+    });
+
+    test('getRepositoryIssues propagates fetch errors', async () => {
+      global.fetch.mockRejectedValue(new Error('Network error issues'));
+      await expect(githubApi.getRepositoryIssues(99)).rejects.toThrow('Network error issues');
+    });
+
+    test('linkTaskWithGithub propagates fetch errors', async () => {
+      global.fetch.mockRejectedValue(new Error('Network error link'));
+      await expect(githubApi.linkTaskWithGithub(99, {})).rejects.toThrow('Network error link');
+    });
+
+    test('getTaskGithubLinks propagates fetch errors', async () => {
+      global.fetch.mockRejectedValue(new Error('Network error fetch links'));
+      await expect(githubApi.getTaskGithubLinks(99)).rejects.toThrow('Network error fetch links');
+    });
+  });
 });
