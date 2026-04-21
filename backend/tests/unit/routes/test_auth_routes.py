@@ -1,143 +1,163 @@
-import sys
 import os
-import json
-import unittest
-from unittest.mock import patch, MagicMock
-from flask import Flask, Response
+import sys
+from unittest.mock import MagicMock
+
+import pytest
+from flask import Blueprint, Flask
+
+import backend.src.api.controllers.users_controller as users_controller
+from backend.src.api.routes import auth_routes
 
 # Set up proper import paths
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..')))
 
-class TestAuthRoutes(unittest.TestCase):
-    def setUp(self):
-        # Create a fresh Flask app instance for each test
-        self.app = Flask(__name__)
-        self.app.config['TESTING'] = True
-        self.client = self.app.test_client()
-    
-    def test_login_route(self):
-        # Create mock route before any request is made
-        @self.app.route('/auth/login', methods=['POST'])
-        def mock_login():
-            return Response(
-                json.dumps({
-                    'message': 'Login successful',
-                    'user': {
-                        'id': 1,
-                        'name': 'Test User',
-                        'email': 'test@example.com',
-                        'role': 'developer'
-                    }
-                }),
-                mimetype='application/json',
-                status=200
-            )
-        
-        # Test the endpoint with valid data
-        response = self.client.post(
-            '/auth/login',
-            data=json.dumps({
-                'email': 'test@example.com',
-                'password': 'password123'
-            }),
-            content_type='application/json'
-        )
-        
-        self.assertEqual(response.status_code, 200)
-        data = json.loads(response.data)
-        self.assertEqual(data['message'], 'Login successful')
-        self.assertEqual(data['user']['email'], 'test@example.com')
-    
-    def test_register_route(self):
-        # Create mock route before any request is made
-        @self.app.route('/auth/register', methods=['POST'])
-        def mock_register():
-            return Response(
-                json.dumps({
-                    'message': 'User registered successfully',
-                    'user': {
-                        'id': 1,
-                        'name': 'New User',
-                        'email': 'new@example.com',
-                        'role': 'developer'
-                    }
-                }),
-                mimetype='application/json',
-                status=201
-            )
-        
-        # Test the endpoint with valid data
-        response = self.client.post(
-            '/auth/register',
-            data=json.dumps({
-                'name': 'New User',
-                'email': 'new@example.com',
-                'password': 'password123',
-                'role': 'developer'
-            }),
-            content_type='application/json'
-        )
-        
-        self.assertEqual(response.status_code, 201)
-        data = json.loads(response.data)
-        self.assertEqual(data['message'], 'User registered successfully')
-        self.assertEqual(data['user']['email'], 'new@example.com')
-    
-    def test_logout_route(self):
-        # Create mock route
-        @self.app.route('/auth/logout', methods=['POST'])
-        def mock_logout():
-            return Response(
-                json.dumps({'message': 'Logout successful'}),
-                mimetype='application/json',
-                status=200
-            )
-        
-        # Test the endpoint
-        response = self.client.post('/auth/logout')
-        self.assertEqual(response.status_code, 200)
-        data = json.loads(response.data)
-        self.assertEqual(data['message'], 'Logout successful')
-    
-    def test_refresh_token_route(self):
-        # Create mock route
-        @self.app.route('/auth/refresh', methods=['POST'])
-        def mock_refresh():
-            return Response(
-                json.dumps({'message': 'Token refreshed successfully'}),
-                mimetype='application/json',
-                status=200
-            )
-        
-        # Test the endpoint
-        response = self.client.post('/auth/refresh')
-        self.assertEqual(response.status_code, 200)
-        data = json.loads(response.data)
-        self.assertEqual(data['message'], 'Token refreshed successfully')
-    
-    def test_get_current_user_route(self):
-        # Create mock route
-        @self.app.route('/auth/me', methods=['GET'])
-        def mock_me():
-            return Response(
-                json.dumps({
-                    'user': {
-                        'id': 1,
-                        'name': 'Test User',
-                        'email': 'test@example.com',
-                        'role': 'developer'
-                    }
-                }),
-                mimetype='application/json',
-                status=200
-            )
-        
-        # Test the endpoint
-        response = self.client.get('/auth/me')
-        self.assertEqual(response.status_code, 200)
-        data = json.loads(response.data)
-        self.assertIn('user', data)
-        self.assertEqual(data['user']['name'], 'Test User')
 
-if __name__ == '__main__':
-    unittest.main()
+def passthrough_decorator(*_args, **_kwargs):
+    def _decorator(fn):
+        return fn
+
+    return _decorator
+
+
+@pytest.fixture
+def app(monkeypatch):
+    app = Flask(__name__)
+    app.config['TESTING'] = True
+    app.config['SECRET_KEY'] = 'test-secret-key'
+    app.config['JWT_SECRET_KEY'] = 'test-secret-key'
+
+    monkeypatch.setattr(auth_routes, 'jwt_required', passthrough_decorator)
+    monkeypatch.setattr(auth_routes, 'validate_json', passthrough_decorator)
+
+    bp = Blueprint('api', __name__, url_prefix='/api/v1')
+    auth_routes.register_routes(bp)
+    app.register_blueprint(bp)
+
+    return app
+
+
+@pytest.fixture
+def client(app):
+    return app.test_client()
+
+
+def test_auth_routes_registered(app):
+    rules = {rule.rule for rule in app.url_map.iter_rules()}
+    assert '/api/v1/auth/login' in rules
+    assert '/api/v1/auth/register' in rules
+    assert '/api/v1/auth/refresh' in rules
+    assert '/api/v1/auth/logout' in rules
+    assert '/api/v1/auth/me' in rules
+    assert '/api/v1/auth/token' in rules
+
+
+def test_login_route_calls_auth_login(monkeypatch, client):
+    validator = MagicMock(return_value=None)
+    handler = MagicMock(return_value=({'message': 'Login successful'}, 200))
+    monkeypatch.setattr(auth_routes, 'validate_login_data', validator)
+    monkeypatch.setattr(auth_routes, 'login', handler)
+
+    response = client.post('/api/v1/auth/login', json={'email': 'test@example.com', 'password': 'password123'})
+
+    assert response.status_code == 200
+    assert response.get_json()['message'] == 'Login successful'
+    validator.assert_called_once()
+    handler.assert_called_once_with()
+
+
+def test_register_route_calls_register_user(monkeypatch, client):
+    validator = MagicMock(return_value=None)
+    handler = MagicMock(return_value=({'message': 'User registered successfully'}, 201))
+    monkeypatch.setattr(auth_routes, 'validate_registration_data', validator)
+    monkeypatch.setattr(auth_routes, 'register_user', handler)
+
+    response = client.post(
+        '/api/v1/auth/register',
+        json={'name': 'New User', 'email': 'new@example.com', 'password': 'password123', 'role': 'developer'}
+    )
+
+    assert response.status_code == 201
+    assert response.get_json()['message'] == 'User registered successfully'
+    validator.assert_called_once()
+    handler.assert_called_once_with()
+
+
+def test_refresh_route_calls_refresh_token(monkeypatch, client):
+    handler = MagicMock(return_value=({'message': 'Token refreshed successfully'}, 200))
+    monkeypatch.setattr(auth_routes, 'refresh_token', handler)
+
+    response = client.post('/api/v1/auth/refresh')
+
+    assert response.status_code == 200
+    assert response.get_json()['message'] == 'Token refreshed successfully'
+    handler.assert_called_once_with()
+
+
+def test_logout_route_calls_logout_user(monkeypatch, client):
+    handler = MagicMock(return_value=({'message': 'Logout successful'}, 200))
+    monkeypatch.setattr(auth_routes, 'logout_user', handler)
+
+    response = client.post('/api/v1/auth/logout')
+
+    assert response.status_code == 200
+    assert response.get_json()['message'] == 'Logout successful'
+    handler.assert_called_once_with()
+
+
+def test_me_route_calls_current_user_profile(monkeypatch, client):
+    handler = MagicMock(return_value=({'user': {'id': 1, 'name': 'Test User'}}, 200))
+    monkeypatch.setattr(users_controller, 'get_current_user_profile', handler)
+
+    response = client.get('/api/v1/auth/me')
+
+    assert response.status_code == 200
+    assert response.get_json()['user']['name'] == 'Test User'
+    handler.assert_called_once_with()
+
+
+def test_token_route_calls_get_token(monkeypatch, client):
+    validator = MagicMock(return_value=None)
+    handler = MagicMock(return_value=({'token': 'abc123'}, 200))
+    monkeypatch.setattr(auth_routes, 'validate_login_data', validator)
+    monkeypatch.setattr(auth_routes, 'get_token', handler)
+
+    response = client.post('/api/v1/auth/token', json={'email': 'test@example.com', 'password': 'password123'})
+
+    assert response.status_code == 200
+    assert response.get_json()['token'] == 'abc123'
+    validator.assert_called_once()
+    handler.assert_called_once_with()
+
+
+def test_admin_required_middleware_blocks_client_role(app, monkeypatch):
+    from backend.src.api.middlewares import admin_required
+    monkeypatch.setattr('backend.src.api.middlewares.verify_jwt_in_request', lambda: None)
+    monkeypatch.setattr('backend.src.api.middlewares.get_jwt', lambda: {'role': 'client'})
+    
+    @app.route('/api/v1/projects/mutation', methods=['POST'])
+    @admin_required()
+    def fake_admin_route():
+        return {'message': 'Success'}, 200
+
+    client = app.test_client()
+    response = client.post('/api/v1/projects/mutation')
+    
+    assert response.status_code == 403
+    assert response.get_json()['message'] == 'Admin access required'
+
+
+def test_admin_required_middleware_allows_admin_role(app, monkeypatch):
+    from backend.src.api.middlewares import admin_required
+    monkeypatch.setattr('backend.src.api.middlewares.verify_jwt_in_request', lambda: None)
+    monkeypatch.setattr('backend.src.api.middlewares.get_jwt', lambda: {'role': 'admin'})
+    
+    @app.route('/api/v1/projects/admin-only', methods=['POST'])
+    @admin_required()
+    def fake_admin_route():
+        return {'message': 'Success'}, 200
+
+    client = app.test_client()
+    response = client.post('/api/v1/projects/admin-only')
+    
+    assert response.status_code == 200
+    assert response.get_json()['message'] == 'Success'

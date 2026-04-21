@@ -15,8 +15,8 @@ from backend.src.api.middlewares.validation_middleware import (
 # Create a test Flask app
 app = Flask(__name__)
 
-# Rename TestSchema to TestSchemaForValidation to prevent collection warnings
-class TestSchemaForValidation:
+# Helper schema used by middleware tests
+class SchemaForValidation:
     def __init__(self):
         pass
         
@@ -89,7 +89,7 @@ def test_validate_schema_success():
     """Test schema validation (success case)"""
     with app.test_request_context(json={"name": "Test User", "email": "test@example.com", "age": 30}):
         # Create test route with schema validation
-        @validate_schema(TestSchemaForValidation)
+        @validate_schema(SchemaForValidation)
         def test_route():
             return jsonify({"success": True})
         
@@ -102,7 +102,7 @@ def test_validate_schema_missing_json():
     """Test schema validation with missing JSON"""
     with app.test_request_context():
         # Create test route with schema validation
-        @validate_schema(TestSchemaForValidation)
+        @validate_schema(SchemaForValidation)
         def test_route():
             return jsonify({"success": True})
         
@@ -119,7 +119,7 @@ def test_validate_schema_validation_error():
     """Test schema validation with invalid data"""
     with app.test_request_context(json={"name": "Test User", "email": "invalid-email"}):
         # Create test route with schema validation
-        @validate_schema(TestSchemaForValidation)
+        @validate_schema(SchemaForValidation)
         def test_route():
             return jsonify({"success": True})
         

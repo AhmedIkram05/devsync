@@ -1,5 +1,5 @@
 from flask_socketio import emit
-from datetime import datetime
+from datetime import datetime, timezone
 from src.socketio_server import connected_users, project_rooms
 from src.db.models import Notification
 from src.db.db_connection import db
@@ -25,7 +25,7 @@ class NotificationService:
             message=message,
             reference_id=reference_id,
             is_read=False,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
         
         # Save to database
@@ -84,7 +84,7 @@ class NotificationService:
         notification = Notification.query.filter_by(id=notification_id, user_id=user_id).first()
         if notification:
             notification.is_read = True   # changed from notification.read
-            notification.read_at = datetime.utcnow()
+            notification.read_at = datetime.now(timezone.utc)
             db.session.commit()
             return True
         return False
@@ -92,7 +92,7 @@ class NotificationService:
     @staticmethod
     def mark_all_as_read(user_id):
         """Mark all user's notifications as read"""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         Notification.query.filter_by(user_id=user_id, is_read=False).update({  # changed filter key
             'is_read': True,  # changed update key
             'read_at': now

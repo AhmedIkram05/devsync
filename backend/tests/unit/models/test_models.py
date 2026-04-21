@@ -1,7 +1,7 @@
 import sys
 import os
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 from flask import Flask  # added import
 
@@ -36,6 +36,7 @@ class TestModels:
     
     def test_task_model_creation(self):
         """Test creation of Task model"""
+        expected_deadline = datetime.now(timezone.utc) + timedelta(days=7)
         task = Task(
             title="Test Task",
             description="This is a test task",
@@ -43,7 +44,7 @@ class TestModels:
             progress=50,
             assigned_to=1,
             created_by=2,
-            deadline=datetime.utcnow() + timedelta(days=7)
+            deadline=expected_deadline
         )
         
         assert task.title == "Test Task"
@@ -52,21 +53,22 @@ class TestModels:
         assert task.progress == 50
         assert task.assigned_to == 1
         assert task.created_by == 2
-        assert (task.deadline - (datetime.utcnow() + timedelta(days=7))).total_seconds() < 1
+        assert task.deadline == expected_deadline
     
     def test_github_token_model_creation(self):
         """Test creation of GitHubToken model"""
+        expected_expiry = datetime.now(timezone.utc) + timedelta(hours=1)
         token = GitHubToken(
             user_id=1,
             access_token="access_token_123",
             refresh_token="refresh_token_456",
-            token_expires_at=datetime.utcnow() + timedelta(hours=1)
+            token_expires_at=expected_expiry
         )
         
         assert token.user_id == 1
         assert token.access_token == "access_token_123"
         assert token.refresh_token == "refresh_token_456"
-        assert (token.token_expires_at - (datetime.utcnow() + timedelta(hours=1))).total_seconds() < 1
+        assert token.token_expires_at == expected_expiry
     
     def test_github_repository_model_creation(self):
         """Test creation of GitHubRepository model"""
@@ -128,7 +130,7 @@ class TestModels:
     
     def test_notification_to_dict(self):
         """Test notification to_dict method"""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         notification = Notification(
             id=1,
             user_id=1,

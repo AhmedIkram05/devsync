@@ -20,6 +20,10 @@ var/
 .installed.cfg
 *.egg
 .pytest_cache
+.coverage
+.coverage.*
+coverage
+backend/coverage.xml
 
 # Virtual Environment
 ENV/
@@ -30,7 +34,9 @@ ENV/
 .vscode/
 *.swp
 *.swo
-/.github
+/.github/*
+!/.github/workflows/
+!/.github/workflows/**
 
 # Database
 *.sqlite3

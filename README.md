@@ -1,5 +1,7 @@
 # DevSync
 
+[![CI](https://github.com/AhmedIkram05/devsync/actions/workflows/ci.yml/badge.svg)](https://github.com/AhmedIkram05/devsync/actions/workflows/ci.yml)
+
 DevSync is a development synchronisation platform that integrates database management, GitHub integration, and task tracking into one unified system.
 
 ## Overview

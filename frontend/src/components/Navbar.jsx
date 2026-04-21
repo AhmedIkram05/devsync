@@ -88,20 +88,19 @@ const Navbar = () => {
             </>
           )}
           
-          {/* Connection Status Indicator (visible only in development) */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="flex items-center">
-              <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-500'}`}></span>
-              <span className="ml-1 text-xs opacity-75">
-                {isConnected ? 'Connected' : 'Disconnected'}
-              </span>
-            </div>
-          )}
+          {/* Connection Status Indicator */}
+          <div className="flex items-center">
+            <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-500'}`}></span>
+            <span className="ml-1 text-xs opacity-75">
+              {isConnected ? 'Connected' : 'Disconnected'}
+            </span>
+          </div>
           
           {/* Notification Bell */}
           <div className="relative">
             <button 
               onClick={toggleNotifications}
+              aria-label="Notifications"
               className="hover:text-gray-300 transition focus:outline-none"
             >
               <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -158,6 +157,7 @@ const Navbar = () => {
         {/* Mobile Menu Button */}
         <button 
           onClick={toggleMobileMenu} 
+          aria-label={showMobileMenu ? 'Close menu' : 'Open menu'}
           className="md:hidden focus:outline-none"
         >
           <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

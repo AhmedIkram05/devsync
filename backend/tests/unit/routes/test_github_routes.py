@@ -1,322 +1,214 @@
-import sys
-import os
-import unittest
-from unittest.mock import patch, MagicMock, Mock
-import json
-from flask import Flask, Response
+from unittest.mock import MagicMock
 
-# Set up proper import paths
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..')))
+import pytest
+from flask import Blueprint, Flask
 
-from backend.src.api.routes.github_routes import register_routes
+from backend.src.api.routes import github_routes
 
-class TestGithubRoutes(unittest.TestCase):
-    def setUp(self):
-        self.app = Flask(__name__)
-        self.app.config['TESTING'] = True
-        
-        # Complete JWT configuration needed for testing
-        self.app.config['JWT_SECRET_KEY'] = 'test-secret-key'
-        self.app.config['JWT_TOKEN_LOCATION'] = ['headers']
-        self.app.config['JWT_HEADER_NAME'] = 'Authorization'
-        self.app.config['JWT_HEADER_TYPE'] = 'Bearer'
-        self.app.config['JWT_ACCESS_TOKEN_EXPIRES'] = False
-        
-        # Create a Blueprint mock
-        self.bp = MagicMock()
-        self.bp.route = self.app.route
-        
-        # Apply JWT patch to bypass authentication
-        self.patcher = patch('backend.src.api.routes.github_routes.jwt_required')
-        self.mock_jwt_required = self.patcher.start()
-        self.mock_jwt_required.return_value = lambda f: f
-        
-        # Register routes with our mocked Blueprint
-        with self.app.app_context():
-            register_routes(self.bp)
-        
-        self.client = self.app.test_client()
-    
-    def tearDown(self):
-        self.patcher.stop()
 
-    @patch('backend.src.api.routes.github_routes.initiate_github_auth')
-    def test_github_auth_route(self, mock_controller):
-        """Test the GitHub auth initialization route"""
-        # Setup mocks - use Response instead of jsonify
-        mock_controller.return_value = Response(
-            json.dumps({'authorization_url': 'https://github.com/auth-url'}), 
-            mimetype='application/json',
-            status=200
+def passthrough_decorator(*_args, **_kwargs):
+    def _decorator(fn):
+        return fn
+
+    return _decorator
+
+
+@pytest.fixture
+def app(monkeypatch):
+    app = Flask(__name__)
+    app.config['TESTING'] = True
+    app.config['SECRET_KEY'] = 'test-secret-key'
+    app.config['JWT_SECRET_KEY'] = 'jwt-secret-key'
+
+    monkeypatch.setattr(github_routes, 'jwt_required', passthrough_decorator)
+    monkeypatch.setattr(github_routes, 'validate_json', passthrough_decorator)
+
+    bp = Blueprint('api', __name__, url_prefix='/api/v1')
+    github_routes.register_routes(bp)
+    app.register_blueprint(bp)
+
+    return app
+
+
+@pytest.fixture
+def client(app):
+    return app.test_client()
+
+
+def test_github_routes_registered(app):
+    rules = {rule.rule for rule in app.url_map.iter_rules()}
+    assert '/api/v1/github/config-check' in rules
+    assert '/api/v1/github/auth' in rules
+    assert '/api/v1/github/callback' in rules
+    assert '/api/v1/github/repositories' in rules
+    assert '/api/v1/github/repositories/<int:repo_id>/issues' in rules
+    assert '/api/v1/github/repositories/<int:repo_id>/pulls' in rules
+    assert '/api/v1/tasks/<int:task_id>/github' in rules
+    assert '/api/v1/tasks/<int:task_id>/github/<int:link_id>' in rules
+    assert '/api/v1/github/exchange' in rules
+    assert '/api/v1/github/connect' in rules
+    assert '/api/v1/github/status' in rules
+    assert '/api/v1/github/disconnect' in rules
+
+
+def test_github_config_check_route_calls_controller(monkeypatch, client):
+    handler = MagicMock(return_value=({'configured': True}, 200))
+    monkeypatch.setattr(github_routes, 'check_github_config', handler)
+
+    response = client.get('/api/v1/github/config-check')
+
+    assert response.status_code == 200
+    assert response.get_json()['configured'] is True
+    handler.assert_called_once_with()
+
+
+def test_github_auth_route_calls_controller(monkeypatch, client):
+    handler = MagicMock(return_value=({'authorization_url': 'https://github.com/auth-url'}, 200))
+    monkeypatch.setattr(github_routes, 'initiate_github_auth', handler)
+
+    response = client.get('/api/v1/github/auth')
+
+    assert response.status_code == 200
+    assert response.get_json()['authorization_url'] == 'https://github.com/auth-url'
+    handler.assert_called_once_with()
+
+
+def test_github_callback_get_route_calls_controller(monkeypatch, client):
+    handler = MagicMock(return_value=({'success': True}, 200))
+    monkeypatch.setattr(github_routes, 'github_callback', handler)
+
+    response = client.get('/api/v1/github/callback?code=test-code&state=test-state')
+
+    assert response.status_code == 200
+    assert response.get_json()['success'] is True
+    handler.assert_called_once_with()
+
+
+def test_repositories_list_route_calls_controller(monkeypatch, client):
+    handler = MagicMock(return_value=({'repositories': [{'id': 1, 'name': 'repo1'}]}, 200))
+    monkeypatch.setattr(github_routes, 'get_github_repositories', handler)
+
+    response = client.get('/api/v1/github/repositories')
+
+    assert response.status_code == 200
+    assert response.get_json()['repositories'][0]['name'] == 'repo1'
+    handler.assert_called_once_with()
+
+
+def test_add_repository_route_calls_controller(monkeypatch, client):
+    handler = MagicMock(return_value=({'message': 'Repository added successfully'}, 201))
+    monkeypatch.setattr(github_routes, 'add_github_repository', handler)
+
+    response = client.post(
+        '/api/v1/github/repositories',
+        json={'repository_name': 'owner/repo', 'repository_url': 'https://github.com/owner/repo'}
+    )
+
+    assert response.status_code == 201
+    assert response.get_json()['message'] == 'Repository added successfully'
+    handler.assert_called_once_with()
+
+
+def test_repository_issues_route_calls_controller(monkeypatch, client):
+    handler = MagicMock(return_value=({'issues': [{'id': 101, 'title': 'Test Issue'}]}, 200))
+    monkeypatch.setattr(github_routes, 'get_repository_issues', handler)
+
+    response = client.get('/api/v1/github/repositories/1/issues')
+
+    assert response.status_code == 200
+    assert response.get_json()['issues'][0]['title'] == 'Test Issue'
+    handler.assert_called_once_with(1)
+
+
+def test_repository_pulls_route_calls_controller(monkeypatch, client):
+    handler = MagicMock(return_value=({'pull_requests': [{'id': 201, 'title': 'Test PR'}]}, 200))
+    monkeypatch.setattr(github_routes, 'get_repository_pulls', handler)
+
+    response = client.get('/api/v1/github/repositories/1/pulls')
+
+    assert response.status_code == 200
+    assert response.get_json()['pull_requests'][0]['title'] == 'Test PR'
+    handler.assert_called_once_with(1)
+
+
+def test_link_github_route_calls_controller(monkeypatch, client):
+    handler = MagicMock(return_value=({'message': 'Task linked with GitHub successfully'}, 200))
+    monkeypatch.setattr(github_routes, 'link_task_with_github', handler)
+
+    response = client.post('/api/v1/tasks/1/github', json={'repo_id': 2, 'issue_number': 3})
+
+    assert response.status_code == 200
+    assert response.get_json()['message'] == 'Task linked with GitHub successfully'
+    handler.assert_called_once_with(1)
+
+
+def test_get_github_links_route_calls_controller(monkeypatch, client):
+    handler = MagicMock(return_value=({'links': [{'id': 1, 'task_id': 10}]}, 200))
+    monkeypatch.setattr(github_routes, 'get_task_github_links', handler)
+
+    response = client.get('/api/v1/tasks/10/github')
+
+    assert response.status_code == 200
+    assert response.get_json()['links'][0]['task_id'] == 10
+    handler.assert_called_once_with(10)
+
+
+def test_delete_github_link_route_calls_controller(monkeypatch, client):
+    handler = MagicMock(return_value=({'message': 'GitHub link removed from task'}, 200))
+    monkeypatch.setattr(github_routes, 'delete_task_github_link', handler)
+
+    response = client.delete('/api/v1/tasks/10/github/1')
+
+    assert response.status_code == 200
+    assert response.get_json()['message'] == 'GitHub link removed from task'
+    handler.assert_called_once_with(10, 1)
+
+
+def test_disconnect_github_route_calls_controller(monkeypatch, client):
+    handler = MagicMock(return_value=({'success': True}, 200))
+    monkeypatch.setattr(github_routes, 'disconnect_github_account', handler)
+
+    response = client.post('/api/v1/github/disconnect')
+
+    assert response.status_code == 200
+    assert response.get_json()['success'] is True
+    handler.assert_called_once_with()
+
+
+def test_github_route_missing_or_malformed_token_returns_401():
+    from flask import Flask, Blueprint
+    from flask_jwt_extended import JWTManager, jwt_required
+    from backend.src.api.routes import github_routes
+
+    # Create a fresh app with real JWT configuration
+    app_jwt = Flask(__name__)
+    app_jwt.config['TESTING'] = True
+    app_jwt.config['JWT_SECRET_KEY'] = 'test-secret-key-for-jwt'
+    JWTManager(app_jwt)
+
+    # Temporarily restore the real jwt_required behavior
+    old_jwt = getattr(github_routes, 'jwt_required', None)
+    github_routes.jwt_required = jwt_required
+
+    try:
+        bp = Blueprint('api_jwt_test', __name__, url_prefix='/api/v1')
+        github_routes.register_routes(bp)
+        app_jwt.register_blueprint(bp)
+
+        client = app_jwt.test_client()
+
+        # Test missing token
+        response_missing = client.get('/api/v1/github/auth')
+        assert response_missing.status_code == 401
+        assert 'msg' in response_missing.get_json() or 'message' in response_missing.get_json() or 'error' in response_missing.get_json()
+
+        # Test malformed authorization header
+        response_malformed = client.get(
+            '/api/v1/github/auth',
+            headers={'Authorization': 'Bearer invalid.token.signature'}
         )
-        
-        # Add authorization header to bypass JWT check
-        headers = {
-            'Authorization': 'Bearer fake.jwt.token'
-        }
-        
-        # Test endpoint
-        response = self.client.get('/github/auth', headers=headers)
-        data = json.loads(response.data)
-        
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('authorization_url', data)
-        self.assertEqual(data['authorization_url'], 'https://github.com/auth-url')
-        mock_controller.assert_called_once()
-
-    @patch('backend.src.api.routes.github_routes.github_callback')
-    def test_github_callback_route(self, mock_controller):
-        # Setup mocks
-        mock_controller.return_value = Response(
-            json.dumps({'success': True}),
-            mimetype='application/json',
-            status=200
-        )
-        
-        # Test callback endpoint (no JWT required)
-        response = self.client.get('/github/callback?code=test-code&state=test-state')
-        data = json.loads(response.data)
-        
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(data['success'])
-        mock_controller.assert_called_once()
-
-    @patch('backend.src.api.routes.github_routes.get_github_repositories')
-    def test_repositories_list_route(self, mock_controller):
-        # Setup mocks
-        mock_controller.return_value = Response(
-            json.dumps({
-                'repositories': [
-                    {
-                        'id': 1,
-                        'name': 'repo1',
-                        'full_name': 'user/repo1'
-                    }
-                ]
-            }),
-            mimetype='application/json',
-            status=200
-        )
-        
-        # Add authorization header to bypass JWT check
-        headers = {
-            'Authorization': 'Bearer fake.jwt.token'
-        }
-        
-        # Test endpoint
-        response = self.client.get('/github/repositories', headers=headers)
-        data = json.loads(response.data)
-        
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('repositories', data)
-        self.assertEqual(len(data['repositories']), 1)
-        self.assertEqual(data['repositories'][0]['name'], 'repo1')
-        mock_controller.assert_called_once()
-
-    @patch('backend.src.api.routes.github_routes.validate_json')
-    @patch('backend.src.api.routes.github_routes.add_github_repository')
-    def test_add_repository_route(self, mock_controller, mock_validate_json):
-        # Setup mocks
-        mock_validate_json.return_value = lambda f: f
-        
-        mock_controller.return_value = Response(
-            json.dumps({
-                'message': 'Repository added successfully',
-                'repository': {
-                    'id': 1,
-                    'name': 'owner/repo',
-                    'url': 'https://github.com/owner/repo'
-                }
-            }),
-            mimetype='application/json',
-            status=201
-        )
-        
-        # Add authorization header to bypass JWT check
-        headers = {
-            'Authorization': 'Bearer fake.jwt.token',
-            'Content-Type': 'application/json'
-        }
-        
-        # Test endpoint
-        response = self.client.post(
-            '/github/repositories',
-            data=json.dumps({
-                'repository_name': 'owner/repo',
-                'repository_url': 'https://github.com/owner/repo'
-            }),
-            headers=headers
-        )
-        data = json.loads(response.data)
-        
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(data['message'], 'Repository added successfully')
-        self.assertEqual(data['repository']['name'], 'owner/repo')
-        mock_controller.assert_called_once()
-
-    @patch('backend.src.api.routes.github_routes.get_repository_issues')
-    def test_repository_issues_route(self, mock_controller):
-        # Setup mocks
-        mock_controller.return_value = Response(
-            json.dumps({
-                'issues': [
-                    {
-                        'id': 101,
-                        'number': 42,
-                        'title': 'Test Issue',
-                        'state': 'open'
-                    }
-                ]
-            }),
-            mimetype='application/json',
-            status=200
-        )
-        
-        # Add authorization header to bypass JWT check
-        headers = {
-            'Authorization': 'Bearer fake.jwt.token'
-        }
-        
-        # Test endpoint
-        response = self.client.get('/github/repositories/1/issues', headers=headers)
-        data = json.loads(response.data)
-        
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('issues', data)
-        self.assertEqual(len(data['issues']), 1)
-        self.assertEqual(data['issues'][0]['title'], 'Test Issue')
-        mock_controller.assert_called_with(1)
-
-    @patch('backend.src.api.routes.github_routes.get_repository_pulls')
-    def test_repository_pulls_route(self, mock_controller):
-        # Setup mocks
-        mock_controller.return_value = Response(
-            json.dumps({
-                'pull_requests': [
-                    {
-                        'id': 201,
-                        'number': 5,
-                        'title': 'Test PR',
-                        'state': 'open'
-                    }
-                ]
-            }),
-            mimetype='application/json',
-            status=200
-        )
-        
-        # Add authorization header to bypass JWT check
-        headers = {
-            'Authorization': 'Bearer fake.jwt.token'
-        }
-        
-        # Test endpoint
-        response = self.client.get('/github/repositories/1/pulls', headers=headers)
-        data = json.loads(response.data)
-        
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('pull_requests', data)
-        self.assertEqual(len(data['pull_requests']), 1)
-        self.assertEqual(data['pull_requests'][0]['title'], 'Test PR')
-        mock_controller.assert_called_with(1)
-
-    @patch('backend.src.api.routes.github_routes.validate_json')
-    @patch('backend.src.api.routes.github_routes.link_task_with_github')
-    def test_link_github_route(self, mock_controller, mock_validate_json):
-        # Setup mocks
-        mock_validate_json.return_value = lambda f: f
-        
-        mock_controller.return_value = Response(
-            json.dumps({
-                'message': 'Task linked with GitHub successfully',
-                'link': {
-                    'task_id': 1,
-                    'repo_id': 2,
-                    'issue_number': 3
-                }
-            }),
-            mimetype='application/json',
-            status=200
-        )
-        
-        # Add authorization header to bypass JWT check
-        headers = {
-            'Authorization': 'Bearer fake.jwt.token',
-            'Content-Type': 'application/json'
-        }
-        
-        # Test endpoint
-        response = self.client.post(
-            '/tasks/1/github',
-            data=json.dumps({'repo_id': 2, 'issue_number': 3}),
-            headers=headers
-        )
-        data = json.loads(response.data)
-        
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(data['message'], 'Task linked with GitHub successfully')
-        self.assertEqual(data['link']['task_id'], 1)
-        mock_controller.assert_called_with(1)
-
-    @patch('backend.src.api.routes.github_routes.get_task_github_links')
-    def test_get_github_links_route(self, mock_controller):
-        # Setup mocks
-        mock_controller.return_value = Response(
-            json.dumps({
-                'links': [
-                    {
-                        'id': 1,
-                        'task_id': 10,
-                        'repo_id': 2,
-                        'repo_name': 'owner/repo',
-                        'repo_url': 'https://github.com/owner/repo',
-                        'issue_number': 42
-                    }
-                ]
-            }),
-            mimetype='application/json',
-            status=200
-        )
-        
-        # Add authorization header to bypass JWT check
-        headers = {
-            'Authorization': 'Bearer fake.jwt.token'
-        }
-        
-        # Test endpoint
-        response = self.client.get('/tasks/10/github', headers=headers)
-        data = json.loads(response.data)
-        
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('links', data)
-        self.assertEqual(len(data['links']), 1)
-        self.assertEqual(data['links'][0]['task_id'], 10)
-        self.assertEqual(data['links'][0]['issue_number'], 42)
-        mock_controller.assert_called_with(10)
-
-    @patch('backend.src.api.routes.github_routes.delete_task_github_link')
-    def test_delete_github_link_route(self, mock_controller):
-        # Setup mocks
-        mock_controller.return_value = Response(
-            json.dumps({
-                'message': 'GitHub link removed from task'
-            }),
-            mimetype='application/json',
-            status=200
-        )
-        
-        # Add authorization header to bypass JWT check
-        headers = {
-            'Authorization': 'Bearer fake.jwt.token'
-        }
-        
-        # Test endpoint
-        response = self.client.delete('/tasks/10/github/1', headers=headers)
-        data = json.loads(response.data)
-        
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(data['message'], 'GitHub link removed from task')
-        mock_controller.assert_called_with(10, 1)
-
-if __name__ == '__main__':
-    unittest.main()
+        assert response_malformed.status_code in [401, 422]
+    finally:
+        # Restore the mocked jwt_required for other tests
+        if old_jwt:
+            github_routes.jwt_required = old_jwt
