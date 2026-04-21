@@ -148,6 +148,35 @@ make db-reset
 make db-down
 ```
 
+## Dockerised Backend (Recommended for Production-like testing)
+
+You can run the backend in a containerized environment using Gunicorn and an async Socket.IO worker.
+
+### Setup
+
+1. Ensure your `.env` file has the correct `DATABASE_URL` (see `.env.example`).
+2. Build the backend image:
+   ```bash
+   make backend-build
+   ```
+
+### Running
+
+Start the full stack (DB + Backend):
+```bash
+make backend-up
+```
+
+View logs:
+```bash
+make backend-logs
+```
+
+Stop the stack:
+```bash
+make backend-down
+```
+
 ### API Documentation
 
 The API documentation is available at `/api/docs` endpoint.

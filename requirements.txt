@@ -41,6 +41,8 @@ redis==5.0.1
 
 # Production deployment
 gunicorn==21.2.0
+gevent==23.9.1
+gevent-websocket==0.10.1
 supervisor==4.2.5
 
 # API documentation
