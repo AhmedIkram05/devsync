@@ -88,15 +88,13 @@ const Navbar = () => {
             </>
           )}
           
-          {/* Connection Status Indicator (visible only in development) */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="flex items-center">
-              <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-500'}`}></span>
-              <span className="ml-1 text-xs opacity-75">
-                {isConnected ? 'Connected' : 'Disconnected'}
-              </span>
-            </div>
-          )}
+          {/* Connection Status Indicator */}
+          <div className="flex items-center">
+            <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-500'}`}></span>
+            <span className="ml-1 text-xs opacity-75">
+              {isConnected ? 'Connected' : 'Disconnected'}
+            </span>
+          </div>
           
           {/* Notification Bell */}
           <div className="relative">
