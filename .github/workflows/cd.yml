@@ -61,7 +61,7 @@ jobs:
       - name: Build frontend production bundle
         working-directory: frontend
         env:
-          VITE_API_URL: ${{ secrets.PRODUCTION_API_URL }}
+          REACT_APP_API_URL: ${{ secrets.PRODUCTION_API_URL }}
         run: npm run build
 
       - name: Configure AWS Credentials
@@ -73,7 +73,7 @@ jobs:
 
       - name: Sync to S3
         run: |
-          aws s3 sync ./frontend/dist s3://${{ secrets.S3_BUCKET_NAME }} --delete
+          aws s3 sync ./frontend/build s3://${{ secrets.S3_BUCKET_NAME }} --delete
 
       - name: Invalidate CloudFront Cache
         run: |

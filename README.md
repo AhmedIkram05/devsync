@@ -196,6 +196,7 @@ Create a user named `github-actions-devsync` and attach this inline policy:
 
 ### 4. App Runner (Backend)
 - Connect to your ECR repository.
+- **Port**: Set to **`8000`** (Match `Dockerfile` EXPOSE).
 - **Environment variables**: `DATABASE_URL`, `JWT_SECRET_KEY`, `FLASK_ENV=production`.
 
 ### 5. S3 + CloudFront (Frontend)
