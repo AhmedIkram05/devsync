@@ -66,7 +66,7 @@ npm install
 ### Backend Server
 
 ```bash
-source .venv/bin/activate  # If not already activated
+source .venv/bin/activate
 cd backend/src
 python app.py
 ```
@@ -77,11 +77,10 @@ The API server will start running on <http://localhost:8000>
 
 ```bash
 cd frontend
-npm run build
-serve -s build
+npm run dev
 ```
 
-The React app should automatically open in your browser at <http://localhost:3000>
+The app should automatically open in your browser at <http://localhost:5173>
 
 ## Configuration
 
@@ -91,27 +90,6 @@ Create a `.env` file at the repository root (or copy from `.env.example`) and ad
 
 ```bash
 cp .env.example .env
-```
-
-```env
-# Flask Application Settings
-FLASK_APP=backend/src/app.py
-FLASK_ENV=development
-
-# Local PostgreSQL (Docker)
-POSTGRES_PASSWORD=your_local_postgres_password
-DATABASE_URL=postgresql://devsync:your_local_postgres_password@localhost:5432/devsync?sslmode=disable
-
-# Authentication
-JWT_SECRET_KEY=your_secure_secret_key
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=60
-
-# GitHub OAuth
-GITHUB_CLIENT_ID=your_github_client_id
-GITHUB_CLIENT_SECRET=your_github_client_secret
-GITHUB_REDIRECT_URI=http://localhost:8000/api/v1/github/callback
-FRONTEND_URL=http://localhost:3000
 ```
 
 ### Database Setup
@@ -148,7 +126,7 @@ make db-reset
 make db-down
 ```
 
-## Dockerised Backend (Recommended for Production-like testing)
+## Dockerized Backend (Recommended for Production-like testing)
 
 You can run the backend in a containerized environment using Gunicorn and an async Socket.IO worker.
 
@@ -176,6 +154,62 @@ Stop the stack:
 ```bash
 make backend-down
 ```
+
+## AWS Deployment (S3 + ECR + App Runner + RDS)
+
+This project is configured for a lean, low-cost deployment to AWS using GitHub Actions.
+
+### 1. RDS (PostgreSQL)
+- Create a Free Tier RDS instance.
+- **Connectivity**: Public access = Yes (protected by password + Security Group).
+- **Security Group**: Allow PostgreSQL (5432) from `0.0.0.0/0`.
+- **Full DATABASE_URL**: `postgresql://admin:password@endpoint:5432/db_name`
+
+### 2. ECR (Container Registry)
+- Create a private repository named `devsync-backend`.
+
+### 3. IAM User for GitHub Actions
+Create a user named `github-actions-devsync` and attach this inline policy:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Sid": "ECRAuth", "Effect": "Allow", "Action": "ecr:GetAuthorizationToken", "Resource": "*" },
+    {
+      "Sid": "ECRPush",
+      "Effect": "Allow",
+      "Action": ["ecr:BatchCheckLayerAvailability", "ecr:CompleteLayerUpload", "ecr:InitiateLayerUpload", "ecr:PutImage", "ecr:UploadLayerPart", "ecr:DescribeRepositories", "ecr:BatchGetImage"],
+      "Resource": "arn:aws:ecr:us-east-1:ACCOUNT_ID:repository/devsync-backend"
+    },
+    {
+      "Sid": "S3Deploy",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:DeleteObject", "s3:ListBucket", "s3:GetBucketLocation"],
+      "Resource": ["arn:aws:s3:::devsync-frontend-prod", "arn:aws:s3:::devsync-frontend-prod/*"]
+    },
+    { "Sid": "CloudFrontInvalidate", "Effect": "Allow", "Action": "cloudfront:CreateInvalidation", "Resource": "*" },
+    { "Sid": "AppRunnerDeploy", "Effect": "Allow", "Action": ["apprunner:UpdateService", "apprunner:DescribeService", "apprunner:StartDeployment"], "Resource": "*" }
+  ]
+}
+```
+
+### 4. App Runner (Backend)
+- Connect to your ECR repository.
+- **Environment variables**: `DATABASE_URL`, `JWT_SECRET_KEY`, `FLASK_ENV=production`.
+
+### 5. S3 + CloudFront (Frontend)
+- **S3**: Enable static website hosting.
+- **CloudFront**: Origin Access Control (OAC) to your S3 bucket.
+
+### 6. GitHub Secrets
+Add these to your repo:
+- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`
+- `ECR_REPOSITORY`: `ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/devsync-backend`
+- `S3_BUCKET_NAME`: `devsync-frontend-prod`
+- `CLOUDFRONT_DIST_ID`
+- `APPRUNNER_SERVICE_ARN`
+- `PRODUCTION_API_URL`: Your App Runner HTTPS URL
 
 ### API Documentation
 
