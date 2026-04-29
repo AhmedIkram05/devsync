@@ -148,9 +148,6 @@ def test_update_project_clears_team_members(app, mock_jwt_identity, mock_jwt, mo
 
             mock_validate.return_value = None
             mock_project = MagicMock()
-            mock_project.id = 1
-            mock_project.name = 'Test Project'
-            mock_project.status = 'active'
             mock_project.team_members = [MagicMock()]
             mock_query.get_or_404.return_value = mock_project
 
