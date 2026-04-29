@@ -302,26 +302,6 @@ const projectService = {
       console.error(`Failed to fetch tasks for project ${projectId}:`, error);
       return [];
     }
-  },
-
-  createProject: async (projectData) => {
-    return await fetchWithAuth('projects', {
-      method: 'POST',
-      body: JSON.stringify(projectData)
-    });
-  },
-
-  updateProject: async (projectId, projectData) => {
-    return await fetchWithAuth(`projects/${projectId}`, {
-      method: 'PUT',
-      body: JSON.stringify(projectData)
-    });
-  },
-
-  deleteProject: async (projectId) => {
-    return await fetchWithAuth(`projects/${projectId}`, {
-      method: 'DELETE'
-    });
   }
 };
 

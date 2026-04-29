@@ -7,8 +7,6 @@ import DeveloperProgress from "./pages/DeveloperProgress";
 import Reports from "./pages/Reports";
 import AdminProjects from "./pages/AdminProjects";
 import ProjectDetails from "./pages/ProjectDetails";
-import AdminProjectCreate from "./pages/AdminProjectCreate";
-import AdminProjectEdit from "./pages/AdminProjectEdit";
 import Login from "./pages/Login";
 import Navbar from "./components/Navbar";
 import GitHubConnectPrompt from "./components/GitHubConnectPrompt";
@@ -188,18 +186,6 @@ function AppRoutes() {
         <Route path="/admin/projects" element={
           <ProtectedRoute allowedRoles={['admin']}>
             <AdminProjects />
-          </ProtectedRoute>
-        } />
-
-        <Route path="/admin/projects/new" element={
-          <ProtectedRoute allowedRoles={['admin']}>
-            <AdminProjectCreate />
-          </ProtectedRoute>
-        } />
-
-        <Route path="/admin/projects/:id/edit" element={
-          <ProtectedRoute allowedRoles={['admin']}>
-            <AdminProjectEdit />
           </ProtectedRoute>
         } />
 

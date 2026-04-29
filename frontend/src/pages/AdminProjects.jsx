@@ -6,19 +6,8 @@ import { projectService } from '../services/utils/api';
 const statusClasses = {
   active: 'bg-green-100 text-green-800',
   completed: 'bg-blue-100 text-blue-800',
-  on_hold: 'bg-yellow-100 text-yellow-800',
   'on-hold': 'bg-yellow-100 text-yellow-800',
-  planning: 'bg-purple-100 text-purple-800',
-  cancelled: 'bg-red-100 text-red-800'
-};
-
-const statusLabels = {
-  active: 'Active',
-  completed: 'Completed',
-  on_hold: 'On Hold',
-  'on-hold': 'On Hold',
-  planning: 'Planning',
-  cancelled: 'Cancelled'
+  planning: 'bg-purple-100 text-purple-800'
 };
 
 const formatDate = (value) => {
@@ -97,12 +86,6 @@ const AdminProjects = () => {
                 Refresh
               </button>
               <Link
-                to="/admin/projects/new"
-                className="inline-flex items-center px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
-              >
-                Create Project
-              </Link>
-              <Link
                 to="/admin"
                 className="inline-flex items-center px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
               >
@@ -151,7 +134,6 @@ const AdminProjects = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredProjects.map((project) => {
                     const statusClass = statusClasses[project.status] || 'bg-gray-100 text-gray-800';
-                    const statusLabel = statusLabels[project.status] || project.status || 'unknown';
 
                     return (
                       <tr key={project.id} className="hover:bg-gray-50">
@@ -163,7 +145,7 @@ const AdminProjects = () => {
                         </td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold ${statusClass}`}>
-                            {statusLabel}
+                            {project.status || 'unknown'}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-700">{formatDate(project.created_at)}</td>
@@ -183,20 +165,12 @@ const AdminProjects = () => {
                           )}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-2">
-                            <Link
-                              to={`/projects/${project.id}`}
-                              className="inline-flex px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
-                            >
-                              View Details
-                            </Link>
-                            <Link
-                              to={`/admin/projects/${project.id}/edit`}
-                              className="inline-flex px-3 py-1.5 rounded border border-gray-300 text-gray-700 text-sm hover:bg-gray-100"
-                            >
-                              Edit
-                            </Link>
-                          </div>
+                          <Link
+                            to={`/projects/${project.id}`}
+                            className="inline-flex px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
+                          >
+                            View Details
+                          </Link>
                         </td>
                       </tr>
                     );

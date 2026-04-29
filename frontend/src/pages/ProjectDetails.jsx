@@ -50,14 +50,6 @@ const formatTaskStatus = (status) => {
   return status.replace('_', ' ');
 };
 
-const formatProjectStatus = (status) => {
-  if (!status) {
-    return 'unknown';
-  }
-
-  return status.replace(/[_-]/g, ' ');
-};
-
 const ProjectDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -69,7 +61,6 @@ const ProjectDetails = () => {
   const [error, setError] = useState(null);
 
   const fallbackRoute = currentUser?.role === 'admin' ? '/admin/projects' : '/clientdashboard';
-  const isAdmin = currentUser?.role === 'admin';
 
   const loadProjectDetails = useCallback(async () => {
     try {
@@ -147,26 +138,16 @@ const ProjectDetails = () => {
               <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
               <p className="text-gray-600 mt-2">{project.description || 'No description provided.'}</p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {isAdmin && (
-                <Link
-                  to={`/admin/projects/${project.id}/edit`}
-                  className="inline-flex items-center px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
-                >
-                  Edit Project
-                </Link>
-              )}
-              <button
-                onClick={() => navigate(fallbackRoute)}
-                className="inline-flex items-center px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
-              >
-                Back
-              </button>
-            </div>
+            <button
+              onClick={() => navigate(fallbackRoute)}
+              className="inline-flex items-center px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
+            >
+              Back
+            </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <InfoCard label="Status" value={formatProjectStatus(project.status)} />
+            <InfoCard label="Status" value={project.status || 'unknown'} />
             <InfoCard label="Created" value={formatDate(project.created_at)} />
             <InfoCard label="Updated" value={formatDate(project.updated_at)} />
             <InfoCard label="Completion" value={`${summary.completionPercentage}%`} />
