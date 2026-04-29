@@ -78,6 +78,12 @@ The API server will start running on <http://localhost:8000>
 ```bash
 cd frontend
 npm run dev
+
+#or
+
+cd frontend
+serve -s build
+npm run build
 ```
 
 The app should automatically open in your browser at <http://localhost:5173>
