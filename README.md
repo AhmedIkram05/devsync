@@ -77,7 +77,7 @@ The API server will start running on <http://localhost:8000>
 
 ```bash
 cd frontend
-npm run dev
+npm start
 
 #or
 
@@ -140,6 +140,7 @@ You can run the backend in a containerized environment using Gunicorn and an asy
 
 1. Ensure your `.env` file has the correct `DATABASE_URL` (see `.env.example`).
 2. Build the backend image:
+
    ```bash
    make backend-build
    ```
@@ -147,16 +148,19 @@ You can run the backend in a containerized environment using Gunicorn and an asy
 ### Running
 
 Start the full stack (DB + Backend):
+
 ```bash
 make backend-up
 ```
 
 View logs:
+
 ```bash
 make backend-logs
 ```
 
 Stop the stack:
+
 ```bash
 make backend-down
 ```
@@ -166,15 +170,18 @@ make backend-down
 This project is configured for a lean, low-cost deployment to AWS using GitHub Actions.
 
 ### 1. RDS (PostgreSQL)
+
 - Create a Free Tier RDS instance.
 - **Connectivity**: Public access = Yes (protected by password + Security Group).
 - **Security Group**: Allow PostgreSQL (5432) from `0.0.0.0/0`.
 - **Full DATABASE_URL**: `postgresql://admin:password@endpoint:5432/db_name`
 
 ### 2. ECR (Container Registry)
+
 - Create a private repository named `devsync-backend`.
 
 ### 3. IAM User for GitHub Actions
+
 Create a user named `github-actions-devsync` and attach this inline policy:
 
 ```json
@@ -201,16 +208,20 @@ Create a user named `github-actions-devsync` and attach this inline policy:
 ```
 
 ### 4. App Runner (Backend)
+
 - Connect to your ECR repository.
 - **Port**: Set to **`8000`** (Match `Dockerfile` EXPOSE).
 - **Environment variables**: `DATABASE_URL`, `JWT_SECRET_KEY`, `FLASK_ENV=production`.
 
 ### 5. S3 + CloudFront (Frontend)
+
 - **S3**: Enable static website hosting.
 - **CloudFront**: Origin Access Control (OAC) to your S3 bucket.
 
 ### 6. GitHub Secrets
+
 Add these to your repo:
+
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`
 - `ECR_REPOSITORY`: `ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/devsync-backend`
 - `S3_BUCKET_NAME`: `devsync-frontend-prod`
