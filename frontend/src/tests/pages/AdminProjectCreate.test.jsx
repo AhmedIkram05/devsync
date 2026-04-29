@@ -107,7 +107,7 @@ describe('AdminProjectCreate page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /submit mock project/i }));
 
-    expect(await screen.findByText(/Failed to create project/i)).toBeInTheDocument();
+    expect(await screen.findByText(/create failed/i)).toBeInTheDocument();
   });
 
   test('shows user load error but keeps form usable', async () => {
