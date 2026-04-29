@@ -36,3 +36,12 @@ backend-down:
 
 backend-logs:
 	docker compose -f $(COMPOSE_FILE) -f docker-compose.backend-local.yml logs -f backend
+
+# PostgreSQL and Backend Combined Docker Targets
+devsync up:
+	docker compose -f $(COMPOSE_FILE) -f docker-compose.backend-local.yml up -d
+	docker compose -f $(COMPOSE_FILE) up -d --wait
+
+devsync down:
+	docker compose -f $(COMPOSE_FILE) -f docker-compose.backend-local.yml down
+	docker compose -f $(COMPOSE_FILE) down
