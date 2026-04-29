@@ -118,6 +118,7 @@ describe('ProjectDetails page', () => {
       'https://github.com/org/phoenix'
     );
 
+    expect(screen.getByRole('link', { name: /Edit Project/i })).toHaveAttribute('href', '/admin/projects/17/edit');
     expect(screen.getAllByRole('link', { name: /View Task/i })[0]).toHaveAttribute('href', '/tasks/100');
     expect(screen.getByText('Alice')).toBeInTheDocument();
     expect(screen.getByText('Bob')).toBeInTheDocument();
@@ -171,5 +172,29 @@ describe('ProjectDetails page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /go back/i }));
     expect(mockNavigate).toHaveBeenCalledWith('/clientdashboard');
+  });
+
+  test('hides edit link for non-admin users', async () => {
+    useAuth.mockReturnValue({
+      currentUser: {
+        id: 2,
+        role: 'client',
+      },
+    });
+
+    projectService.getProjectById.mockResolvedValue({
+      id: 17,
+      name: 'Project Atlas',
+      description: 'Client view',
+      status: 'active',
+      team_members: [],
+    });
+
+    projectService.getProjectTasks.mockResolvedValue([]);
+
+    renderProjectDetails();
+
+    expect(await screen.findByText('Project Atlas')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Edit Project/i })).not.toBeInTheDocument();
   });
 });

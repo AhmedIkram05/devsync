@@ -56,8 +56,11 @@ describe('AdminProjects page', () => {
     renderAdminProjects();
 
     expect(await screen.findByText('Projects')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Create Project/i })).toHaveAttribute('href', '/admin/projects/new');
     expect(screen.getByText('Core Platform')).toBeInTheDocument();
     expect(screen.getByText('Mobile Sprint')).toBeInTheDocument();
+    const editLinks = screen.getAllByRole('link', { name: 'Edit' });
+    expect(editLinks[0]).toHaveAttribute('href', '/admin/projects/1/edit');
 
     fireEvent.change(screen.getByPlaceholderText(/Search by name, status, or description/i), {
       target: { value: 'core' },
