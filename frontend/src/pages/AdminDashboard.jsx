@@ -236,9 +236,14 @@ const AdminDashboard = () => {
                                     Completed
                                   </p>
                                 )}
-                                {project.status === 'on-hold' && (
+                                {(project.status === 'on-hold' || project.status === 'on_hold') && (
                                   <p className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
                                     On Hold
+                                  </p>
+                                )}
+                                {project.status === 'cancelled' && (
+                                  <p className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                                    Cancelled
                                   </p>
                                 )}
                               </div>

@@ -393,8 +393,13 @@ const ProjectStatusBadge = ({ status }) => {
       textColor = 'text-blue-800';
       break;
     case 'on-hold':
+    case 'on_hold':
       bgColor = 'bg-yellow-100';
       textColor = 'text-yellow-800';
+      break;
+    case 'cancelled':
+      bgColor = 'bg-red-100';
+      textColor = 'text-red-800';
       break;
     default:
       bgColor = 'bg-neutral-100';
@@ -403,7 +408,9 @@ const ProjectStatusBadge = ({ status }) => {
   
   return (
     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${bgColor} ${textColor}`}>
-      {status === 'on-hold' ? 'On Hold' : status.charAt(0).toUpperCase() + status.slice(1)}
+      {(status || 'unknown')
+        .replace(/[_-]/g, ' ')
+        .replace(/\b\w/g, (char) => char.toUpperCase())}
     </span>
   );
 };
