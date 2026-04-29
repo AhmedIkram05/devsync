@@ -82,8 +82,8 @@ npm start
 #or
 
 cd frontend
-serve -s build
 npm run build
+serve -s build
 ```
 
 The app should automatically open in your browser at <http://localhost:5173>
