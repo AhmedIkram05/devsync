@@ -28,7 +28,7 @@ if __name__ == '__main__':
     from src.api.middlewares import setup_middlewares
     from src.socketio_server import init_socketio
 else:
-    from .db.models import db
+    from db.models import db
     from .config.config import get_config
     from .api import init_app as init_api
     from .api.middlewares import setup_middlewares
