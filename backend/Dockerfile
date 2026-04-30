@@ -1,3 +1,33 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install system deps required for some packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+ && rm -rf /var/lib/apt/lists/*
+
+# Copy and install backend Python dependencies
+COPY backend/requirements.txt ./backend/requirements.txt
+RUN pip install --upgrade pip && pip install --no-cache-dir -r backend/requirements.txt
+
+# Copy the backend source
+COPY backend ./backend
+
+WORKDIR /app/backend
+
+# Ensure Python path includes backend package
+ENV PYTHONPATH=/app/backend
+ENV FLASK_ENV=production
+
+EXPOSE 8000
+
+# Run Gunicorn using the wsgi module which exposes `app`
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--worker-class", "geventwebsocket.gunicorn.workers.GeventWebSocketWorker", "src.wsgi:app"]
 # Use an official Python runtime as a parent image
 FROM python:3.10-slim
 
