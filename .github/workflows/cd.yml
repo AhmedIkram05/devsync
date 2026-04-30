@@ -35,11 +35,17 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
-                       -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
-                       ./backend
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          LATEST_IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:latest"
+
+          if aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG" >/dev/null 2>&1; then
+            echo "Image $IMAGE_URI already exists; reusing it for this deployment."
+          else
+            docker build -t "$IMAGE_URI" -t "$LATEST_IMAGE_URI" ./backend
+            docker push "$IMAGE_URI"
+            docker push "$LATEST_IMAGE_URI"
+          fi
+
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Render ECS task definition
