@@ -66,6 +66,13 @@ def test_root_health_endpoint(client):
     assert response.get_data(as_text=True) == 'DevSync API is running'
 
 
+def test_health_endpoint(client):
+    response = client.get('/health')
+
+    assert response.status_code == 200
+    assert response.get_json() == {'status': 'ok'}
+
+
 def test_swagger_spec_endpoint_available(client):
     response = client.get('/api/swagger.yaml')
 

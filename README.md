@@ -66,7 +66,7 @@ npm install
 ### Backend Server
 
 ```bash
-source .venv/bin/activate  # If not already activated
+source .venv/bin/activate
 cd backend/src
 python app.py
 ```
@@ -77,11 +77,16 @@ The API server will start running on <http://localhost:8000>
 
 ```bash
 cd frontend
+npm start
+
+#or
+
+cd frontend
 npm run build
 serve -s build
 ```
 
-The React app should automatically open in your browser at <http://localhost:3000>
+The app should automatically open in your browser at <http://localhost:5173>
 
 ## Configuration
 
@@ -91,27 +96,6 @@ Create a `.env` file at the repository root (or copy from `.env.example`) and ad
 
 ```bash
 cp .env.example .env
-```
-
-```env
-# Flask Application Settings
-FLASK_APP=backend/src/app.py
-FLASK_ENV=development
-
-# Local PostgreSQL (Docker)
-POSTGRES_PASSWORD=your_local_postgres_password
-DATABASE_URL=postgresql://devsync:your_local_postgres_password@localhost:5432/devsync?sslmode=disable
-
-# Authentication
-JWT_SECRET_KEY=your_secure_secret_key
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=60
-
-# GitHub OAuth
-GITHUB_CLIENT_ID=your_github_client_id
-GITHUB_CLIENT_SECRET=your_github_client_secret
-GITHUB_REDIRECT_URI=http://localhost:8000/api/v1/github/callback
-FRONTEND_URL=http://localhost:3000
 ```
 
 ### Database Setup
@@ -147,6 +131,154 @@ make db-inspect
 make db-reset
 make db-down
 ```
+
+## Dockerized Backend (Recommended for Production-like testing)
+
+You can run the backend in a containerized environment using Gunicorn and an async Socket.IO worker.
+
+### Setup
+
+1. Ensure your `.env` file has the correct `DATABASE_URL` (see `.env.example`).
+2. Build the backend image:
+
+   ```bash
+   make backend-build
+   ```
+
+### Running
+
+Start the full stack (DB + Backend):
+
+```bash
+make backend-up
+```
+
+View logs:
+
+```bash
+make backend-logs
+```
+
+Stop the stack:
+
+```bash
+make backend-down
+```
+
+## AWS Deployment (S3 + ECR + ECS + RDS)
+
+This project is configured for a lean, low-cost deployment to AWS using GitHub Actions.
+
+### 1. RDS (PostgreSQL)
+
+- Create a Free Tier RDS instance.
+- **Connectivity**: Public access = Yes (protected by password + Security Group).
+- **Security Group**: Allow PostgreSQL (5432) from `0.0.0.0/0`.
+- **Full DATABASE_URL**: `postgresql://admin:password@endpoint:5432/db_name`
+
+### 2. ECR (Container Registry)
+
+- Create a private repository named `devsync-backend`.
+
+### 3. IAM Role for GitHub Actions (OIDC)
+
+Configure the GitHub OIDC provider in AWS, then create a role that trusts this repository's `main` branch:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:AhmedIkram05/DevSync:ref:refs/heads/main"
+        }
+      }
+    }
+  ]
+}
+```
+
+Attach a permissions policy that covers ECR pushes, ECS deploys, and frontend publish steps:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Sid": "ECRAuth", "Effect": "Allow", "Action": "ecr:GetAuthorizationToken", "Resource": "*" },
+    {
+      "Sid": "ECRPush",
+      "Effect": "Allow",
+      "Action": ["ecr:BatchCheckLayerAvailability", "ecr:CompleteLayerUpload", "ecr:InitiateLayerUpload", "ecr:PutImage", "ecr:UploadLayerPart", "ecr:DescribeRepositories", "ecr:BatchGetImage"],
+      "Resource": "arn:aws:ecr:us-east-1:ACCOUNT_ID:repository/devsync-backend"
+    },
+    {
+      "Sid": "RegisterTaskDefinition",
+      "Effect": "Allow",
+      "Action": ["ecs:RegisterTaskDefinition"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "PassRolesInTaskDefinition",
+      "Effect": "Allow",
+      "Action": ["iam:PassRole"],
+      "Resource": [
+        "arn:aws:iam::ACCOUNT_ID:role/<task_definition_task_role_name>",
+        "arn:aws:iam::ACCOUNT_ID:role/<task_definition_task_execution_role_name>"
+      ]
+    },
+    {
+      "Sid": "DeployService",
+      "Effect": "Allow",
+      "Action": ["ecs:UpdateService", "ecs:DescribeServices", "ecs:DescribeTaskDefinition"],
+      "Resource": [
+        "arn:aws:ecs:us-east-1:ACCOUNT_ID:service/<cluster_name>/<service_name>",
+        "arn:aws:ecs:us-east-1:ACCOUNT_ID:task-definition/<task_definition_family>:*"
+      ]
+    },
+    {
+      "Sid": "S3Deploy",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:DeleteObject", "s3:ListBucket", "s3:GetBucketLocation"],
+      "Resource": ["arn:aws:s3:::devsync-frontend-prod", "arn:aws:s3:::devsync-frontend-prod/*"]
+    },
+    { "Sid": "CloudFrontInvalidate", "Effect": "Allow", "Action": "cloudfront:CreateInvalidation", "Resource": "*" }
+  ]
+}
+```
+
+### 4. ECS (Backend)
+
+- Create an ECS service that pulls from your ECR repository.
+- Record the ECS cluster name, ECS service name, current task definition ARN, and the container name inside that task definition.
+- **Port**: Set to **`8000`** (Match `Dockerfile` EXPOSE).
+- **Environment variables**: `DATABASE_URL`, `JWT_SECRET_KEY`, `FLASK_ENV=production`.
+
+### 5. S3 + CloudFront (Frontend)
+
+- **S3**: Enable static website hosting.
+- **CloudFront**: Origin Access Control (OAC) to your S3 bucket.
+
+### 6. GitHub Secrets
+
+Add these to your repo:
+
+- `IAM_ROLE_ARN`
+- `AWS_REGION`
+- `ECR_REPOSITORY`: `devsync-backend`
+- `ECS_CLUSTER`
+- `ECS_SERVICE`
+- `ECS_TASK_DEFINITION_ARN`
+- `ECS_CONTAINER_NAME`
+- `S3_BUCKET_NAME`: `devsync-frontend-prod`
+- `CLOUDFRONT_DIST_ID`
+- `PRODUCTION_API_URL`: Your public backend HTTPS URL
 
 ### API Documentation
 

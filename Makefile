@@ -3,6 +3,7 @@ PYTHON := ./.venv/bin/python
 
 .PHONY: db-up db-down db-reset db-setup db-inspect db-status
 
+# PostgreSQL database Dockertargets
 db-up:
 	docker compose -f $(COMPOSE_FILE) up -d --wait
 
@@ -22,3 +23,25 @@ db-inspect:
 
 db-status:
 	docker compose -f $(COMPOSE_FILE) ps
+
+# Backend Docker targets
+backend-build:
+	docker compose -f $(COMPOSE_FILE) -f docker-compose.backend-local.yml build
+
+backend-up:
+	docker compose -f $(COMPOSE_FILE) -f docker-compose.backend-local.yml up -d
+
+backend-down:
+	docker compose -f $(COMPOSE_FILE) -f docker-compose.backend-local.yml down
+
+backend-logs:
+	docker compose -f $(COMPOSE_FILE) -f docker-compose.backend-local.yml logs -f backend
+
+# PostgreSQL and Backend Combined Docker Targets
+devsync up:
+	docker compose -f $(COMPOSE_FILE) -f docker-compose.backend-local.yml up -d
+	docker compose -f $(COMPOSE_FILE) up -d --wait
+
+devsync down:
+	docker compose -f $(COMPOSE_FILE) -f docker-compose.backend-local.yml down
+	docker compose -f $(COMPOSE_FILE) down

@@ -1,0 +1,32 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: devsync-backend
+    restart: unless-stopped
+    depends_on:
+      devsync-postgres:
+        condition: service_healthy
+    environment:
+      - FLASK_APP=src/app.py
+      - FLASK_ENV=development
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - DATABASE_URL=postgresql://devsync:${POSTGRES_PASSWORD}@devsync-postgres:5432/devsync?sslmode=disable
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
+      - GITHUB_REDIRECT_URI=${GITHUB_REDIRECT_URI}
+      - FRONTEND_URL=${FRONTEND_URL}
+    ports:
+      - "8000:8000"
+    networks:
+      - devsync-network
+
+  devsync-postgres:
+    networks:
+      - devsync-network
+
+networks:
+  devsync-network:
+    driver: bridge
