@@ -15,8 +15,7 @@ from src.api import init_app as init_api
 from src.api.middlewares import setup_middlewares
 from src.socketio_server import init_socketio
 
-dotenv_override = os.getenv('FLASK_ENV', 'development').lower() != 'production'
-load_dotenv(override=dotenv_override)
+load_dotenv(override=False)
 
 # Add the backend directory to the Python path
 backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
