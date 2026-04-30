@@ -31,7 +31,7 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
-              - 'requirements*.txt'
+              - 'backend/requirements*.txt'
             frontend:
               - 'frontend/**'
 
@@ -55,12 +55,12 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: |
-            requirements.txt
+            backend/requirements.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest-cov pytest-xdist
+          pip install -r backend/requirements.txt pytest-cov pytest-xdist
 
       - name: Run backend tests
         run: |
@@ -96,7 +96,6 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        if: steps.setup-node.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Run frontend tests
