@@ -38,7 +38,13 @@ jobs:
           IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
           LATEST_IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:latest"
 
-          if aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG" >/dev/null 2>&1; then
+          EXISTING_IMAGE_TAG="$(aws ecr batch-get-image \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$IMAGE_TAG" \
+            --query 'images[0].imageId.imageTag' \
+            --output text 2>/dev/null || true)"
+
+          if [ "$EXISTING_IMAGE_TAG" = "$IMAGE_TAG" ]; then
             echo "Image $IMAGE_URI already exists; reusing it for this deployment."
           else
             docker build -t "$IMAGE_URI" -t "$LATEST_IMAGE_URI" ./backend
