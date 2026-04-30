@@ -80,6 +80,7 @@ describe('NotificationContext', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
 
@@ -195,26 +196,32 @@ describe('NotificationContext', () => {
   test('marks server down after repeated socket connection failures', async () => {
     notificationService.getNotifications.mockResolvedValue([]);
 
-    render(
-      <NotificationProvider>
-        <NotificationHarness />
-      </NotificationProvider>
-    );
+    jest.useFakeTimers();
+    try {
+      render(
+        <NotificationProvider>
+          <NotificationHarness />
+        </NotificationProvider>
+      );
 
-    await waitFor(() => {
-      expect(notificationService.getNotifications).toHaveBeenCalled();
-    });
+      await waitFor(() => {
+        expect(notificationService.getNotifications).toHaveBeenCalled();
+      });
 
-    act(() => {
-      socketHandlers.connect_error(new Error('socket down'));
-      socketHandlers.connect_error(new Error('socket down'));
-      socketHandlers.connect_error(new Error('socket down'));
-      socketHandlers.connect_error(new Error('socket down'));
-      socketHandlers.connect_error(new Error('socket down'));
-    });
+      act(() => {
+        socketHandlers.connect_error(new Error('socket down'));
+        socketHandlers.connect_error(new Error('socket down'));
+        socketHandlers.connect_error(new Error('socket down'));
+        socketHandlers.connect_error(new Error('socket down'));
+        socketHandlers.connect_error(new Error('socket down'));
+      });
 
-    expect(screen.getByTestId('server-down')).toHaveTextContent('true');
-    expect(socketMock.disconnect).toHaveBeenCalled();
+      expect(screen.getByTestId('server-down')).toHaveTextContent('true');
+      expect(socketMock.disconnect).toHaveBeenCalled();
+    } finally {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
   });
 
   test('returns early for mark-all operations while server is down', async () => {
@@ -288,25 +295,31 @@ describe('NotificationContext', () => {
 
   test('debounces frequent manual refresh calls', async () => {
     notificationService.getNotifications.mockResolvedValue([]);
+    jest.useFakeTimers();
+    try {
+      render(
+        <NotificationProvider>
+          <NotificationHarness />
+        </NotificationProvider>
+      );
 
-    render(
-      <NotificationProvider>
-        <NotificationHarness />
-      </NotificationProvider>
-    );
+      await waitFor(() => expect(notificationService.getNotifications).toHaveBeenCalledTimes(1));
 
-    await waitFor(() => expect(notificationService.getNotifications).toHaveBeenCalledTimes(1));
+      // Rapid-fire refresh clicks
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
 
-    // Rapid-fire refresh clicks
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
-    
-    // Only 1 additional call should occur due to debouncing
-    await waitFor(() => {
-      expect(notificationService.getNotifications).toHaveBeenCalledTimes(1); 
-      // The manual clicks are debounced because they occurred within minFetchInterval
-      // Since it's debounced, the timeout would trigger later, but for this test, we verify it didn't fire immediately.
-    });
+      // Immediately there should be no extra calls (debounced)
+      expect(notificationService.getNotifications).toHaveBeenCalledTimes(1);
+
+      // Advance timers past the debounce window so the scheduled refresh fires quickly
+      jest.advanceTimersByTime(100);
+
+      await waitFor(() => expect(notificationService.getNotifications).toHaveBeenCalledTimes(2));
+    } finally {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
   });
 
   test('handles nested data format from getNotifications', async () => {

@@ -20,11 +20,19 @@ export const NotificationProvider = ({ children }) => {
   const socketRef = useRef(null);
   const lastFetchTimeRef = useRef(0);
   const refreshTimeoutRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
+  const isMountedRef = useRef(true);
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
+  const _isTestEnv = process.env.NODE_ENV === 'test';
+  const MIN_FETCH_INTERVAL = _isTestEnv ? 50 : 3000; // ms between fetches
+  const SERVER_RETRY_DELAY = _isTestEnv ? 50 : 30000; // ms
+  const RATE_LIMIT_RETRY_DELAY = _isTestEnv ? 50 : 30000; // ms
+  const RECONNECT_RETRY_DELAY = _isTestEnv ? 50 : 60000; // ms
   
   // Debounced refresh notifications function with rate limiting
   const refreshNotifications = useCallback(async (force = false) => {
+    if (!isMountedRef.current) return;
     if (!currentUser || !currentUser.token) {
       return;
     }
@@ -44,7 +52,7 @@ export const NotificationProvider = ({ children }) => {
     // Check time since last fetch - enforce minimum 3 second gap between requests
     const now = Date.now();
     const timeSinceLastFetch = now - lastFetchTimeRef.current;
-    const minFetchInterval = 3000; // 3 seconds minimum between fetches
+    const minFetchInterval = MIN_FETCH_INTERVAL; // ms between fetches
     
     // If we fetched recently and this isn't a forced refresh, debounce it
     if (timeSinceLastFetch < minFetchInterval && !force) {
@@ -55,6 +63,10 @@ export const NotificationProvider = ({ children }) => {
       
       // Set a new timeout to fetch after the minimum interval has passed
       refreshTimeoutRef.current = setTimeout(() => {
+        if (!isMountedRef.current) {
+          refreshTimeoutRef.current = null;
+          return;
+        }
         refreshNotifications(true); // Force refresh after delay
       }, minFetchInterval - timeSinceLastFetch);
       
@@ -110,11 +122,15 @@ export const NotificationProvider = ({ children }) => {
         setServerDown(true);
         setError("Server connection failed. Notifications will refresh when the connection is restored.");
         
-        // Schedule a check in 30 seconds to see if server is back up
+        // Schedule a check to see if server is back up
         refreshTimeoutRef.current = setTimeout(() => {
+          if (!isMountedRef.current) {
+            refreshTimeoutRef.current = null;
+            return;
+          }
           console.log('Checking if server is back online...');
           refreshNotifications(true);
-        }, 30000);
+        }, SERVER_RETRY_DELAY);
         
         return;
       }
@@ -126,9 +142,13 @@ export const NotificationProvider = ({ children }) => {
         
         // Auto retry after a longer delay for rate limit errors
         refreshTimeoutRef.current = setTimeout(() => {
+          if (!isMountedRef.current) {
+            refreshTimeoutRef.current = null;
+            return;
+          }
           console.log('Attempting to fetch notifications again after rate limit cooling period');
           refreshNotifications(true);
-        }, 30000); // Wait 30 seconds before trying again
+        }, RATE_LIMIT_RETRY_DELAY);
       } else {
         setError('Failed to load notifications');
       }
@@ -198,6 +218,10 @@ export const NotificationProvider = ({ children }) => {
           setIsConnected(true);
           setServerDown(false); // Clear server down flag on successful connection
           reconnectAttemptsRef.current = 0; // Reset reconnect counter
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+          }
         });
         
         socketConnection.on('disconnect', () => {
@@ -224,13 +248,22 @@ export const NotificationProvider = ({ children }) => {
             }
             
             // Schedule a retry to check if server is up after a longer delay
-            setTimeout(() => {
+            if (reconnectTimeoutRef.current) {
+              clearTimeout(reconnectTimeoutRef.current);
+              reconnectTimeoutRef.current = null;
+            }
+            reconnectTimeoutRef.current = setTimeout(() => {
+              if (!isMountedRef.current) {
+                reconnectTimeoutRef.current = null;
+                return;
+              }
               console.log('Checking if server is back online...');
               setServerDown(false); // Reset the flag to allow reconnection attempts
               reconnectAttemptsRef.current = 0; // Reset counter
               connectSocket(); // Try to connect again
               refreshNotifications(true); // Also refresh notifications
-            }, 60000); // Try again in 1 minute
+              reconnectTimeoutRef.current = null;
+            }, RECONNECT_RETRY_DELAY);
           }
         });
         
@@ -270,6 +303,7 @@ export const NotificationProvider = ({ children }) => {
     
     // Clean up function
     return () => {
+      isMountedRef.current = false;
       if (socketRef.current) {
         console.log('Cleaning up socket connection');
         socketRef.current.disconnect();
@@ -279,6 +313,11 @@ export const NotificationProvider = ({ children }) => {
       if (refreshTimeoutRef.current) {
         clearTimeout(refreshTimeoutRef.current);
         refreshTimeoutRef.current = null;
+      }
+
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
       }
     };
   }, [currentUser, refreshNotifications, serverDown]);
