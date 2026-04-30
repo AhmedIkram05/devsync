@@ -117,6 +117,7 @@ def create_app(config_class=None):
     explicit_allowed_origins = {
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "https://www.devsyncapp.me",
     }
 
     frontend_url = app.config.get('FRONTEND_URL') or os.getenv('FRONTEND_URL')
