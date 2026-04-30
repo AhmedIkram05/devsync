@@ -165,7 +165,7 @@ Stop the stack:
 make backend-down
 ```
 
-## AWS Deployment (S3 + ECR + App Runner + RDS)
+## AWS Deployment (S3 + ECR + ECS + RDS)
 
 This project is configured for a lean, low-cost deployment to AWS using GitHub Actions.
 
@@ -180,9 +180,32 @@ This project is configured for a lean, low-cost deployment to AWS using GitHub A
 
 - Create a private repository named `devsync-backend`.
 
-### 3. IAM User for GitHub Actions
+### 3. IAM Role for GitHub Actions (OIDC)
 
-Create a user named `github-actions-devsync` and attach this inline policy:
+Configure the GitHub OIDC provider in AWS, then create a role that trusts this repository's `main` branch:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:AhmedIkram05/DevSync:ref:refs/heads/main"
+        }
+      }
+    }
+  ]
+}
+```
+
+Attach a permissions policy that covers ECR pushes, ECS deploys, and frontend publish steps:
 
 ```json
 {
@@ -196,20 +219,44 @@ Create a user named `github-actions-devsync` and attach this inline policy:
       "Resource": "arn:aws:ecr:us-east-1:ACCOUNT_ID:repository/devsync-backend"
     },
     {
+      "Sid": "RegisterTaskDefinition",
+      "Effect": "Allow",
+      "Action": ["ecs:RegisterTaskDefinition"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "PassRolesInTaskDefinition",
+      "Effect": "Allow",
+      "Action": ["iam:PassRole"],
+      "Resource": [
+        "arn:aws:iam::ACCOUNT_ID:role/<task_definition_task_role_name>",
+        "arn:aws:iam::ACCOUNT_ID:role/<task_definition_task_execution_role_name>"
+      ]
+    },
+    {
+      "Sid": "DeployService",
+      "Effect": "Allow",
+      "Action": ["ecs:UpdateService", "ecs:DescribeServices", "ecs:DescribeTaskDefinition"],
+      "Resource": [
+        "arn:aws:ecs:us-east-1:ACCOUNT_ID:service/<cluster_name>/<service_name>",
+        "arn:aws:ecs:us-east-1:ACCOUNT_ID:task-definition/<task_definition_family>:*"
+      ]
+    },
+    {
       "Sid": "S3Deploy",
       "Effect": "Allow",
       "Action": ["s3:PutObject", "s3:DeleteObject", "s3:ListBucket", "s3:GetBucketLocation"],
       "Resource": ["arn:aws:s3:::devsync-frontend-prod", "arn:aws:s3:::devsync-frontend-prod/*"]
     },
-    { "Sid": "CloudFrontInvalidate", "Effect": "Allow", "Action": "cloudfront:CreateInvalidation", "Resource": "*" },
-    { "Sid": "AppRunnerDeploy", "Effect": "Allow", "Action": ["apprunner:UpdateService", "apprunner:DescribeService", "apprunner:StartDeployment"], "Resource": "*" }
+    { "Sid": "CloudFrontInvalidate", "Effect": "Allow", "Action": "cloudfront:CreateInvalidation", "Resource": "*" }
   ]
 }
 ```
 
-### 4. App Runner (Backend)
+### 4. ECS (Backend)
 
-- Connect to your ECR repository.
+- Create an ECS service that pulls from your ECR repository.
+- Record the ECS cluster name, ECS service name, current task definition ARN, and the container name inside that task definition.
 - **Port**: Set to **`8000`** (Match `Dockerfile` EXPOSE).
 - **Environment variables**: `DATABASE_URL`, `JWT_SECRET_KEY`, `FLASK_ENV=production`.
 
@@ -222,12 +269,16 @@ Create a user named `github-actions-devsync` and attach this inline policy:
 
 Add these to your repo:
 
-- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`
-- `ECR_REPOSITORY`: `ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/devsync-backend`
+- `IAM_ROLE_ARN`
+- `AWS_REGION`
+- `ECR_REPOSITORY`: `devsync-backend`
+- `ECS_CLUSTER`
+- `ECS_SERVICE`
+- `ECS_TASK_DEFINITION_ARN`
+- `ECS_CONTAINER_NAME`
 - `S3_BUCKET_NAME`: `devsync-frontend-prod`
 - `CLOUDFRONT_DIST_ID`
-- `APPRUNNER_SERVICE_ARN`
-- `PRODUCTION_API_URL`: Your App Runner HTTPS URL
+- `PRODUCTION_API_URL`: Your public backend HTTPS URL
 
 ### API Documentation
 

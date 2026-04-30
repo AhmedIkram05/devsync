@@ -77,6 +77,18 @@ jobs:
           path: backend/coverage.xml
           if-no-files-found: ignore
 
+  backend-image-build:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend container image
+        run: docker build -t devsync-backend-ci ./backend
+
   frontend-tests:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'

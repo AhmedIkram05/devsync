@@ -1,15 +1,15 @@
 services:
   backend:
     build:
-      context: .
-      dockerfile: backend/Dockerfile
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: devsync-backend
     restart: unless-stopped
     depends_on:
       devsync-postgres:
         condition: service_healthy
     environment:
-      - FLASK_APP=backend/src/app.py
+      - FLASK_APP=src/app.py
       - FLASK_ENV=development
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - DATABASE_URL=postgresql://devsync:${POSTGRES_PASSWORD}@devsync-postgres:5432/devsync?sslmode=disable
