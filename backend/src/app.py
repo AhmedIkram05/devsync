@@ -230,6 +230,7 @@ def create_app(config_class=None):
         '/api/v1/github/callback',
         '/api/v1/github/exchange',
         '/api/v1/github/connect',
+        '/health',
         '/api/docs',
         '/api/swagger.yaml'
     ]
@@ -255,6 +256,10 @@ def create_app(config_class=None):
     @app.route('/')
     def index():
         return "DevSync API is running"
+
+    @app.route('/health')
+    def health():
+        return jsonify({'status': 'ok'}), 200
     
     return app, socketio
 
