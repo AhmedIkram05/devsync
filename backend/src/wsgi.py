@@ -9,7 +9,7 @@ if backend_dir not in sys.path:
 from src.app import create_app
 
 # Create the application object for Gunicorn
-app = create_app()
+app, socketio = create_app()
 
 if __name__ == "__main__":
     app.run()

@@ -24,7 +24,7 @@ from src.api.routes import (
 def app_and_socket(monkeypatch):
     monkeypatch.setenv('FLASK_ENV', 'testing')
 
-    app = create_app({
+    app, socketio = create_app({
         'TESTING': True,
         'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
         'JWT_SECRET_KEY': 'test-secret-key-for-integration-suite-32',
@@ -32,7 +32,7 @@ def app_and_socket(monkeypatch):
         'JWT_COOKIE_SAMESITE': 'Lax',
     })
 
-    return app
+    return app, socketio
 
 
 @pytest.fixture
