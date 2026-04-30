@@ -138,6 +138,31 @@ def test_update_project(app, mock_jwt_identity, mock_jwt, mock_db, mock_project)
             assert data['project']['name'] == 'Updated Project'  # Changed to expect the updated name
             mock_db.session.commit.assert_called_once()
 
+
+def test_update_project_clears_team_members(app, mock_jwt_identity, mock_jwt, mock_db):
+    test_data = {'team_members': []}
+
+    with app.test_request_context(json=test_data):
+        with patch('backend.src.api.controllers.projects_controller.Project.query') as mock_query, \
+             patch('backend.src.api.controllers.projects_controller.validate_project_data') as mock_validate:
+
+            mock_validate.return_value = None
+            mock_project = MagicMock()
+            mock_project.id = 1
+            mock_project.name = 'Test Project'
+            mock_project.status = 'active'
+            mock_project.team_members = [MagicMock()]
+            mock_query.get_or_404.return_value = mock_project
+
+            from backend.src.api.controllers.projects_controller import update_project
+
+            response = update_project(1)
+
+            data = response.get_json()
+            assert data['message'] == 'Project updated successfully'
+            assert mock_project.team_members == []
+            mock_db.session.commit.assert_called_once()
+
 def test_delete_project(app, mock_jwt_identity, mock_jwt, mock_db):
     with app.test_request_context():
         with patch('backend.src.api.controllers.projects_controller.Project.query') as mock_query:
@@ -154,6 +179,22 @@ def test_delete_project(app, mock_jwt_identity, mock_jwt, mock_db):
             # Assert results
             assert response[0] == ''  # Empty response body
             assert response[1] == 204  # Status code
+            mock_db.session.delete.assert_called_once_with(mock_project)
+            mock_db.session.commit.assert_called_once()
+
+
+def test_delete_project_with_tasks(app, mock_jwt_identity, mock_jwt, mock_db):
+    with app.test_request_context():
+        with patch('backend.src.api.controllers.projects_controller.Project.query') as mock_query:
+            mock_project = MagicMock()
+            mock_project.tasks = [MagicMock()]
+            mock_query.get_or_404.return_value = mock_project
+
+            from backend.src.api.controllers.projects_controller import delete_project
+
+            response = delete_project(7)
+
+            assert response[1] == 204
             mock_db.session.delete.assert_called_once_with(mock_project)
             mock_db.session.commit.assert_called_once()
 
