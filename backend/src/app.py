@@ -248,9 +248,8 @@ def create_app(config_class=None):
     def health():
         return jsonify({'status': 'ok'}), 200
     
-    return app, socketio
+    return app
 
 if __name__ == '__main__':
-    app, socketio = create_app()
-    # Use socketio.run instead of app.run
-    socketio.run(app, debug=True, host='0.0.0.0', port=8000)
+    app = create_app()
+    socketio = init_socketio(app)

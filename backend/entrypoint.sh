@@ -1,11 +1,8 @@
-#!/bin/bash
+#!/bin/sh
 set -e
 
-# Run database migrations
-echo "Running database migrations..."
-flask db upgrade
-echo "Migrations complete."
+echo "Running migrations..."
+flask --app src.app:create_app db upgrade
 
-# Start Gunicorn
-echo "Starting Gunicorn..."
-exec gunicorn --config gunicorn.conf.py src.wsgi:app
+echo "Starting app..."
+exec gunicorn src.wsgi:app --bind 0.0.0.0:8000
