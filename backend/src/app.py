@@ -8,31 +8,18 @@ from dotenv import load_dotenv
 
 from flask_swagger_ui import get_swaggerui_blueprint
 
-# Load .env before importing config-dependent modules.
-# We intentionally allow .env to override existing variables only outside production:
-# in local/dev, this prevents stale exported shell vars from surprising developers,
-# while in production the deployment-provided environment must take precedence over
-# any .env file that may be present on disk.
+# Import before config-dependent modules to allow env vars to be read.
+from src.db.models import db
+from src.config.config import get_config
+from src.api import init_app as init_api
+from src.api.middlewares import setup_middlewares
+from src.socketio_server import init_socketio
+
 dotenv_override = os.getenv('FLASK_ENV', 'development').lower() != 'production'
 load_dotenv(override=dotenv_override)
 
 # Add the backend directory to the Python path
 backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
-sys.path.insert(0, backend_dir)
-
-# Handle both relative imports for package and absolute imports for direct execution
-if __name__ == '__main__':
-    from src.db.models import db
-    from src.config.config import get_config
-    from src.api import init_app as init_api
-    from src.api.middlewares import setup_middlewares
-    from src.socketio_server import init_socketio
-else:
-    from db.models import db
-    from .config.config import get_config
-    from .api import init_app as init_api
-    from .api.middlewares import setup_middlewares
-    from .socketio_server import init_socketio
 
 from datetime import timedelta
 from flask import Flask, request, jsonify, make_response, send_file, abort
