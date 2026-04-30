@@ -5,6 +5,12 @@ import { useAuth } from './AuthContext';
 
 const NotificationContext = createContext();
 
+const _isTestEnv = process.env.NODE_ENV === 'test';
+const MIN_FETCH_INTERVAL = _isTestEnv ? 50 : 3000; // ms between fetches
+const SERVER_RETRY_DELAY = _isTestEnv ? 50 : 30000; // ms
+const RATE_LIMIT_RETRY_DELAY = _isTestEnv ? 50 : 30000; // ms
+const RECONNECT_RETRY_DELAY = _isTestEnv ? 50 : 60000; // ms
+
 export const useNotifications = () => useContext(NotificationContext);
 
 export const NotificationProvider = ({ children }) => {
@@ -24,11 +30,6 @@ export const NotificationProvider = ({ children }) => {
   const isMountedRef = useRef(true);
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
-  const _isTestEnv = process.env.NODE_ENV === 'test';
-  const MIN_FETCH_INTERVAL = _isTestEnv ? 50 : 3000; // ms between fetches
-  const SERVER_RETRY_DELAY = _isTestEnv ? 50 : 30000; // ms
-  const RATE_LIMIT_RETRY_DELAY = _isTestEnv ? 50 : 30000; // ms
-  const RECONNECT_RETRY_DELAY = _isTestEnv ? 50 : 60000; // ms
   
   // Debounced refresh notifications function with rate limiting
   const refreshNotifications = useCallback(async (force = false) => {
