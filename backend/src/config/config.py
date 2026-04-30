@@ -46,9 +46,15 @@ def _append_default_sslmode(database_url):
 
 def _resolve_database_uri(env):
     if env == "testing":
+        print("[DB CONFIG] Using in-memory SQLite (testing mode)")
         return "sqlite:///:memory:"
 
     database_url = os.getenv("DATABASE_URL")
+
+    # Debug logs
+    print(f"[DB CONFIG] FLASK_ENV: {env}")
+    print(f"[DB CONFIG] Raw DATABASE_URL: {database_url}")
+
     if not database_url:
         raise ValueError(
             "DATABASE_URL is required for non-testing environments. "
@@ -56,7 +62,11 @@ def _resolve_database_uri(env):
             f"{POSTGRES_URL_EXAMPLE}"
         )
 
+    database_url = database_url.strip()
+    print(f"[DB CONFIG] Stripped DATABASE_URL: {database_url}")
+
     database_url = _normalize_postgres_scheme(database_url)
+    print(f"[DB CONFIG] Normalized DATABASE_URL: {database_url}")
 
     if database_url.startswith("sqlite:"):
         raise ValueError(
@@ -67,11 +77,14 @@ def _resolve_database_uri(env):
 
     if not database_url.startswith("postgresql://"):
         raise ValueError(
-            "Unsupported DATABASE_URL scheme. "
+            f"Unsupported DATABASE_URL scheme: {database_url}. "
             f"Use a postgresql:// connection string, for example: {POSTGRES_URL_EXAMPLE}"
         )
 
-    return _append_default_sslmode(database_url)
+    final_url = _append_default_sslmode(database_url)
+    print(f"[DB CONFIG] Final DATABASE_URL (with sslmode): {final_url}")
+
+    return final_url
 
 
 class Config:
