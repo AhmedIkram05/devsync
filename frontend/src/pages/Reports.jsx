@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { dashboardService } from '../services/utils/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ReportTable from '../components/ReportTable';
@@ -9,26 +9,192 @@ const Reports = () => {
   const [error, setError] = useState(null);
   const [reportType, setReportType] = useState('tasks'); // tasks, github, developers
   const [dateRange, setDateRange] = useState('week'); // week, month, quarter, year
+  const [generatedReports, setGeneratedReports] = useState([]);
+
+  const getReportLabel = (type) => {
+    switch (type) {
+      case 'tasks':
+        return 'Task Report';
+      case 'github':
+        return 'GitHub Activity';
+      case 'developers':
+        return 'Developer Performance';
+      default:
+        return 'Report';
+    }
+  };
+
+  const getDateRangeLabel = (range) => {
+    switch (range) {
+      case 'week':
+        return 'Last Week';
+      case 'month':
+        return 'Last Month';
+      case 'quarter':
+        return 'Last Quarter';
+      case 'year':
+        return 'Last Year';
+      default:
+        return 'Custom Range';
+    }
+  };
+
+  const formatGeneratedAt = (value) => {
+    if (!value) return 'Unknown date';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Unknown date';
+    return date.toLocaleString('en-US');
+  };
+
+  const sanitizePdfText = (value) => {
+    return String(value || '')
+      .replace(/\\/g, '\\\\')
+      .replace(/\(/g, '\\(')
+      .replace(/\)/g, '\\)')
+        .replace(/[^\u0000-\u007F]/g, '?');
+  };
+
+  const buildPdfLines = (report) => {
+    const summary = report.summary || {};
+    const details = Array.isArray(report.details) ? report.details : [];
+    const lines = [
+      'DevSync Report',
+      `Type: ${getReportLabel(report.type)}`,
+      `Date Range: ${getDateRangeLabel(report.dateRange)}`,
+      `Generated: ${formatGeneratedAt(report.generatedAt)}`,
+      '',
+      'Summary:'
+    ];
+
+    const summaryEntries = Object.entries(summary);
+    if (summaryEntries.length === 0) {
+      lines.push('No summary data.');
+    } else {
+      summaryEntries.forEach(([key, value]) => {
+        lines.push(`- ${key.replace(/_/g, ' ')}: ${value}`);
+      });
+    }
+
+    lines.push('', 'Details (top items):');
+
+    if (details.length === 0) {
+      lines.push('No detail data.');
+    } else if (report.type === 'tasks') {
+      details.slice(0, 8).forEach((task) => {
+        lines.push(`- ${task.title || 'Untitled'} [${task.status || 'unknown'}]`);
+      });
+    } else if (report.type === 'developers') {
+      details.slice(0, 8).forEach((developer) => {
+        lines.push(`- ${developer.name || 'Unknown'} (${developer.email || 'n/a'}) tasks: ${developer.total_tasks || 0}`);
+      });
+    } else if (report.type === 'github') {
+      details.slice(0, 8).forEach((repo) => {
+        lines.push(`- ${repo.name || 'Repo'} (${repo.owner || 'owner'}) issues: ${repo.open_issues || 0} prs: ${repo.open_prs || 0}`);
+      });
+    } else {
+      details.slice(0, 8).forEach((item) => {
+        lines.push(`- ${item.name || item.title || 'Item'}`);
+      });
+    }
+
+    return lines.map(sanitizePdfText);
+  };
+
+  const createPdfBlob = (lines) => {
+    const textStream = [
+      'BT',
+      '/F1 12 Tf',
+      '72 720 Td',
+      ...lines.flatMap((line, index) => {
+        if (index === 0) {
+          return [`(${line}) Tj`];
+        }
+        return ['0 -16 Td', `(${line}) Tj`];
+      }),
+      'ET'
+    ].join('\n');
+
+    const objects = [
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+      `<< /Length ${textStream.length} >>\nstream\n${textStream}\nendstream`,
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+    ];
+
+    let pdf = '%PDF-1.4\n';
+    const offsets = [0];
+
+    objects.forEach((object, index) => {
+      offsets.push(pdf.length);
+      pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+    });
+
+    const xrefStart = pdf.length;
+    pdf += 'xref\n';
+    pdf += `0 ${objects.length + 1}\n`;
+    pdf += '0000000000 65535 f \n';
+
+    offsets.slice(1).forEach((offset) => {
+      pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+    });
+
+    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
+
+    return new Blob([pdf], { type: 'application/pdf' });
+  };
+
+  const loadReportData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await dashboardService.getReportData(reportType, dateRange);
+      setReportData(data);
+      return data;
+    } catch (err) {
+      console.error('Failed to fetch report data:', err);
+      setError('Failed to load report data. Please try again.');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [reportType, dateRange]);
   
   useEffect(() => {
-    const fetchReportData = async () => {
-      try {
-        setLoading(true);
-        
-        // Fetch report data based on selected type and date range
-        const data = await dashboardService.getReportData(reportType, dateRange);
-        setReportData(data);
-        
-      } catch (err) {
-        console.error('Failed to fetch report data:', err);
-        setError('Failed to load report data. Please try again.');
-      } finally {
-        setLoading(false);
-      }
+    loadReportData();
+  }, [loadReportData]);
+
+  const handleGenerateReport = async () => {
+    const data = reportData || await loadReportData();
+    if (!data) return;
+
+    const now = new Date();
+    const reportEntry = {
+      id: `${now.getTime()}`,
+      type: reportType,
+      dateRange,
+      generatedAt: now.toISOString(),
+      summary: data.summary || {},
+      details: data.details || []
     };
-    
-    fetchReportData();
-  }, [reportType, dateRange]);
+
+    setGeneratedReports((prev) => [reportEntry, ...prev]);
+  };
+
+  const handleDownloadPdf = (report) => {
+    const lines = buildPdfLines(report);
+    const blob = createPdfBlob(lines);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    link.href = url;
+    link.download = `devsync-${report.type}-${report.dateRange}-${report.id}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
   
   // Render different charts based on the report type
   const renderCharts = () => {
@@ -185,12 +351,61 @@ const Reports = () => {
           </div>
         </div>
         
-        {/* Detailed Report Table */}
-        <div className="bg-white rounded-lg shadow-md overflow-hidden">
-          <ReportTable 
-            data={details || []} 
-            type={reportType}
-          />
+        {/* Detailed Report Table + Generated Reports */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white rounded-lg shadow-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-800">Report Details</h2>
+            </div>
+            <ReportTable 
+              data={details || []} 
+              type={reportType}
+            />
+          </div>
+
+          <div className="bg-white rounded-lg shadow-md">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-800">Generated Reports</h2>
+              <span className="text-sm text-gray-500">PDF downloads</span>
+            </div>
+            <div className="p-6">
+              {generatedReports.length === 0 ? (
+                <div className="text-gray-500 text-sm">
+                  No generated reports yet. Use Generate Report to create one.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {generatedReports.map((report) => (
+                    <div
+                      key={report.id}
+                      className="border border-gray-200 rounded-lg p-4 flex flex-col gap-3"
+                    >
+                      <div>
+                        <div className="text-sm font-semibold text-gray-900">
+                          {getReportLabel(report.type)}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {getDateRangeLabel(report.dateRange)} · {formatGeneratedAt(report.generatedAt)}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs text-gray-500">
+                          Summary entries: {Object.keys(report.summary || {}).length}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadPdf(report)}
+                          className="px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                        >
+                          Download PDF
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -280,7 +495,7 @@ const Reports = () => {
         
         <div className="mt-4 flex justify-end">
           <button 
-            onClick={() => window.location.reload()}
+            onClick={handleGenerateReport}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
             Generate Report
