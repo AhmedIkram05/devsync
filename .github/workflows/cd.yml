@@ -61,18 +61,41 @@ jobs:
             --task-definition ${{ secrets.ECS_TASK_DEFINITION_ARN }} \
             --query 'taskDefinition' > base-task-def.json
 
-          jq --arg IMAGE "${{ steps.build-image.outputs.image }}" '
+          jq \
+            --arg IMAGE "${{ steps.build-image.outputs.image }}" \
+            --arg dbUrlArn "${{ secrets.DB_URL_SECRET_ARN }}" \
+            --arg jwtSecretArn "${{ secrets.JWT_SECRET_ARN }}" \
+            --arg githubClientIdArn "${{ secrets.CLIENT_ID_SECRET_ARN }}" \
+            --arg githubClientSecretArn "${{ secrets.CLIENT_SECRET_ARN }}" \
+            --arg githubRedirectUri "https://api.devsyncapp.me/api/v1/github/callback" \
+            --arg frontendUrl "https://www.devsyncapp.me" '
             .containerDefinitions[0].image = $IMAGE |
             .containerDefinitions[0].secrets = [
               {
                 "name": "DATABASE_URL",
-                "valueFrom": "arn:aws:secretsmanager:eu-west-2:676433090516:secret:/devsync/prod/db_url-H85a7Y"
+                "valueFrom": $dbUrlArn
               },
               {
                 "name": "JWT_SECRET_KEY",
-                "valueFrom": "arn:aws:secretsmanager:eu-west-2:676433090516:secret:/devsync/prod/jwt_secret-JBMR5X"
+                "valueFrom": $jwtSecretArn
+              },
+              {
+                "name": "GITHUB_CLIENT_ID",
+                "valueFrom": $githubClientIdArn
+              },
+              {
+                "name": "GITHUB_CLIENT_SECRET",
+                "valueFrom": $githubClientSecretArn
               }
             ] |
+            .containerDefinitions[0].environment = (
+              (.containerDefinitions[0].environment // [])
+              | map(select(.name != "GITHUB_REDIRECT_URI" and .name != "FRONTEND_URL"))
+              + [
+                {"name": "GITHUB_REDIRECT_URI", "value": $githubRedirectUri},
+                {"name": "FRONTEND_URL", "value": $frontendUrl}
+              ]
+            ) |
             del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .placementConstraints, .compatibilities, .registeredAt, .registeredBy)
           ' base-task-def.json > task-definition.json
 
@@ -83,6 +106,20 @@ jobs:
           service: ${{ secrets.ECS_SERVICE }}
           cluster: ${{ secrets.ECS_CLUSTER }}
           wait-for-service-stability: true
+
+      - name: Verify GitHub OAuth config
+        run: |
+          for i in {1..10}; do
+            resp=$(curl -fsS https://api.devsyncapp.me/api/v1/github/config-check || true)
+            echo "$resp" | grep -q '"client_id_set":true' && \
+            echo "$resp" | grep -q '"client_secret_set":true' && \
+            echo "$resp" | grep -q '"redirect_uri_set":true' && \
+            echo "$resp" | grep -q '"frontend_url":"https://www.devsyncapp.me"' && exit 0
+            echo "GitHub OAuth config not ready yet. Retrying..."
+            sleep 10
+          done
+          echo "GitHub OAuth config check failed."
+          exit 1
 
   deploy-frontend:
     runs-on: ubuntu-latest
