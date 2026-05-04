@@ -92,4 +92,46 @@ describe('ProjectForm component', () => {
     expect(screen.getByLabelText(/Sam/i)).toBeChecked();
     expect(screen.getByLabelText(/Taylor/i)).toBeChecked();
   });
+
+  test('preserves user input when re-rendered without initialData', () => {
+    const onSubmit = jest.fn();
+
+    const { rerender } = render(
+      <ProjectForm
+        onSubmit={onSubmit}
+        users={[
+          { id: 1, name: 'Alex', role: 'developer' },
+        ]}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText(/Project Name/i), {
+      target: { value: 'New Project' },
+    });
+    fireEvent.change(screen.getByLabelText(/Description/i), {
+      target: { value: 'Initial scope' },
+    });
+    fireEvent.change(screen.getByLabelText(/Status/i), {
+      target: { value: 'completed' },
+    });
+    fireEvent.change(screen.getByLabelText(/GitHub Repository URL/i), {
+      target: { value: 'https://github.com/org/new' },
+    });
+    fireEvent.click(screen.getByLabelText(/Alex/i));
+
+    rerender(
+      <ProjectForm
+        onSubmit={onSubmit}
+        users={[
+          { id: 1, name: 'Alex', role: 'developer' },
+        ]}
+      />
+    );
+
+    expect(screen.getByDisplayValue('New Project')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Initial scope')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Status/i)).toHaveValue('completed');
+    expect(screen.getByDisplayValue('https://github.com/org/new')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Alex/i)).toBeChecked();
+  });
 });
