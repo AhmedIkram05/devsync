@@ -39,7 +39,7 @@ const buildInitialState = (initialData) => {
 };
 
 const ProjectForm = ({
-  initialData = {},
+  initialData = null,
   users = [],
   onSubmit,
   onCancel,
