@@ -104,6 +104,9 @@ class Config:
     GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
     GITHUB_REDIRECT_URI = os.getenv("GITHUB_REDIRECT_URI", "")
 
+    # Frontend URL (used for redirects and config checks)
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "")
+
 class DevelopmentConfig(Config):
     """Development configuration"""
     DEBUG = True
