@@ -243,3 +243,54 @@ def test_get_token_success_returns_minimal_token_contract(monkeypatch):
     assert payload == {'token': 'access-3', 'user_id': 11, 'role': 'admin'}
     set_access_cookies.assert_called_once_with(response, 'access-3')
     set_refresh_cookies.assert_called_once_with(response, 'refresh-3')
+
+
+def test_refresh_token_keeps_role_from_claims(monkeypatch):
+    app = build_test_app()
+    set_access_cookies = MagicMock()
+    create_access_token = MagicMock(return_value='refreshed-access')
+
+    monkeypatch.setattr(auth_module, 'get_jwt_identity', MagicMock(return_value={'user_id': 21}))
+    monkeypatch.setattr(auth_module, 'get_jwt', MagicMock(return_value={'role': 'team_lead'}))
+    monkeypatch.setattr(auth_module, 'create_access_token', create_access_token)
+    monkeypatch.setattr(auth_module, 'set_access_cookies', set_access_cookies)
+
+    with app.test_request_context():
+        response = auth_module.refresh_token()
+
+    payload = response.get_json()
+    assert payload['message'] == 'Token refreshed successfully'
+    assert payload['token'] == 'refreshed-access'
+    create_access_token.assert_called_once_with(
+        identity={'user_id': 21},
+        additional_claims={'role': 'team_lead'}
+    )
+    set_access_cookies.assert_called_once_with(response, 'refreshed-access')
+
+
+def test_refresh_token_backfills_missing_role_from_db_user(monkeypatch):
+    app = build_test_app()
+    set_access_cookies = MagicMock()
+    create_access_token = MagicMock(return_value='refreshed-access')
+    stub_user = SimpleNamespace(role='developer')
+    stub_query = MagicMock()
+    stub_query.get.return_value = stub_user
+    stub_user_model = SimpleNamespace(query=stub_query)
+
+    monkeypatch.setattr(auth_module, 'get_jwt_identity', MagicMock(return_value={'user_id': 34}))
+    monkeypatch.setattr(auth_module, 'get_jwt', MagicMock(return_value={}))
+    monkeypatch.setattr(auth_module, 'User', stub_user_model)
+    monkeypatch.setattr(auth_module, 'create_access_token', create_access_token)
+    monkeypatch.setattr(auth_module, 'set_access_cookies', set_access_cookies)
+
+    with app.test_request_context():
+        response = auth_module.refresh_token()
+
+    payload = response.get_json()
+    assert payload['token'] == 'refreshed-access'
+    create_access_token.assert_called_once_with(
+        identity={'user_id': 34},
+        additional_claims={'role': 'developer'}
+    )
+    stub_query.get.assert_called_once_with(34)
+    set_access_cookies.assert_called_once_with(response, 'refreshed-access')

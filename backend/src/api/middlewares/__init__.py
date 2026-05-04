@@ -51,7 +51,7 @@ def role_required(allowed_roles):
         def decorator(*args, **kwargs):
             verify_jwt_in_request()
             claims = get_jwt()
-            if claims["role"] not in normalized_allowed_roles:
+            if claims.get("role") not in normalized_allowed_roles:
                 return jsonify({'message': 'Insufficient permissions'}), 403
             return fn(*args, **kwargs)
         return decorator

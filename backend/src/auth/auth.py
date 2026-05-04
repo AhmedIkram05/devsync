@@ -221,9 +221,19 @@ def register_user():
 def refresh_token():
     """Function to refresh an access token"""
     current_user = get_jwt_identity()
+    claims = get_jwt()
+    role = claims.get('role')
+    user_id = current_user.get('user_id') if isinstance(current_user, dict) else current_user
+
+    if not role and user_id:
+        user = User.query.get(user_id)
+        if user:
+            role = user.role
+
+    additional_claims = {'role': role} if role else {}
     
     # Create new access token
-    access_token = create_access_token(identity=current_user)
+    access_token = create_access_token(identity=current_user, additional_claims=additional_claims)
     
     # Create response
     resp = jsonify({
