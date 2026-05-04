@@ -10,8 +10,16 @@ from sqlalchemy.exc import IntegrityError
 
 from ..db.models import db, User  # Fix import path
 from .helpers import hash_password, verify_password, generate_tokens
+from .rbac import Role
 
 auth_bp = Blueprint('auth', __name__)
+
+
+def _validate_role(role):
+    valid_roles = [item.value for item in Role]
+    if role not in valid_roles:
+        return jsonify({'message': f'Role must be one of: {", ".join(valid_roles)}'}), 400
+    return None
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -20,6 +28,10 @@ def register():
     # Validate required fields
     if not all(k in data for k in ['name', 'email', 'password', 'role']):
         return jsonify({'message': 'Missing required fields'}), 400
+
+    role_validation = _validate_role(data['role'])
+    if role_validation:
+        return role_validation
     
     # Check if email already exists
     existing_user = User.query.filter_by(email=data['email']).first()
@@ -170,6 +182,10 @@ def register_user():
     # Validate required fields
     if not all(k in data for k in ['name', 'email', 'password', 'role']):
         return jsonify({'message': 'Missing required fields'}), 400
+
+    role_validation = _validate_role(data['role'])
+    if role_validation:
+        return role_validation
     
     # Check if email already exists
     existing_user = User.query.filter_by(email=data['email']).first()

@@ -9,47 +9,49 @@ class Role(Enum):
     """User roles with hierarchical permissions"""
     DEVELOPER = 'developer'
     TEAM_LEAD = 'team_lead'
-    CLIENT = 'client'
     ADMIN = 'admin'
 
 
-# Define permissions for each role
+DEVELOPER_PERMISSIONS = [
+    'can_view_tasks',
+    'can_update_assigned_tasks',
+    'can_comment',
+    'can_comment_on_tasks',
+    'can_view_notifications',
+    'can_manage_personal_notifications',
+    'can_view_own_profile',
+    'can_update_own_profile',
+    'can_link_github_account',
+    'can_view_github_repos',
+    'can_link_github_commits',
+]
+
+TEAM_LEAD_PERMISSIONS = [
+    *DEVELOPER_PERMISSIONS,
+    'can_create_tasks',
+    'can_assign_tasks',
+    'can_view_team_metrics',
+    'can_view_team_reports',
+    'can_generate_reports',
+    'can_view_team_profiles',
+]
+
+ADMIN_PERMISSIONS = [
+    *TEAM_LEAD_PERMISSIONS,
+    'can_update_any_task',
+    'can_delete_tasks',
+    'can_manage_users',
+    'can_manage_system_settings',
+    'can_view_audit_logs',
+    'can_access_all_data',
+    'can_link_github_repos',
+]
+
+
 ROLE_PERMISSIONS = {
-    Role.DEVELOPER.value: [
-        'can_view_tasks',
-        'can_update_assigned_tasks',
-        'can_comment_on_tasks',
-        'can_view_github_repos',
-        'can_link_github_commits',
-    ],
-    Role.TEAM_LEAD.value: [
-        'can_view_tasks',
-        'can_update_assigned_tasks',
-        'can_comment_on_tasks',
-        'can_view_github_repos',
-        'can_link_github_commits',
-    ],
-    Role.CLIENT.value: [
-        'can_view_tasks',
-        'can_update_assigned_tasks',
-        'can_comment_on_tasks',
-        'can_view_github_repos',
-        'can_link_github_commits',
-    ],
-    Role.ADMIN.value: [
-        'can_view_tasks',
-        'can_create_tasks',
-        'can_update_any_task',
-        'can_delete_tasks',
-        'can_assign_tasks',
-        'can_comment_on_tasks',
-        'can_view_github_repos',
-        'can_link_github_repos',
-        'can_link_github_commits',
-        'can_view_team_reports',
-        'can_manage_users',
-        'can_manage_system_settings',
-    ]
+    Role.DEVELOPER.value: DEVELOPER_PERMISSIONS,
+    Role.TEAM_LEAD.value: TEAM_LEAD_PERMISSIONS,
+    Role.ADMIN.value: ADMIN_PERMISSIONS,
 }
 
 

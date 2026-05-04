@@ -167,14 +167,14 @@ def get_user_dashboard():
         return jsonify({'message': 'An error occurred while loading the dashboard', 'error': str(e)}), 500
 
 def get_client_dashboard():
-    """Controller function to get dashboard data for a client user"""
+    """Controller function to get dashboard data for a developer or team lead."""
     try:
         user_id = get_jwt_identity()['user_id']
         claims = get_jwt()
         user_role = claims.get('role')
         
         # Log the request details for debugging
-        logger.info(f"Getting client dashboard for user ID: {user_id}, role: {user_role}")
+        logger.info(f"Getting member dashboard for user ID: {user_id}, role: {user_role}")
         
         # Get basic user info
         user = User.query.get(user_id)
@@ -252,8 +252,9 @@ def get_admin_dashboard():
         users = User.query.all()
         user_counts = {
             'total': len(users),
-            'admin': len([u for u in users if u.role == 'admin']),
-            'client': len([u for u in users if u.role == 'client'])
+            'admin': len([u for u in users if u.role == Role.ADMIN.value]),
+            'team_lead': len([u for u in users if u.role == Role.TEAM_LEAD.value]),
+            'developer': len([u for u in users if u.role == Role.DEVELOPER.value]),
         }
         
         # Calculate task statistics

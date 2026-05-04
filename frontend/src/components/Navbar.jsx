@@ -46,6 +46,7 @@ const Navbar = () => {
   if (!currentUser) return null;
   
   const isAdmin = currentUser.role === "admin";
+  const canCreateTasks = isAdmin || currentUser.role === "team_lead";
 
   return (
     <nav className="bg-blue-600 p-4 text-white shadow-md">
@@ -82,6 +83,11 @@ const Navbar = () => {
               <Link to="/tasks" className="hover:text-gray-300 transition">
                 Tasks
               </Link>
+              {canCreateTasks && (
+                <Link to="/admin/create-task" className="hover:text-gray-300 transition">
+                  Create Task
+                </Link>
+              )}
               <Link to="/github" className="hover:text-gray-300 transition">
                 GitHub
               </Link>
@@ -195,6 +201,11 @@ const Navbar = () => {
               <Link to="/tasks" className="block px-3 py-2 hover:bg-blue-700 transition">
                 Tasks
               </Link>
+              {canCreateTasks && (
+                <Link to="/admin/create-task" className="block px-3 py-2 hover:bg-blue-700 transition">
+                  Create Task
+                </Link>
+              )}
               <Link to="/github" className="block px-3 py-2 hover:bg-blue-700 transition">
                 GitHub
               </Link>

@@ -2,6 +2,7 @@
 
 from flask import jsonify
 import re
+from ...auth.rbac import Role
 
 def validate_user_data(data):
     """Validate user data from requests"""
@@ -17,7 +18,7 @@ def validate_user_data(data):
     
     # Validate role if provided
     if 'role' in data:
-        valid_roles = ['developer', 'team_lead', 'client', 'admin']
+        valid_roles = [role.value for role in Role]
         if data['role'] not in valid_roles:
             return jsonify({'message': f'Role must be one of: {", ".join(valid_roles)}'}), 400
     

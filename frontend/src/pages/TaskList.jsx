@@ -17,6 +17,7 @@ const TaskList = () => {
   
   const navigate = useNavigate();
   const { currentUser } = useAuth();
+  const canCreateTasks = currentUser?.role === 'admin' || currentUser?.role === 'team_lead';
 
   // Fetch tasks when component mounts
   useEffect(() => {
@@ -156,7 +157,7 @@ const TaskList = () => {
                 Refresh
               </button>
               
-              {currentUser?.role === 'admin' && (
+              {canCreateTasks && (
                 <button 
                   onClick={() => navigate('/admin/create-task')}
                   className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"

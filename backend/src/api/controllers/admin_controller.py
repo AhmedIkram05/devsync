@@ -12,7 +12,8 @@ def get_system_stats():
     user_stats = {
         'total': len(users),
         'admins': len([u for u in users if u.role == Role.ADMIN.value]),
-        'clients': len([u for u in users if u.role == Role.CLIENT.value])
+        'team_leads': len([u for u in users if u.role == Role.TEAM_LEAD.value]),
+        'developers': len([u for u in users if u.role == Role.DEVELOPER.value]),
     }
     
     # Count projects by status
@@ -47,7 +48,7 @@ def get_system_settings():
     settings = {
         'app_name': 'DevSync',
         'allow_registration': True,
-        'default_user_role': Role.CLIENT.value,  # Changed to CLIENT from DEVELOPER
+        'default_user_role': Role.DEVELOPER.value,
         'github_integration_enabled': True,
         'notification_settings': {
             'email_notifications': True,

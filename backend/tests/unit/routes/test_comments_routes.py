@@ -26,6 +26,7 @@ def app(monkeypatch):
     app.config['JWT_SECRET_KEY'] = 'test-secret-key'
 
     monkeypatch.setattr(comments_routes, 'jwt_required', passthrough_decorator)
+    monkeypatch.setattr(comments_routes, 'role_required', passthrough_decorator)
     monkeypatch.setattr(comments_routes, 'validate_json', passthrough_decorator)
 
     bp = Blueprint('api', __name__, url_prefix='/api/v1')

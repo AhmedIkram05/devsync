@@ -237,6 +237,22 @@ def test_update_task_permission_denied(app, mock_jwt_identity, mock_jwt, mock_ta
             assert status_code == 403
             assert 'You can only update tasks assigned to you' in response.get_json()['message']
 
+def test_team_lead_can_assign_unassigned_task(app, mock_jwt_identity, mock_jwt, mock_db, mock_task):
+    mock_jwt.return_value = {'role': 'team_lead'}
+    mock_task.assigned_to = None
+
+    with app.test_request_context(json={'assigned_to': 2}):
+        with patch('backend.src.api.controllers.tasks_controller.Task.query') as mock_query:
+            mock_query.get_or_404.return_value = mock_task
+
+            from backend.src.api.controllers.tasks_controller import update_task_by_id
+
+            response = update_task_by_id(1)
+
+            assert response.get_json()['message'] == 'Task updated successfully'
+            assert mock_task.assigned_to == 2
+            mock_db.session.commit.assert_called_once()
+
 def test_delete_task_by_id(app, mock_jwt_identity, mock_db):
     with app.test_request_context():
         with patch('backend.src.api.controllers.tasks_controller.Task.query') as mock_query:

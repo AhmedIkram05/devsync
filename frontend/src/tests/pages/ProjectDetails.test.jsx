@@ -154,11 +154,11 @@ describe('ProjectDetails page', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/admin/projects');
   });
 
-  test('shows error state on fetch failure and navigates client fallback route', async () => {
+  test('shows error state on fetch failure and navigates member fallback route', async () => {
     useAuth.mockReturnValue({
       currentUser: {
         id: 2,
-        role: 'client',
+        role: 'developer',
       },
     });
 
@@ -178,7 +178,7 @@ describe('ProjectDetails page', () => {
     useAuth.mockReturnValue({
       currentUser: {
         id: 2,
-        role: 'client',
+        role: 'developer',
       },
     });
 

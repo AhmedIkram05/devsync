@@ -32,7 +32,7 @@ components:
           type: string
         role:
           type: string
-          enum: [admin, client]
+          enum: [developer, team_lead, admin]
         github_username:
           type: string
         created_at:
@@ -173,7 +173,7 @@ paths:
                   type: string
                 role:
                   type: string
-                  enum: [admin, client]
+                  enum: [developer, team_lead, admin]
       responses:
         '201':
           description: User registered successfully

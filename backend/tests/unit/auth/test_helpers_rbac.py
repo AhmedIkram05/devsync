@@ -8,7 +8,7 @@ from flask import Flask, jsonify
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..')))
 
 from backend.src.auth.helpers import generate_tokens, hash_password, verify_password
-from backend.src.auth.rbac import Role, require_permission, require_role
+from backend.src.auth.rbac import ROLE_PERMISSIONS, Role, require_permission, require_role
 
 
 auth_test_app = Flask(__name__)
@@ -59,12 +59,12 @@ def test_require_role_allows_matching_string_role():
 
 
 def test_require_role_allows_matching_enum_role():
-    @require_role(Role.CLIENT)
+    @require_role(Role.DEVELOPER)
     def protected_endpoint():
         return jsonify({'ok': True}), 200
 
     with auth_test_app.app_context():
-        with patch('backend.src.auth.rbac.get_jwt', return_value={'role': 'client'}):
+        with patch('backend.src.auth.rbac.get_jwt', return_value={'role': 'developer'}):
             response, status = protected_endpoint()
 
     assert status == 200
@@ -80,7 +80,7 @@ def test_require_role_rejects_missing_or_mismatched_role():
         with patch('backend.src.auth.rbac.get_jwt', return_value={}):
             missing_response, missing_status = protected_endpoint()
 
-        with patch('backend.src.auth.rbac.get_jwt', return_value={'role': 'client'}):
+        with patch('backend.src.auth.rbac.get_jwt', return_value={'role': 'developer'}):
             denied_response, denied_status = protected_endpoint()
 
     assert missing_status == 403
@@ -108,8 +108,16 @@ def test_require_permission_rejects_unpermitted_role():
         return jsonify({'allowed': True}), 200
 
     with auth_test_app.app_context():
-        with patch('backend.src.auth.rbac.get_jwt', return_value={'role': 'client'}):
+        with patch('backend.src.auth.rbac.get_jwt', return_value={'role': 'developer'}):
             response, status = protected_endpoint()
 
     assert status == 403
     assert response.get_json() == {'message': 'Insufficient permissions'}
+
+
+def test_role_permissions_use_strict_three_role_model():
+    assert set(ROLE_PERMISSIONS.keys()) == {'developer', 'team_lead', 'admin'}
+    assert 'can_create_tasks' not in ROLE_PERMISSIONS[Role.DEVELOPER.value]
+    assert 'can_create_tasks' in ROLE_PERMISSIONS[Role.TEAM_LEAD.value]
+    assert 'can_assign_tasks' in ROLE_PERMISSIONS[Role.TEAM_LEAD.value]
+    assert 'can_manage_users' in ROLE_PERMISSIONS[Role.ADMIN.value]

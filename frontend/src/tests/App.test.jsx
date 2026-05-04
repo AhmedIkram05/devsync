@@ -90,9 +90,9 @@ describe('App route access controls', () => {
     expect(await screen.findByText('Admin Dashboard Page')).toBeInTheDocument();
   });
 
-  test('redirects non-admin user from admin route to client dashboard', async () => {
+  test('redirects developer user from admin route to member dashboard', async () => {
     mockAuthState = {
-      currentUser: { id: 2, role: 'client', token: 'test-token' },
+      currentUser: { id: 2, role: 'developer', token: 'test-token' },
       loading: false,
       showGithubPrompt: false,
     };
@@ -114,9 +114,9 @@ describe('App route access controls', () => {
     expect(await screen.findByText('Admin Dashboard Page')).toBeInTheDocument();
   });
 
-  test('redirects authenticated client from root path to client dashboard', async () => {
+  test('redirects authenticated developer from root path to member dashboard', async () => {
     mockAuthState = {
-      currentUser: { id: 2, role: 'client', token: 'test-token' },
+      currentUser: { id: 2, role: 'developer', token: 'test-token' },
       loading: false,
       showGithubPrompt: false,
     };
@@ -128,7 +128,7 @@ describe('App route access controls', () => {
 
   test('renders GitHub connection prompt when enabled', async () => {
     mockAuthState = {
-      currentUser: { id: 2, role: 'client', token: 'test-token' },
+      currentUser: { id: 2, role: 'developer', token: 'test-token' },
       loading: false,
       showGithubPrompt: true,
     };

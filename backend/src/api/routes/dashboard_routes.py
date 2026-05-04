@@ -11,6 +11,8 @@ from ..controllers.dashboard_controller import (
 from ..middlewares import role_required
 from ...auth.rbac import Role
 
+MEMBER_DASHBOARD_ROLES = [Role.DEVELOPER, Role.TEAM_LEAD]
+
 def register_routes(bp):
     """Register all dashboard routes with the provided Blueprint"""
     
@@ -22,9 +24,9 @@ def register_routes(bp):
     
     @bp.route('/dashboard/client', methods=['GET'])
     @jwt_required()
-    @role_required(Role.CLIENT)
+    @role_required(MEMBER_DASHBOARD_ROLES)
     def client_dashboard():
-        """Route to get client-specific dashboard data"""
+        """Route to get developer/team-lead dashboard data"""
         return get_client_dashboard()
     
     @bp.route('/dashboard/admin', methods=['GET'])

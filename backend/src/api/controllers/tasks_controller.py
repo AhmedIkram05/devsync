@@ -7,9 +7,13 @@ from ...auth.rbac import Role  # Changed to relative import
 from ..validators.task_validator import validate_task_data  # Changed to relative import
 
 MEMBER_ROLES = {
-    Role.CLIENT.value,
     Role.DEVELOPER.value,
     Role.TEAM_LEAD.value,
+}
+
+TASK_MANAGER_ROLES = {
+    Role.TEAM_LEAD.value,
+    Role.ADMIN.value,
 }
 
 def get_all_tasks():
@@ -35,11 +39,11 @@ def get_all_tasks():
         query = query.filter(Task.created_by == created_by)
     
     # Apply role-based filtering
-    if user_role == Role.ADMIN.value:
-        # Admins (Project Managers) can see all tasks
+    if user_role in TASK_MANAGER_ROLES:
+        # Team leads and admins can see all tasks for assignment and reporting.
         tasks = query.all()
     else:
-        # Clients (Team Members) can only see tasks assigned to them or created by them
+        # Developers can only see tasks assigned to them or created by them.
         tasks = query.filter(
             (Task.assigned_to == user_id) | (Task.created_by == user_id)
         ).all()
@@ -143,7 +147,14 @@ def update_task_by_id(task_id):
     task = Task.query.get_or_404(task_id)
     
     # Check if user has permission to update this task
-    if user_role in MEMBER_ROLES and task.assigned_to != user_id:
+    can_update_task = user_role == Role.ADMIN.value or task.assigned_to == user_id
+    can_assign_task = user_role in TASK_MANAGER_ROLES
+
+    if not can_update_task and not can_assign_task:
+        return jsonify({'message': 'You can only update tasks assigned to you'}), 403
+
+    non_assignment_fields = {'title', 'description', 'status', 'progress'} & set(data.keys())
+    if non_assignment_fields and not can_update_task:
         return jsonify({'message': 'You can only update tasks assigned to you'}), 403
     
     # Update allowed fields
@@ -156,9 +167,10 @@ def update_task_by_id(task_id):
     if 'progress' in data:
         task.progress = data['progress']
     
-    # Only admins (Project Managers) can reassign tasks
-    if 'assigned_to' in data and user_role == Role.ADMIN.value:
+    if 'assigned_to' in data and can_assign_task:
         task.assigned_to = data['assigned_to']
+    elif 'assigned_to' in data:
+        return jsonify({'message': 'You do not have permission to assign tasks'}), 403
     
     db.session.commit()
     

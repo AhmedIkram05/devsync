@@ -114,13 +114,13 @@ describe('Navbar component', () => {
     expect(mockMarkAllAsRead).toHaveBeenCalled();
   });
 
-  test('toggles mobile menu and shows client links for non-admin users', async () => {
+  test('toggles mobile menu and shows developer links for non-admin users', async () => {
     useAuth.mockReturnValue({
       currentUser: {
         id: 2,
-        role: 'client',
-        name: 'Client User',
-        email: 'client@example.com',
+        role: 'developer',
+        name: 'Developer User',
+        email: 'developer@example.com',
       },
       logout: mockLogout,
     });
@@ -138,6 +138,23 @@ describe('Navbar component', () => {
 
     expect(screen.getAllByText('Tasks').length).toBeGreaterThan(0);
     expect(screen.getAllByText('GitHub').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Create Task')).not.toBeInTheDocument();
+  });
+
+  test('shows task creation link for team leads', () => {
+    useAuth.mockReturnValue({
+      currentUser: {
+        id: 3,
+        role: 'team_lead',
+        name: 'Lead User',
+        email: 'lead@example.com',
+      },
+      logout: mockLogout,
+    });
+
+    renderNavbar();
+
+    expect(screen.getAllByText('Create Task').length).toBeGreaterThan(0);
   });
 
   test('shows logging out state while logout is in progress', async () => {

@@ -55,7 +55,7 @@ def test_register_returns_409_for_existing_email(monkeypatch):
             'name': 'Test User',
             'email': 'existing@example.com',
             'password': 'password123',
-            'role': 'client',
+            'role': 'developer',
         }
     ):
         response, status = auth_module.register()
@@ -125,7 +125,7 @@ def test_register_handles_integrity_error(monkeypatch):
             'name': 'New User',
             'email': 'new@example.com',
             'password': 'password123',
-            'role': 'client',
+            'role': 'developer',
         }
     ):
         response, status = auth_module.register()
@@ -167,7 +167,7 @@ def test_login_success_includes_github_connection_flags(monkeypatch):
         name='Login User',
         email='login@example.com',
         password='stored-hash',
-        role='client',
+        role='developer',
         github_username='octocat',
     )
 
@@ -200,7 +200,7 @@ def test_login_success_includes_github_connection_flags(monkeypatch):
     assert payload['user']['github_connected'] is True
     assert payload['user']['github_username'] == 'octocat'
 
-    generate_tokens.assert_called_once_with(7, {'role': 'client'})
+    generate_tokens.assert_called_once_with(7, {'role': 'developer'})
     set_access_cookies.assert_called_once_with(response, 'access-2')
     set_refresh_cookies.assert_called_once_with(response, 'refresh-2')
 

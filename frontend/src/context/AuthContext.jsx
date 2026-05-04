@@ -7,6 +7,11 @@ const AuthContext = createContext();
 
 export const useAuth = () => useContext(AuthContext);
 
+const VALID_ROLES = new Set(["developer", "team_lead", "admin"]);
+const DEFAULT_ROLE = "developer";
+
+const hasValidRole = (user) => user?.role && VALID_ROLES.has(user.role);
+
 export const AuthProvider = ({ children }) => {
   // Try to load user immediately during component initialization to prevent flicker
   const initialUser = (() => {
@@ -14,12 +19,14 @@ export const AuthProvider = ({ children }) => {
       const userJson = localStorage.getItem('user');
       if (userJson) {
         const userData = JSON.parse(userJson);
-        if (userData && userData.id && userData.token) {
+        if (userData && userData.id && userData.token && hasValidRole(userData)) {
           return userData;
         }
+        localStorage.removeItem('user');
       }
     } catch (e) {
       console.error("Error initializing user from localStorage:", e);
+      localStorage.removeItem('user');
     }
     return null;
   })();
@@ -62,7 +69,7 @@ export const AuthProvider = ({ children }) => {
         const user = authApi.getCurrentUser();
         if (user) {
           // User exists in localStorage
-          if (verifyToken(user)) {
+          if (verifyToken(user) && hasValidRole(user)) {
             // Update the state with the user
             setCurrentUser(user);
             // Set GitHub connection status if available
@@ -139,8 +146,12 @@ export const AuthProvider = ({ children }) => {
           token: token || "", 
           github_connected: data.user.github_connected || false,
           github_username: data.user.github_username || "",
-          role: data.user.role || (data.user.is_admin ? "admin" : "client"),
+          role: data.user.role || (data.user.is_admin ? "admin" : DEFAULT_ROLE),
         };
+
+        if (!hasValidRole(userWithToken)) {
+          throw new Error("This account role is no longer supported. Please contact an administrator.");
+        }
         
         // Save to localStorage first to ensure persistence
         localStorage.setItem("user", JSON.stringify(userWithToken));

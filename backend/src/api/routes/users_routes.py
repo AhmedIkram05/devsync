@@ -19,7 +19,7 @@ def register_routes(bp):
     
     @bp.route('/users', methods=['GET'])
     @jwt_required()
-    @role_required([Role.ADMIN])  # Changed: removed Role.TEAM_LEAD, now only ADMIN can see all users
+    @role_required([Role.ADMIN])
     def users_list():
         """Route to get all users"""
         return get_all_users()

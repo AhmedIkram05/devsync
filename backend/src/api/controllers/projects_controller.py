@@ -87,7 +87,7 @@ def get_project_by_id(project_id):
         # endregion
         
         # Check if user has access to this project
-        if user_role in [Role.DEVELOPER.value, Role.CLIENT.value]:
+        if user_role == Role.DEVELOPER.value:
             # Check if developer is assigned to this project
             user = User.query.get(user_id)
             # region agent log
@@ -95,7 +95,7 @@ def get_project_by_id(project_id):
             _debug_log(
                 'H1-H4',
                 'projects_controller.py:get_project_by_id:membership_check',
-                'Evaluating membership access for developer/client',
+                'Evaluating membership access for developer',
                 {
                     'project_id': project_id,
                     'user_id': user_id,
@@ -277,7 +277,7 @@ def get_project_tasks(project_id):
     project = Project.query.get_or_404(project_id)
     
     # Check if user has access to this project
-    if user_role in [Role.DEVELOPER.value, Role.CLIENT.value]:
+    if user_role == Role.DEVELOPER.value:
         # Check if developer is assigned to this project
         user = User.query.get(user_id)
         if project not in user.projects:

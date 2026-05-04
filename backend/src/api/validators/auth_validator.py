@@ -30,8 +30,7 @@ def validate_registration_data(data):
     if len(data['password']) < 8:
         return jsonify({'message': 'Password must be at least 8 characters long'}), 400
     
-    # Validate role using the updated simplified role structure
-    valid_roles = [role.value for role in Role]  # Gets ['client', 'admin'] from the Role enum
+    valid_roles = [role.value for role in Role]
     if data['role'] not in valid_roles:
         return jsonify({'message': f'Role must be one of: {", ".join(valid_roles)}'}), 400
     

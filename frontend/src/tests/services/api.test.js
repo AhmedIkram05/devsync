@@ -215,7 +215,7 @@ describe('api utilities', () => {
     global.fetch.mockResolvedValueOnce(
       buildResponse({
         users: [
-          { id: 1, name: 'Client One', role: 'client' },
+          { id: 1, name: 'Client One', role: 'developer' },
           { id: 2, name: 'Admin One', role: 'admin' },
           { id: 3, name: 'Developer One', role: 'developer' },
         ],
