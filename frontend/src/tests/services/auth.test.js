@@ -30,7 +30,7 @@ describe('authApi', () => {
       name: 'New User',
       email: 'new@example.com',
       password: 'password123',
-      role: 'client',
+      role: 'developer',
     });
 
     expect(response.user.id).toBe(1);

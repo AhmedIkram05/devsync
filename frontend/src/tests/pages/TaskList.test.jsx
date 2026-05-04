@@ -92,7 +92,7 @@ describe('TaskList page', () => {
   });
 
   test('shows fetch error state when loading tasks fails', async () => {
-    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'client' } });
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
     taskService.getAllTasks.mockRejectedValue(new Error('network failure'));
 
     render(<TaskList />);
@@ -100,8 +100,8 @@ describe('TaskList page', () => {
     expect(await screen.findByText(/Failed to load tasks/i)).toBeInTheDocument();
   });
 
-  test('does NOT show New Task button for non-admin users', async () => {
-    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'client' } });
+  test('does NOT show New Task button for developers', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
     taskService.getAllTasks.mockResolvedValue([]);
 
     render(<TaskList />);
@@ -110,8 +110,19 @@ describe('TaskList page', () => {
     expect(screen.queryByRole('button', { name: /new task/i })).not.toBeInTheDocument();
   });
 
+  test('shows New Task button for team leads', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'team_lead' } });
+    taskService.getAllTasks.mockResolvedValue([]);
+
+    render(<TaskList />);
+    await screen.findByText(/No tasks found/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /new task/i }));
+    expect(mockNavigate).toHaveBeenCalledWith('/admin/create-task');
+  });
+
   test('shows overdue badge for past-deadline non-completed tasks', async () => {
-    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'client' } });
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
     taskService.getAllTasks.mockResolvedValue([
       {
         id: 1,
@@ -139,7 +150,7 @@ describe('TaskList page', () => {
   });
 
   test('renders task with no description and no deadline gracefully', async () => {
-    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'client' } });
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
     taskService.getAllTasks.mockResolvedValue([
       {
         id: 3,
@@ -160,7 +171,7 @@ describe('TaskList page', () => {
   });
 
   test('renders all priority badge variants and progress colour thresholds', async () => {
-    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'client' } });
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
     taskService.getAllTasks.mockResolvedValue([
       { id: 1, title: 'High P',   status: 'todo',        priority: 'high',   progress: 100, deadline: null },
       { id: 2, title: 'Med P',    status: 'in_progress', priority: 'medium', progress: 60,  deadline: null },
@@ -183,7 +194,7 @@ describe('TaskList page', () => {
   });
 
   test('renders all status badge variants including unknown', async () => {
-    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'client' } });
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
     taskService.getAllTasks.mockResolvedValue([
       { id: 1, title: 'T1', status: 'todo',        priority: 'low', progress: 0, deadline: null },
       { id: 2, title: 'T2', status: 'backlog',     priority: 'low', progress: 0, deadline: null },
@@ -202,7 +213,7 @@ describe('TaskList page', () => {
   });
 
   test('clear-filters button is shown when a filter is active, hidden when none', async () => {
-    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'client' } });
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
     taskService.getAllTasks.mockResolvedValue([
       { id: 1, title: 'Alpha', status: 'todo', priority: 'high', progress: 0, deadline: null },
     ]);
@@ -221,7 +232,7 @@ describe('TaskList page', () => {
   });
 
   test('updating task status fails and shows update error', async () => {
-    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'client' } });
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
     taskService.getAllTasks.mockResolvedValue([
       { id: 1, title: 'Failing Task', status: 'todo', priority: 'medium', progress: 0, deadline: null },
     ]);
@@ -239,7 +250,7 @@ describe('TaskList page', () => {
   });
 
   test('dismisses error banner via × button', async () => {
-    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'client' } });
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
     taskService.getAllTasks.mockRejectedValue(new Error('load error'));
 
     render(<TaskList />);
@@ -252,7 +263,7 @@ describe('TaskList page', () => {
   });
 
   test('clicking a task row navigates to task detail', async () => {
-    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'client' } });
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
     taskService.getAllTasks.mockResolvedValue([
       { id: 7, title: 'Clickable Task', status: 'todo', priority: 'low', progress: 0, deadline: null },
     ]);
@@ -263,4 +274,3 @@ describe('TaskList page', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/tasks/7');
   });
 });
-

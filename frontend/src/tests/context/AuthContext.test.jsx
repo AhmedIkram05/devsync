@@ -118,7 +118,7 @@ describe('AuthContext', () => {
   test('hydrates authenticated user from localStorage without loading flicker', () => {
     localStorage.setItem(
       'user',
-      JSON.stringify({ id: 1, email: 'user@example.com', token: 'token-1', role: 'client' })
+      JSON.stringify({ id: 1, email: 'user@example.com', token: 'token-1', role: 'developer' })
     );
 
     renderWithProvider();
@@ -127,13 +127,25 @@ describe('AuthContext', () => {
     expect(screen.getByTestId('user-id')).toHaveTextContent('1');
   });
 
+  test('ignores stored users with legacy client role', () => {
+    localStorage.setItem(
+      'user',
+      JSON.stringify({ id: 1, email: 'user@example.com', token: 'token-1', role: 'client' })
+    );
+
+    renderWithProvider();
+
+    expect(screen.getByTestId('user-id')).toHaveTextContent('none');
+    expect(localStorage.getItem('user')).toBeNull();
+  });
+
   test('login stores token, enables GitHub prompt, and keeps existing token on partial user update', async () => {
     authApi.login.mockResolvedValue({
       user: {
         id: 7,
         name: 'Dev User',
         email: 'dev@example.com',
-        role: 'client',
+        role: 'developer',
         github_connected: false,
       },
       token: 'token-7',
@@ -187,7 +199,7 @@ describe('AuthContext', () => {
   test('supports register and logout flows', async () => {
     localStorage.setItem(
       'user',
-      JSON.stringify({ id: 7, email: 'dev@example.com', token: 'token-7', role: 'client' })
+      JSON.stringify({ id: 7, email: 'dev@example.com', token: 'token-7', role: 'developer' })
     );
     authApi.register.mockResolvedValue({ success: true });
     authApi.logout.mockResolvedValue({ success: true });
@@ -217,7 +229,7 @@ describe('AuthContext', () => {
   test('handles explicit GitHub success callback query parameters', async () => {
     localStorage.setItem(
       'user',
-      JSON.stringify({ id: 9, email: 'dev@example.com', token: 'token-9', github_connected: false })
+      JSON.stringify({ id: 9, email: 'dev@example.com', token: 'token-9', role: 'developer', github_connected: false })
     );
 
     renderWithProvider(['/github/callback?github_success=true&github_username=octocat&user_id=9']);
@@ -235,7 +247,7 @@ describe('AuthContext', () => {
   test('handles OAuth code callback and updates connected user state', async () => {
     localStorage.setItem(
       'user',
-      JSON.stringify({ id: 11, email: 'dev@example.com', token: 'token-11', github_connected: false })
+      JSON.stringify({ id: 11, email: 'dev@example.com', token: 'token-11', role: 'developer', github_connected: false })
     );
     githubService.completeOAuthFlow.mockResolvedValue({ success: true, github_username: 'octo' });
 
@@ -268,7 +280,7 @@ describe('AuthContext', () => {
   test('reconciles stale github_connected state when backend check reports disconnected', async () => {
     localStorage.setItem(
       'user',
-      JSON.stringify({ id: 15, email: 'dev@example.com', token: 'token-15', github_connected: true, github_username: 'old' })
+      JSON.stringify({ id: 15, email: 'dev@example.com', token: 'token-15', role: 'developer', github_connected: true, github_username: 'old' })
     );
     githubService.checkConnection.mockResolvedValue({ connected: false });
 
@@ -305,7 +317,7 @@ describe('AuthContext', () => {
 
   test('loadUser: user with github_connected=true does NOT show prompt', async () => {
     authApi.getCurrentUser.mockReturnValue({
-      id: 20, email: 'dev@example.com', token: 'tok-20',
+      id: 20, email: 'dev@example.com', token: 'tok-20', role: 'developer',
       github_connected: true, github_username: 'octo'
     });
     githubService.checkConnection.mockResolvedValue({ connected: true });
@@ -320,10 +332,10 @@ describe('AuthContext', () => {
 
   test('handleGithubPromptResponse(true) triggers connectGitHub', async () => {
     authApi.login.mockResolvedValue({
-      user: { id: 7, name: 'Dev', email: 'dev@example.com', role: 'client', github_connected: false },
+      user: { id: 7, name: 'Dev', email: 'dev@example.com', role: 'developer', github_connected: false },
       token: 'token-7',
     });
-    authApi.getCurrentUser.mockReturnValue({ id: 7, email: 'dev@example.com', token: 'token-7' });
+    authApi.getCurrentUser.mockReturnValue({ id: 7, email: 'dev@example.com', token: 'token-7', role: 'developer' });
     githubService.initiateOAuthFlow.mockResolvedValue('https://github.com/oauth');
     // Prevent actual window.location redirect
     delete window.location;
@@ -359,7 +371,7 @@ describe('AuthContext', () => {
   test('logout failure still clears user state and localStorage', async () => {
     localStorage.setItem(
       'user',
-      JSON.stringify({ id: 7, email: 'dev@example.com', token: 'token-7', role: 'client' })
+      JSON.stringify({ id: 7, email: 'dev@example.com', token: 'token-7', role: 'developer' })
     );
     authApi.logout.mockRejectedValue(new Error('server gone'));
 
@@ -376,7 +388,7 @@ describe('AuthContext', () => {
   test('updateUser(null) is a no-op and logs warning', async () => {
     localStorage.setItem(
       'user',
-      JSON.stringify({ id: 7, email: 'dev@example.com', token: 'token-7', role: 'client' })
+      JSON.stringify({ id: 7, email: 'dev@example.com', token: 'token-7', role: 'developer' })
     );
     jest.spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -395,7 +407,7 @@ describe('AuthContext', () => {
   test('OAuth code callback returns success=false — no github state update', async () => {
     localStorage.setItem(
       'user',
-      JSON.stringify({ id: 11, email: 'dev@example.com', token: 'token-11', github_connected: false })
+      JSON.stringify({ id: 11, email: 'dev@example.com', token: 'token-11', role: 'developer', github_connected: false })
     );
     githubService.completeOAuthFlow.mockResolvedValue({ success: false });
 
@@ -414,9 +426,9 @@ describe('AuthContext', () => {
   test('connectGitHub catches error and sets error message', async () => {
     localStorage.setItem(
       'user',
-      JSON.stringify({ id: 7, email: 'dev@example.com', token: 'token-7' })
+      JSON.stringify({ id: 7, email: 'dev@example.com', token: 'token-7', role: 'developer' })
     );
-    authApi.getCurrentUser.mockReturnValue({ id: 7, email: 'dev@example.com', token: 'token-7' });
+    authApi.getCurrentUser.mockReturnValue({ id: 7, email: 'dev@example.com', token: 'token-7', role: 'developer' });
     githubService.initiateOAuthFlow.mockRejectedValue(new Error('oauth failed'));
 
     renderWithProvider();

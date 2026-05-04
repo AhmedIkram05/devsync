@@ -46,7 +46,7 @@ describe('DeveloperProgress page', () => {
       {
         id: 2,
         name: 'Bob',
-        role: 'client',
+        role: 'developer',
         total_tasks: 2,
         completed_tasks: 2,
         active_tasks: 0,

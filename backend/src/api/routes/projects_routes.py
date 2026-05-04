@@ -16,11 +16,14 @@ from ..middlewares.api_usage_logger import log_api_usage
 from ..middlewares.request_logger import log_request
 from ...auth.rbac import Role
 
+AUTHENTICATED_ROLES = [Role.DEVELOPER, Role.TEAM_LEAD, Role.ADMIN]
+
 def register_routes(bp):
     """Register all project routes with the provided Blueprint"""
     
     @bp.route('/projects', methods=['GET'])
     @jwt_required()
+    @role_required(AUTHENTICATED_ROLES)
     @log_api_usage()
     @log_request()
     def projects_list():
@@ -39,6 +42,7 @@ def register_routes(bp):
     
     @bp.route('/projects/<int:project_id>', methods=['GET'])
     @jwt_required()
+    @role_required(AUTHENTICATED_ROLES)
     @log_api_usage()
     def get_project(project_id):
         """Route to get a specific project"""
@@ -63,6 +67,7 @@ def register_routes(bp):
     
     @bp.route('/projects/<int:project_id>/tasks', methods=['GET'])
     @jwt_required()
+    @role_required(AUTHENTICATED_ROLES)
     @log_api_usage()
     def project_tasks(project_id):
         """Route to get all tasks for a project"""

@@ -297,8 +297,9 @@ class TestAdminController(unittest.TestCase):
         
         # Setup mock users
         mock_admin = MagicMock(role=Role.ADMIN.value)
-        mock_client = MagicMock(role=Role.CLIENT.value)
-        mock_users = [mock_admin, mock_client, mock_client]
+        mock_developer = MagicMock(role=Role.DEVELOPER.value)
+        mock_team_lead = MagicMock(role=Role.TEAM_LEAD.value)
+        mock_users = [mock_admin, mock_developer, mock_team_lead]
         mock_user.query.all.return_value = mock_users
         
         # Setup mock projects
@@ -329,7 +330,8 @@ class TestAdminController(unittest.TestCase):
         # Check user stats
         self.assertEqual(data['users']['total'], 3)
         self.assertEqual(data['users']['admins'], 1)
-        self.assertEqual(data['users']['clients'], 2)
+        self.assertEqual(data['users']['developers'], 1)
+        self.assertEqual(data['users']['team_leads'], 1)
         
         # Check project stats
         self.assertEqual(data['projects']['total'], 3)
@@ -361,7 +363,7 @@ class TestAdminController(unittest.TestCase):
         # Check settings fields
         self.assertEqual(settings['app_name'], 'DevSync')
         self.assertTrue(settings['allow_registration'])
-        self.assertEqual(settings['default_user_role'], Role.CLIENT.value)
+        self.assertEqual(settings['default_user_role'], Role.DEVELOPER.value)
         self.assertTrue(settings['github_integration_enabled'])
         
         # Check notification settings
@@ -380,7 +382,7 @@ class TestAdminController(unittest.TestCase):
         test_data = {
             'app_name': 'DevSync', 
             'allow_registration': True, 
-            'default_user_role': Role.CLIENT.value, 
+            'default_user_role': Role.DEVELOPER.value,
             'github_integration_enabled': True, 
             'notification_settings': {
                 'email_notifications': True, 

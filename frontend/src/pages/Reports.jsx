@@ -47,12 +47,12 @@ const Reports = () => {
   };
 
   const sanitizePdfText = (value) => {
-    return String(value || '')
-      .replace(/\\/g, '\\\\')
-      .replace(/\(/g, '\\(')
-      .replace(/\)/g, '\\)')
-        .replace(/[^\u0000-\u007F]/g, '?');
-  };
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)')
+    .replace(/[^\x20-\x7E]/g, '?');
+};
 
   const buildPdfLines = (report) => {
     const summary = report.summary || {};

@@ -20,6 +20,18 @@ import { NotificationProvider } from "./context/NotificationContext";
 import Register from "./pages/Register";
 import GitHubCallback from './pages/GitHubCallback';
 
+const ROLES = {
+  DEVELOPER: 'developer',
+  TEAM_LEAD: 'team_lead',
+  ADMIN: 'admin',
+};
+
+const MEMBER_ROLES = [ROLES.DEVELOPER, ROLES.TEAM_LEAD];
+const AUTHENTICATED_ROLES = [ROLES.DEVELOPER, ROLES.TEAM_LEAD, ROLES.ADMIN];
+const TASK_CREATOR_ROLES = [ROLES.TEAM_LEAD, ROLES.ADMIN];
+
+const getDashboardPath = (role) => (role === ROLES.ADMIN ? '/admin' : '/clientdashboard');
+
 // Protected route wrapper component - Completely rewritten to prevent infinite loops
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
   const { currentUser, loading } = useAuth();
@@ -51,8 +63,7 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
     console.log(`User role ${currentUser.role} not allowed for this route`);
     
     // Redirect to the appropriate dashboard based on role
-    const redirectPath = currentUser.role === 'admin' ? '/admin' : '/clientdashboard';
-    return <Navigate to={redirectPath} replace />;
+    return <Navigate to={getDashboardPath(currentUser.role)} replace />;
   }
 
   // All checks passed, render the protected component
@@ -86,7 +97,7 @@ function AppRoutes() {
         {/* Public Routes */}
         <Route path="/login" element={
           currentUser ? (
-            <Navigate to={currentUser.role === 'admin' ? '/admin' : '/clientdashboard'} replace />
+            <Navigate to={getDashboardPath(currentUser.role)} replace />
           ) : (
             <Login />
           )
@@ -94,51 +105,51 @@ function AppRoutes() {
         
         <Route path="/register" element={
           currentUser ? (
-            <Navigate to={currentUser.role === 'admin' ? '/admin' : '/clientdashboard'} replace />
+            <Navigate to={getDashboardPath(currentUser.role)} replace />
           ) : (
             <Register />
           )
         } />
         
-        {/* Client Routes (Team Members) */}
+        {/* Developer and Team Lead Routes */}
         <Route path="/clientdashboard" element={
-          <ProtectedRoute allowedRoles={['client']}>
+          <ProtectedRoute allowedRoles={MEMBER_ROLES}>
             <ClientDashboard />
           </ProtectedRoute>
         } />
         
         <Route path="/dashboard/client" element={
-          <ProtectedRoute allowedRoles={['client']}>
+          <ProtectedRoute allowedRoles={MEMBER_ROLES}>
             <ClientDashboard />
           </ProtectedRoute>
         } />
         
         <Route path="/TaskDetailUser/:id" element={
-          <ProtectedRoute allowedRoles={['client']}>
+          <ProtectedRoute allowedRoles={MEMBER_ROLES}>
             <TaskDetailsUser />
           </ProtectedRoute>
         } />
         
         <Route path="/tasks" element={
-          <ProtectedRoute allowedRoles={['client', 'admin']}>
+          <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES}>
             <TaskList />
           </ProtectedRoute>
         } />
         
         <Route path="/tasks/:id" element={
-          <ProtectedRoute allowedRoles={['client', 'admin']}>
+          <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES}>
             <TaskDetailsUser />
           </ProtectedRoute>
         } />
         
         <Route path="/github" element={
-          <ProtectedRoute allowedRoles={['client', 'admin']}>
+          <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES}>
             <GitHubIntegration />
           </ProtectedRoute>
         } />
         
         <Route path="/githubintegrationdetail/:repoId" element={
-          <ProtectedRoute allowedRoles={['client', 'admin']}>
+          <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES}>
             <GitHubIntegrationDetail />
           </ProtectedRoute>
         } />
@@ -149,7 +160,7 @@ function AppRoutes() {
         <Route path="/api/v1/github/callback" element={<GitHubCallback />} /> {/* Add this new route */}
         
         <Route path="/github/connected" element={
-          <ProtectedRoute allowedRoles={['client', 'admin']}>
+          <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES}>
             <GitHubIntegration />
           </ProtectedRoute>
         } />
@@ -168,7 +179,7 @@ function AppRoutes() {
         } />
         
         <Route path="/admin/create-task" element={
-          <ProtectedRoute allowedRoles={['admin']}>
+          <ProtectedRoute allowedRoles={TASK_CREATOR_ROLES}>
             <TaskCreation />
           </ProtectedRoute>
         } />
@@ -204,7 +215,7 @@ function AppRoutes() {
         } />
 
         <Route path="/projects/:id" element={
-          <ProtectedRoute allowedRoles={['client', 'admin']}>
+          <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES}>
             <ProjectDetails />
           </ProtectedRoute>
         } />
@@ -213,9 +224,7 @@ function AppRoutes() {
         <Route path="/" element={
           !loading && (
             currentUser ? 
-              currentUser.role === 'admin' ? 
-                <Navigate to="/admin" replace /> : 
-                <Navigate to="/clientdashboard" replace /> 
+              <Navigate to={getDashboardPath(currentUser.role)} replace />
               : 
               <Navigate to="/login" replace />
           )

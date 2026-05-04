@@ -115,8 +115,8 @@ describe('Login page', () => {
     expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
   });
 
-  test('redirects existing client user from login to client dashboard', () => {
-    localStorage.setItem('user', JSON.stringify({ id: 2, role: 'client' }));
+  test('redirects existing developer user from login to member dashboard', () => {
+    localStorage.setItem('user', JSON.stringify({ id: 2, role: 'developer' }));
 
     renderLogin();
 

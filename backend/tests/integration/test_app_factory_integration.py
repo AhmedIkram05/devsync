@@ -130,7 +130,7 @@ def test_socket_register_accepts_valid_bearer_token(app_and_socket):
     project_rooms.clear()
 
     with app.app_context():
-        token = create_access_token(identity={'user_id': 88}, additional_claims={'role': 'client'})
+        token = create_access_token(identity={'user_id': 88}, additional_claims={'role': 'developer'})
 
     ws_client = socketio.test_client(app, headers={'Authorization': f'Bearer {token}'})
     assert ws_client.is_connected()

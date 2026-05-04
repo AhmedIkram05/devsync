@@ -364,7 +364,7 @@ const normalizeTaskStatus = (status) => {
 };
 
 const buildDeveloperProgress = (users, tasks) => {
-  const progressTrackingRoles = new Set(['client', 'developer', 'team_lead']);
+  const progressTrackingRoles = new Set(['developer', 'team_lead']);
   const tasksByAssignee = new Map();
 
   tasks.forEach((task) => {
@@ -408,7 +408,7 @@ const buildDeveloperProgress = (users, tasks) => {
     });
 };
 
-// Dashboard service for admin and client dashboards
+// Dashboard service for admin and member dashboards
 const dashboardService = {
   getAdminDashboardStats: async (timeRange = 'week') => {
     try {
@@ -665,7 +665,7 @@ const githubService = {
 const userService = {
   getAllDevelopers: async () => {
     try {
-      const response = await fetchWithAuth('users?role=client');
+      const response = await fetchWithAuth('users?role=developer');
       return response || [];
     } catch (error) {
       console.error("Failed to fetch developers:", error);

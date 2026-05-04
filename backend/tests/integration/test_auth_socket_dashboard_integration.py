@@ -43,7 +43,7 @@ def client(app):
     return app.test_client()
 
 
-def auth_headers(app, role='client', user_id=1):
+def auth_headers(app, role='developer', user_id=1):
     with app.app_context():
         token = create_access_token(
             identity={'user_id': user_id},
@@ -52,7 +52,7 @@ def auth_headers(app, role='client', user_id=1):
     return {'Authorization': f'Bearer {token}'}
 
 
-def refresh_headers(app, role='client', user_id=1):
+def refresh_headers(app, role='developer', user_id=1):
     with app.app_context():
         token = create_refresh_token(
             identity={'user_id': user_id},
@@ -92,7 +92,7 @@ def test_auth_register_success_contract(client, monkeypatch):
             'name': 'Integration User',
             'email': 'integration@example.com',
             'password': 'password123',
-            'role': 'client',
+            'role': 'developer',
         },
     )
 
@@ -103,7 +103,7 @@ def test_auth_register_success_contract(client, monkeypatch):
     assert payload['user']['email'] == 'integration@example.com'
 
     hash_password.assert_called_once_with('password123')
-    generate_tokens.assert_called_once_with(101, {'role': 'client'})
+    generate_tokens.assert_called_once_with(101, {'role': 'developer'})
     session.add.assert_called_once()
     session.commit.assert_called_once_with()
 
@@ -114,7 +114,7 @@ def test_auth_login_success_returns_token_and_github_flags(client, monkeypatch):
         name='Login User',
         email='login@example.com',
         password='stored-hash',
-        role='client',
+        role='developer',
         github_username='octocat',
     )
 
@@ -151,7 +151,7 @@ def test_auth_login_success_returns_token_and_github_flags(client, monkeypatch):
     assert payload['user']['github_connected'] is False
 
     verify_password.assert_called_once_with('password123', 'stored-hash')
-    generate_tokens.assert_called_once_with(7, {'role': 'client'})
+    generate_tokens.assert_called_once_with(7, {'role': 'developer'})
 
 
 def test_auth_token_route_rejects_unknown_user(client, monkeypatch):
@@ -271,7 +271,7 @@ def test_dashboard_client_route_returns_computed_task_stats(client, app, monkeyp
     user = SimpleNamespace(
         id=21,
         name='Client User',
-        role='client',
+        role='developer',
         projects=SimpleNamespace(all=lambda: [SimpleNamespace(id=5, name='Project A', status='active')]),
     )
 
@@ -297,7 +297,7 @@ def test_dashboard_client_route_returns_computed_task_stats(client, app, monkeyp
     monkeypatch.setattr(dashboard_controller, 'get_user_tasks', MagicMock(return_value=assigned_tasks))
     monkeypatch.setattr(dashboard_controller, 'get_tasks_due_soon', MagicMock(return_value=[due_task]))
 
-    response = client.get('/api/v1/dashboard/client', headers=auth_headers(app, role='client', user_id=21))
+    response = client.get('/api/v1/dashboard/client', headers=auth_headers(app, role='developer', user_id=21))
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -312,8 +312,8 @@ def test_dashboard_admin_route_returns_user_and_task_totals(client, app, monkeyp
     admin_user = SimpleNamespace(id=1, name='Admin User', role='admin')
     users = [
         SimpleNamespace(role='admin'),
-        SimpleNamespace(role='client'),
-        SimpleNamespace(role='client'),
+        SimpleNamespace(role='developer'),
+        SimpleNamespace(role='team_lead'),
     ]
     tasks = [
         SimpleNamespace(status='todo'),
@@ -346,7 +346,8 @@ def test_dashboard_admin_route_returns_user_and_task_totals(client, app, monkeyp
     payload = response.get_json()
     assert payload['users']['total'] == 3
     assert payload['users']['admin'] == 1
-    assert payload['users']['client'] == 2
+    assert payload['users']['developer'] == 1
+    assert payload['users']['team_lead'] == 1
     assert payload['tasks']['total'] == 4
     assert payload['projects']['total'] == 4
 
@@ -357,7 +358,7 @@ def test_dashboard_project_route_returns_project_metrics(client, app, monkeypatc
         name='Project Delta',
         description='Important project',
         status='active',
-        team_members=SimpleNamespace(all=lambda: [SimpleNamespace(id=1, name='Client One', role='client')]),
+        team_members=SimpleNamespace(all=lambda: [SimpleNamespace(id=1, name='Developer One', role='developer')]),
     )
 
     project_tasks = [
@@ -375,7 +376,7 @@ def test_dashboard_project_route_returns_project_metrics(client, app, monkeypatc
     monkeypatch.setattr(dashboard_controller, 'get_project_tasks_due_soon', MagicMock(return_value=project_tasks[:1]))
     monkeypatch.setattr(dashboard_controller, 'get_recent_updated_project_tasks', MagicMock(return_value=project_tasks[:1]))
 
-    response = client.get('/api/v1/dashboard/projects/11', headers=auth_headers(app, role='client', user_id=1))
+    response = client.get('/api/v1/dashboard/projects/11', headers=auth_headers(app, role='developer', user_id=1))
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -383,7 +384,7 @@ def test_dashboard_project_route_returns_project_metrics(client, app, monkeypatc
     assert payload['task_stats']['total'] == 2
     assert payload['task_stats']['done'] == 1
     assert payload['project']['completion_percentage'] == 50.0
-    assert payload['team_members'][0]['name'] == 'Client One'
+    assert payload['team_members'][0]['name'] == 'Developer One'
 
 
 def test_dashboard_project_route_returns_404_for_missing_project(client, app, monkeypatch):
@@ -393,7 +394,7 @@ def test_dashboard_project_route_returns_404_for_missing_project(client, app, mo
     StubProject.query.get.return_value = None
     monkeypatch.setattr(dashboard_controller, 'Project', StubProject)
 
-    response = client.get('/api/v1/dashboard/projects/999', headers=auth_headers(app, role='client', user_id=1))
+    response = client.get('/api/v1/dashboard/projects/999', headers=auth_headers(app, role='developer', user_id=1))
 
     assert response.status_code == 404
     assert response.get_json()['message'] == 'Project not found'
