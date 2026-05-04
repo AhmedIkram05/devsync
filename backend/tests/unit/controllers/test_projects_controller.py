@@ -113,6 +113,42 @@ def test_get_project(app, mock_jwt_identity, mock_jwt, mock_project):
             assert 'project' in data
             assert data['project']['name'] == 'Test Project'
 
+
+def test_get_project_supports_list_backref_team_members(app, mock_jwt_identity, mock_jwt):
+    with app.test_request_context():
+        with patch('backend.src.api.controllers.projects_controller.Project.query') as mock_query, \
+             patch('backend.src.api.controllers.projects_controller.User.query') as mock_user_query:
+
+            project = MagicMock()
+            project.id = 8
+            project.name = 'List Team Project'
+            project.description = 'Description'
+            project.status = 'active'
+            project.github_repo = None
+            project.created_by = 1
+            project.created_at = MagicMock()
+            project.created_at.isoformat.return_value = '2026-01-01T00:00:00'
+            project.updated_at = MagicMock()
+            project.updated_at.isoformat.return_value = '2026-01-02T00:00:00'
+            member = MagicMock()
+            member.id = 2
+            member.name = 'Dev One'
+            member.role = 'developer'
+            project.team_members = [member]
+            mock_query.get_or_404.return_value = project
+
+            creator = MagicMock()
+            creator.name = 'Creator'
+            mock_user_query.get.return_value = creator
+
+            from backend.src.api.controllers.projects_controller import get_project_by_id
+
+            response = get_project_by_id(8)
+
+            payload = response.get_json()['project']
+            assert payload['id'] == 8
+            assert payload['team_members'][0]['name'] == 'Dev One'
+
 def test_update_project(app, mock_jwt_identity, mock_jwt, mock_db, mock_project):
     # Create a test request context with JSON data
     test_data = {'name': 'Updated Project'}

@@ -140,4 +140,46 @@ describe('Reports page', () => {
 
     expect(await screen.findByText(/Failed to load report data. Please try again./i)).toBeInTheDocument();
   });
+
+  test('generates a report entry and downloads it as PDF', async () => {
+    const createObjectURL = jest.fn(() => 'blob:report-pdf');
+    const revokeObjectURL = jest.fn();
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    const originalCreateElement = document.createElement.bind(document);
+    const realLink = originalCreateElement('a');
+    const clickSpy = jest.spyOn(realLink, 'click').mockImplementation(() => {});
+    const createElementSpy = jest.spyOn(document, 'createElement').mockImplementation((tagName) => {
+      if (tagName === 'a') {
+        return realLink;
+      }
+      return originalCreateElement(tagName);
+    });
+
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL;
+    jest.useFakeTimers();
+
+    render(<Reports />);
+
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
+    expect(await screen.findByText('Task Report')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Download PDF/i }));
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(realLink.download).toContain('devsync-tasks-week-');
+    expect(realLink.download).toContain('.pdf');
+
+    jest.advanceTimersByTime(1000);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:report-pdf');
+
+    jest.useRealTimers();
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+    createElementSpy.mockRestore();
+    clickSpy.mockRestore();
+  });
 });
