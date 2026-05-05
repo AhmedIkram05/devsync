@@ -80,10 +80,9 @@ const GitHubIntegration = () => {
       console.log("GitHub connection status:", data);
       
       // If we just connected or the status changed, update local storage
-      if (justConnected || (data.connected !== connectionStatus.connected)) {
-        console.log("Updating GitHub connection status:", data.connected);
+      if (justConnected) {
         const updatedUser = authApi.updateGitHubStatus(data.connected, data.username);
-        if (updatedUser && typeof setCurrentUser === 'function') {
+        if (updatedUser && typeof setCurrentUser === "function") {
           setCurrentUser(updatedUser);
         }
       }
@@ -136,8 +135,8 @@ const GitHubIntegration = () => {
         });
       }
     }
-  }, [setCurrentUser, connectionStatus.connected]);
-  
+  }, [setCurrentUser]);
+
   // Function to handle the OAuth callback code
   const handleOAuthCallback = useCallback(async (code, state) => {
     try {
@@ -302,7 +301,7 @@ const GitHubIntegration = () => {
     if (connectionStatus.rateLimitError && connectionStatus.rateLimitInfo) {
       const { title, message, suggestion } = connectionStatus.rateLimitInfo;
       return (
-        <div className="bg-yellow-50 border border-yellow-300 text-yellow-800 px-4 py-3 rounded mb-4">
+        <div className="bg-amber-500/10 border border-amber-400/40 text-amber-200 px-4 py-3 rounded mb-4">
           <h3 className="font-semibold">{title}</h3>
           <p className="mt-1">{message}</p>
           {suggestion && <p className="mt-2 text-sm opacity-75">{suggestion}</p>}
@@ -311,7 +310,7 @@ const GitHubIntegration = () => {
               href="https://docs.github.com/en/rest/rate-limit" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="text-blue-600 hover:underline"
+              className="text-rose-300 hover:text-rose-200"
             >
               Learn more about GitHub API rate limits
             </a>
@@ -332,24 +331,25 @@ const GitHubIntegration = () => {
   }
   
   return (
-    <div className="container mx-auto p-4 md:p-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold mb-4">GitHub Integration</h1>
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <div className="container mx-auto p-4 md:p-8">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold mb-4">GitHub Integration</h1>
         
         {connectionStatus.rateLimitError ? renderRateLimitError() : connectionStatus.error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          <div className="bg-rose-500/10 border border-rose-400/40 text-rose-200 px-4 py-3 rounded mb-4">
             {connectionStatus.error}
           </div>
         )}
         
         {!connectionStatus.connected ? (
-          <div className="bg-white rounded-lg shadow p-6 mb-6">
-            <h2 className="text-xl font-semibold mb-3">Connect Your GitHub Account</h2>
-            <p className="mb-4 text-gray-600">
+          <div className="bg-slate-900/70 rounded-2xl border border-slate-800/70 p-6 mb-6">
+            <h2 className="text-xl font-semibold mb-3 text-slate-100">Connect Your GitHub Account</h2>
+            <p className="mb-4 text-slate-400">
               Connect your GitHub account to link tasks with repositories and issues. 
               This integration allows you to:
             </p>
-            <ul className="list-disc pl-5 mb-6 text-gray-600">
+            <ul className="list-disc pl-5 mb-6 text-slate-400">
               <li className="mb-1">View your GitHub repositories and issues within DevSync</li>
               <li className="mb-1">Link tasks to specific GitHub issues</li>
               <li className="mb-1">Track GitHub activity related to your tasks</li>
@@ -357,7 +357,7 @@ const GitHubIntegration = () => {
             <button
               onClick={connectGitHub}
               disabled={isConnecting}
-              className={`flex items-center bg-gray-800 text-white px-6 py-3 rounded hover:bg-gray-700 ${
+              className={`flex items-center rounded-full bg-rose-500/90 text-white px-6 py-3 hover:bg-rose-400 ${
                 isConnecting ? 'opacity-70 cursor-not-allowed' : ''
               }`}
             >
@@ -380,21 +380,21 @@ const GitHubIntegration = () => {
             </button>
           </div>
         ) : (
-          <div className="bg-white rounded-lg shadow mb-8">
-            <div className="p-6 border-b">
+          <div className="bg-slate-900/70 rounded-2xl border border-slate-800/70 mb-8">
+            <div className="p-6 border-b border-slate-800/70">
               <div className="flex justify-between items-center">
                 <div className="flex items-center">
-                  <svg className="h-8 w-8 mr-3 text-gray-800" fill="currentColor" viewBox="0 0 24 24">
+                  <svg className="h-8 w-8 mr-3 text-slate-200" fill="currentColor" viewBox="0 0 24 24">
                     <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
                   </svg>
                   <div>
-                    <h2 className="text-xl font-semibold">GitHub Account Connected</h2>
-                    <p className="text-gray-600">Connected as: {connectionStatus.username}</p>
+                    <h2 className="text-xl font-semibold text-slate-100">GitHub Account Connected</h2>
+                    <p className="text-slate-400">Connected as: {connectionStatus.username}</p>
                   </div>
                 </div>
                 <button 
                   onClick={disconnectGitHub}
-                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+                  className="bg-rose-500/90 hover:bg-rose-400 text-white px-4 py-2 rounded-full"
                 >
                   Disconnect
                 </button>
@@ -407,7 +407,7 @@ const GitHubIntegration = () => {
                 <h3 className="text-lg font-medium">Your Repositories</h3>
                 <button 
                   onClick={fetchRepositories}
-                  className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1 rounded flex items-center"
+                  className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1 rounded flex items-center"
                 >
                   <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -427,13 +427,14 @@ const GitHubIntegration = () => {
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-10 text-gray-500">
+                <div className="text-center py-10 text-slate-400">
                   No repositories found. Make sure you have repositories in your GitHub account.
                 </div>
               )}
             </div>
           </div>
-        )}
+                )}
+        </div>
       </div>
     </div>
   );

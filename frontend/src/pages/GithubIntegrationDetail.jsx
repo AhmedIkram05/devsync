@@ -10,13 +10,16 @@ function GitHubIntegrationDetail() {
   
   const [repository, setRepository] = useState(null);
   const [issues, setIssues] = useState([]);
+  const [pullRequests, setPullRequests] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [selectedTask, setSelectedTask] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadingIssues, setLoadingIssues] = useState(false);
+  const [loadingPullRequests, setLoadingPullRequests] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [error, setError] = useState(null);
   const [linkingIssue, setLinkingIssue] = useState(false);
+  const [linkingPullRequest, setLinkingPullRequest] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
 
   // Fetch available tasks
@@ -67,6 +70,12 @@ function GitHubIntegrationDetail() {
         // Handle different response structures
         const issuesData = issuesResponse.issues || issuesResponse || [];
         setIssues(issuesData);
+
+        // Get repository pull requests using consolidated GitHub service
+        setLoadingPullRequests(true);
+        const pullsResponse = await githubService.getPullRequests(repoId);
+        const pullsData = pullsResponse.pull_requests || pullsResponse || [];
+        setPullRequests(pullsData);
         
       } catch (err) {
         console.error('Failed to fetch repository data:', err);
@@ -74,6 +83,7 @@ function GitHubIntegrationDetail() {
       } finally {
         setLoading(false);
         setLoadingIssues(false);
+        setLoadingPullRequests(false);
       }
     };
 
@@ -120,6 +130,44 @@ function GitHubIntegrationDetail() {
     }
   };
 
+  const handleLinkPullRequest = async (pullRequestId) => {
+    if (!selectedTask || !pullRequestId) {
+      alert('Please select a task to link with this pull request');
+      return;
+    }
+    
+    try {
+      setLinkingPullRequest(true);
+      
+      const selectedPullRequest = pullRequests.find(
+        (pullRequest) => pullRequest.id.toString() === pullRequestId.toString()
+      );
+      
+      if (!selectedPullRequest) {
+        throw new Error('Selected pull request not found');
+      }
+      
+      const linkData = {
+        repo_id: repoId,
+        repo_name: repository.full_name,
+        pull_request_number: selectedPullRequest.number,
+        pull_request_title: selectedPullRequest.title
+      };
+      
+      await githubService.linkTaskToGithub(selectedTask, linkData);
+      
+      setSuccessMessage(`Successfully linked PR #${selectedPullRequest.number} to task!`);
+      setTimeout(() => setSuccessMessage(''), 5000);
+      
+      setSelectedTask('');
+    } catch (err) {
+      console.error('Failed to link pull request to task:', err);
+      setError('Failed to link pull request to task. Please try again.');
+    } finally {
+      setLinkingPullRequest(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -146,6 +194,22 @@ function GitHubIntegrationDetail() {
     if (!dateString) return 'Unknown';
     const date = new Date(dateString);
     return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const getPullRequestStatus = (pullRequest) => {
+    if (pullRequest.draft) {
+      return { text: 'Draft', className: 'bg-yellow-100 text-yellow-800' };
+    }
+
+    if (pullRequest.merged) {
+      return { text: 'Merged', className: 'bg-purple-100 text-purple-800' };
+    }
+
+    if (pullRequest.state === 'closed') {
+      return { text: 'Closed', className: 'bg-gray-100 text-gray-800' };
+    }
+
+    return { text: 'Open', className: 'bg-green-100 text-green-800' };
   };
 
   return (
@@ -189,6 +253,83 @@ function GitHubIntegrationDetail() {
         </div>
       </div>
       
+      {/* Pull Requests Section */}
+      <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold">Repository Pull Requests</h2>
+          <span className="text-sm text-gray-500">{pullRequests.length} total</span>
+        </div>
+        
+        {loadingPullRequests ? (
+          <div className="py-10 text-center">
+            <LoadingSpinner />
+          </div>
+        ) : pullRequests.length > 0 ? (
+          <div className="space-y-4">
+            {pullRequests.map((pullRequest) => {
+              const pullRequestStatus = getPullRequestStatus(pullRequest);
+
+              return (
+                <div key={pullRequest.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <h3 className="font-medium">
+                        <a 
+                          href={pullRequest.html_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800"
+                        >
+                          #{pullRequest.number} {pullRequest.title}
+                        </a>
+                      </h3>
+                      <div className="text-sm text-gray-500 mt-1">
+                        Opened on {formatDate(pullRequest.created_at)} by {pullRequest.user?.login || 'Unknown'}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-1 text-xs rounded ${pullRequestStatus.className}`}>
+                        {pullRequestStatus.text}
+                      </span>
+                      <button
+                        onClick={() => handleLinkPullRequest(pullRequest.id)}
+                        disabled={!selectedTask || linkingPullRequest}
+                        className={`px-3 py-1 rounded text-sm ${
+                          !selectedTask || linkingPullRequest
+                            ? 'bg-gray-300 cursor-not-allowed'
+                            : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        }`}
+                      >
+                        {linkingPullRequest ? 'Linking...' : 'Link to Task'}
+                      </button>
+                    </div>
+                  </div>
+                  {pullRequest.body && (
+                    <div className="mt-2 text-sm text-gray-600 line-clamp-2">
+                      {pullRequest.body}
+                    </div>
+                  )}
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {pullRequest.labels?.map(label => (
+                      <span 
+                        key={label.id || label.name}
+                        className="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800"
+                      >
+                        {label.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-10 text-gray-500">
+            No pull requests found in this repository.
+          </div>
+        )}
+      </div>
+
       {/* Task Linking Section */}
       <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
         <h2 className="text-xl font-semibold mb-4">Link Issues to Tasks</h2>
@@ -212,7 +353,7 @@ function GitHubIntegrationDetail() {
               className="w-full p-2 border rounded"
               value={selectedTask}
               onChange={(e) => setSelectedTask(e.target.value)}
-              disabled={linkingIssue}
+              disabled={linkingIssue || linkingPullRequest}
             >
               <option value="">Choose a task...</option>
               {tasks.map((task) => (
@@ -259,9 +400,9 @@ function GitHubIntegrationDetail() {
                   </div>
                   <button
                     onClick={() => handleLinkIssue(issue.id)}
-                    disabled={!selectedTask || linkingIssue}
+                    disabled={!selectedTask || linkingIssue || linkingPullRequest}
                     className={`px-3 py-1 rounded text-sm ${
-                      !selectedTask || linkingIssue
+                      !selectedTask || linkingIssue || linkingPullRequest
                         ? 'bg-gray-300 cursor-not-allowed'
                         : 'bg-blue-600 hover:bg-blue-700 text-white'
                     }`}

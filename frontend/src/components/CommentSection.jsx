@@ -58,11 +58,11 @@ const CommentSection = ({ taskId, comments = [], onCommentAdded }) => {
   };
 
   return (
-    <div className="bg-white rounded-lg">
-      <h3 className="text-lg font-semibold mb-4">Comments</h3>
+    <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-6">
+      <h3 className="text-lg font-semibold text-slate-100 mb-4">Comments</h3>
       
       {error && (
-        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4" role="alert">
+        <div className="bg-rose-500/10 border-l-4 border-rose-400 text-rose-200 p-4 mb-4" role="alert">
           <p>{error}</p>
         </div>
       )}
@@ -71,16 +71,16 @@ const CommentSection = ({ taskId, comments = [], onCommentAdded }) => {
       <div className="space-y-4 max-h-96 overflow-y-auto mb-6">
         {comments && comments.length > 0 ? (
           comments.map((comment) => (
-            <div key={comment.id} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <div key={comment.id} className="rounded-xl border border-slate-800/70 bg-slate-950/60 p-4">
               <div className="flex justify-between items-start">
-                <span className="font-medium text-gray-700">{comment.author_name}</span>
-                <span className="text-xs text-gray-500">{formatDate(comment.created_at)}</span>
+                <span className="font-medium text-slate-200">{comment.author_name}</span>
+                <span className="text-xs text-slate-500">{formatDate(comment.created_at)}</span>
               </div>
-              <p className="mt-2 text-gray-700 whitespace-pre-line">{comment.content}</p>
+              <p className="mt-2 text-slate-200 whitespace-pre-line">{comment.content}</p>
             </div>
           ))
         ) : (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-slate-500">
             No comments yet. Be the first to add one!
           </div>
         )}
@@ -92,7 +92,7 @@ const CommentSection = ({ taskId, comments = [], onCommentAdded }) => {
           <textarea
             value={newComment}
             onChange={(e) => setNewComment(e.target.value)}
-            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 p-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
             placeholder="Add your comment..."
             rows={3}
             disabled={isSubmitting}
@@ -105,8 +105,8 @@ const CommentSection = ({ taskId, comments = [], onCommentAdded }) => {
             type="submit"
             className={`px-4 py-2 rounded ${
               isSubmitting || !newComment.trim() ? 
-                'bg-gray-300 cursor-not-allowed' : 
-                'bg-blue-600 hover:bg-blue-700 text-white'
+                'bg-slate-800 text-slate-500 cursor-not-allowed' : 
+                'bg-rose-500/90 hover:bg-rose-400 text-white'
             }`}
             disabled={isSubmitting || !newComment.trim()}
           >

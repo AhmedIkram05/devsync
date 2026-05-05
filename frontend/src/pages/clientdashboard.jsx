@@ -36,19 +36,19 @@ const ClientDashboard = () => {
   };
 
   return (
-    <div className="bg-neutral-50 min-h-screen">
+    <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-neutral-900">My Dashboard</h1>
-            <p className="mt-1 text-sm text-neutral-600">
+            <h1 className="text-2xl font-bold text-slate-100">My Dashboard</h1>
+            <p className="mt-1 text-sm text-slate-400">
               View your tasks, projects, and GitHub activity
             </p>
           </div>
           
           <button
             onClick={handleRefresh}
-            className="mt-4 md:mt-0 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+            className="mt-4 md:mt-0 inline-flex items-center px-4 py-2 rounded-full text-sm font-medium text-white bg-rose-500/90 hover:bg-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -62,16 +62,16 @@ const ClientDashboard = () => {
             <LoadingSpinner size="lg" />
           </div>
         ) : error ? (
-          <div className="bg-error-50 p-4 rounded-lg border border-error-300 text-error-800">
+          <div className="bg-rose-500/10 p-4 rounded-lg border border-rose-400/40 text-rose-200">
             <div className="flex">
-              <svg className="h-5 w-5 text-error-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-5 w-5 text-rose-300 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <p>{error}</p>
             </div>
             <button 
               onClick={handleRefresh}
-              className="mt-3 text-sm font-medium text-error-600 hover:text-error-500"
+              className="mt-3 text-sm font-medium text-rose-300 hover:text-rose-200"
             >
               Try again
             </button>
@@ -359,17 +359,17 @@ const StatCard = ({ title, value, icon, color }) => {
   const classes = colorClasses[color] || colorClasses.primary;
 
   return (
-    <div className="bg-white overflow-hidden rounded-lg shadow-card">
+    <div className="bg-slate-900/70 overflow-hidden rounded-2xl border border-slate-800/70">
       <div className="p-5">
         <div className="flex items-center">
-          <div className={`flex-shrink-0 rounded-md ${classes.light} p-3`}>
-            <div className={classes.text}>{icon}</div>
+          <div className={`flex-shrink-0 rounded-xl ${classes.light} p-3 border border-white/5`}>
+            <div className={`${classes.text} text-lg`}>{icon}</div>
           </div>
           <div className="ml-5 w-0 flex-1">
             <dl>
-              <dt className="text-sm font-medium text-neutral-500 truncate">{title}</dt>
+              <dt className="text-sm font-medium text-slate-400 truncate">{title}</dt>
               <dd>
-                <div className="text-xl font-bold text-neutral-900">{value}</div>
+                <div className="text-xl font-bold text-slate-100">{value}</div>
               </dd>
             </dl>
           </div>
