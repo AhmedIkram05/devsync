@@ -339,3 +339,103 @@ class GitHubClient:
             json={'body': body},
             use_cache=False  # Don't cache POST requests
         )
+    
+    def _get_issue_search_count(self, owner, repo, query_fragment):
+        """Get a repository-scoped count from the GitHub issues search API."""
+        try:
+            result = self._make_request(
+                'GET',
+                f"{self.BASE_API_URL}/search/issues",
+                params={
+                    'q': f'repo:{owner}/{repo} is:open {query_fragment}',
+                    'per_page': 1,
+                },
+                use_cache=True,
+                cache_ttl=300
+            )
+
+            if result is not None and 'total_count' in result:
+                return result['total_count']
+
+            return None
+        except Exception:
+            return None
+
+    def get_open_issues_count(self, owner, repo):
+        """Get count of open issues for a repository."""
+        return self._get_issue_search_count(owner, repo, 'is:issue')
+
+    def get_open_pulls_count(self, owner, repo):
+        """Get count of open pull requests for a repository."""
+        return self._get_issue_search_count(owner, repo, 'is:pr')
+    
+    def get_recent_commits(self, owner, repo, since_days=7):
+        """Get count of commits pushed to a repository within the given window."""
+        from datetime import datetime, timedelta
+
+        try:
+            window_days = max(int(since_days or 0), 1)
+            since_date = (datetime.utcnow() - timedelta(days=window_days)).replace(microsecond=0).isoformat() + 'Z'
+            total_commits = 0
+            page = 1
+            per_page = 100
+
+            while True:
+                commits = self._make_request(
+                    'GET',
+                    f"{self.BASE_API_URL}/repos/{owner}/{repo}/commits",
+                    params={
+                        'since': since_date,
+                        'page': page,
+                        'per_page': per_page,
+                    },
+                    use_cache=True,
+                    cache_ttl=300
+                )
+
+                if commits is None or not isinstance(commits, list):
+                    return None
+
+                if len(commits) == 0:
+                    break
+
+                total_commits += len(commits)
+
+                if len(commits) < per_page:
+                    break
+
+                page += 1
+
+            return total_commits
+        except Exception:
+            return None
+
+    def get_repository_activity_summary(self, owner, repo, fallback_open_issues=0, since_days=7):
+        """Build the report activity metrics for a repository."""
+        open_issues = fallback_open_issues or 0
+        open_prs = 0
+        recent_commits = 0
+
+        issue_count = self.get_open_issues_count(owner, repo)
+        if issue_count is None:
+            logger.warning(f"Failed to fetch open issues for {owner}/{repo}; using fallback count")
+        else:
+            open_issues = issue_count
+
+        pull_count = self.get_open_pulls_count(owner, repo)
+        if pull_count is None:
+            logger.warning(f"Failed to fetch open PRs for {owner}/{repo}; defaulting to 0")
+        else:
+            open_prs = pull_count
+
+        commit_count = self.get_recent_commits(owner, repo, since_days=since_days)
+        if commit_count is None:
+            logger.warning(f"Failed to fetch recent commits for {owner}/{repo}; defaulting to 0")
+        else:
+            recent_commits = commit_count
+
+        return {
+            'open_issues': open_issues,
+            'open_prs': open_prs,
+            'recent_commits': recent_commits,
+        }

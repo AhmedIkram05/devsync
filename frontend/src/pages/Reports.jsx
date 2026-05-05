@@ -311,9 +311,9 @@ const Reports = () => {
   const buildSummarySnapshot = (type, summary, details) => {
     if (type === 'github') {
       const repos = Array.isArray(details) ? details : [];
-      const openIssues = repos.reduce((sum, repo) => sum + (repo.open_issues || 0), 0);
-      const openPrs = repos.reduce((sum, repo) => sum + (repo.open_prs || 0), 0);
-      const recentCommits = repos.reduce((sum, repo) => sum + (repo.recent_commits || 0), 0);
+      const openIssues = repos.reduce((sum, repo) => sum + getGithubRepoMetrics(repo).openIssues, 0);
+      const openPrs = repos.reduce((sum, repo) => sum + getGithubRepoMetrics(repo).openPrs, 0);
+      const recentCommits = repos.reduce((sum, repo) => sum + getGithubRepoMetrics(repo).recentCommits, 0);
 
       return {
         repos: summary?.repos ?? repos.length,
@@ -342,6 +342,18 @@ const Reports = () => {
 
   const hasNonZero = (values = []) => values.some((value) => Number(value) > 0);
   const getRepoLabel = (repo) => repo?.name || repo?.full_name || 'Repo';
+  const getGithubRepoMetrics = (repo) => {
+    const openIssues = Number(repo?.open_issues ?? repo?.open_issues_count ?? 0) || 0;
+    const openPrs = Number(repo?.open_prs ?? 0) || 0;
+    const recentCommits = Number(repo?.recent_commits ?? 0) || 0;
+
+    return {
+      openIssues,
+      openPrs,
+      recentCommits,
+      total: openIssues + openPrs + recentCommits
+    };
+  };
   
   // Render different charts based on the report type
   const renderCharts = () => {
@@ -611,18 +623,10 @@ const Reports = () => {
 
           {reportType === 'github' && (() => {
             const repos = Array.isArray(details) ? details : [];
-            const repoActivity = repos.map((repo) => {
-              const openIssues = repo.open_issues || 0;
-              const openPrs = repo.open_prs || 0;
-              const recentCommits = repo.recent_commits || 0;
-              return {
-                label: getRepoLabel(repo),
-                openIssues,
-                openPrs,
-                recentCommits,
-                total: openIssues + openPrs + recentCommits
-              };
-            });
+            const repoActivity = repos.map((repo) => ({
+              label: getRepoLabel(repo),
+              ...getGithubRepoMetrics(repo)
+            }));
             const topRepos = repoActivity
               .sort((a, b) => b.total - a.total)
               .slice(0, 6);
@@ -647,9 +651,9 @@ const Reports = () => {
               ]
             };
 
-            const issuesTotal = repos.reduce((sum, repo) => sum + (repo.open_issues || 0), 0);
-            const prsTotal = repos.reduce((sum, repo) => sum + (repo.open_prs || 0), 0);
-            const commitsTotal = repos.reduce((sum, repo) => sum + (repo.recent_commits || 0), 0);
+            const issuesTotal = repos.reduce((sum, repo) => sum + getGithubRepoMetrics(repo).openIssues, 0);
+            const prsTotal = repos.reduce((sum, repo) => sum + getGithubRepoMetrics(repo).openPrs, 0);
+            const commitsTotal = repos.reduce((sum, repo) => sum + getGithubRepoMetrics(repo).recentCommits, 0);
             const githubMixValues = [issuesTotal, prsTotal, commitsTotal];
             const githubMixData = {
               labels: ['Open Issues', 'Open PRs', 'Recent Commits'],

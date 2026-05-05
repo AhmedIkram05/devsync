@@ -178,6 +178,49 @@ class TestGitHubClient(unittest.TestCase):
             headers=self.client.get_headers()
         )
 
+    @patch('backend.src.services.github_client.requests.get')
+    def test_get_recent_commits_uses_commits_endpoint(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [
+            {'sha': 'abc123'},
+            {'sha': 'def456'},
+        ]
+        mock_response.headers = {}
+        mock_get.return_value = mock_response
+
+        commit_count = self.client.get_recent_commits('owner', 'repo1', since_days=30)
+
+        self.assertEqual(commit_count, 2)
+        mock_get.assert_called_once()
+        called_url = mock_get.call_args.args[0]
+        called_kwargs = mock_get.call_args.kwargs
+        self.assertEqual(called_url, 'https://api.github.com/repos/owner/repo1/commits')
+        self.assertEqual(called_kwargs['params']['page'], 1)
+        self.assertEqual(called_kwargs['params']['per_page'], 100)
+        self.assertIn('since', called_kwargs['params'])
+        self.assertEqual(called_kwargs['headers'], self.client.get_headers())
+
+    @patch.object(GitHubClient, 'get_recent_commits', return_value=None)
+    @patch.object(GitHubClient, 'get_open_pulls_count', return_value=3)
+    @patch.object(GitHubClient, 'get_open_issues_count', return_value=None)
+    def test_get_repository_activity_summary_keeps_fallback_issue_count(
+        self,
+        mock_issue_count,
+        mock_pull_count,
+        mock_recent_commits,
+    ):
+        summary = self.client.get_repository_activity_summary(
+            'owner',
+            'repo1',
+            fallback_open_issues=9,
+            since_days=30,
+        )
+
+        self.assertEqual(summary['open_issues'], 9)
+        self.assertEqual(summary['open_prs'], 3)
+        self.assertEqual(summary['recent_commits'], 0)
+
     def test_parse_state_param_invalid(self):
         # Mismatched/malformed state should safely return None
         result = GitHubClient.parse_state_param("invalid_base64_###")

@@ -354,6 +354,43 @@ const isWithinDateRange = (isoDate, rangeStart) => {
   return parsedDate >= rangeStart;
 };
 
+const getGithubActivityWindowDays = (dateRange) => {
+  switch (dateRange) {
+    case 'month':
+      return 30;
+    case 'quarter':
+      return 90;
+    case 'year':
+      return 365;
+    case 'week':
+    default:
+      return 7;
+  }
+};
+
+const toSafeMetricValue = (value, fallback = 0) => {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : fallback;
+};
+
+const normalizeGithubRepository = (repository = {}) => {
+  const openIssues = toSafeMetricValue(
+    repository.open_issues ?? repository.open_issues_count,
+    0
+  );
+  const openPrs = toSafeMetricValue(repository.open_prs, 0);
+  const recentCommits = toSafeMetricValue(repository.recent_commits, 0);
+
+  return {
+    ...repository,
+    open_issues: openIssues,
+    open_issues_count: toSafeMetricValue(repository.open_issues_count, openIssues),
+    open_prs: openPrs,
+    recent_commits: recentCommits,
+    last_updated: repository.last_updated || repository.pushed_at || repository.updated_at || null,
+  };
+};
+
 
 const normalizeTaskStatus = (status) => {
   if (status === 'completed') {
@@ -487,14 +524,23 @@ const dashboardService = {
       if (reportType === 'github') {
         const githubStatus = await fetchWithAuth('github/status').catch(() => ({ connected: false }));
         const connected = Boolean(githubStatus?.connected);
-        const repositories = connected ? await githubService.getUserRepos() : [];
+        const repositories = connected
+          ? await githubService.getUserRepos({
+              activityWindowDays: getGithubActivityWindowDays(dateRange),
+            })
+          : [];
+
+        // Calculate totals from enriched repo data
+        const openIssuesTotal = repositories.reduce((sum, repo) => sum + (repo.open_issues || 0), 0);
+        const openPrsTotal = repositories.reduce((sum, repo) => sum + (repo.open_prs || 0), 0);
+        const recentCommitsTotal = repositories.reduce((sum, repo) => sum + (repo.recent_commits || 0), 0);
 
         return {
           summary: {
             repos: repositories.length,
-            open_issues: 0,
-            open_prs: 0,
-            linked_tasks: 0
+            open_issues: openIssuesTotal,
+            open_prs: openPrsTotal,
+            recent_commits: recentCommitsTotal
           },
           details: repositories
         };
@@ -567,16 +613,36 @@ const githubService = {
   },
   
   // Get user's repositories
-  getUserRepos: async () => {
+  getUserRepos: async (options = {}) => {
     try {
-      const response = await fetchWithAuth('github/repositories');
+      const params = new URLSearchParams();
+
+      if (options.page) {
+        params.set('page', String(options.page));
+      }
+
+      if (options.perPage) {
+        params.set('per_page', String(options.perPage));
+      }
+
+      if (options.activityWindowDays) {
+        params.set('activity_window_days', String(options.activityWindowDays));
+      }
+
+      const endpoint = params.toString()
+        ? `github/repositories?${params.toString()}`
+        : 'github/repositories';
+      const response = await fetchWithAuth(endpoint);
       
       // Handle potential errors or empty responses
       if (response.error) {
         return [];
       }
       
-      return response?.repositories || response || [];
+      const repositories = response?.repositories || response || [];
+      return Array.isArray(repositories)
+        ? repositories.map((repository) => normalizeGithubRepository(repository))
+        : [];
     } catch (error) {
       console.error("Failed to get GitHub repositories:", error);
       return [];

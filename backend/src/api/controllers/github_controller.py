@@ -182,6 +182,7 @@ def get_github_repositories():
     # Fetch repositories (with pagination support)
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 30, type=int)
+    activity_window_days = max(request.args.get('activity_window_days', 7, type=int) or 7, 1)
     
     repositories = github_client.get_user_repositories(page=page, per_page=per_page)
 
@@ -212,6 +213,15 @@ def get_github_repositories():
                 local_repo.repo_url = repo['html_url']
                 should_commit = True
 
+        owner = repo['owner']['login']
+        repo_name = repo['name']
+        activity_metrics = github_client.get_repository_activity_summary(
+            owner,
+            repo_name,
+            fallback_open_issues=repo.get('open_issues_count', 0),
+            since_days=activity_window_days,
+        )
+        
         formatted_repos.append({
             'id': local_repo.id,
             'github_id': repo['id'],
@@ -228,6 +238,10 @@ def get_github_repositories():
             'language': repo['language'],
             'default_branch': repo['default_branch'],
             'open_issues_count': repo['open_issues_count'],
+            'open_issues': activity_metrics['open_issues'],
+            'open_prs': activity_metrics['open_prs'],
+            'recent_commits': activity_metrics['recent_commits'],
+            'last_updated': repo.get('pushed_at') or repo.get('updated_at'),
             'stargazers_count': repo.get('stargazers_count', 0),
             'forks_count': repo.get('forks_count', 0),
         })

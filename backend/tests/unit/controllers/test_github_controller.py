@@ -134,6 +134,11 @@ class TestGitHubController(unittest.TestCase):
         
         mock_client_instance = MagicMock()
         mock_github_client.return_value = mock_client_instance
+        mock_client_instance.get_repository_activity_summary.return_value = {
+            'open_issues': 4,
+            'open_prs': 2,
+            'recent_commits': 7,
+        }
         
         mock_client_instance.get_user_repositories.return_value = [
             {
@@ -172,7 +177,16 @@ class TestGitHubController(unittest.TestCase):
         self.assertEqual(len(result['repositories']), 1)
         self.assertEqual(result['repositories'][0]['id'], 101)
         self.assertEqual(result['repositories'][0]['name'], 'repo1')
+        self.assertEqual(result['repositories'][0]['open_issues'], 4)
+        self.assertEqual(result['repositories'][0]['open_prs'], 2)
+        self.assertEqual(result['repositories'][0]['recent_commits'], 7)
         mock_client_instance.get_user_repositories.assert_called_with(page=1, per_page=10)
+        mock_client_instance.get_repository_activity_summary.assert_called_with(
+            'user',
+            'repo1',
+            fallback_open_issues=5,
+            since_days=7,
+        )
         mock_db.session.add.assert_called_once()
         mock_db.session.commit.assert_called_once()
 

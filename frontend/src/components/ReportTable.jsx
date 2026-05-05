@@ -88,13 +88,13 @@ const ReportTable = ({ data = [], type }) => {
             </div>
           );
         case 'Issues':
-          return item.open_issues || 0;
+          return item.open_issues ?? item.open_issues_count ?? 0;
         case 'PRs':
           return item.open_prs || 0;
         case 'Commits':
           return item.recent_commits || 0;
         case 'Last Updated':
-          return formatDate(item.last_updated);
+          return formatDate(item.last_updated || item.pushed_at || item.updated_at);
         case 'Actions':
           return (
             <a 
