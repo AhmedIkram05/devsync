@@ -32,26 +32,26 @@ const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [] }) => 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">Task Title</label>
+        <label htmlFor="title" className="block text-sm font-medium text-slate-300 mb-1">Task Title</label>
         <input
           id="title"
           type="text"
           placeholder="Task Title"
           value={task.title}
           onChange={(e) => setTask({ ...task, title: e.target.value })}
-          className="w-full p-2 border rounded focus:ring-blue-500 focus:border-blue-500"
+          className="w-full p-2 border border-slate-700/60 rounded bg-slate-950/60 text-slate-100 placeholder:text-slate-500 focus:ring-rose-400/60 focus:border-rose-400/60"
           required
         />
       </div>
       
       <div>
-        <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+        <label htmlFor="description" className="block text-sm font-medium text-slate-300 mb-1">Description</label>
         <textarea
           id="description"
           placeholder="Task Description"
           value={task.description}
           onChange={(e) => setTask({ ...task, description: e.target.value })}
-          className="w-full p-2 border rounded focus:ring-blue-500 focus:border-blue-500"
+          className="w-full p-2 border border-slate-700/60 rounded bg-slate-950/60 text-slate-100 placeholder:text-slate-500 focus:ring-rose-400/60 focus:border-rose-400/60"
           rows={4}
           required
         />
@@ -59,12 +59,12 @@ const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [] }) => 
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label htmlFor="assignee" className="block text-sm font-medium text-gray-700 mb-1">Assignee</label>
+          <label htmlFor="assignee" className="block text-sm font-medium text-slate-300 mb-1">Assignee</label>
           <select
             id="assignee"
             value={task.assignee}
             onChange={(e) => setTask({ ...task, assignee: e.target.value })}
-            className="w-full p-2 border rounded focus:ring-blue-500 focus:border-blue-500"
+            className="w-full p-2 border border-slate-700/60 rounded bg-slate-950/60 text-slate-100 focus:ring-rose-400/60 focus:border-rose-400/60"
           >
             <option value="">Select Assignee</option>
             {users.map(user => (
@@ -76,12 +76,12 @@ const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [] }) => 
         </div>
         
         <div>
-          <label htmlFor="project" className="block text-sm font-medium text-gray-700 mb-1">Project</label>
+          <label htmlFor="project" className="block text-sm font-medium text-slate-300 mb-1">Project</label>
           <select
             id="project"
             value={task.project}
             onChange={(e) => setTask({ ...task, project: e.target.value })}
-            className="w-full p-2 border rounded focus:ring-blue-500 focus:border-blue-500"
+            className="w-full p-2 border border-slate-700/60 rounded bg-slate-950/60 text-slate-100 focus:ring-rose-400/60 focus:border-rose-400/60"
           >
             <option value="">Select Project</option>
             {projects.map(project => (
@@ -95,12 +95,12 @@ const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [] }) => 
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-          <label htmlFor="status" className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+          <label htmlFor="status" className="block text-sm font-medium text-slate-300 mb-1">Status</label>
           <select
             id="status"
             value={task.status}
             onChange={(e) => setTask({ ...task, status: e.target.value })}
-            className="w-full p-2 border rounded focus:ring-blue-500 focus:border-blue-500"
+            className="w-full p-2 border border-slate-700/60 rounded bg-slate-950/60 text-slate-100 focus:ring-rose-400/60 focus:border-rose-400/60"
           >
             {statusOptions.map(option => (
               <option key={option.value} value={option.value}>
@@ -111,12 +111,12 @@ const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [] }) => 
         </div>
         
         <div>
-          <label htmlFor="priority" className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+          <label htmlFor="priority" className="block text-sm font-medium text-slate-300 mb-1">Priority</label>
           <select
             id="priority"
             value={task.priority}
             onChange={(e) => setTask({ ...task, priority: e.target.value })}
-            className="w-full p-2 border rounded focus:ring-blue-500 focus:border-blue-500"
+            className="w-full p-2 border border-slate-700/60 rounded bg-slate-950/60 text-slate-100 focus:ring-rose-400/60 focus:border-rose-400/60"
           >
             {priorityOptions.map(option => (
               <option key={option.value} value={option.value}>
@@ -127,13 +127,13 @@ const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [] }) => 
         </div>
         
         <div>
-          <label htmlFor="deadline" className="block text-sm font-medium text-gray-700 mb-1">Deadline</label>
+          <label htmlFor="deadline" className="block text-sm font-medium text-slate-300 mb-1">Deadline</label>
           <input
             id="deadline"
             type="date"
             value={task.deadline}
             onChange={(e) => setTask({ ...task, deadline: e.target.value })}
-            className="w-full p-2 border rounded focus:ring-blue-500 focus:border-blue-500"
+            className="w-full p-2 border border-slate-700/60 rounded bg-slate-950/60 text-slate-100 focus:ring-rose-400/60 focus:border-rose-400/60"
           />
         </div>
       </div>
@@ -141,7 +141,7 @@ const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [] }) => 
       <div className="pt-4 flex justify-end">
         <button
           type="submit"
-          className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          className="px-6 py-2 rounded-full bg-rose-500/90 text-white hover:bg-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60 focus:ring-offset-2 focus:ring-offset-slate-950"
         >
           {initialData.id ? "Update Task" : "Create Task"}
         </button>

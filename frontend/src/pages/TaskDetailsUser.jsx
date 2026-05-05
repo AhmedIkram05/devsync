@@ -214,10 +214,10 @@ function TaskDetailsUser() {
   if (error || !task) {
     return (
       <div className="flex flex-col h-screen items-center justify-center p-6">
-        <div className="text-xl text-red-600 mb-4">{error || 'Task not found'}</div>
+        <div className="text-xl text-rose-300 mb-4">{error || 'Task not found'}</div>
         <button 
           onClick={() => navigate('/tasks')} 
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          className="px-4 py-2 rounded-full bg-rose-500/90 text-white hover:bg-rose-400"
         >
           Back to Tasks
         </button>
@@ -226,10 +226,11 @@ function TaskDetailsUser() {
   }
 
   return (
-    <div className="container mx-auto p-4 md:p-6 max-w-4xl">
-      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <div className="container mx-auto p-4 md:p-6 max-w-4xl">
+        <div className="bg-slate-900/70 rounded-2xl border border-slate-800/70 overflow-hidden">
         {/* Task Header */}
-        <div className="bg-blue-600 text-white p-6">
+        <div className="bg-slate-900/90 text-slate-100 p-6 border-b border-slate-800/70">
           <div className="flex justify-between items-start">
             <div>
               <h1 className="text-2xl font-bold mb-2">{task.title}</h1>
@@ -252,9 +253,9 @@ function TaskDetailsUser() {
             </div>
             <span 
               className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                (task.status === 'completed' || task.status === 'done') ? 'bg-green-100 text-green-800' : 
-                task.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' : 
-                'bg-gray-100 text-gray-800'
+                (task.status === 'completed' || task.status === 'done') ? 'bg-emerald-500/15 text-emerald-200' : 
+                task.status === 'in_progress' ? 'bg-amber-500/15 text-amber-200' : 
+                'bg-slate-800/70 text-slate-300'
               }`}
             >
               {task.status === 'in_progress' ? 'In Progress' : 
@@ -270,20 +271,20 @@ function TaskDetailsUser() {
         <div className="p-6">
           {/* Task Details */}
           <div className="mb-8">
-            <h2 className="text-xl font-semibold mb-4">Task Details</h2>
-            <div className="bg-gray-50 rounded-lg p-4">
+            <h2 className="text-xl font-semibold mb-4 text-slate-100">Task Details</h2>
+            <div className="bg-slate-950/60 rounded-xl border border-slate-800/70 p-4">
               <p className="mb-4 whitespace-pre-line">{task.description}</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 <div>
-                  <p className="text-sm text-gray-600">Assigned to:</p>
-                  <p className="font-medium">{task.assignee_name || 'Unassigned'}</p>
+                  <p className="text-sm text-slate-400">Assigned to:</p>
+                  <p className="font-medium text-slate-100">{task.assignee_name || 'Unassigned'}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600">Priority:</p>
+                  <p className="text-sm text-slate-400">Priority:</p>
                   <p className={`font-medium ${
-                    task.priority === 'high' ? 'text-red-600' : 
-                    task.priority === 'medium' ? 'text-yellow-600' : 
-                    'text-blue-600'
+                    task.priority === 'high' ? 'text-rose-300' : 
+                    task.priority === 'medium' ? 'text-amber-300' : 
+                    'text-sky-300'
                   }`}>
                     {task.priority === 'high' ? 'High' : 
                      task.priority === 'medium' ? 'Medium' : 
@@ -297,8 +298,8 @@ function TaskDetailsUser() {
           {/* Progress Update (if task is not completed) */}
           {task.status !== 'completed' && task.status !== 'done' && (
             <div className="mb-8">
-              <h2 className="text-xl font-semibold mb-4">Update Progress</h2>
-              <div className="bg-gray-50 rounded-lg p-4">
+              <h2 className="text-xl font-semibold mb-4 text-slate-100">Update Progress</h2>
+              <div className="bg-slate-950/60 rounded-xl border border-slate-800/70 p-4">
                 <ProgressBar 
                   progress={task.progress || 0}
                   onChange={handleProgressUpdate}
@@ -310,32 +311,32 @@ function TaskDetailsUser() {
           
           {/* GitHub Integration */}
           <div className="mb-8">
-            <h2 className="text-xl font-semibold mb-4">GitHub Integration</h2>
-            <div className="bg-gray-50 rounded-lg p-4">
+            <h2 className="text-xl font-semibold mb-4 text-slate-100">GitHub Integration</h2>
+            <div className="bg-slate-950/60 rounded-xl border border-slate-800/70 p-4">
               {/* Linked GitHub Issues */}
               {githubLinks.length > 0 && (
                 <div className="mb-6">
-                  <h3 className="font-semibold mb-3">Linked GitHub Issues:</h3>
+                  <h3 className="font-semibold mb-3 text-slate-100">Linked GitHub Issues:</h3>
                   <div className="space-y-2">
                     {githubLinks.map((link) => (
-                      <div key={link.id} className="flex items-center justify-between bg-white p-3 rounded border border-gray-200">
+                      <div key={link.id} className="flex items-center justify-between bg-slate-950/60 p-3 rounded border border-slate-800/70">
                         <div>
-                          <span className="font-medium">{link.repo_name}</span>
-                          <span className="mx-2">•</span>
-                          <span>#{link.issue_number} - {link.issue_title}</span>
+                          <span className="font-medium text-slate-100">{link.repo_name}</span>
+                          <span className="mx-2 text-slate-500">•</span>
+                          <span className="text-slate-300">#{link.issue_number} - {link.issue_title}</span>
                         </div>
                         <div className="flex items-center space-x-2">
                           <a 
                             href={`https://github.com/${link.repo_name}/issues/${link.issue_number}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-blue-600 hover:text-blue-800"
+                            className="text-rose-300 hover:text-rose-200"
                           >
                             View
                           </a>
                           <button
                             onClick={() => handleRemoveGithubLink(link.id)}
-                            className="text-red-600 hover:text-red-800"
+                            className="text-rose-300 hover:text-rose-200"
                             disabled={updateLoading}
                           >
                             Unlink
@@ -349,13 +350,13 @@ function TaskDetailsUser() {
               
               {/* Link new GitHub Issue */}
               <div>
-                <h3 className="font-semibold mb-3">Link GitHub Issue:</h3>
+                <h3 className="font-semibold mb-3 text-slate-100">Link GitHub Issue:</h3>
                 {repositories.length > 0 ? (
                   <>
                     <div className="flex flex-col md:flex-row md:items-center gap-2">
                       <div className="flex-1">
                         <select 
-                          className="w-full p-2 border rounded"
+                          className="w-full p-2 border border-slate-700/60 rounded bg-slate-950/60 text-slate-100"
                           value={selectedRepo}
                           onChange={(e) => handleRepoSelect(e.target.value)}
                           disabled={updateLoading}
@@ -371,7 +372,7 @@ function TaskDetailsUser() {
                       
                       <div className="flex-1">
                         <select 
-                          className="w-full p-2 border rounded"
+                          className="w-full p-2 border border-slate-700/60 rounded bg-slate-950/60 text-slate-100"
                           disabled={!selectedRepo || loadingIssues || updateLoading}
                           onChange={(e) => handleLinkIssue(e.target.value)}
                           defaultValue=""
@@ -393,10 +394,10 @@ function TaskDetailsUser() {
                   </>
                 ) : (
                   <div className="text-center py-4">
-                    <p className="text-gray-600 mb-4">Connect your GitHub account to link issues</p>
+                    <p className="text-slate-400 mb-4">Connect your GitHub account to link issues</p>
                     <a 
                       href="/github" 
-                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                      className="px-4 py-2 rounded-full bg-rose-500/90 text-white hover:bg-rose-400"
                     >
                       Connect GitHub Account
                     </a>
@@ -408,23 +409,23 @@ function TaskDetailsUser() {
           
           {/* Comments Section */}
           <div>
-            <h2 className="text-xl font-semibold mb-4">Comments</h2>
-            <div className="bg-gray-50 rounded-lg p-4">
+            <h2 className="text-xl font-semibold mb-4 text-slate-100">Comments</h2>
+            <div className="bg-slate-950/60 rounded-xl border border-slate-800/70 p-4">
               <div className="mb-4">
                 {comments.length > 0 ? (
                   <div className="space-y-4">
                     {comments.map((comment) => (
-                      <div key={comment.id} className="bg-white p-4 rounded-lg border border-gray-200">
+                      <div key={comment.id} className="bg-slate-950/60 p-4 rounded-lg border border-slate-800/70">
                         <div className="flex justify-between items-start">
-                          <span className="font-medium">{comment.author_name}</span>
-                          <span className="text-xs text-gray-500">{formatDate(comment.created_at)}</span>
+                          <span className="font-medium text-slate-200">{comment.author_name}</span>
+                          <span className="text-xs text-slate-500">{formatDate(comment.created_at)}</span>
                         </div>
-                        <p className="mt-2 whitespace-pre-line">{comment.content}</p>
+                        <p className="mt-2 whitespace-pre-line text-slate-200">{comment.content}</p>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-gray-500 text-center py-4">No comments yet</p>
+                  <p className="text-slate-500 text-center py-4">No comments yet</p>
                 )}
               </div>
               
@@ -433,7 +434,7 @@ function TaskDetailsUser() {
                 <textarea
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
-                  className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full p-3 border border-slate-700/60 bg-slate-950/60 rounded-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
                   placeholder="Add a comment..."
                   rows={3}
                 />
@@ -443,8 +444,8 @@ function TaskDetailsUser() {
                     disabled={submittingComment || !newComment.trim()}
                     className={`px-4 py-2 rounded ${
                       submittingComment || !newComment.trim()
-                        ? 'bg-gray-400 cursor-not-allowed'
-                        : 'bg-blue-600 hover:bg-blue-700'
+                        ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                        : 'bg-rose-500/90 hover:bg-rose-400'
                     } text-white`}
                   >
                     {submittingComment ? 'Posting...' : 'Post Comment'}
@@ -454,6 +455,7 @@ function TaskDetailsUser() {
             </div>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

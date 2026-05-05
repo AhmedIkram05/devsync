@@ -61,28 +61,30 @@ const TaskCreation = () => {
   };
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
-      <h1 className="text-2xl font-bold mb-6">Create New Task</h1>
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <div className="container mx-auto p-6 max-w-4xl">
+        <h1 className="text-2xl font-bold mb-6">Create New Task</h1>
       
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-          {error}
-        </div>
-      )}
+        {error && (
+          <div className="bg-rose-500/10 border border-rose-400/40 text-rose-200 px-4 py-3 rounded mb-4">
+            {error}
+          </div>
+        )}
       
-      {loading ? (
-        <div className="flex justify-center my-8">
-          <LoadingSpinner />
-        </div>
-      ) : (
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <TaskForm 
-            onSubmit={handleSubmit} 
-            users={users}
-            projects={projects}
-          />
-        </div>
-      )}
+        {loading ? (
+          <div className="flex justify-center my-8">
+            <LoadingSpinner />
+          </div>
+        ) : (
+          <div className="bg-slate-900/70 rounded-2xl border border-slate-800/70 p-6">
+            <TaskForm 
+              onSubmit={handleSubmit} 
+              users={users}
+              projects={projects}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 };
