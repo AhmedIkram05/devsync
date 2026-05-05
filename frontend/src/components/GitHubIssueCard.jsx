@@ -11,7 +11,7 @@ const GitHubIssueCard = ({ issue, onLinkClick, linkedTaskId, isLinking = false }
   // Determine issue status based on GitHub issue state and labels
   const getIssueStatus = () => {
     if (issue.state === 'closed') {
-      return { text: 'Closed', className: 'bg-gray-100 text-gray-800' };
+      return { text: 'Closed', className: 'bg-slate-700/50 text-slate-300' };
     }
     
     // Check for common status labels
@@ -20,27 +20,27 @@ const GitHubIssueCard = ({ issue, onLinkClick, linkedTaskId, isLinking = false }
       const labelName = (label.name || '').toLowerCase();
       
       if (labelName.includes('bug')) {
-        return { text: 'Bug', className: 'bg-red-100 text-red-800' };
+        return { text: 'Bug', className: 'bg-rose-500/20 text-rose-300' };
       } else if (labelName.includes('feature')) {
-        return { text: 'Feature', className: 'bg-green-100 text-green-800' };
+        return { text: 'Feature', className: 'bg-emerald-500/20 text-emerald-300' };
       } else if (labelName.includes('enhancement')) {
-        return { text: 'Enhancement', className: 'bg-blue-100 text-blue-800' };
+        return { text: 'Enhancement', className: 'bg-sky-500/20 text-sky-300' };
       } else if (labelName.includes('help')) {
-        return { text: 'Help Wanted', className: 'bg-purple-100 text-purple-800' };
+        return { text: 'Help Wanted', className: 'bg-purple-500/20 text-purple-300' };
       }
     }
     
-    return { text: 'Open', className: 'bg-yellow-100 text-yellow-800' };
+    return { text: 'Open', className: 'bg-amber-500/20 text-amber-300' };
   };
   
   const issueStatus = getIssueStatus();
 
   return (
-    <div className="bg-white border rounded-lg hover:shadow-md transition-shadow p-4">
+    <div className="bg-slate-900/70 border border-slate-800/70 rounded-lg hover:shadow-lg transition-shadow p-4">
       <div className="flex justify-between">
         <div>
           <div className="flex items-center mb-2">
-            <svg className="h-4 w-4 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <svg className="h-4 w-4 mr-2 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
             </svg>
             <h3 className="font-medium">
@@ -48,14 +48,14 @@ const GitHubIssueCard = ({ issue, onLinkClick, linkedTaskId, isLinking = false }
                 href={issue.html_url} 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-800"
+                className="text-rose-400 hover:text-rose-300"
               >
                 #{issue.number} {issue.title}
               </a>
             </h3>
           </div>
-          <p className="text-sm text-gray-500 mb-2">
-            Opened by <span className="font-medium">{issue.user?.login || 'Unknown'}</span> on {formatDate(issue.created_at)}
+          <p className="text-sm text-slate-400 mb-2">
+            Opened by <span className="font-medium text-slate-300">{issue.user?.login || 'Unknown'}</span> on {formatDate(issue.created_at)}
           </p>
         </div>
         <span className={`px-2 py-1 h-6 rounded-full text-xs ${issueStatus.className}`}>
@@ -64,7 +64,7 @@ const GitHubIssueCard = ({ issue, onLinkClick, linkedTaskId, isLinking = false }
       </div>
       
       {issue.body && (
-        <div className="text-sm text-gray-600 mt-3 mb-3 line-clamp-2">
+        <div className="text-sm text-slate-300 mt-3 mb-3 line-clamp-2">
           {issue.body}
         </div>
       )}
@@ -74,14 +74,14 @@ const GitHubIssueCard = ({ issue, onLinkClick, linkedTaskId, isLinking = false }
           {issue.labels?.slice(0, 3).map(label => (
             <span 
               key={label.id || label.name} 
-              className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+              className="px-2 py-1 rounded-full text-xs bg-sky-500/20 text-sky-300"
               title={label.description || label.name}
             >
               {label.name}
             </span>
           ))}
           {(issue.labels?.length > 3) && (
-            <span className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800">
+            <span className="px-2 py-1 rounded-full text-xs bg-slate-700/50 text-slate-300">
               +{issue.labels.length - 3} more
             </span>
           )}
@@ -91,8 +91,8 @@ const GitHubIssueCard = ({ issue, onLinkClick, linkedTaskId, isLinking = false }
           <button
             onClick={() => onLinkClick(issue.id)}
             disabled={isLinking}
-            className={`px-3 py-1 rounded text-sm ${
-              isLinking ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'
+            className={`px-3 py-1 rounded-full text-sm ${
+              isLinking ? 'bg-slate-800/50 text-slate-500 cursor-not-allowed' : 'bg-rose-500/90 hover:bg-rose-600/90 text-white'
             }`}
           >
             {isLinking ? 'Linking...' : 'Link Issue'}
