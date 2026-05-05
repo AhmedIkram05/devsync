@@ -61,20 +61,23 @@ const Login = () => {
   
   // Rest of the component remains unchanged
   return (
-    <div className="flex justify-center items-center min-h-screen bg-gray-100">
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <h1 className="text-3xl font-bold text-center mb-6">DevSync</h1>
-        <h2 className="text-xl text-gray-600 text-center mb-6">Sign In to Your Account</h2>
+    <div className="flex justify-center items-center min-h-screen bg-slate-950">
+      <div className="w-full max-w-md rounded-2xl border border-slate-800/80 bg-slate-900/80 p-8 shadow-2xl">
+        <div className="text-center mb-6">
+          <p className="text-xs uppercase tracking-[0.35em] text-slate-500">DevSync</p>
+          <h1 className="text-3xl font-semibold text-slate-100 mt-3">Welcome back</h1>
+          <h2 className="text-sm text-slate-400 mt-2">Sign in to continue</h2>
+        </div>
         
         {(loginError || authError) && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          <div className="bg-rose-500/10 border border-rose-400/40 text-rose-200 px-4 py-3 rounded mb-4">
             {loginError || authError}
           </div>
         )}
         
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2">
+            <label className="block text-slate-300 text-sm font-medium mb-2">
               Email Address
             </label>
             <input
@@ -82,13 +85,13 @@ const Login = () => {
               name="email"
               value={credentials.email}
               onChange={handleChange}
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+              className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
               placeholder="you@example.com"
             />
           </div>
           
           <div className="mb-6">
-            <label className="block text-gray-700 text-sm font-bold mb-2">
+            <label className="block text-slate-300 text-sm font-medium mb-2">
               Password
             </label>
             <input
@@ -96,7 +99,7 @@ const Login = () => {
               name="password"
               value={credentials.password}
               onChange={handleChange}
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+              className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
               placeholder="********"
             />
           </div>
@@ -104,7 +107,7 @@ const Login = () => {
           <div className="flex items-center justify-between mb-6">
             <button
               type="submit"
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline w-full"
+              className="w-full rounded-full bg-rose-500/90 py-2 px-4 text-white font-semibold hover:bg-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
               disabled={isSubmitting || loading}
             >
               {isSubmitting || loading ? "Signing In..." : "Sign In"}
@@ -112,9 +115,9 @@ const Login = () => {
           </div>
           
           <div className="text-center">
-            <p className="text-gray-600">
+            <p className="text-slate-400">
               Don't have an account?{" "}
-              <Link to="/register" className="text-blue-600 hover:text-blue-800">
+              <Link to="/register" className="text-rose-300 hover:text-rose-200">
                 Create one now
               </Link>
             </p>
