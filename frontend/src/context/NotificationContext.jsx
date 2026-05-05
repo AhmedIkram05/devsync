@@ -306,7 +306,6 @@ export const NotificationProvider = ({ children }) => {
     return () => {
       isMountedRef.current = false;
       if (socketRef.current) {
-        console.log('Cleaning up socket connection');
         socketRef.current.disconnect();
         socketRef.current = null;
       }
