@@ -120,7 +120,7 @@ jobs:
               --coverageReporters=text-summary \
               --coverageReporters=lcov \
               --maxWorkers=50% \
-              --coverageThreshold='{"global":{"branches":78,"functions":80,"lines":80,"statements":80}}'
+              --coverageThreshold='{"global":{"branches":80,"functions":80,"lines":80,"statements":80}}'
           else
             CI=true npm test -- \
               --watchAll=false \
