@@ -19,15 +19,15 @@ const formatDate = (value) => {
 
 const statusBadgeClass = (status) => {
   const statusMap = {
-    todo: 'bg-gray-100 text-gray-800',
-    backlog: 'bg-gray-100 text-gray-800',
-    in_progress: 'bg-yellow-100 text-yellow-800',
-    review: 'bg-blue-100 text-blue-800',
-    done: 'bg-green-100 text-green-800',
-    completed: 'bg-green-100 text-green-800'
+    todo: 'bg-amber-500/20 text-amber-300 border border-amber-400/40',
+    backlog: 'bg-slate-700/50 text-slate-300 border border-slate-600/40',
+    in_progress: 'bg-sky-500/20 text-sky-300 border border-sky-400/40',
+    review: 'bg-rose-500/20 text-rose-300 border border-rose-400/40',
+    done: 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40',
+    completed: 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
   };
 
-  return statusMap[status] || 'bg-gray-100 text-gray-800';
+  return statusMap[status] || 'bg-slate-800/40 text-slate-300';
 };
 
 const formatTaskStatus = (status) => {
@@ -139,26 +139,26 @@ const ProjectDetails = () => {
   }
 
   return (
-    <div className="bg-gray-50 min-h-screen p-4 md:p-6">
+    <div className="bg-slate-950 min-h-screen p-4 md:p-6 text-slate-100">
       <div className="max-w-6xl mx-auto">
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <div className="bg-slate-900/70 border border-slate-800/70 rounded-2xl shadow-md p-6 mb-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
-              <p className="text-gray-600 mt-2">{project.description || 'No description provided.'}</p>
+              <h1 className="text-2xl font-bold text-slate-100">{project.name}</h1>
+              <p className="text-slate-400 mt-2">{project.description || 'No description provided.'}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {isAdmin && (
                 <Link
                   to={`/admin/projects/${project.id}/edit`}
-                  className="inline-flex items-center px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+                  className="inline-flex items-center px-4 py-2 rounded-full bg-rose-500/90 text-white hover:bg-rose-400"
                 >
                   Edit Project
                 </Link>
               )}
               <button
                 onClick={() => navigate(fallbackRoute)}
-                className="inline-flex items-center px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
+                className="inline-flex items-center px-4 py-2 rounded-full border border-slate-700/70 text-slate-300 hover:text-slate-100 hover:border-slate-500"
               >
                 Back
               </button>
@@ -172,7 +172,7 @@ const ProjectDetails = () => {
             <InfoCard label="Completion" value={`${summary.completionPercentage}%`} />
           </div>
 
-          <div className="mt-5 flex flex-wrap gap-3 text-sm text-gray-600">
+          <div className="mt-5 flex flex-wrap gap-3 text-sm text-slate-400">
             <span>Total Tasks: {summary.totalTasks}</span>
             <span>Completed: {summary.completedTasks}</span>
             {project.creator_name && <span>Created By: {project.creator_name}</span>}
@@ -181,7 +181,7 @@ const ProjectDetails = () => {
                 href={project.github_repo}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-800"
+                className="text-rose-400 hover:text-rose-300"
               >
                 Open Repository
               </a>
@@ -190,43 +190,43 @@ const ProjectDetails = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold mb-4">Project Tasks</h2>
+          <div className="lg:col-span-2 bg-slate-900/70 border border-slate-800/70 rounded-2xl shadow-md p-6">
+            <h2 className="text-xl font-semibold mb-4 text-slate-100">Project Tasks</h2>
 
             {tasks.length === 0 ? (
-              <div className="text-center py-8 border rounded bg-gray-50 text-gray-600">
+              <div className="text-center py-8 border rounded-lg border-slate-700/70 bg-slate-800/30 text-slate-400">
                 No tasks are currently associated with this project.
               </div>
             ) : (
-              <div className="overflow-x-auto border rounded-lg">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+              <div className="overflow-x-auto border rounded-lg border-slate-700/70">
+                <table className="min-w-full divide-y divide-slate-700/70">
+                  <thead className="bg-slate-800/60">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Title</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Progress</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Deadline</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Action</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Title</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Progress</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Deadline</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-slate-900/40 divide-y divide-slate-700/70">
                     {tasks.map((task) => (
-                      <tr key={task.id} className="hover:bg-gray-50">
+                      <tr key={task.id} className="hover:bg-slate-800/40">
                         <td className="px-4 py-3">
-                          <div className="font-medium text-gray-900">{task.title}</div>
-                          <div className="text-sm text-gray-500 truncate max-w-md">{task.description || 'No description'}</div>
+                          <div className="font-medium text-slate-100">{task.title}</div>
+                          <div className="text-sm text-slate-500 truncate max-w-md">{task.description || 'No description'}</div>
                         </td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold ${statusBadgeClass(task.status)}`}>
                             {formatTaskStatus(task.status)}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">{task.progress || 0}%</td>
-                        <td className="px-4 py-3 text-sm text-gray-700">{formatDate(task.deadline)}</td>
+                        <td className="px-4 py-3 text-sm text-slate-300">{task.progress || 0}%</td>
+                        <td className="px-4 py-3 text-sm text-slate-300">{formatDate(task.deadline)}</td>
                         <td className="px-4 py-3">
                           <Link
                             to={`/tasks/${task.id}`}
-                            className="inline-flex px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
+                            className="inline-flex px-3 py-1.5 rounded-full bg-rose-500/80 text-white text-sm hover:bg-rose-400"
                           >
                             View Task
                           </Link>
@@ -239,19 +239,19 @@ const ProjectDetails = () => {
             )}
           </div>
 
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold mb-4">Team Members</h2>
+          <div className="bg-slate-900/70 border border-slate-800/70 rounded-2xl shadow-md p-6">
+            <h2 className="text-xl font-semibold mb-4 text-slate-100">Team Members</h2>
             {Array.isArray(project.team_members) && project.team_members.length > 0 ? (
               <ul className="space-y-3">
                 {project.team_members.map((member) => (
-                  <li key={member.id} className="p-3 rounded border border-gray-200 bg-gray-50">
-                    <p className="font-medium text-gray-900">{member.name}</p>
-                    <p className="text-sm text-gray-600">{member.role}</p>
+                  <li key={member.id} className="p-3 rounded-lg border border-slate-700/70 bg-slate-800/30">
+                    <p className="font-medium text-slate-100">{member.name}</p>
+                    <p className="text-sm text-slate-400">{member.role}</p>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-gray-600">No team members assigned to this project.</p>
+              <p className="text-slate-400">No team members assigned to this project.</p>
             )}
           </div>
         </div>
@@ -261,9 +261,9 @@ const ProjectDetails = () => {
 };
 
 const InfoCard = ({ label, value }) => (
-  <div className="border rounded-lg p-4 bg-gray-50">
-    <p className="text-sm text-gray-600">{label}</p>
-    <p className="text-lg font-semibold text-gray-900 capitalize">{value}</p>
+  <div className="border border-slate-700/70 rounded-lg p-4 bg-slate-800/30">
+    <p className="text-sm text-slate-400">{label}</p>
+    <p className="text-lg font-semibold text-slate-100 capitalize">{value}</p>
   </div>
 );
 
