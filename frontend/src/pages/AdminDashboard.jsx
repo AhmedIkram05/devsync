@@ -9,53 +9,53 @@ const StatCard = ({ title, value, change, icon, color, currentTimeRange }) => {
   const getColorClasses = (colorName) => {
     switch (colorName) {
       case 'primary':
-        return 'bg-primary-50 text-primary-700';
+        return 'bg-rose-500/10 text-rose-200 border border-rose-400/20';
       case 'secondary':
-        return 'bg-blue-50 text-blue-700';
+        return 'bg-sky-500/10 text-sky-200 border border-sky-400/20';
       case 'success':
-        return 'bg-green-50 text-green-700';
+        return 'bg-emerald-500/10 text-emerald-200 border border-emerald-400/20';
       case 'warning':
-        return 'bg-yellow-50 text-yellow-700';
+        return 'bg-amber-500/10 text-amber-200 border border-amber-400/20';
       case 'error':
-        return 'bg-red-50 text-red-700';
+        return 'bg-rose-500/10 text-rose-200 border border-rose-400/20';
       default:
-        return 'bg-neutral-50 text-neutral-700';
+        return 'bg-slate-900/60 text-slate-200 border border-slate-800/70';
     }
   };
 
   return (
-    <div className="bg-white overflow-hidden shadow-card rounded-lg">
+    <div className="bg-slate-900/70 overflow-hidden border border-slate-800/70 rounded-2xl">
       <div className="p-5">
         <div className="flex items-center">
-          <div className={`flex-shrink-0 rounded-md p-3 ${getColorClasses(color)}`}>
+          <div className={`flex-shrink-0 rounded-xl p-3 ${getColorClasses(color)}`}>
             {icon}
           </div>
           <div className="ml-5 w-0 flex-1">
             <dl>
-              <dt className="text-sm font-medium text-neutral-500 truncate">{title}</dt>
+              <dt className="text-sm font-medium text-slate-400 truncate">{title}</dt>
               <dd>
-                <div className="text-lg font-medium text-neutral-900">{value}</div>
+                <div className="text-lg font-medium text-slate-100">{value}</div>
               </dd>
               {change !== undefined && (
                 <dd className="flex items-center text-xs mt-1">
                   {change > 0 ? (
-                    <span className="flex items-center text-green-600">
+                    <span className="flex items-center text-emerald-300">
                       <svg className="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 10l7-7m0 0l7 7m-7-7v18" />
                       </svg>
                       {change}% increase
                     </span>
                   ) : change < 0 ? (
-                    <span className="flex items-center text-red-600">
+                    <span className="flex items-center text-rose-300">
                       <svg className="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                       </svg>
                       {Math.abs(change)}% decrease
                     </span>
                   ) : (
-                    <span className="text-neutral-500">No change</span>
+                    <span className="text-slate-500">No change</span>
                   )}
-                  <span className="ml-2 text-neutral-500">since last {currentTimeRange}</span>
+                  <span className="ml-2 text-slate-500">since last {currentTimeRange}</span>
                 </dd>
               )}
             </dl>
@@ -98,12 +98,12 @@ const AdminDashboard = () => {
   };
 
   return (
-    <div className="bg-neutral-50 min-h-screen">
+    <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-neutral-900">Admin Dashboard</h1>
-            <p className="mt-1 text-sm text-neutral-600">
+            <h1 className="text-2xl font-bold text-slate-100">Admin Dashboard</h1>
+            <p className="mt-1 text-sm text-slate-400">
               Overview of projects, tasks, and team progress
             </p>
           </div>
@@ -112,7 +112,7 @@ const AdminDashboard = () => {
             <select
               value={timeRange}
               onChange={(e) => setTimeRange(e.target.value)}
-              className="rounded-md border-neutral-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
+              className="rounded-md border border-slate-700/70 bg-slate-900/80 text-slate-200 shadow-sm focus:border-rose-400 focus:ring-rose-400 text-sm"
             >
               <option value="week">Last 7 days</option>
               <option value="month">Last 30 days</option>
@@ -121,7 +121,7 @@ const AdminDashboard = () => {
             
             <button
               onClick={handleRefresh}
-              className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+              className="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium text-white bg-rose-500/90 hover:bg-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -136,16 +136,16 @@ const AdminDashboard = () => {
             <LoadingSpinner size="lg" />
           </div>
         ) : error ? (
-          <div className="bg-error-50 p-4 rounded-lg border border-error-300 text-error-800">
+          <div className="bg-rose-500/10 p-4 rounded-lg border border-rose-400/40 text-rose-200">
             <div className="flex">
-              <svg className="h-5 w-5 text-error-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="h-5 w-5 text-rose-300 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <p>{error}</p>
             </div>
             <button 
               onClick={handleRefresh}
-              className="mt-3 text-sm font-medium text-error-600 hover:text-error-500"
+              className="mt-3 text-sm font-medium text-rose-300 hover:text-rose-200"
             >
               Try again
             </button>
@@ -210,39 +210,39 @@ const AdminDashboard = () => {
             {/* Project & Task Overview */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Recent projects */}
-              <div className="lg:col-span-1 bg-white rounded-lg shadow-card overflow-hidden">
-                <div className="px-4 py-5 sm:px-6 border-b border-neutral-200 flex justify-between items-center">
-                  <h3 className="text-lg leading-6 font-medium text-neutral-900">Recent Projects</h3>
-                  <Link to="/admin/projects" className="text-sm text-primary-600 hover:text-primary-500">
+              <div className="lg:col-span-1 bg-slate-900/70 rounded-2xl border border-slate-800/70 overflow-hidden">
+                <div className="px-4 py-5 sm:px-6 border-b border-slate-800/70 flex justify-between items-center">
+                  <h3 className="text-lg leading-6 font-medium text-slate-100">Recent Projects</h3>
+                  <Link to="/admin/projects" className="text-sm text-rose-300 hover:text-rose-200">
                     View all
                   </Link>
                 </div>
-                <div className="bg-white shadow overflow-hidden">
-                  <ul className="divide-y divide-neutral-200">
+                <div className="bg-slate-900/70 overflow-hidden">
+                  <ul className="divide-y divide-slate-800/70">
                     {dashboardData?.recentProjects?.length > 0 ? (
                       dashboardData.recentProjects.map((project) => (
-                        <li key={project.id} className="px-4 py-4 sm:px-6 hover:bg-neutral-50">
+                        <li key={project.id} className="px-4 py-4 sm:px-6 hover:bg-slate-900/90">
                           <Link to={`/projects/${project.id}`} className="block">
                             <div className="flex items-center justify-between">
-                              <p className="text-sm font-medium text-primary-700 truncate">{project.name}</p>
+                              <p className="text-sm font-medium text-rose-200 truncate">{project.name}</p>
                               <div className="ml-2 flex-shrink-0 flex">
                                 {project.status === 'active' && (
-                                  <p className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                  <p className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-emerald-500/10 text-emerald-200">
                                     Active
                                   </p>
                                 )}
                                 {project.status === 'completed' && (
-                                  <p className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                                  <p className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-sky-500/10 text-sky-200">
                                     Completed
                                   </p>
                                 )}
                                 {(project.status === 'on-hold' || project.status === 'on_hold') && (
-                                  <p className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                                  <p className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-amber-500/10 text-amber-200">
                                     On Hold
                                   </p>
                                 )}
                                 {project.status === 'cancelled' && (
-                                  <p className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                                  <p className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-rose-500/10 text-rose-200">
                                     Cancelled
                                   </p>
                                 )}
@@ -250,14 +250,14 @@ const AdminDashboard = () => {
                             </div>
                             <div className="mt-2 flex justify-between">
                               <div className="sm:flex">
-                                <p className="flex items-center text-sm text-neutral-500">
-                                  <svg className="flex-shrink-0 mr-1.5 h-5 w-5 text-neutral-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <p className="flex items-center text-sm text-slate-400">
+                                  <svg className="flex-shrink-0 mr-1.5 h-5 w-5 text-slate-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                                     <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
                                   </svg>
                                   {new Date(project.created_at).toLocaleDateString()}
                                 </p>
-                                <p className="mt-2 flex items-center text-sm text-neutral-500">
-                                  <svg className="flex-shrink-0 mr-1.5 h-5 w-5 text-neutral-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <p className="mt-2 flex items-center text-sm text-slate-400">
+                                  <svg className="flex-shrink-0 mr-1.5 h-5 w-5 text-slate-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
                                     <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
                                   </svg>
                                   {project.task_count} Tasks
@@ -268,7 +268,7 @@ const AdminDashboard = () => {
                         </li>
                       ))
                     ) : (
-                      <li className="px-4 py-4 sm:px-6 text-sm text-neutral-500">
+                      <li className="px-4 py-4 sm:px-6 text-sm text-slate-500">
                         No recent projects found.
                       </li>
                     )}

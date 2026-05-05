@@ -4,12 +4,12 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import { projectService } from '../services/utils/api';
 
 const statusClasses = {
-  active: 'bg-green-100 text-green-800',
-  completed: 'bg-blue-100 text-blue-800',
-  on_hold: 'bg-yellow-100 text-yellow-800',
-  'on-hold': 'bg-yellow-100 text-yellow-800',
-  planning: 'bg-purple-100 text-purple-800',
-  cancelled: 'bg-red-100 text-red-800'
+  active: 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40',
+  completed: 'bg-sky-500/20 text-sky-300 border border-sky-400/40',
+  on_hold: 'bg-amber-500/20 text-amber-300 border border-amber-400/40',
+  'on-hold': 'bg-amber-500/20 text-amber-300 border border-amber-400/40',
+  planning: 'bg-rose-500/20 text-rose-300 border border-rose-400/40',
+  cancelled: 'bg-slate-700/50 text-slate-300 border border-slate-600/40'
 };
 
 const statusLabels = {
@@ -81,30 +81,30 @@ const AdminProjects = () => {
   }
 
   return (
-    <div className="bg-gray-50 min-h-screen p-4 md:p-6">
+    <div className="bg-slate-950 min-h-screen p-4 md:p-6 text-slate-100">
       <div className="max-w-7xl mx-auto">
-        <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="bg-slate-900/70 border border-slate-800/70 rounded-2xl shadow-md p-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Projects</h1>
-              <p className="text-sm text-gray-600 mt-1">Browse all projects and open project details.</p>
+              <h1 className="text-2xl font-bold text-slate-100">Projects</h1>
+              <p className="text-sm text-slate-400 mt-1">Browse all projects and open project details.</p>
             </div>
             <div className="flex items-center gap-3">
               <button
                 onClick={loadProjects}
-                className="inline-flex items-center px-4 py-2 rounded bg-gray-700 text-white hover:bg-gray-800"
+                className="inline-flex items-center px-4 py-2 rounded-full bg-slate-800/80 text-slate-200 hover:bg-slate-700/80 border border-slate-700/70"
               >
                 Refresh
               </button>
               <Link
                 to="/admin/projects/new"
-                className="inline-flex items-center px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+                className="inline-flex items-center px-4 py-2 rounded-full bg-rose-500/90 text-white hover:bg-rose-400"
               >
                 Create Project
               </Link>
               <Link
                 to="/admin"
-                className="inline-flex items-center px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
+                className="inline-flex items-center px-4 py-2 rounded-full border border-slate-700/70 text-slate-300 hover:text-slate-100 hover:border-slate-500"
               >
                 Back to Dashboard
               </Link>
@@ -112,7 +112,7 @@ const AdminProjects = () => {
           </div>
 
           <div className="mb-5">
-            <label htmlFor="project-search" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="project-search" className="block text-sm font-medium text-slate-300 mb-1">
               Search Projects
             </label>
             <input
@@ -121,43 +121,43 @@ const AdminProjects = () => {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search by name, status, or description"
-              className="w-full md:w-96 p-2 border border-gray-300 rounded-md"
+              className="w-full md:w-96 p-2 border border-slate-700/70 rounded-lg bg-slate-800/50 text-slate-100 placeholder-slate-500"
             />
           </div>
 
           {error && (
-            <div className="mb-5 p-3 rounded border border-red-300 bg-red-50 text-red-700">
+            <div className="mb-5 p-3 rounded-lg border border-rose-400/40 bg-rose-500/10 text-rose-200">
               {error}
             </div>
           )}
 
           {filteredProjects.length === 0 ? (
-            <div className="text-center py-10 border rounded bg-gray-50 text-gray-600">
+            <div className="text-center py-10 border rounded-lg border-slate-700/70 bg-slate-800/30 text-slate-400">
               No projects found.
             </div>
           ) : (
-            <div className="overflow-x-auto border rounded-lg">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+            <div className="overflow-x-auto border rounded-lg border-slate-700/70">
+              <table className="min-w-full divide-y divide-slate-700/70">
+                <thead className="bg-slate-800/60">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Name</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Status</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Created</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Updated</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">GitHub Repo</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Action</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Name</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Status</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Created</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Updated</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">GitHub Repo</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Action</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-slate-900/40 divide-y divide-slate-700/70">
                   {filteredProjects.map((project) => {
-                    const statusClass = statusClasses[project.status] || 'bg-gray-100 text-gray-800';
+                    const statusClass = statusClasses[project.status] || 'bg-slate-800/40 text-slate-300';
                     const statusLabel = statusLabels[project.status] || project.status || 'unknown';
 
                     return (
-                      <tr key={project.id} className="hover:bg-gray-50">
+                      <tr key={project.id} className="hover:bg-slate-800/40">
                         <td className="px-4 py-3">
-                          <div className="font-medium text-gray-900">{project.name}</div>
-                          <div className="text-sm text-gray-500 truncate max-w-md">
+                          <div className="font-medium text-slate-100">{project.name}</div>
+                          <div className="text-sm text-slate-500 truncate max-w-md">
                             {project.description || 'No description'}
                           </div>
                         </td>
@@ -166,15 +166,15 @@ const AdminProjects = () => {
                             {statusLabel}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">{formatDate(project.created_at)}</td>
-                        <td className="px-4 py-3 text-sm text-gray-700">{formatDate(project.updated_at)}</td>
-                        <td className="px-4 py-3 text-sm text-gray-700">
+                        <td className="px-4 py-3 text-sm text-slate-300">{formatDate(project.created_at)}</td>
+                        <td className="px-4 py-3 text-sm text-slate-300">{formatDate(project.updated_at)}</td>
+                        <td className="px-4 py-3 text-sm text-slate-300">
                           {project.github_repo ? (
                             <a
                               href={project.github_repo}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-blue-600 hover:text-blue-800"
+                              className="text-rose-400 hover:text-rose-300"
                             >
                               Open Repository
                             </a>
@@ -186,13 +186,13 @@ const AdminProjects = () => {
                           <div className="flex flex-wrap gap-2">
                             <Link
                               to={`/projects/${project.id}`}
-                              className="inline-flex px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700"
+                              className="inline-flex px-3 py-1.5 rounded-full bg-rose-500/80 text-white text-sm hover:bg-rose-400"
                             >
                               View Details
                             </Link>
                             <Link
                               to={`/admin/projects/${project.id}/edit`}
-                              className="inline-flex px-3 py-1.5 rounded border border-gray-300 text-gray-700 text-sm hover:bg-gray-100"
+                              className="inline-flex px-3 py-1.5 rounded-full border border-slate-700/70 text-slate-300 text-sm hover:text-slate-100 hover:border-slate-500"
                             >
                               Edit
                             </Link>

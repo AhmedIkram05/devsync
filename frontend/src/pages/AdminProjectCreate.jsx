@@ -69,16 +69,16 @@ const AdminProjectCreate = () => {
   };
 
   return (
-    <div className="bg-gray-50 min-h-screen p-4 md:p-6">
+    <div className="bg-slate-950 min-h-screen p-4 md:p-6 text-slate-100">
       <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="bg-slate-900/70 border border-slate-800/70 rounded-2xl shadow-md p-6">
           <div className="mb-6">
-            <h1 className="text-2xl font-bold text-gray-900">Create Project</h1>
-            <p className="mt-1 text-sm text-gray-600">Set up a new project and assign team members.</p>
+            <h1 className="text-2xl font-bold text-slate-100">Create Project</h1>
+            <p className="mt-1 text-sm text-slate-400">Set up a new project and assign team members.</p>
           </div>
 
           {error && (
-            <div className="mb-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="mb-4 rounded-lg border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
               {error}
             </div>
           )}
