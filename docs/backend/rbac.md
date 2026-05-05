@@ -13,6 +13,7 @@ DevSync has three primary roles with increasing levels of permission:
 ## Permissions by Role
 
 ### Developer Permissions
+
 - View assigned tasks and created tasks
 - Update tasks assigned to them
 - Add comments to tasks
@@ -21,7 +22,9 @@ DevSync has three primary roles with increasing levels of permission:
 - Link GitHub account
 
 ### Team Lead Permissions
+
 All Developer permissions, plus:
+
 - Create new tasks
 - Assign tasks to team members
 - View team statistics and metrics
@@ -29,7 +32,9 @@ All Developer permissions, plus:
 - View all team member profiles
 
 ### Admin Permissions
+
 All Team Lead permissions, plus:
+
 - Delete tasks
 - Manage users (create, update, delete)
 - Modify system settings
@@ -61,6 +66,7 @@ All Team Lead permissions, plus:
 ## Implementation Details
 
 The RBAC system is implemented using:
+
 1. JWT tokens with role claims
 2. Custom permission decorators for route protection
 3. Role hierarchy enforcement
@@ -69,6 +75,7 @@ The RBAC system is implemented using:
 ## Frontend Integration
 
 For frontend developers:
+
 - Use the token's decoded payload to determine user role
 - Hide UI elements based on permissions (not just disable them)
 - Handle 403 responses by redirecting to appropriate error pages
@@ -78,13 +85,14 @@ For frontend developers:
 ### Handling Permission Errors
 
 When a user attempts an unauthorised action, the API returns:
+
 - HTTP status code 403
 - JSON response with "message" field explaining the error
 
 Frontend should:
+
 1. Display appropriate error message
 2. Not attempt to retry the request
 3. Guide the user to appropriate actions they are permitted to take
 
 ## Example RBAC Usage in Code
-

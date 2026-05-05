@@ -1,47 +1,51 @@
-COMPOSE_FILE := docker-compose.local-postgres.yml
-PYTHON := ./.venv/bin/python
+COMPOSE_DB := docker-compose.local-postgres.yml
+COMPOSE_BACKEND := docker-compose.backend-local.yml
 
-.PHONY: db-up db-down db-reset db-setup db-inspect db-status
+DC_DB := docker compose -f $(COMPOSE_DB)
+DC_ALL := docker compose -f $(COMPOSE_DB) -f $(COMPOSE_BACKEND)
 
-# PostgreSQL database Dockertargets
+.PHONY: db-up db-down db-inspect db-logs db-reset
+.PHONY: backend-build backend-up backend-down backend-logs
+.PHONY: up down reset
+
+# Database
 db-up:
-	docker compose -f $(COMPOSE_FILE) up -d --wait
+	$(DC_DB) up -d --wait
 
 db-down:
-	docker compose -f $(COMPOSE_FILE) down
-
-db-reset:
-	docker compose -f $(COMPOSE_FILE) down -v
-	docker compose -f $(COMPOSE_FILE) up -d --wait
-	$(PYTHON) backend/src/db/scripts/setup_database.py
-
-db-setup:
-	$(PYTHON) backend/src/db/scripts/setup_database.py
+	$(DC_DB) down
 
 db-inspect:
-	$(PYTHON) backend/src/db/scripts/inspect_database.py
+	$(DC_DB) ps
 
-db-status:
-	docker compose -f $(COMPOSE_FILE) ps
+db-logs:
+	$(DC_DB) logs -f
 
-# Backend Docker targets
+db-reset:
+	$(DC_DB) down -v
+	$(DC_DB) up -d --wait
+
+# Backend
 backend-build:
-	docker compose -f $(COMPOSE_FILE) -f docker-compose.backend-local.yml build
+	$(DC_ALL) build backend
 
 backend-up:
-	docker compose -f $(COMPOSE_FILE) -f docker-compose.backend-local.yml up -d
+	$(DC_ALL) up -d backend
 
 backend-down:
-	docker compose -f $(COMPOSE_FILE) -f docker-compose.backend-local.yml down
+	$(DC_ALL) stop backend
 
 backend-logs:
-	docker compose -f $(COMPOSE_FILE) -f docker-compose.backend-local.yml logs -f backend
+	$(DC_ALL) logs -f backend
 
-# PostgreSQL and Backend Combined Docker Targets
-devsync up:
-	docker compose -f $(COMPOSE_FILE) -f docker-compose.backend-local.yml up -d
-	docker compose -f $(COMPOSE_FILE) up -d --wait
+# Combined
+up:
+	$(DC_ALL) up -d --wait
 
-devsync down:
-	docker compose -f $(COMPOSE_FILE) -f docker-compose.backend-local.yml down
-	docker compose -f $(COMPOSE_FILE) down
+down:
+	$(DC_ALL) down
+
+reset:
+	$(DC_ALL) down
+	$(DC_DB) down -v
+	$(DC_ALL) up -d --wait
