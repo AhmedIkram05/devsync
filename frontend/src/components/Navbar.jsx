@@ -77,7 +77,7 @@ const Navbar = () => {
             </>
           ) : (
             <>
-              <Link to="/clientdashboard" className="hover:text-gray-300 transition">
+              <Link to="/BasicDashboard" className="hover:text-gray-300 transition">
                 Dashboard
               </Link>
               <Link to="/tasks" className="hover:text-gray-300 transition">
@@ -195,7 +195,7 @@ const Navbar = () => {
             </>
           ) : (
             <>
-              <Link to="/clientdashboard" className="block px-3 py-2 hover:bg-blue-700 transition">
+              <Link to="/BasicDashboard" className="block px-3 py-2 hover:bg-blue-700 transition">
                 Dashboard
               </Link>
               <Link to="/tasks" className="block px-3 py-2 hover:bg-blue-700 transition">

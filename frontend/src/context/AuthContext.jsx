@@ -175,7 +175,7 @@ export const AuthProvider = ({ children }) => {
           // Navigate to the appropriate dashboard with state to prevent loops
           const redirectPath =
             location.state?.from ||
-            (userWithToken.role === "admin" ? "/admin" : "/clientdashboard");
+            (userWithToken.role === "admin" ? "/admin" : "/BasicDashboard");
           navigate(redirectPath, { replace: true });
         }, 100);
         

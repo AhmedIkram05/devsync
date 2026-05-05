@@ -171,7 +171,7 @@ describe('ProjectDetails page', () => {
     expect(console.error).toHaveBeenCalledWith('Failed to load project details:', expect.any(Error));
 
     fireEvent.click(screen.getByRole('button', { name: /go back/i }));
-    expect(mockNavigate).toHaveBeenCalledWith('/clientdashboard');
+    expect(mockNavigate).toHaveBeenCalledWith('/BasicDashboard');
   });
 
   test('hides edit link for non-admin users', async () => {

@@ -475,10 +475,10 @@ describe('api utilities', () => {
     expect(stats.tasks.active).toBe(0);
   });
 
-  test('dashboardService.getClientDashboardStats returns fallback on error', async () => {
+  test('dashboardService.getBasicDashboardStats returns fallback on error', async () => {
     global.fetch.mockRejectedValue(new Error('client down'));
 
-    const stats = await dashboardService.getClientDashboardStats();
+    const stats = await dashboardService.getBasicDashboardStats();
     expect(stats.tasks.active).toBe(0);
     expect(stats.repositories).toEqual([]);
   });

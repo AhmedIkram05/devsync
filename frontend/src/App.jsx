@@ -13,7 +13,7 @@ import Login from "./pages/Login";
 import Landing from "./pages/Landing";
 import Navbar from "./components/Navbar";
 import GitHubConnectPrompt from "./components/GitHubConnectPrompt";
-import ClientDashboard from "./pages/clientdashboard";
+import BasicDashboard from "./pages/BasicDashboard";
 import TaskDetailsUser from "./pages/TaskDetailsUser";
 import GitHubIntegrationDetail from "./pages/GithubIntegrationDetail";
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -31,7 +31,7 @@ const MEMBER_ROLES = [ROLES.DEVELOPER, ROLES.TEAM_LEAD];
 const AUTHENTICATED_ROLES = [ROLES.DEVELOPER, ROLES.TEAM_LEAD, ROLES.ADMIN];
 const TASK_CREATOR_ROLES = [ROLES.TEAM_LEAD, ROLES.ADMIN];
 
-const getDashboardPath = (role) => (role === ROLES.ADMIN ? '/admin' : '/clientdashboard');
+const getDashboardPath = (role) => (role === ROLES.ADMIN ? '/admin' : '/BasicDashboard');
 
 // Protected route wrapper component - Completely rewritten to prevent infinite loops
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
@@ -113,15 +113,15 @@ function AppRoutes() {
         } />
         
         {/* Developer and Team Lead Routes */}
-        <Route path="/clientdashboard" element={
+        <Route path="/BasicDashboard" element={
           <ProtectedRoute allowedRoles={MEMBER_ROLES}>
-            <ClientDashboard />
+            <BasicDashboard />
           </ProtectedRoute>
         } />
         
         <Route path="/dashboard/client" element={
           <ProtectedRoute allowedRoles={MEMBER_ROLES}>
-            <ClientDashboard />
+            <BasicDashboard />
           </ProtectedRoute>
         } />
         

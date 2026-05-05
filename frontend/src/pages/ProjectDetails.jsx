@@ -68,7 +68,7 @@ const ProjectDetails = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fallbackRoute = currentUser?.role === 'admin' ? '/admin/projects' : '/clientdashboard';
+  const fallbackRoute = currentUser?.role === 'admin' ? '/admin/projects' : '/BasicDashboard';
   const isAdmin = currentUser?.role === 'admin';
 
   const loadProjectDetails = useCallback(async () => {

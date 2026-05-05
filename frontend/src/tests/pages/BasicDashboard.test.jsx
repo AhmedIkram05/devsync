@@ -2,13 +2,13 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
-import ClientDashboard from '../../pages/clientdashboard';
+import BasicDashboard from '../../pages/BasicDashboard';
 import { dashboardService } from '../../services/utils/api';
 import { useAuth } from '../../context/AuthContext';
 
 jest.mock('../../services/utils/api', () => ({
   dashboardService: {
-    getClientDashboardStats: jest.fn(),
+    getBasicDashboardStats: jest.fn(),
   },
 }));
 
@@ -23,12 +23,12 @@ jest.mock('../../components/LoadingSpinner', () => () => <div>Loading spinner</d
 const renderDashboard = () => {
   return render(
     <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <ClientDashboard />
+      <BasicDashboard />
     </MemoryRouter>
   );
 };
 
-describe('ClientDashboard page', () => {
+describe('BasicDashboard page', () => {
   beforeEach(() => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'log').mockImplementation(() => {});
@@ -43,7 +43,7 @@ describe('ClientDashboard page', () => {
       },
     });
 
-    dashboardService.getClientDashboardStats.mockReset();
+    dashboardService.getBasicDashboardStats.mockReset();
   });
 
   afterEach(() => {
@@ -51,7 +51,7 @@ describe('ClientDashboard page', () => {
   });
 
   test('renders dashboard data, task cards, github activity, projects, and deadlines', async () => {
-    dashboardService.getClientDashboardStats.mockResolvedValue({
+    dashboardService.getBasicDashboardStats.mockResolvedValue({
       taskCounts: {
         assigned: 7,
         inProgress: 3,
@@ -120,7 +120,7 @@ describe('ClientDashboard page', () => {
       },
     });
 
-    dashboardService.getClientDashboardStats.mockResolvedValue({
+    dashboardService.getBasicDashboardStats.mockResolvedValue({
       taskCounts: {
         assigned: 0,
         inProgress: 0,
@@ -142,7 +142,7 @@ describe('ClientDashboard page', () => {
   });
 
   test('shows error state and supports retry after failed dashboard load', async () => {
-    dashboardService.getClientDashboardStats
+    dashboardService.getBasicDashboardStats
       .mockRejectedValueOnce(new Error('dashboard unavailable'))
       .mockResolvedValueOnce({
         taskCounts: {
@@ -164,14 +164,14 @@ describe('ClientDashboard page', () => {
     fireEvent.click(screen.getByRole('button', { name: /try again/i }));
 
     await waitFor(() => {
-      expect(dashboardService.getClientDashboardStats).toHaveBeenCalledTimes(2);
+      expect(dashboardService.getBasicDashboardStats).toHaveBeenCalledTimes(2);
     });
 
     expect(await screen.findByText('Task: Retry fetched task')).toBeInTheDocument();
   });
 
   test('refresh button triggers a re-fetch when dashboard is already loaded', async () => {
-    dashboardService.getClientDashboardStats.mockResolvedValue({
+    dashboardService.getBasicDashboardStats.mockResolvedValue({
       taskCounts: {
         assigned: 2,
         inProgress: 1,
@@ -191,7 +191,7 @@ describe('ClientDashboard page', () => {
     fireEvent.click(screen.getByRole('button', { name: /refresh/i }));
 
     await waitFor(() => {
-      expect(dashboardService.getClientDashboardStats).toHaveBeenCalledTimes(2);
+      expect(dashboardService.getBasicDashboardStats).toHaveBeenCalledTimes(2);
     });
   });
 });

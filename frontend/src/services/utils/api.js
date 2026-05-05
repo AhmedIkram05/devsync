@@ -462,7 +462,7 @@ const dashboardService = {
     }
   },
   
-  getClientDashboardStats: async () => {
+  getBasicDashboardStats: async () => {
     try {
       return await fetchWithAuth('dashboard/client');
     } catch (error) {

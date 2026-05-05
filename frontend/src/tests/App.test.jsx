@@ -30,7 +30,7 @@ jest.mock('../pages/Reports', () => () => <div>Reports Page</div>);
 jest.mock('../pages/AdminProjects', () => () => <div>Admin Projects Page</div>);
 jest.mock('../pages/ProjectDetails', () => () => <div>Project Details Page</div>);
 jest.mock('../pages/Login', () => () => <div>Login Page</div>);
-jest.mock('../pages/clientdashboard', () => () => <div>Client Dashboard Page</div>);
+jest.mock('../pages/BasicDashboard', () => () => <div>Client Dashboard Page</div>);
 jest.mock('../pages/TaskDetailsUser', () => () => <div>Task Details User Page</div>);
 jest.mock('../pages/GithubIntegrationDetail', () => () => <div>GitHub Integration Detail Page</div>);
 jest.mock('../pages/Register', () => () => <div>Register Page</div>);
@@ -133,7 +133,7 @@ describe('App route access controls', () => {
       showGithubPrompt: true,
     };
 
-    renderAt('/clientdashboard');
+    renderAt('/BasicDashboard');
 
     expect(await screen.findByText('GitHub Connect Prompt')).toBeInTheDocument();
   });

@@ -20,7 +20,7 @@ const Login = () => {
     return currentUser.role === "admin" ? (
       <Navigate to="/admin" replace />
     ) : (
-      <Navigate to="/clientdashboard" replace />
+      <Navigate to="/BasicDashboard" replace />
     );
   }
   

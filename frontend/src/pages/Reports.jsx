@@ -32,35 +32,26 @@ const Reports = () => {
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [reportType, setReportType] = useState('tasks'); // tasks, github, developers
-  const [dateRange, setDateRange] = useState('week'); // week, month, quarter, year
+  const [reportType, setReportType] = useState('tasks');
+  const [dateRange, setDateRange] = useState('week');
   const [generatedReports, setGeneratedReports] = useState([]);
 
   const getReportLabel = (type) => {
     switch (type) {
-      case 'tasks':
-        return 'Task Report';
-      case 'github':
-        return 'GitHub Activity';
-      case 'developers':
-        return 'Developer Performance';
-      default:
-        return 'Report';
+      case 'tasks': return 'Task Report';
+      case 'github': return 'GitHub Activity';
+      case 'developers': return 'Developer Performance';
+      default: return 'Report';
     }
   };
 
   const getDateRangeLabel = (range) => {
     switch (range) {
-      case 'week':
-        return 'Last Week';
-      case 'month':
-        return 'Last Month';
-      case 'quarter':
-        return 'Last Quarter';
-      case 'year':
-        return 'Last Year';
-      default:
-        return 'Custom Range';
+      case 'week': return 'Last Week';
+      case 'month': return 'Last Month';
+      case 'quarter': return 'Last Quarter';
+      case 'year': return 'Last Year';
+      default: return 'Custom Range';
     }
   };
 
@@ -71,13 +62,12 @@ const Reports = () => {
     return date.toLocaleString('en-US');
   };
 
-  const sanitizePdfText = (value) => {
-  return String(value || '')
-    .replace(/\\/g, '\\\\')
-    .replace(/\(/g, '\\(')
-    .replace(/\)/g, '\\)')
-    .replace(/[^\x20-\x7E]/g, '?');
-};
+  const sanitizePdfText = (value) =>
+    String(value || '')
+      .replace(/\\/g, '\\\\')
+      .replace(/\(/g, '\\(')
+      .replace(/\)/g, '\\)')
+      .replace(/[^\x20-\x7E]/g, '?');
 
   const buildPdfLines = (report) => {
     const summary = report.summary || {};
@@ -127,15 +117,10 @@ const Reports = () => {
 
   const createPdfBlob = (lines) => {
     const textStream = [
-      'BT',
-      '/F1 12 Tf',
-      '72 720 Td',
-      ...lines.flatMap((line, index) => {
-        if (index === 0) {
-          return [`(${line}) Tj`];
-        }
-        return ['0 -16 Td', `(${line}) Tj`];
-      }),
+      'BT', '/F1 12 Tf', '72 720 Td',
+      ...lines.flatMap((line, index) =>
+        index === 0 ? [`(${line}) Tj`] : ['0 -16 Td', `(${line}) Tj`]
+      ),
       'ET'
     ].join('\n');
 
@@ -149,7 +134,6 @@ const Reports = () => {
 
     let pdf = '%PDF-1.4\n';
     const offsets = [0];
-
     objects.forEach((object, index) => {
       offsets.push(pdf.length);
       pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
@@ -159,11 +143,9 @@ const Reports = () => {
     pdf += 'xref\n';
     pdf += `0 ${objects.length + 1}\n`;
     pdf += '0000000000 65535 f \n';
-
     offsets.slice(1).forEach((offset) => {
       pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
     });
-
     pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
 
     return new Blob([pdf], { type: 'application/pdf' });
@@ -184,7 +166,7 @@ const Reports = () => {
       setLoading(false);
     }
   }, [reportType, dateRange]);
-  
+
   useEffect(() => {
     loadReportData();
   }, [loadReportData]);
@@ -211,13 +193,11 @@ const Reports = () => {
     const blob = createPdfBlob(lines);
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-
     link.href = url;
     link.download = `devsync-${report.type}-${report.dateRange}-${report.id}.pdf`;
     document.body.appendChild(link);
     link.click();
     link.remove();
-
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
@@ -229,8 +209,7 @@ const Reports = () => {
       const start = new Date(now);
       start.setDate(now.getDate() - 6);
       start.setHours(0, 0, 0, 0);
-
-      for (let i = 0; i < 7; i += 1) {
+      for (let i = 0; i < 7; i++) {
         const bucketStart = new Date(start);
         bucketStart.setDate(start.getDate() + i);
         const bucketEnd = new Date(bucketStart);
@@ -241,7 +220,6 @@ const Reports = () => {
           end: bucketEnd
         });
       }
-
       return buckets;
     }
 
@@ -249,25 +227,18 @@ const Reports = () => {
       const start = new Date(now);
       start.setDate(now.getDate() - 27);
       start.setHours(0, 0, 0, 0);
-
-      for (let i = 0; i < 4; i += 1) {
+      for (let i = 0; i < 4; i++) {
         const bucketStart = new Date(start);
         bucketStart.setDate(start.getDate() + i * 7);
         const bucketEnd = new Date(bucketStart);
         bucketEnd.setDate(bucketStart.getDate() + 7);
-        buckets.push({
-          label: `Week ${i + 1}`,
-          start: bucketStart,
-          end: bucketEnd
-        });
+        buckets.push({ label: `Week ${i + 1}`, start: bucketStart, end: bucketEnd });
       }
-
       return buckets;
     }
 
     const monthsToShow = range === 'quarter' ? 3 : 12;
-
-    for (let i = 0; i < monthsToShow; i += 1) {
+    for (let i = 0; i < monthsToShow; i++) {
       const monthOffset = monthsToShow - 1 - i;
       const bucketStart = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
       const bucketEnd = new Date(now.getFullYear(), now.getMonth() - monthOffset + 1, 1);
@@ -286,15 +257,9 @@ const Reports = () => {
     const counts = buckets.map(() => 0);
 
     (tasks || []).forEach((task) => {
-      if (!task?.created_at) {
-        return;
-      }
-
+      if (!task?.created_at) return;
       const createdAt = new Date(task.created_at);
-      if (Number.isNaN(createdAt.getTime())) {
-        return;
-      }
-
+      if (Number.isNaN(createdAt.getTime())) return;
       buckets.forEach((bucket, index) => {
         if (createdAt >= bucket.start && createdAt < bucket.end) {
           counts[index] += 1;
@@ -302,10 +267,7 @@ const Reports = () => {
       });
     });
 
-    return {
-      labels: buckets.map((bucket) => bucket.label),
-      counts
-    };
+    return { labels: buckets.map((b) => b.label), counts };
   };
 
   const buildSummarySnapshot = (type, summary, details) => {
@@ -314,7 +276,6 @@ const Reports = () => {
       const openIssues = repos.reduce((sum, repo) => sum + getGithubRepoMetrics(repo).openIssues, 0);
       const openPrs = repos.reduce((sum, repo) => sum + getGithubRepoMetrics(repo).openPrs, 0);
       const recentCommits = repos.reduce((sum, repo) => sum + getGithubRepoMetrics(repo).recentCommits, 0);
-
       return {
         repos: summary?.repos ?? repos.length,
         open_issues: summary?.open_issues ?? openIssues,
@@ -340,224 +301,191 @@ const Reports = () => {
     };
   };
 
-  const hasNonZero = (values = []) => values.some((value) => Number(value) > 0);
+  const hasNonZero = (values = []) => values.some((v) => Number(v) > 0);
   const getRepoLabel = (repo) => repo?.name || repo?.full_name || 'Repo';
   const getGithubRepoMetrics = (repo) => {
     const openIssues = Number(repo?.open_issues ?? repo?.open_issues_count ?? 0) || 0;
     const openPrs = Number(repo?.open_prs ?? 0) || 0;
     const recentCommits = Number(repo?.recent_commits ?? 0) || 0;
-
-    return {
-      openIssues,
-      openPrs,
-      recentCommits,
-      total: openIssues + openPrs + recentCommits
-    };
+    return { openIssues, openPrs, recentCommits, total: openIssues + openPrs + recentCommits };
   };
-  
-  // Render different charts based on the report type
-  const renderCharts = () => {
-    if (!reportData) return null;
-    
-    const { summary, details } = reportData;
-    const summarySnapshot = buildSummarySnapshot(reportType, summary, details);
-    const dateRangeLabel = getDateRangeLabel(dateRange);
-    const chartPalette = {
-      blue: 'rgba(59, 130, 246, 0.7)',
-      blueBorder: 'rgba(37, 99, 235, 1)',
-      green: 'rgba(16, 185, 129, 0.7)',
-      greenBorder: 'rgba(5, 150, 105, 1)',
-      yellow: 'rgba(245, 158, 11, 0.7)',
-      red: 'rgba(239, 68, 68, 0.7)',
-      purple: 'rgba(168, 85, 247, 0.7)',
-      gray: 'rgba(107, 114, 128, 0.6)'
-    };
 
-    const baseAxisOptions = {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: 'bottom',
-          labels: { usePointStyle: true, boxWidth: 10 }
-        }
+  // ─── Chart theme tokens ───────────────────────────────────────────────────
+  const slateLabel  = 'rgba(148, 163, 184, 1)';  // slate-400
+  const slateGrid   = 'rgba(51,  65,  85,  0.6)'; // slate-700/60
+  const tooltipBg   = 'rgba(15,  23,  42,  0.95)'; // slate-950
+
+  const baseAxisOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'bottom',
+        labels: { usePointStyle: true, boxWidth: 10, color: slateLabel, font: { size: 12 } }
       },
-      scales: {
-        x: { grid: { display: false } },
-        y: { beginAtZero: true, ticks: { precision: 0 } }
+      tooltip: {
+        backgroundColor: tooltipBg,
+        titleColor: '#f1f5f9',
+        bodyColor: slateLabel,
+        borderColor: 'rgba(51, 65, 85, 0.7)',
+        borderWidth: 1
       }
-    };
-
-    const doughnutOptions = {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: 'bottom',
-          labels: { usePointStyle: true, boxWidth: 10 }
-        }
+    },
+    scales: {
+      x: {
+        grid: { display: false },
+        ticks: { color: slateLabel },
+        border: { color: slateGrid }
       },
-      cutout: '60%'
+      y: {
+        beginAtZero: true,
+        ticks: { precision: 0, color: slateLabel },
+        grid: { color: slateGrid },
+        border: { color: slateGrid }
+      }
+    }
+  };
+
+  const doughnutOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'bottom',
+        labels: { usePointStyle: true, boxWidth: 10, color: slateLabel, font: { size: 12 } }
+      },
+      tooltip: {
+        backgroundColor: tooltipBg,
+        titleColor: '#f1f5f9',
+        bodyColor: slateLabel,
+        borderColor: 'rgba(51, 65, 85, 0.7)',
+        borderWidth: 1
+      }
+    },
+    cutout: '60%'
+  };
+
+  // ─── Chart palette (brighter for dark surfaces) ───────────────────────────
+  const chartPalette = {
+    blue:        'rgba(56,  189, 248, 0.75)', // sky-400
+    blueBorder:  'rgba(14,  165, 233, 1)',     // sky-500
+    green:       'rgba(52,  211, 153, 0.75)', // emerald-400
+    greenBorder: 'rgba(16,  185, 129, 1)',     // emerald-500
+    yellow:      'rgba(251, 191, 36,  0.75)', // amber-400
+    red:         'rgba(251, 113, 133, 0.75)', // rose-400
+    purple:      'rgba(192, 132, 252, 0.75)', // purple-400
+    gray:        'rgba(100, 116, 139, 0.75)'  // slate-500
+  };
+
+  // Doughnut segment separator matches dark surface
+  const doughnutBorder = 'rgba(15, 23, 42, 0.8)';
+
+  // ─── Sub-components ───────────────────────────────────────────────────────
+  const SummaryCard = ({ title, value, color, icon }) => {
+    const colorClasses = {
+      blue:   'bg-sky-500/15 text-sky-300 border border-sky-400/20',
+      green:  'bg-emerald-500/15 text-emerald-300 border border-emerald-400/20',
+      yellow: 'bg-amber-500/15 text-amber-300 border border-amber-400/20',
+      red:    'bg-rose-500/15 text-rose-300 border border-rose-400/20',
+      purple: 'bg-purple-500/15 text-purple-300 border border-purple-400/20',
     };
 
-    const ChartCard = ({ title, subtitle, emptyState, children }) => (
-      <div className="bg-slate-900/70 rounded-2xl shadow-md p-6 border border-slate-800/70">
-        <div className="mb-4">
-          <h3 className="text-lg font-semibold text-slate-100">{title}</h3>
-          {subtitle && <p className="text-sm text-slate-400">{subtitle}</p>}
-        </div>
-        <div className="h-72">
-          {emptyState ? (
-            <div className="h-full flex items-center justify-center border border-dashed border-slate-700/70 rounded">
-              <p className="text-sm text-slate-400">No chart data for this range.</p>
-            </div>
-          ) : (
-            children
-          )}
+    return (
+      <div className={`rounded-xl p-4 ${colorClasses[color] || 'bg-slate-800/50 text-slate-400 border border-slate-700/70'}`}>
+        <div className="flex items-center gap-4">
+          <div className="shrink-0">{icon}</div>
+          <div>
+            <p className="text-xs font-medium opacity-75 uppercase tracking-wide">{title}</p>
+            <p className="text-2xl font-semibold mt-0.5">{value}</p>
+          </div>
         </div>
       </div>
     );
-    
+  };
+
+  const ChartCard = ({ title, subtitle, emptyState, children }) => (
+    <div className="bg-slate-900/70 rounded-2xl shadow-md p-6 border border-slate-800/70">
+      <div className="mb-4">
+        <h3 className="text-lg font-semibold text-slate-100">{title}</h3>
+        {subtitle && <p className="text-sm text-slate-400 mt-0.5">{subtitle}</p>}
+      </div>
+      <div className="h-72">
+        {emptyState ? (
+          <div className="h-full flex items-center justify-center border border-dashed border-slate-700/70 rounded-lg">
+            <p className="text-sm text-slate-500">No chart data for this range.</p>
+          </div>
+        ) : (
+          children
+        )}
+      </div>
+    </div>
+  );
+
+  // ─── Chart rendering ──────────────────────────────────────────────────────
+  const renderCharts = () => {
+    if (!reportData) return null;
+
+    const { summary, details } = reportData;
+    const summarySnapshot = buildSummarySnapshot(reportType, summary, details);
+    const dateRangeLabel = getDateRangeLabel(dateRange);
+
     return (
       <div className="space-y-6">
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {reportType === 'tasks' && (
             <>
-              <SummaryCard 
-                title="Total Tasks" 
-                value={summarySnapshot.total || 0} 
-                color="blue"
-                icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                  </svg>
-                }
+              <SummaryCard title="Total Tasks" value={summarySnapshot.total || 0} color="blue"
+                icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>}
               />
-              <SummaryCard 
-                title="Completed" 
-                value={summarySnapshot.completed || 0} 
-                color="green"
-                icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                  </svg>
-                }
+              <SummaryCard title="Completed" value={summarySnapshot.completed || 0} color="green"
+                icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>}
               />
-              <SummaryCard 
-                title="In Progress" 
-                value={summarySnapshot.in_progress || 0} 
-                color="yellow"
-                icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                }
+              <SummaryCard title="In Progress" value={summarySnapshot.in_progress || 0} color="yellow"
+                icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
               />
-              <SummaryCard 
-                title="Overdue" 
-                value={summarySnapshot.overdue || 0} 
-                color="red"
-                icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                }
+              <SummaryCard title="Overdue" value={summarySnapshot.overdue || 0} color="red"
+                icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
               />
             </>
           )}
-          
+
           {reportType === 'github' && (
             <>
-              <SummaryCard 
-                title="Connected Repos" 
-                value={summarySnapshot.repos || 0} 
-                color="purple"
-                icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                  </svg>
-                }
+              <SummaryCard title="Connected Repos" value={summarySnapshot.repos || 0} color="purple"
+                icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>}
               />
-              <SummaryCard 
-                title="Open Issues" 
-                value={summarySnapshot.open_issues || 0} 
-                color="blue"
-                icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                }
+              <SummaryCard title="Open Issues" value={summarySnapshot.open_issues || 0} color="blue"
+                icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>}
               />
-              <SummaryCard 
-                title="Open PRs" 
-                value={summarySnapshot.open_prs || 0} 
-                color="green"
-                icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-                  </svg>
-                }
+              <SummaryCard title="Open PRs" value={summarySnapshot.open_prs || 0} color="green"
+                icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" /></svg>}
               />
-              <SummaryCard 
-                title="Recent Commits" 
-                value={summarySnapshot.recent_commits || 0} 
-                color="yellow"
-                icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                }
+              <SummaryCard title="Recent Commits" value={summarySnapshot.recent_commits || 0} color="yellow"
+                icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>}
               />
             </>
           )}
-          
+
           {reportType === 'developers' && (
             <>
-              <SummaryCard 
-                title="Team Members" 
-                value={summarySnapshot.team_members || 0} 
-                color="blue"
-                icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
-                }
+              <SummaryCard title="Team Members" value={summarySnapshot.team_members || 0} color="blue"
+                icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>}
               />
-              <SummaryCard 
-                title="Avg. Tasks Per Dev" 
-                value={summarySnapshot.avg_tasks || 0} 
-                color="purple"
-                icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                }
+              <SummaryCard title="Avg. Tasks Per Dev" value={summarySnapshot.avg_tasks || 0} color="purple"
+                icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>}
               />
-              <SummaryCard 
-                title="Avg. Completion Rate" 
-                value={`${summarySnapshot.avg_completion || 0}%`} 
-                color="green"
-                icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                }
+              <SummaryCard title="Avg. Completion Rate" value={`${summarySnapshot.avg_completion || 0}%`} color="green"
+                icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>}
               />
-              <SummaryCard 
-                title="Active Developers" 
-                value={summarySnapshot.active_devs || 0} 
-                color="yellow"
-                icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                }
+              <SummaryCard title="Active Developers" value={summarySnapshot.active_devs || 0} color="yellow"
+                icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
               />
             </>
           )}
         </div>
-        
+
+        {/* Charts */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {reportType === 'tasks' && (() => {
             const otherCount = Math.max(
@@ -575,46 +503,34 @@ const Reports = () => {
             ];
             const taskStatusData = {
               labels: ['Completed', 'In Progress', 'Overdue', 'Other'],
-              datasets: [
-                {
-                  data: taskStatusValues,
-                  backgroundColor: [chartPalette.green, chartPalette.yellow, chartPalette.red, chartPalette.gray],
-                  borderColor: '#ffffff',
-                  borderWidth: 2
-                }
-              ]
+              datasets: [{
+                data: taskStatusValues,
+                backgroundColor: [chartPalette.green, chartPalette.yellow, chartPalette.red, chartPalette.gray],
+                borderColor: doughnutBorder,
+                borderWidth: 2
+              }]
             };
 
             const taskTrend = buildTaskTrend(details, dateRange);
             const taskTrendData = {
               labels: taskTrend.labels,
-              datasets: [
-                {
-                  label: 'Tasks created',
-                  data: taskTrend.counts,
-                  borderColor: chartPalette.blueBorder,
-                  backgroundColor: 'rgba(59, 130, 246, 0.2)',
-                  tension: 0.35,
-                  fill: true,
-                  pointRadius: 3
-                }
-              ]
+              datasets: [{
+                label: 'Tasks created',
+                data: taskTrend.counts,
+                borderColor: chartPalette.blueBorder,
+                backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                tension: 0.35,
+                fill: true,
+                pointRadius: 3
+              }]
             };
 
             return (
               <>
-                <ChartCard
-                  title="Task status breakdown"
-                  subtitle={`Distribution for ${dateRangeLabel}`}
-                  emptyState={!hasNonZero(taskStatusValues)}
-                >
+                <ChartCard title="Task status breakdown" subtitle={`Distribution for ${dateRangeLabel}`} emptyState={!hasNonZero(taskStatusValues)}>
                   <Doughnut data={taskStatusData} options={doughnutOptions} />
                 </ChartCard>
-                <ChartCard
-                  title="Tasks created over time"
-                  subtitle={`Activity for ${dateRangeLabel}`}
-                  emptyState={!hasNonZero(taskTrend.counts)}
-                >
+                <ChartCard title="Tasks created over time" subtitle={`Activity for ${dateRangeLabel}`} emptyState={!hasNonZero(taskTrend.counts)}>
                   <Line data={taskTrendData} options={baseAxisOptions} />
                 </ChartCard>
               </>
@@ -623,64 +539,37 @@ const Reports = () => {
 
           {reportType === 'github' && (() => {
             const repos = Array.isArray(details) ? details : [];
-            const repoActivity = repos.map((repo) => ({
-              label: getRepoLabel(repo),
-              ...getGithubRepoMetrics(repo)
-            }));
-            const topRepos = repoActivity
-              .sort((a, b) => b.total - a.total)
-              .slice(0, 6);
+            const repoActivity = repos.map((repo) => ({ label: getRepoLabel(repo), ...getGithubRepoMetrics(repo) }));
+            const topRepos = repoActivity.sort((a, b) => b.total - a.total).slice(0, 6);
             const repoBarData = {
-              labels: topRepos.map((repo) => repo.label),
+              labels: topRepos.map((r) => r.label),
               datasets: [
-                {
-                  label: 'Open Issues',
-                  data: topRepos.map((repo) => repo.openIssues),
-                  backgroundColor: chartPalette.blue
-                },
-                {
-                  label: 'Open PRs',
-                  data: topRepos.map((repo) => repo.openPrs),
-                  backgroundColor: chartPalette.green
-                },
-                {
-                  label: 'Recent Commits',
-                  data: topRepos.map((repo) => repo.recentCommits),
-                  backgroundColor: chartPalette.yellow
-                }
+                { label: 'Open Issues',     data: topRepos.map((r) => r.openIssues),    backgroundColor: chartPalette.blue   },
+                { label: 'Open PRs',        data: topRepos.map((r) => r.openPrs),       backgroundColor: chartPalette.green  },
+                { label: 'Recent Commits',  data: topRepos.map((r) => r.recentCommits), backgroundColor: chartPalette.yellow }
               ]
             };
 
-            const issuesTotal = repos.reduce((sum, repo) => sum + getGithubRepoMetrics(repo).openIssues, 0);
-            const prsTotal = repos.reduce((sum, repo) => sum + getGithubRepoMetrics(repo).openPrs, 0);
-            const commitsTotal = repos.reduce((sum, repo) => sum + getGithubRepoMetrics(repo).recentCommits, 0);
+            const issuesTotal  = repos.reduce((s, r) => s + getGithubRepoMetrics(r).openIssues, 0);
+            const prsTotal     = repos.reduce((s, r) => s + getGithubRepoMetrics(r).openPrs, 0);
+            const commitsTotal = repos.reduce((s, r) => s + getGithubRepoMetrics(r).recentCommits, 0);
             const githubMixValues = [issuesTotal, prsTotal, commitsTotal];
             const githubMixData = {
               labels: ['Open Issues', 'Open PRs', 'Recent Commits'],
-              datasets: [
-                {
-                  data: githubMixValues,
-                  backgroundColor: [chartPalette.blue, chartPalette.green, chartPalette.yellow],
-                  borderColor: '#ffffff',
-                  borderWidth: 2
-                }
-              ]
+              datasets: [{
+                data: githubMixValues,
+                backgroundColor: [chartPalette.blue, chartPalette.green, chartPalette.yellow],
+                borderColor: doughnutBorder,
+                borderWidth: 2
+              }]
             };
 
             return (
               <>
-                <ChartCard
-                  title="Repository activity by repo"
-                  subtitle={`Top repositories · ${dateRangeLabel}`}
-                  emptyState={!hasNonZero(topRepos.map((repo) => repo.total))}
-                >
+                <ChartCard title="Repository activity by repo" subtitle={`Top repositories · ${dateRangeLabel}`} emptyState={!hasNonZero(topRepos.map((r) => r.total))}>
                   <Bar data={repoBarData} options={baseAxisOptions} />
                 </ChartCard>
-                <ChartCard
-                  title="Activity mix"
-                  subtitle={`Snapshot for ${dateRangeLabel}`}
-                  emptyState={!hasNonZero(githubMixValues)}
-                >
+                <ChartCard title="Activity mix" subtitle={`Snapshot for ${dateRangeLabel}`} emptyState={!hasNonZero(githubMixValues)}>
                   <Doughnut data={githubMixData} options={doughnutOptions} />
                 </ChartCard>
               </>
@@ -689,108 +578,82 @@ const Reports = () => {
 
           {reportType === 'developers' && (() => {
             const developers = Array.isArray(details) ? details : [];
-            const topDevelopers = [...developers]
-              .sort((a, b) => (b.total_tasks || 0) - (a.total_tasks || 0))
-              .slice(0, 6);
+            const topDevelopers = [...developers].sort((a, b) => (b.total_tasks || 0) - (a.total_tasks || 0)).slice(0, 6);
             const developerBarData = {
               labels: topDevelopers.map((dev) => dev.name || 'Developer'),
               datasets: [
-                {
-                  label: 'Total Tasks',
-                  data: topDevelopers.map((dev) => dev.total_tasks || 0),
-                  backgroundColor: chartPalette.purple
-                },
-                {
-                  label: 'Completed Tasks',
-                  data: topDevelopers.map((dev) => dev.completed_tasks || 0),
-                  backgroundColor: chartPalette.green
-                }
+                { label: 'Total Tasks',     data: topDevelopers.map((dev) => dev.total_tasks     || 0), backgroundColor: chartPalette.purple },
+                { label: 'Completed Tasks', data: topDevelopers.map((dev) => dev.completed_tasks || 0), backgroundColor: chartPalette.green  }
               ]
             };
 
-            const idleCount = Math.max(
-              (summarySnapshot.team_members || 0) - (summarySnapshot.active_devs || 0),
-              0
-            );
+            const idleCount = Math.max((summarySnapshot.team_members || 0) - (summarySnapshot.active_devs || 0), 0);
             const developerMixValues = [summarySnapshot.active_devs || 0, idleCount];
             const developerMixData = {
               labels: ['Active', 'Idle'],
-              datasets: [
-                {
-                  data: developerMixValues,
-                  backgroundColor: [chartPalette.green, chartPalette.gray],
-                  borderColor: '#ffffff',
-                  borderWidth: 2
-                }
-              ]
+              datasets: [{
+                data: developerMixValues,
+                backgroundColor: [chartPalette.green, chartPalette.gray],
+                borderColor: doughnutBorder,
+                borderWidth: 2
+              }]
             };
 
             return (
               <>
-                <ChartCard
-                  title="Task volume by developer"
-                  subtitle={`Top contributors · ${dateRangeLabel}`}
-                  emptyState={!hasNonZero(topDevelopers.map((dev) => dev.total_tasks || 0))}
-                >
+                <ChartCard title="Task volume by developer" subtitle={`Top contributors · ${dateRangeLabel}`} emptyState={!hasNonZero(topDevelopers.map((dev) => dev.total_tasks || 0))}>
                   <Bar data={developerBarData} options={baseAxisOptions} />
                 </ChartCard>
-                <ChartCard
-                  title="Developer activity"
-                  subtitle={`Active vs idle · ${dateRangeLabel}`}
-                  emptyState={!hasNonZero(developerMixValues)}
-                >
+                <ChartCard title="Developer activity" subtitle={`Active vs idle · ${dateRangeLabel}`} emptyState={!hasNonZero(developerMixValues)}>
                   <Doughnut data={developerMixData} options={doughnutOptions} />
                 </ChartCard>
               </>
             );
           })()}
         </div>
-        
-        {/* Detailed Report Table + Generated Reports */}
+
+        {/* Report Details + Generated Reports */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-slate-900/70 rounded-2xl shadow-md overflow-hidden border border-slate-800/70">
-            <div className="px-6 py-4 border-b border-slate-800/70">
+            <div className="px-6 py-4 border-b border-slate-800">
               <h2 className="text-lg font-semibold text-slate-100">Report Details</h2>
             </div>
-            <ReportTable 
-              data={details || []} 
-              type={reportType}
-            />
+            <ReportTable data={details || []} type={reportType} />
           </div>
 
           <div className="bg-slate-900/70 rounded-2xl shadow-md border border-slate-800/70">
-            <div className="px-6 py-4 border-b border-slate-800/70 flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-slate-100">Generated Reports</h2>
-              <span className="text-sm text-slate-400">PDF downloads</span>
+              <span className="text-xs text-slate-500 uppercase tracking-wide">PDF downloads</span>
             </div>
             <div className="p-6">
               {generatedReports.length === 0 ? (
-                <div className="text-slate-400 text-sm">
+                <p className="text-sm text-slate-500">
                   No generated reports yet. Use Generate Report to create one.
-                </div>
+                </p>
               ) : (
                 <div className="space-y-4">
                   {generatedReports.map((report) => (
                     <div
                       key={report.id}
-                      className="border border-slate-700/70 rounded-lg p-4 flex flex-col gap-3 bg-slate-800/30"
+                      className="border border-slate-700/70 rounded-xl p-4 flex flex-col gap-3 bg-slate-800/30"
                     >
                       <div>
                         <div className="text-sm font-semibold text-slate-100">
                           {getReportLabel(report.type)}
                         </div>
-                        <div className="text-xs text-slate-400">
+                        <div className="text-xs text-slate-400 mt-0.5">
                           {getDateRangeLabel(report.dateRange)} · {formatGeneratedAt(report.generatedAt)}
                         </div>
                       </div>
                       <div className="flex items-center justify-between">
-                        <div className="text-xs text-slate-400">
+                        <div className="text-xs text-slate-500">
                           Summary entries: {Object.keys(report.summary || {}).length}
                         </div>
                         <button
                           type="button"
                           onClick={() => handleDownloadPdf(report)}
-                          className="px-3 py-2 bg-rose-500/90 text-white text-sm rounded-full hover:bg-rose-600/90"
+                          className="px-3 py-1.5 bg-rose-500/90 text-white text-xs font-medium rounded-full hover:bg-rose-400 transition-colors"
                         >
                           Download PDF
                         </button>
@@ -805,35 +668,11 @@ const Reports = () => {
       </div>
     );
   };
-  
-  // Summary card component for data visualization
-  const SummaryCard = ({ title, value, color, icon }) => {
-    const colorClasses = {
-      blue: 'bg-blue-100 text-blue-500 border-blue-200',
-      green: 'bg-green-100 text-green-500 border-green-200',
-      yellow: 'bg-amber-500/20 text-amber-300 border-amber-700/70',
-      red: 'bg-rose-500/20 text-rose-300 border-rose-700/70',
-      purple: 'bg-purple-500/20 text-purple-300 border-purple-700/70',
-    };
-    
-    return (
-      <div className={`border rounded-lg p-4 ${colorClasses[color] || 'bg-slate-800/50 text-slate-400 border-slate-700/70'}`}>
-        <div className="flex items-center">
-          <div className="mr-4">
-            {icon}
-          </div>
-          <div>
-            <p className="text-sm font-medium opacity-75">{title}</p>
-            <p className="text-2xl font-semibold">{value}</p>
-          </div>
-        </div>
-      </div>
-    );
-  };
 
+  // ─── Loading / error states ────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center">
+      <div className="flex h-screen items-center justify-center bg-slate-950">
         <LoadingSpinner />
       </div>
     );
@@ -841,11 +680,13 @@ const Reports = () => {
 
   if (error) {
     return (
-      <div className="flex flex-col h-screen items-center justify-center p-6">
-        <div className="text-xl text-red-600 mb-4">{error}</div>
-        <button 
-          onClick={() => window.location.reload()} 
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+      <div className="flex flex-col h-screen items-center justify-center p-6 bg-slate-950">
+        <div className="bg-rose-500/10 border border-rose-400/30 rounded-xl px-6 py-4 text-rose-300 text-sm mb-4 max-w-md text-center">
+          {error}
+        </div>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-4 py-2 bg-rose-500/90 text-white rounded-full hover:bg-rose-400 text-sm font-medium transition-colors"
         >
           Try Again
         </button>
@@ -853,32 +694,37 @@ const Reports = () => {
     );
   }
 
+  // ─── Main render ───────────────────────────────────────────────────────────
   return (
     <div className="container mx-auto p-6 bg-slate-950 min-h-screen text-slate-100">
       <h1 className="text-2xl font-bold mb-6 text-slate-100">Reports & Analytics</h1>
-      
-      {/* Report Controls */}
-      <div className="bg-slate-900/70 rounded-2xl shadow-md p-4 mb-6 border border-slate-800/70">
+
+      {/* Controls */}
+      <div className="bg-slate-900/70 rounded-2xl shadow-md p-5 mb-6 border border-slate-800/70">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Report Type</label>
+            <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">
+              Report Type
+            </label>
             <select
               value={reportType}
               onChange={(e) => setReportType(e.target.value)}
-              className="w-full p-2 border border-slate-700/70 bg-slate-800/50 text-slate-100 rounded focus:ring-rose-500 focus:border-rose-500"
+              className="w-full px-3 py-2 border border-slate-700/70 bg-slate-800/60 text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500/70 transition-colors"
             >
               <option value="tasks">Task Reports</option>
               <option value="github">GitHub Activity</option>
               <option value="developers">Developer Performance</option>
             </select>
           </div>
-          
+
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Date Range</label>
+            <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">
+              Date Range
+            </label>
             <select
               value={dateRange}
               onChange={(e) => setDateRange(e.target.value)}
-              className="w-full p-2 border border-slate-700/70 bg-slate-800/50 text-slate-100 rounded focus:ring-rose-500 focus:border-rose-500"
+              className="w-full px-3 py-2 border border-slate-700/70 bg-slate-800/60 text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500/70 transition-colors"
             >
               <option value="week">Last Week</option>
               <option value="month">Last Month</option>
@@ -887,18 +733,17 @@ const Reports = () => {
             </select>
           </div>
         </div>
-        
+
         <div className="mt-4 flex justify-end">
-          <button 
+          <button
             onClick={handleGenerateReport}
-            className="px-4 py-2 bg-rose-500/90 text-white rounded-full hover:bg-rose-600/90"
+            className="px-5 py-2 bg-rose-500/90 text-white text-sm font-medium rounded-full hover:bg-rose-400 transition-colors focus:outline-none focus:ring-2 focus:ring-rose-400/60"
           >
             Generate Report
           </button>
         </div>
       </div>
-      
-      {/* Report Content */}
+
       {renderCharts()}
     </div>
   );
