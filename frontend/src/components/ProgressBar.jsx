@@ -32,9 +32,9 @@ const ProgressBar = ({ progress = 0, onChange, disabled = false }) => {
 
   // Calculate progress bar color based on value
   const getProgressColor = () => {
-    if (value < 30) return 'bg-red-500';
-    if (value < 70) return 'bg-yellow-500';
-    return 'bg-green-500';
+    if (value < 30) return 'bg-rose-400';
+    if (value < 70) return 'bg-amber-400';
+    return 'bg-emerald-400';
   };
 
   return (
@@ -42,12 +42,12 @@ const ProgressBar = ({ progress = 0, onChange, disabled = false }) => {
       {isInteractive ? (
         <div className="relative">
           <div className="flex items-center mb-2">
-            <span className="text-sm font-medium mr-2">Progress:</span>
+            <span className="text-sm font-medium mr-2 text-slate-200">Progress:</span>
             <span 
               className={`text-sm font-bold px-2 py-0.5 rounded ${
-                value < 30 ? 'bg-red-100 text-red-800' : 
-                value < 70 ? 'bg-yellow-100 text-yellow-800' : 
-                'bg-green-100 text-green-800'
+                value < 30 ? 'bg-rose-500/20 text-rose-200' : 
+                value < 70 ? 'bg-amber-500/20 text-amber-200' : 
+                'bg-emerald-500/20 text-emerald-200'
               }`}
             >
               {value}%
@@ -66,21 +66,21 @@ const ProgressBar = ({ progress = 0, onChange, disabled = false }) => {
               onMouseEnter={handleMouseEnter}
               onMouseLeave={handleMouseLeave}
               disabled={disabled}
-              className={`w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer ${
+              className={`w-full h-2 bg-slate-800/70 rounded-lg appearance-none cursor-pointer ${
                 disabled ? 'opacity-60 cursor-not-allowed' : ''
               }`}
               style={{
                 background: `linear-gradient(to right, ${
-                  value < 30 ? '#ef4444' : value < 70 ? '#eab308' : '#22c55e'
+                  value < 30 ? '#fb7185' : value < 70 ? '#fbbf24' : '#34d399'
                 } 0%, ${
-                  value < 30 ? '#ef4444' : value < 70 ? '#eab308' : '#22c55e'
-                } ${value}%, #e5e7eb ${value}%, #e5e7eb 100%)`
+                  value < 30 ? '#fb7185' : value < 70 ? '#fbbf24' : '#34d399'
+                } ${value}%, #1f2937 ${value}%, #1f2937 100%)`
               }}
             />
             
             {showTooltip && isInteractive && !disabled && (
               <div 
-                className="absolute -top-10 px-2 py-1 bg-gray-800 text-white text-xs rounded transform -translate-x-1/2 pointer-events-none"
+                className="absolute -top-10 px-2 py-1 bg-slate-900 text-slate-200 text-xs rounded border border-slate-700 transform -translate-x-1/2 pointer-events-none"
                 style={{ left: `${value}%` }}
               >
                 {value}%
@@ -91,9 +91,9 @@ const ProgressBar = ({ progress = 0, onChange, disabled = false }) => {
       ) : (
         <div>
           <div className="flex justify-between mb-1">
-            <span className="text-xs font-medium text-gray-700">Progress: {progress}%</span>
+            <span className="text-xs font-medium text-slate-300">Progress: {progress}%</span>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-2.5">
+          <div className="w-full bg-slate-800/70 rounded-full h-2.5">
             <div
               className={`h-2.5 rounded-full ${getProgressColor()}`}
               style={{ width: `${progress}%` }}
@@ -103,7 +103,7 @@ const ProgressBar = ({ progress = 0, onChange, disabled = false }) => {
       )}
       
       {isInteractive && !disabled && (
-        <div className="flex justify-between mt-1.5 text-xs text-gray-500">
+        <div className="flex justify-between mt-1.5 text-xs text-slate-500">
           <span>Not Started</span>
           <span>In Progress</span>
           <span>Complete</span>
