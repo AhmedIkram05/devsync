@@ -10,6 +10,7 @@ import ProjectDetails from "./pages/ProjectDetails";
 import AdminProjectCreate from "./pages/AdminProjectCreate";
 import AdminProjectEdit from "./pages/AdminProjectEdit";
 import Login from "./pages/Login";
+import Landing from "./pages/Landing";
 import Navbar from "./components/Navbar";
 import GitHubConnectPrompt from "./components/GitHubConnectPrompt";
 import ClientDashboard from "./pages/clientdashboard";
@@ -157,7 +158,7 @@ function AppRoutes() {
         {/* GitHub OAuth callback handling - Public route for callbacks */}
         <Route path="/github/callback" element={<GitHubCallback />} />
         <Route path="/api/github/callback" element={<GitHubCallback />} />
-        <Route path="/api/v1/github/callback" element={<GitHubCallback />} /> {/* Add this new route */}
+        <Route path="/api/v1/github/callback" element={<GitHubCallback />} />
         
         <Route path="/github/connected" element={
           <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES}>
@@ -226,7 +227,7 @@ function AppRoutes() {
             currentUser ? 
               <Navigate to={getDashboardPath(currentUser.role)} replace />
               : 
-              <Navigate to="/login" replace />
+              <Landing />
           )
         } />
       </Routes>
@@ -236,7 +237,12 @@ function AppRoutes() {
 
 function App() {
   return (
-    <Router>
+    <Router
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
       <AuthProvider>
         <NotificationProvider>
           <AppRoutes />
