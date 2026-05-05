@@ -106,13 +106,33 @@ def get_task_by_id(task_id):
 def create_new_task():
     """Controller function to create a new task"""
     data = request.get_json()
-    
+
+    # Guard: require a JSON body
+    if not data:
+        return jsonify({'message': 'Invalid or missing JSON body'}), 400
+
     # Validate task data
     validation_result = validate_task_data(data)
     if validation_result:
         return validation_result
-    
-    user_id = get_jwt_identity()['user_id']
+
+    # Ensure JWT identity contains user_id
+    identity = get_jwt_identity()
+    if not identity or 'user_id' not in identity:
+        return jsonify({'message': 'Invalid authentication token'}), 401
+    user_id = identity['user_id']
+
+    assigned_to = data.get('assigned_to')
+    if assigned_to in (None, ''):
+        assigned_to = None
+    elif isinstance(assigned_to, str) and assigned_to.isdigit():
+        assigned_to = int(assigned_to)
+
+    project_id = data.get('project_id')
+    if project_id in (None, ''):
+        project_id = None
+    elif isinstance(project_id, str) and project_id.isdigit():
+        project_id = int(project_id)
     
     # Create new task
     new_task = Task(
@@ -120,9 +140,10 @@ def create_new_task():
         description=data['description'],
         status=data['status'],
         progress=data.get('progress', 0),
-        assigned_to=data.get('assigned_to'),
+        assigned_to=assigned_to,
         created_by=user_id,
-        deadline=data.get('deadline')
+        deadline=data.get('deadline'),
+        project_id=project_id
     )
     
     db.session.add(new_task)

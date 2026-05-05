@@ -4,6 +4,7 @@ import { taskService, githubService } from '../services/utils/api';
 import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ProgressBar from '../components/ProgressBar';
+import TaskForm from '../components/TaskForm';
 
 function TaskDetailsUser() {
   const { id } = useParams();
@@ -26,6 +27,16 @@ function TaskDetailsUser() {
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
+
+  // Task editing state
+  const [isEditingTask, setIsEditingTask] = useState(false);
+  const [editUsers, setEditUsers] = useState([]);
+  const [editProjects, setEditProjects] = useState([]);
+  const [loadingEditOptions, setLoadingEditOptions] = useState(false);
+  const [savingTaskEdit, setSavingTaskEdit] = useState(false);
+  const [editError, setEditError] = useState(null);
+
+  const canEditTask = currentUser?.role === 'admin' || currentUser?.role === 'team_lead';
 
   useEffect(() => {
     const fetchTaskDetails = async () => {
@@ -113,6 +124,60 @@ function TaskDetailsUser() {
       alert('Failed to post comment. Please try again.');
     } finally {
       setSubmittingComment(false);
+    }
+  };
+
+  const handleStartEditingTask = async () => {
+    try {
+      setLoadingEditOptions(true);
+      setEditError(null);
+
+      const [usersData, projectsData] = await Promise.all([
+        taskService.getUsers(),
+        taskService.getProjects(),
+      ]);
+
+      setEditUsers(Array.isArray(usersData) ? usersData : []);
+      setEditProjects(Array.isArray(projectsData) ? projectsData : []);
+      setIsEditingTask(true);
+    } catch (err) {
+      console.error('Failed to load task edit options:', err);
+      setEditError('Failed to load edit options. Please try again.');
+    } finally {
+      setLoadingEditOptions(false);
+    }
+  };
+
+  const handleCancelTaskEdit = () => {
+    setIsEditingTask(false);
+    setEditError(null);
+  };
+
+  const handleTaskEditSubmit = async (editedTask) => {
+    try {
+      setSavingTaskEdit(true);
+      setEditError(null);
+
+      const payload = {
+        title: editedTask.title,
+        description: editedTask.description,
+        status: editedTask.status || task.status,
+        priority: editedTask.priority || task.priority,
+        assigned_to: editedTask.assignee ? Number(editedTask.assignee) : null,
+        project_id: editedTask.project ? Number(editedTask.project) : null,
+        deadline: editedTask.deadline ? new Date(editedTask.deadline).toISOString() : null,
+      };
+
+      await taskService.updateTask(id, payload);
+      const refreshedTask = await taskService.getTaskById(id);
+
+      setTask(refreshedTask || { ...task, ...payload });
+      setIsEditingTask(false);
+    } catch (err) {
+      console.error('Failed to update task details:', err);
+      setEditError('Failed to update task. Please try again.');
+    } finally {
+      setSavingTaskEdit(false);
     }
   };
 
@@ -271,27 +336,72 @@ function TaskDetailsUser() {
         <div className="p-6">
           {/* Task Details */}
           <div className="mb-8">
-            <h2 className="text-xl font-semibold mb-4 text-slate-100">Task Details</h2>
+            <div className="flex items-center justify-between mb-4 gap-3">
+              <h2 className="text-xl font-semibold text-slate-100">Task Details</h2>
+              {canEditTask && !isEditingTask && (
+                <button
+                  type="button"
+                  onClick={handleStartEditingTask}
+                  disabled={loadingEditOptions}
+                  className={`px-4 py-2 rounded-full text-sm font-medium ${
+                    loadingEditOptions
+                      ? 'bg-slate-800 text-slate-400 cursor-not-allowed'
+                      : 'bg-rose-500/90 text-white hover:bg-rose-400'
+                  }`}
+                >
+                  {loadingEditOptions ? 'Loading...' : 'Edit Task'}
+                </button>
+              )}
+            </div>
             <div className="bg-slate-950/60 rounded-xl border border-slate-800/70 p-4">
-              <p className="mb-4 whitespace-pre-line">{task.description}</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                <div>
-                  <p className="text-sm text-slate-400">Assigned to:</p>
-                  <p className="font-medium text-slate-100">{task.assignee_name || 'Unassigned'}</p>
+              {editError && (
+                <div className="mb-4 bg-rose-500/10 border border-rose-400/40 text-rose-200 px-4 py-3 rounded">
+                  {editError}
                 </div>
-                <div>
-                  <p className="text-sm text-slate-400">Priority:</p>
-                  <p className={`font-medium ${
-                    task.priority === 'high' ? 'text-rose-300' : 
-                    task.priority === 'medium' ? 'text-amber-300' : 
-                    'text-sky-300'
-                  }`}>
-                    {task.priority === 'high' ? 'High' : 
-                     task.priority === 'medium' ? 'Medium' : 
-                     'Low'}
-                  </p>
-                </div>
-              </div>
+              )}
+
+              {isEditingTask ? (
+                <>
+                  <TaskForm
+                    initialData={task}
+                    users={editUsers}
+                    projects={editProjects}
+                    onSubmit={handleTaskEditSubmit}
+                  />
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleCancelTaskEdit}
+                      disabled={savingTaskEdit}
+                      className="px-4 py-2 rounded-full border border-slate-600 text-slate-200 hover:bg-slate-800/70 disabled:opacity-60"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="mb-4 whitespace-pre-line">{task.description}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <div>
+                      <p className="text-sm text-slate-400">Assigned to:</p>
+                      <p className="font-medium text-slate-100">{task.assignee_name || 'Unassigned'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-400">Priority:</p>
+                      <p className={`font-medium ${
+                        task.priority === 'high' ? 'text-rose-300' : 
+                        task.priority === 'medium' ? 'text-amber-300' : 
+                        'text-sky-300'
+                      }`}>
+                        {task.priority === 'high' ? 'High' : 
+                         task.priority === 'medium' ? 'Medium' : 
+                         'Low'}
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
           

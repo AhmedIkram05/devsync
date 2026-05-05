@@ -4,6 +4,9 @@ from flask import jsonify
 
 def validate_task_data(data):
     """Validate task data from requests"""
+    # Guard: ensure data is present
+    if not data:
+        return jsonify({'message': 'Invalid or missing JSON body'}), 400
     # Check for required fields
     if not all(k in data for k in ['title', 'description', 'status']):
         return jsonify({'message': 'Missing required fields'}), 400
@@ -27,8 +30,11 @@ def validate_task_data(data):
         if data['priority'] not in valid_priorities:
             return jsonify({'message': f'Priority must be one of: {", ".join(valid_priorities)}'}), 400
     
-    # Validate assignee_id if provided
-    if 'assignee_id' in data and data['assignee_id'] and not isinstance(data['assignee_id'], int):
+    # Validate assignee/assigned_to if provided (support both names)
+    assignee = data.get('assignee_id') if 'assignee_id' in data else data.get('assigned_to')
+    if assignee not in (None, '') and not (
+        isinstance(assignee, int) or (isinstance(assignee, str) and assignee.isdigit())
+    ):
         return jsonify({'message': 'Assignee ID must be an integer'}), 400
     
     # If validation passes, return None

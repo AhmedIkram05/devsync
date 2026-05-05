@@ -24,6 +24,8 @@ jest.mock('../../services/utils/api', () => ({
     getTaskComments: jest.fn(),
     updateTask: jest.fn(),
     addTaskComment: jest.fn(),
+    getUsers: jest.fn(),
+    getProjects: jest.fn(),
   },
   githubService: {
     getUserRepos: jest.fn(),
@@ -70,6 +72,8 @@ describe('TaskDetailsUser page', () => {
     taskService.getTaskComments.mockReset();
     taskService.updateTask.mockReset();
     taskService.addTaskComment.mockReset();
+    taskService.getUsers.mockReset();
+    taskService.getProjects.mockReset();
 
     githubService.getUserRepos.mockReset();
     githubService.getIssues.mockReset();
@@ -92,6 +96,8 @@ describe('TaskDetailsUser page', () => {
       content: 'Ready for review',
       created_at: '2099-01-03T00:00:00.000Z',
     });
+    taskService.getUsers.mockResolvedValue([{ id: 5, name: 'Dev User', email: 'dev@example.com' }]);
+    taskService.getProjects.mockResolvedValue([{ id: 10, name: 'Core Platform' }]);
 
     githubService.getUserRepos.mockResolvedValue([]);
     githubService.getIssues.mockResolvedValue([]);
@@ -349,5 +355,59 @@ describe('TaskDetailsUser page', () => {
 
     render(<TaskDetailsUser />);
     expect(await screen.findByText(/Connect GitHub Account/i)).toBeInTheDocument();
+  });
+
+  test('allows admin to edit and save task details', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 1, role: 'admin', name: 'Admin User', email: 'admin@example.com' } });
+    taskService.getTaskById
+      .mockResolvedValueOnce(baseTask)
+      .mockResolvedValueOnce({
+        ...baseTask,
+        title: 'Updated notifications task',
+        description: 'Updated description',
+        priority: 'medium',
+      });
+
+    render(<TaskDetailsUser />);
+
+    expect(await screen.findByText('Implement notifications')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /edit task/i }));
+
+    expect(await screen.findByRole('button', { name: /update task/i })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/task title/i), {
+      target: { value: 'Updated notifications task' },
+    });
+    fireEvent.change(screen.getByLabelText(/description/i), {
+      target: { value: 'Updated description' },
+    });
+    fireEvent.change(screen.getByLabelText(/priority/i), {
+      target: { value: 'medium' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /update task/i }));
+
+    await waitFor(() => {
+      expect(taskService.updateTask).toHaveBeenCalledWith(
+        '1',
+        expect.objectContaining({
+          title: 'Updated notifications task',
+          description: 'Updated description',
+          priority: 'medium',
+        })
+      );
+    });
+
+    expect(await screen.findByText('Updated notifications task')).toBeInTheDocument();
+  });
+
+  test('hides edit task button for non-admin and non-team-lead users', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer', name: 'Dev User', email: 'dev@example.com' } });
+
+    render(<TaskDetailsUser />);
+
+    expect(await screen.findByText('Implement notifications')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /edit task/i })).not.toBeInTheDocument();
   });
 });
