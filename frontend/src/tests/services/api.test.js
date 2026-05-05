@@ -339,15 +339,32 @@ describe('api utilities', () => {
     expect(result.summary.in_progress).toBe(1);
   });
 
-  test('getReportData github branch when connected returns repos', async () => {
+  test('getReportData github branch when connected returns normalized repos', async () => {
     global.fetch
       .mockResolvedValueOnce(buildResponse({ tasks: [] }))
       .mockResolvedValueOnce(buildResponse({ users: [] }))
       .mockResolvedValueOnce(buildResponse({ connected: true }))
-      .mockResolvedValueOnce(buildResponse({ repositories: [{ id: 1, full_name: 'org/r' }] }));
+      .mockResolvedValueOnce(
+        buildResponse({
+          repositories: [
+            {
+              id: 1,
+              full_name: 'org/r',
+              open_issues_count: 5,
+              open_prs: 2,
+              recent_commits: 4,
+              updated_at: '2099-01-01T00:00:00.000Z',
+            },
+          ],
+        })
+      );
 
-    const report = await dashboardService.getReportData('github', 'week');
+    const report = await dashboardService.getReportData('github', 'month');
     expect(report.summary.repos).toBe(1);
+    expect(report.summary.open_issues).toBe(5);
+    expect(report.details[0].open_issues).toBe(5);
+    expect(report.details[0].last_updated).toBe('2099-01-01T00:00:00.000Z');
+    expect(global.fetch.mock.calls[3][0]).toContain('activity_window_days=30');
   });
 
   test('buildDeveloperProgress: task with no assigned_to is skipped', async () => {
@@ -507,11 +524,36 @@ describe('api utilities', () => {
     expect(prsOnError).toEqual([]);
   });
 
-  test('githubService.getUserRepos returns repositories array from response', async () => {
-    global.fetch.mockResolvedValueOnce(buildResponse({ repositories: [{ id: 5 }] }));
+  test('githubService.getUserRepos returns normalized repositories array from response', async () => {
+    global.fetch.mockResolvedValueOnce(
+      buildResponse({
+        repositories: [
+          {
+            id: 5,
+            open_issues_count: 4,
+            pushed_at: '2099-02-01T00:00:00.000Z',
+          },
+        ],
+      })
+    );
 
-    const repos = await githubService.getUserRepos();
-    expect(repos).toEqual([{ id: 5 }]);
+    const repos = await githubService.getUserRepos({
+      page: 2,
+      perPage: 15,
+      activityWindowDays: 30,
+    });
+    expect(repos).toEqual([
+      {
+        id: 5,
+        open_issues_count: 4,
+        open_issues: 4,
+        open_prs: 0,
+        recent_commits: 0,
+        pushed_at: '2099-02-01T00:00:00.000Z',
+        last_updated: '2099-02-01T00:00:00.000Z',
+      },
+    ]);
+    expect(global.fetch.mock.calls[0][0]).toContain('/api/v1/github/repositories?page=2&per_page=15&activity_window_days=30');
   });
 
   test('userService.getDeveloperProgress returns null on error', async () => {

@@ -54,10 +54,10 @@ describe('ReportTable', () => {
       {
         name: 'devsync',
         owner: 'ahmedikram',
-        open_issues: 3,
+        open_issues_count: 3,
         open_prs: 2,
         recent_commits: 6,
-        last_updated: '2099-03-01T00:00:00.000Z',
+        updated_at: '2099-03-01T00:00:00.000Z',
         html_url: 'https://github.com/AhmedIkram05/devsync',
       },
     ];
@@ -65,6 +65,7 @@ describe('ReportTable', () => {
     renderTable(repositories, 'github');
 
     expect(screen.getByText('devsync')).toBeInTheDocument();
+    expect(screen.getByText(new Date('2099-03-01T00:00:00.000Z').toLocaleDateString())).toBeInTheDocument();
     const externalLink = screen.getByRole('link', { name: /View on GitHub/i });
     expect(externalLink).toHaveAttribute('target', '_blank');
     expect(externalLink).toHaveAttribute('href', 'https://github.com/AhmedIkram05/devsync');

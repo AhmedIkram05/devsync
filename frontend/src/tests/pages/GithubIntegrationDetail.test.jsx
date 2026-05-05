@@ -23,6 +23,7 @@ jest.mock('../../services/github', () => ({
   githubService: {
     getUserRepos: jest.fn(),
     getIssues: jest.fn(),
+    getPullRequests: jest.fn(),
     linkTaskToGithub: jest.fn(),
   },
 }));
@@ -62,6 +63,20 @@ describe('GithubIntegrationDetail page', () => {
     labels: [{ id: 1, name: 'bug' }],
   };
 
+  const basePullRequest = {
+    id: 701,
+    number: 7,
+    title: 'Add login redirect',
+    html_url: 'https://github.com/org/devsync/pull/7',
+    created_at: '2099-01-03T00:00:00.000Z',
+    user: { login: 'octocat' },
+    body: 'Pull request body text',
+    labels: [{ id: 9, name: 'feature' }],
+    draft: false,
+    merged: false,
+    state: 'open',
+  };
+
   beforeEach(() => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -71,11 +86,13 @@ describe('GithubIntegrationDetail page', () => {
 
     githubService.getUserRepos.mockReset();
     githubService.getIssues.mockReset();
+    githubService.getPullRequests.mockReset();
     githubService.linkTaskToGithub.mockReset();
     taskService.getAllTasks.mockReset();
 
     githubService.getUserRepos.mockResolvedValue([baseRepository]);
     githubService.getIssues.mockResolvedValue({ issues: [baseIssue] });
+    githubService.getPullRequests.mockResolvedValue({ pull_requests: [] });
     githubService.linkTaskToGithub.mockResolvedValue({ success: true });
     taskService.getAllTasks.mockResolvedValue([
       { id: 11, title: 'Investigate webhook delays', status: 'in_progress' },
@@ -131,12 +148,14 @@ describe('GithubIntegrationDetail page', () => {
       { id: 22, title: 'Done item', status: 'completed' },
     ]);
     githubService.getIssues.mockResolvedValue([]);
+    githubService.getPullRequests.mockResolvedValue([]);
 
     render(<GitHubIntegrationDetail />);
 
     expect(await screen.findByText('devsync')).toBeInTheDocument();
     expect(screen.getByText(/No available tasks found. Please create a task first./i)).toBeInTheDocument();
     expect(screen.getByText(/No issues found in this repository./i)).toBeInTheDocument();
+    expect(screen.getByText(/No pull requests found in this repository./i)).toBeInTheDocument();
   });
 
   test('shows repository fetch error view when repository cannot be found', async () => {
@@ -149,6 +168,7 @@ describe('GithubIntegrationDetail page', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Back to GitHub Integration/i })).toHaveAttribute('href', '/github');
     expect(githubService.getIssues).not.toHaveBeenCalled();
+    expect(githubService.getPullRequests).not.toHaveBeenCalled();
   });
 
   test('shows linking error when issue linking request fails', async () => {
@@ -189,5 +209,32 @@ describe('GithubIntegrationDetail page', () => {
 
     expect(await screen.findByText('devsync')).toBeInTheDocument();
     expect(screen.getByText(/No available tasks found. Please create a task first./i)).toBeInTheDocument();
+  });
+
+  test('links selected pull request to a task', async () => {
+    githubService.getIssues.mockResolvedValue([]);
+    githubService.getPullRequests.mockResolvedValue({ pull_requests: [basePullRequest] });
+
+    render(<GitHubIntegrationDetail />);
+
+    await screen.findByRole('link', { name: /#7 Add login redirect/i });
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '11' } });
+    fireEvent.click(screen.getByRole('button', { name: /link to task/i }));
+
+    await waitFor(() => {
+      expect(githubService.linkTaskToGithub).toHaveBeenCalledWith(
+        '11',
+        expect.objectContaining({
+          repo_id: '1',
+          repo_name: 'org/devsync',
+          pull_request_number: 7,
+          pull_request_title: 'Add login redirect',
+        })
+      );
+    });
+
+    expect(await screen.findByText(/Successfully linked PR #7 to task!/i)).toBeInTheDocument();
+    expect(screen.getByRole('combobox')).toHaveValue('');
   });
 });

@@ -36,7 +36,16 @@ describe('Reports page', () => {
       open_prs: 3,
       recent_commits: 18,
     },
-    details: [{ id: 11 }],
+    details: [
+      {
+        id: 11,
+        name: 'devsync',
+        owner: 'ahmedikram',
+        open_issues_count: 12,
+        open_prs: 3,
+        recent_commits: 18,
+      },
+    ],
   };
 
   const developersReport = {
@@ -111,6 +120,7 @@ describe('Reports page', () => {
     });
 
     expect(await screen.findByText('Connected Repos')).toBeInTheDocument();
+    expect(screen.queryByText('No chart data for this range.')).not.toBeInTheDocument();
     expect(screen.getByText(/Report table: github \(1\)/i)).toBeInTheDocument();
 
     fireEvent.change(screen.getByDisplayValue('Last Week'), {
