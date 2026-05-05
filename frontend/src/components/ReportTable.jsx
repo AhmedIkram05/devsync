@@ -30,16 +30,16 @@ const ReportTable = ({ data = [], type }) => {
         case 'Task':
           return (
             <div>
-              <div className="text-sm font-medium text-gray-900">{item.title}</div>
-              <div className="text-xs text-gray-500">{item.project_name}</div>
+              <div className="text-sm font-medium text-slate-100">{item.title}</div>
+              <div className="text-xs text-slate-400">{item.project_name}</div>
             </div>
           );
         case 'Status':
           return (
             <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-              item.status === 'completed' ? 'bg-green-100 text-green-800' :
-              item.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
-              'bg-gray-100 text-gray-800'
+              item.status === 'completed' ? 'bg-emerald-500/20 text-emerald-300' :
+              item.status === 'in_progress' ? 'bg-sky-500/20 text-sky-300' :
+              'bg-slate-700/50 text-slate-300'
             }`}>
               {item.status === 'in_progress' ? 'In Progress' : 
               item.status === 'todo' ? 'To Do' :
@@ -52,13 +52,13 @@ const ReportTable = ({ data = [], type }) => {
           return item.assignee_name || 'Unassigned';
         case 'Progress':
           return (
-            <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="w-full bg-slate-800/50 rounded-full h-2">
               <div 
                 className={`h-2 rounded-full ${
-                  item.progress >= 100 ? 'bg-green-600' : 
-                  item.progress >= 50 ? 'bg-blue-600' : 
-                  item.progress > 0 ? 'bg-yellow-600' : 
-                  'bg-gray-400'
+                  item.progress >= 100 ? 'bg-emerald-500' : 
+                  item.progress >= 50 ? 'bg-rose-500' : 
+                  item.progress > 0 ? 'bg-amber-500' : 
+                  'bg-slate-700'
                 }`}
                 style={{ width: `${item.progress || 0}%` }}
               ></div>
@@ -70,7 +70,7 @@ const ReportTable = ({ data = [], type }) => {
           return (
             <Link 
               to={`/TaskDetailUser/${item.id}`}
-              className="text-blue-600 hover:text-blue-900"
+              className="text-rose-400 hover:text-rose-300"
             >
               View
             </Link>
@@ -83,8 +83,8 @@ const ReportTable = ({ data = [], type }) => {
         case 'Repository':
           return (
             <div>
-              <div className="text-sm font-medium text-gray-900">{item.name}</div>
-              <div className="text-xs text-gray-500">{item.owner}</div>
+              <div className="text-sm font-medium text-slate-100">{item.name}</div>
+              <div className="text-xs text-slate-400">{item.owner}</div>
             </div>
           );
         case 'Issues':
@@ -101,7 +101,7 @@ const ReportTable = ({ data = [], type }) => {
               href={item.html_url} 
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-600 hover:text-blue-900"
+              className="text-rose-400 hover:text-rose-300"
             >
               View on GitHub
             </a>
@@ -114,8 +114,8 @@ const ReportTable = ({ data = [], type }) => {
         case 'Developer':
           return (
             <div>
-              <div className="text-sm font-medium text-gray-900">{item.name}</div>
-              <div className="text-xs text-gray-500">{item.email}</div>
+              <div className="text-sm font-medium text-slate-100">{item.name}</div>
+              <div className="text-xs text-slate-400">{item.email}</div>
             </div>
           );
         case 'Tasks':
@@ -130,7 +130,7 @@ const ReportTable = ({ data = [], type }) => {
           return (
             <Link 
               to={`/tasks?assignee=${item.id}`}
-              className="text-blue-600 hover:text-blue-900"
+              className="text-rose-400 hover:text-rose-300"
             >
               View Tasks
             </Link>
@@ -172,7 +172,7 @@ const ReportTable = ({ data = [], type }) => {
   
   if (!data || data.length === 0) {
     return (
-      <div className="text-center py-6 text-gray-500">
+      <div className="text-center py-6 text-slate-400">
         No data available for this report
       </div>
     );
@@ -181,20 +181,20 @@ const ReportTable = ({ data = [], type }) => {
   return (
     <div>
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+        <table className="min-w-full divide-y divide-slate-700/70">
+          <thead className="bg-slate-800/60">
             <tr>
               {headers.map((header, index) => (
                 <th 
                   key={index} 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider"
                 >
                   {header}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
+          <tbody className="bg-slate-900/40 divide-y divide-slate-700/70">
             {paginatedData.map((item, itemIndex) => (
               <tr key={itemIndex}>
                 {headers.map((header, headerIndex) => (
@@ -210,15 +210,15 @@ const ReportTable = ({ data = [], type }) => {
       
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="py-3 flex items-center justify-between border-t border-gray-200 px-4">
+        <div className="py-3 flex items-center justify-between border-t border-slate-800/70 px-4">
           <div className="flex-1 flex justify-between sm:hidden">
             <button
               onClick={handlePreviousPage}
               disabled={currentPage === 1}
-              className={`relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md ${
+              className={`relative inline-flex items-center px-4 py-2 border border-slate-700/70 text-sm font-medium rounded-full ${
                 currentPage === 1
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-white text-gray-700 hover:bg-gray-50'
+                  ? 'bg-slate-800/50 text-slate-500 cursor-not-allowed'
+                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700/80'
               }`}
             >
               Previous
@@ -226,10 +226,10 @@ const ReportTable = ({ data = [], type }) => {
             <button
               onClick={handleNextPage}
               disabled={currentPage === totalPages}
-              className={`ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md ${
+              className={`ml-3 relative inline-flex items-center px-4 py-2 border border-slate-700/70 text-sm font-medium rounded-full ${
                 currentPage === totalPages
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-white text-gray-700 hover:bg-gray-50'
+                  ? 'bg-slate-800/50 text-slate-500 cursor-not-allowed'
+                  : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700/80'
               }`}
             >
               Next

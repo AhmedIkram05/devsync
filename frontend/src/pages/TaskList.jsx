@@ -86,11 +86,11 @@ const TaskList = () => {
   // Get status badge color and format status text
   const getStatusInfo = (status) => {
     const statusMap = {
-      'todo': { class: 'bg-gray-100 text-gray-800', text: 'To Do' },
-      'backlog': { class: 'bg-gray-100 text-gray-800', text: 'Backlog' },
-      'in_progress': { class: 'bg-yellow-100 text-yellow-800', text: 'In Progress' },
-      'review': { class: 'bg-blue-100 text-blue-800', text: 'Review' },
-      'completed': { class: 'bg-green-100 text-green-800', text: 'Completed' }
+      'todo': { class: 'bg-slate-800/70 text-slate-300', text: 'To Do' },
+      'backlog': { class: 'bg-slate-800/70 text-slate-300', text: 'Backlog' },
+      'in_progress': { class: 'bg-amber-500/15 text-amber-200', text: 'In Progress' },
+      'review': { class: 'bg-sky-500/15 text-sky-200', text: 'Review' },
+      'completed': { class: 'bg-emerald-500/15 text-emerald-200', text: 'Completed' }
     };
     
     return statusMap[status] || { class: 'bg-gray-100 text-gray-800', text: status };
@@ -99,9 +99,9 @@ const TaskList = () => {
   // Get priority badge
   const getPriorityBadge = (priority) => {
     const priorityMap = {
-      'high': { class: 'bg-red-100 text-red-800', text: 'High', icon: '❗' },
-      'medium': { class: 'bg-yellow-100 text-yellow-800', text: 'Medium', icon: '⚠️' },
-      'low': { class: 'bg-blue-100 text-blue-800', text: 'Low', icon: '🔽' }
+      'high': { class: 'bg-rose-500/15 text-rose-200', text: 'High', icon: '❗' },
+      'medium': { class: 'bg-amber-500/15 text-amber-200', text: 'Medium', icon: '⚠️' },
+      'low': { class: 'bg-sky-500/15 text-sky-200', text: 'Low', icon: '🔽' }
     };
     
     return priorityMap[priority] || { class: 'bg-gray-100 text-gray-800', text: priority };
@@ -136,19 +136,19 @@ const TaskList = () => {
   }
 
   return (
-    <div className="bg-gray-50 min-h-screen p-4 md:p-6">
+    <div className="bg-slate-950 min-h-screen p-4 md:p-6 text-slate-100">
       <div className="max-w-7xl mx-auto">
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <div className="bg-slate-900/70 rounded-2xl border border-slate-800/70 p-6 mb-6">
           <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-6">
-            <h1 className="text-2xl font-bold mb-4 md:mb-0">Your Tasks</h1>
+            <h1 className="text-2xl font-bold mb-4 md:mb-0 text-slate-100">Your Tasks</h1>
             <div className="flex flex-col md:flex-row gap-4">
               <button 
                 onClick={() => fetchTasks()}
                 disabled={loading || updating}
                 className={`inline-flex items-center px-4 py-2 rounded ${
                   loading || updating
-                    ? 'bg-gray-300 cursor-not-allowed'
-                    : 'bg-gray-600 hover:bg-gray-700 text-white'
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    : 'border border-slate-700 text-slate-200 hover:border-slate-500'
                 }`}
               >
                 <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -160,7 +160,7 @@ const TaskList = () => {
               {canCreateTasks && (
                 <button 
                   onClick={() => navigate('/admin/create-task')}
-                  className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded"
+                  className="inline-flex items-center px-4 py-2 rounded-full bg-rose-500/90 hover:bg-rose-400 text-white"
                 >
                   <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -172,11 +172,11 @@ const TaskList = () => {
           </div>
           
           {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+            <div className="bg-rose-500/10 border border-rose-400/40 text-rose-200 px-4 py-3 rounded mb-4">
               {error}
               <button 
                 onClick={() => setError(null)} 
-                className="float-right font-bold"
+                className="float-right font-bold text-rose-200"
               >
                 &times;
               </button>
@@ -186,14 +186,14 @@ const TaskList = () => {
           {/* Filters */}
           <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label htmlFor="statusFilter" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="statusFilter" className="block text-sm font-medium text-slate-300 mb-1">
                 Status
               </label>
               <select
                 id="statusFilter"
                 value={filters.status}
                 onChange={(e) => setFilters({...filters, status: e.target.value})}
-                className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                className="w-full p-2 border border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60"
               >
                 <option value="all">All Statuses</option>
                 <option value="todo">To Do</option>
@@ -205,14 +205,14 @@ const TaskList = () => {
             </div>
             
             <div>
-              <label htmlFor="priorityFilter" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="priorityFilter" className="block text-sm font-medium text-slate-300 mb-1">
                 Priority
               </label>
               <select
                 id="priorityFilter"
                 value={filters.priority}
                 onChange={(e) => setFilters({...filters, priority: e.target.value})}
-                className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                className="w-full p-2 border border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60"
               >
                 <option value="all">All Priorities</option>
                 <option value="high">High</option>
@@ -222,7 +222,7 @@ const TaskList = () => {
             </div>
             
             <div>
-              <label htmlFor="searchFilter" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="searchFilter" className="block text-sm font-medium text-slate-300 mb-1">
                 Search
               </label>
               <input
@@ -231,22 +231,22 @@ const TaskList = () => {
                 placeholder="Search tasks..."
                 value={filters.search}
                 onChange={(e) => setFilters({...filters, search: e.target.value})}
-                className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                className="w-full p-2 border border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60"
               />
             </div>
           </div>
           
           {/* Task List */}
           {filteredTasks.length === 0 ? (
-            <div className="text-center py-10 text-gray-500 border rounded-lg bg-gray-50">
-              <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="text-center py-10 text-slate-500 border border-slate-800/70 rounded-lg bg-slate-900/60">
+              <svg className="mx-auto h-12 w-12 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
               </svg>
               <p className="mt-2 text-lg">No tasks found matching your filters</p>
               {filters.status !== 'all' || filters.priority !== 'all' || filters.search ? (
                 <button
                   onClick={() => setFilters({ status: 'all', priority: 'all', search: '' })}
-                  className="mt-3 text-blue-600 hover:text-blue-800"
+                  className="mt-3 text-rose-300 hover:text-rose-200"
                 >
                   Clear filters
                 </button>
@@ -255,49 +255,49 @@ const TaskList = () => {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-gray-200">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+            <div className="overflow-x-auto rounded-lg border border-slate-800/70">
+              <table className="min-w-full divide-y divide-slate-800/70">
+                <thead className="bg-slate-900/70">
                   <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                       Task
                     </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                       Deadline
                     </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                       Status
                     </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                       Priority
                     </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                       Progress
                     </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-slate-950/60 divide-y divide-slate-800/70">
                   {filteredTasks.map((task) => {
                     const statusInfo = getStatusInfo(task.status);
                     const priorityInfo = getPriorityBadge(task.priority);
                     const isTaskOverdue = isOverdue(task.deadline) && task.status !== 'completed';
                     
                     return (
-                      <tr key={task.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => handleViewDetails(task.id)}>
+                      <tr key={task.id} className="hover:bg-slate-900/80 cursor-pointer" onClick={() => handleViewDetails(task.id)}>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">{task.title}</div>
-                          <div className="text-sm text-gray-500 truncate max-w-xs">
+                          <div className="text-sm font-medium text-slate-100">{task.title}</div>
+                          <div className="text-sm text-slate-400 truncate max-w-xs">
                             {task.description || 'No description'}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className={`text-sm ${isTaskOverdue ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
+                          <div className={`text-sm ${isTaskOverdue ? 'text-rose-300 font-medium' : 'text-slate-100'}`}>
                             {formatDate(task.deadline)}
                             {isTaskOverdue && (
-                              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-rose-500/15 text-rose-200">
                                 Overdue
                               </span>
                             )}
@@ -315,18 +315,18 @@ const TaskList = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
-                            <div className="w-full bg-gray-200 rounded-full h-2.5 mr-2 max-w-[100px]">
+                            <div className="w-full bg-slate-800/70 rounded-full h-2.5 mr-2 max-w-[100px]">
                               <div 
                                 className={`h-2.5 rounded-full ${
-                                  task.progress >= 100 ? 'bg-green-600' : 
-                                  task.progress >= 50 ? 'bg-blue-600' : 
-                                  task.progress > 0 ? 'bg-yellow-600' : 
-                                  'bg-gray-400'
+                                  task.progress >= 100 ? 'bg-emerald-400' : 
+                                  task.progress >= 50 ? 'bg-sky-400' : 
+                                  task.progress > 0 ? 'bg-amber-400' : 
+                                  'bg-slate-600'
                                 }`}
                                 style={{ width: `${task.progress || 0}%` }}
                               ></div>
                             </div>
-                            <span className="text-sm text-gray-500">{task.progress || 0}%</span>
+                            <span className="text-sm text-slate-400">{task.progress || 0}%</span>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium" onClick={(e) => e.stopPropagation()}>
@@ -336,7 +336,7 @@ const TaskList = () => {
                                 e.stopPropagation();
                                 handleViewDetails(task.id);
                               }}
-                              className="text-blue-600 hover:text-blue-900"
+                              className="text-rose-300 hover:text-rose-200"
                             >
                               View Details
                             </button>
@@ -347,7 +347,7 @@ const TaskList = () => {
                                 handleUpdateStatus(task.id, e.target.value);
                               }}
                               disabled={updating}
-                              className="text-sm border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 mr-2"
+                              className="text-sm border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60 mr-2"
                             >
                               <option value="todo">To Do</option>
                               <option value="backlog">Backlog</option>

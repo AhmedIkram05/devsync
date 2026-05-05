@@ -49,9 +49,9 @@ const Navbar = () => {
   const canCreateTasks = isAdmin || currentUser.role === "team_lead";
 
   return (
-    <nav className="bg-blue-600 p-4 text-white shadow-md">
-      <div className="container mx-auto flex justify-between items-center">
-        <Link to="/" className="text-xl font-bold flex items-center">
+    <nav className="bg-transparent p-4 text-white">
+      <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6">
+        <Link to="/" className="text-lg font-semibold tracking-wide">
           DevSync
         </Link>
         
@@ -96,8 +96,8 @@ const Navbar = () => {
           
           {/* Connection Status Indicator */}
           <div className="flex items-center">
-            <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-500'}`}></span>
-            <span className="ml-1 text-xs opacity-75">
+            <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-red-500'}`}></span>
+            <span className="ml-2 text-xs text-slate-300">
               {isConnected ? 'Connected' : 'Disconnected'}
             </span>
           </div>
@@ -121,8 +121,8 @@ const Navbar = () => {
             </button>
             
             {showNotifications && (
-              <div className="absolute right-0 mt-2 w-80 bg-white rounded-md shadow-lg overflow-hidden z-20">
-                <div className="py-2 px-3 bg-gray-100 text-gray-800 font-semibold flex justify-between">
+              <div className="absolute right-0 mt-2 w-80 bg-slate-900/95 rounded-lg shadow-lg overflow-hidden z-20 border border-slate-800/70">
+                <div className="py-2 px-3 bg-slate-800/70 text-slate-100 font-semibold flex justify-between">
                   <span>Notifications</span>
                 </div>
                 
@@ -134,10 +134,10 @@ const Navbar = () => {
                 </div>
                 
                 {notifications.length > 0 && (
-                  <div className="py-2 px-3 bg-gray-100 text-center">
+                  <div className="py-2 px-3 bg-slate-800/70 text-center">
                     <button 
                       onClick={markAllAsRead}
-                      className="text-sm text-blue-600 hover:underline"
+                      className="text-sm text-rose-400 hover:text-rose-300"
                     >
                       Mark all as read
                     </button>
@@ -149,11 +149,11 @@ const Navbar = () => {
           
           {/* User Menu */}
           <div className="flex items-center">
-            <span className="mr-4">{currentUser.name || currentUser.email}</span>
+            <span className="mr-4 text-sm text-slate-200">{currentUser.name || currentUser.email}</span>
             <button
               onClick={handleLogout}
               disabled={isLoggingOut}
-              className="bg-blue-700 hover:bg-blue-800 text-white px-3 py-1 rounded transition"
+              className="rounded-full bg-red-500/90 px-3 py-1 text-white text-sm font-semibold hover:bg-red-400 transition"
             >
               {isLoggingOut ? "Logging out..." : "Logout"}
             </button>

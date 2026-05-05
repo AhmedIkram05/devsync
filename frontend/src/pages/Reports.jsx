@@ -1,7 +1,32 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  PointElement,
+  LineElement,
+  ArcElement,
+  Tooltip,
+  Legend,
+  Filler
+} from 'chart.js';
+import { Bar, Doughnut, Line } from 'react-chartjs-2';
 import { dashboardService } from '../services/utils/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ReportTable from '../components/ReportTable';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  PointElement,
+  LineElement,
+  ArcElement,
+  Tooltip,
+  Legend,
+  Filler
+);
 
 const Reports = () => {
   const [reportData, setReportData] = useState(null);
@@ -195,12 +220,191 @@ const Reports = () => {
 
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+
+  const buildTimeBuckets = (range) => {
+    const now = new Date();
+    const buckets = [];
+
+    if (range === 'week') {
+      const start = new Date(now);
+      start.setDate(now.getDate() - 6);
+      start.setHours(0, 0, 0, 0);
+
+      for (let i = 0; i < 7; i += 1) {
+        const bucketStart = new Date(start);
+        bucketStart.setDate(start.getDate() + i);
+        const bucketEnd = new Date(bucketStart);
+        bucketEnd.setDate(bucketStart.getDate() + 1);
+        buckets.push({
+          label: bucketStart.toLocaleDateString('en-US', { weekday: 'short' }),
+          start: bucketStart,
+          end: bucketEnd
+        });
+      }
+
+      return buckets;
+    }
+
+    if (range === 'month') {
+      const start = new Date(now);
+      start.setDate(now.getDate() - 27);
+      start.setHours(0, 0, 0, 0);
+
+      for (let i = 0; i < 4; i += 1) {
+        const bucketStart = new Date(start);
+        bucketStart.setDate(start.getDate() + i * 7);
+        const bucketEnd = new Date(bucketStart);
+        bucketEnd.setDate(bucketStart.getDate() + 7);
+        buckets.push({
+          label: `Week ${i + 1}`,
+          start: bucketStart,
+          end: bucketEnd
+        });
+      }
+
+      return buckets;
+    }
+
+    const monthsToShow = range === 'quarter' ? 3 : 12;
+
+    for (let i = 0; i < monthsToShow; i += 1) {
+      const monthOffset = monthsToShow - 1 - i;
+      const bucketStart = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
+      const bucketEnd = new Date(now.getFullYear(), now.getMonth() - monthOffset + 1, 1);
+      buckets.push({
+        label: bucketStart.toLocaleDateString('en-US', { month: 'short' }),
+        start: bucketStart,
+        end: bucketEnd
+      });
+    }
+
+    return buckets;
+  };
+
+  const buildTaskTrend = (tasks, range) => {
+    const buckets = buildTimeBuckets(range);
+    const counts = buckets.map(() => 0);
+
+    (tasks || []).forEach((task) => {
+      if (!task?.created_at) {
+        return;
+      }
+
+      const createdAt = new Date(task.created_at);
+      if (Number.isNaN(createdAt.getTime())) {
+        return;
+      }
+
+      buckets.forEach((bucket, index) => {
+        if (createdAt >= bucket.start && createdAt < bucket.end) {
+          counts[index] += 1;
+        }
+      });
+    });
+
+    return {
+      labels: buckets.map((bucket) => bucket.label),
+      counts
+    };
+  };
+
+  const buildSummarySnapshot = (type, summary, details) => {
+    if (type === 'github') {
+      const repos = Array.isArray(details) ? details : [];
+      const openIssues = repos.reduce((sum, repo) => sum + (repo.open_issues || 0), 0);
+      const openPrs = repos.reduce((sum, repo) => sum + (repo.open_prs || 0), 0);
+      const recentCommits = repos.reduce((sum, repo) => sum + (repo.recent_commits || 0), 0);
+
+      return {
+        repos: summary?.repos ?? repos.length,
+        open_issues: summary?.open_issues ?? openIssues,
+        open_prs: summary?.open_prs ?? openPrs,
+        recent_commits: summary?.recent_commits ?? recentCommits
+      };
+    }
+
+    if (type === 'developers') {
+      return {
+        team_members: summary?.team_members ?? summary?.developers ?? 0,
+        avg_tasks: summary?.avg_tasks ?? 0,
+        avg_completion: summary?.avg_completion ?? 0,
+        active_devs: summary?.active_devs ?? 0
+      };
+    }
+
+    return {
+      total: summary?.total ?? 0,
+      completed: summary?.completed ?? 0,
+      in_progress: summary?.in_progress ?? 0,
+      overdue: summary?.overdue ?? 0
+    };
+  };
+
+  const hasNonZero = (values = []) => values.some((value) => Number(value) > 0);
+  const getRepoLabel = (repo) => repo?.name || repo?.full_name || 'Repo';
   
   // Render different charts based on the report type
   const renderCharts = () => {
     if (!reportData) return null;
     
     const { summary, details } = reportData;
+    const summarySnapshot = buildSummarySnapshot(reportType, summary, details);
+    const dateRangeLabel = getDateRangeLabel(dateRange);
+    const chartPalette = {
+      blue: 'rgba(59, 130, 246, 0.7)',
+      blueBorder: 'rgba(37, 99, 235, 1)',
+      green: 'rgba(16, 185, 129, 0.7)',
+      greenBorder: 'rgba(5, 150, 105, 1)',
+      yellow: 'rgba(245, 158, 11, 0.7)',
+      red: 'rgba(239, 68, 68, 0.7)',
+      purple: 'rgba(168, 85, 247, 0.7)',
+      gray: 'rgba(107, 114, 128, 0.6)'
+    };
+
+    const baseAxisOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { usePointStyle: true, boxWidth: 10 }
+        }
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, ticks: { precision: 0 } }
+      }
+    };
+
+    const doughnutOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { usePointStyle: true, boxWidth: 10 }
+        }
+      },
+      cutout: '60%'
+    };
+
+    const ChartCard = ({ title, subtitle, emptyState, children }) => (
+      <div className="bg-slate-900/70 rounded-2xl shadow-md p-6 border border-slate-800/70">
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-slate-100">{title}</h3>
+          {subtitle && <p className="text-sm text-slate-400">{subtitle}</p>}
+        </div>
+        <div className="h-72">
+          {emptyState ? (
+            <div className="h-full flex items-center justify-center border border-dashed border-slate-700/70 rounded">
+              <p className="text-sm text-slate-400">No chart data for this range.</p>
+            </div>
+          ) : (
+            children
+          )}
+        </div>
+      </div>
+    );
     
     return (
       <div className="space-y-6">
@@ -210,7 +414,7 @@ const Reports = () => {
             <>
               <SummaryCard 
                 title="Total Tasks" 
-                value={summary.total || 0} 
+                value={summarySnapshot.total || 0} 
                 color="blue"
                 icon={
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -220,7 +424,7 @@ const Reports = () => {
               />
               <SummaryCard 
                 title="Completed" 
-                value={summary.completed || 0} 
+                value={summarySnapshot.completed || 0} 
                 color="green"
                 icon={
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -230,7 +434,7 @@ const Reports = () => {
               />
               <SummaryCard 
                 title="In Progress" 
-                value={summary.in_progress || 0} 
+                value={summarySnapshot.in_progress || 0} 
                 color="yellow"
                 icon={
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -240,7 +444,7 @@ const Reports = () => {
               />
               <SummaryCard 
                 title="Overdue" 
-                value={summary.overdue || 0} 
+                value={summarySnapshot.overdue || 0} 
                 color="red"
                 icon={
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -255,7 +459,7 @@ const Reports = () => {
             <>
               <SummaryCard 
                 title="Connected Repos" 
-                value={summary.repos || 0} 
+                value={summarySnapshot.repos || 0} 
                 color="purple"
                 icon={
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -265,7 +469,7 @@ const Reports = () => {
               />
               <SummaryCard 
                 title="Open Issues" 
-                value={summary.open_issues || 0} 
+                value={summarySnapshot.open_issues || 0} 
                 color="blue"
                 icon={
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -275,7 +479,7 @@ const Reports = () => {
               />
               <SummaryCard 
                 title="Open PRs" 
-                value={summary.open_prs || 0} 
+                value={summarySnapshot.open_prs || 0} 
                 color="green"
                 icon={
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -285,7 +489,7 @@ const Reports = () => {
               />
               <SummaryCard 
                 title="Recent Commits" 
-                value={summary.recent_commits || 0} 
+                value={summarySnapshot.recent_commits || 0} 
                 color="yellow"
                 icon={
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -300,7 +504,7 @@ const Reports = () => {
             <>
               <SummaryCard 
                 title="Team Members" 
-                value={summary.team_members || 0} 
+                value={summarySnapshot.team_members || 0} 
                 color="blue"
                 icon={
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -310,7 +514,7 @@ const Reports = () => {
               />
               <SummaryCard 
                 title="Avg. Tasks Per Dev" 
-                value={summary.avg_tasks || 0} 
+                value={summarySnapshot.avg_tasks || 0} 
                 color="purple"
                 icon={
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -320,7 +524,7 @@ const Reports = () => {
               />
               <SummaryCard 
                 title="Avg. Completion Rate" 
-                value={`${summary.avg_completion || 0}%`} 
+                value={`${summarySnapshot.avg_completion || 0}%`} 
                 color="green"
                 icon={
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -330,7 +534,7 @@ const Reports = () => {
               />
               <SummaryCard 
                 title="Active Developers" 
-                value={summary.active_devs || 0} 
+                value={summarySnapshot.active_devs || 0} 
                 color="yellow"
                 icon={
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -342,20 +546,207 @@ const Reports = () => {
           )}
         </div>
         
-        {/* Visual Charts - In a real app, you would use a charting library like Chart.js or Recharts */}
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <div className="h-64 flex items-center justify-center border border-dashed border-gray-300 rounded">
-            <p className="text-gray-500 italic">
-              Charts would be displayed here using a library like Chart.js or Recharts
-            </p>
-          </div>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          {reportType === 'tasks' && (() => {
+            const otherCount = Math.max(
+              (summarySnapshot.total || 0)
+                - (summarySnapshot.completed || 0)
+                - (summarySnapshot.in_progress || 0)
+                - (summarySnapshot.overdue || 0),
+              0
+            );
+            const taskStatusValues = [
+              summarySnapshot.completed || 0,
+              summarySnapshot.in_progress || 0,
+              summarySnapshot.overdue || 0,
+              otherCount
+            ];
+            const taskStatusData = {
+              labels: ['Completed', 'In Progress', 'Overdue', 'Other'],
+              datasets: [
+                {
+                  data: taskStatusValues,
+                  backgroundColor: [chartPalette.green, chartPalette.yellow, chartPalette.red, chartPalette.gray],
+                  borderColor: '#ffffff',
+                  borderWidth: 2
+                }
+              ]
+            };
+
+            const taskTrend = buildTaskTrend(details, dateRange);
+            const taskTrendData = {
+              labels: taskTrend.labels,
+              datasets: [
+                {
+                  label: 'Tasks created',
+                  data: taskTrend.counts,
+                  borderColor: chartPalette.blueBorder,
+                  backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                  tension: 0.35,
+                  fill: true,
+                  pointRadius: 3
+                }
+              ]
+            };
+
+            return (
+              <>
+                <ChartCard
+                  title="Task status breakdown"
+                  subtitle={`Distribution for ${dateRangeLabel}`}
+                  emptyState={!hasNonZero(taskStatusValues)}
+                >
+                  <Doughnut data={taskStatusData} options={doughnutOptions} />
+                </ChartCard>
+                <ChartCard
+                  title="Tasks created over time"
+                  subtitle={`Activity for ${dateRangeLabel}`}
+                  emptyState={!hasNonZero(taskTrend.counts)}
+                >
+                  <Line data={taskTrendData} options={baseAxisOptions} />
+                </ChartCard>
+              </>
+            );
+          })()}
+
+          {reportType === 'github' && (() => {
+            const repos = Array.isArray(details) ? details : [];
+            const repoActivity = repos.map((repo) => {
+              const openIssues = repo.open_issues || 0;
+              const openPrs = repo.open_prs || 0;
+              const recentCommits = repo.recent_commits || 0;
+              return {
+                label: getRepoLabel(repo),
+                openIssues,
+                openPrs,
+                recentCommits,
+                total: openIssues + openPrs + recentCommits
+              };
+            });
+            const topRepos = repoActivity
+              .sort((a, b) => b.total - a.total)
+              .slice(0, 6);
+            const repoBarData = {
+              labels: topRepos.map((repo) => repo.label),
+              datasets: [
+                {
+                  label: 'Open Issues',
+                  data: topRepos.map((repo) => repo.openIssues),
+                  backgroundColor: chartPalette.blue
+                },
+                {
+                  label: 'Open PRs',
+                  data: topRepos.map((repo) => repo.openPrs),
+                  backgroundColor: chartPalette.green
+                },
+                {
+                  label: 'Recent Commits',
+                  data: topRepos.map((repo) => repo.recentCommits),
+                  backgroundColor: chartPalette.yellow
+                }
+              ]
+            };
+
+            const issuesTotal = repos.reduce((sum, repo) => sum + (repo.open_issues || 0), 0);
+            const prsTotal = repos.reduce((sum, repo) => sum + (repo.open_prs || 0), 0);
+            const commitsTotal = repos.reduce((sum, repo) => sum + (repo.recent_commits || 0), 0);
+            const githubMixValues = [issuesTotal, prsTotal, commitsTotal];
+            const githubMixData = {
+              labels: ['Open Issues', 'Open PRs', 'Recent Commits'],
+              datasets: [
+                {
+                  data: githubMixValues,
+                  backgroundColor: [chartPalette.blue, chartPalette.green, chartPalette.yellow],
+                  borderColor: '#ffffff',
+                  borderWidth: 2
+                }
+              ]
+            };
+
+            return (
+              <>
+                <ChartCard
+                  title="Repository activity by repo"
+                  subtitle={`Top repositories · ${dateRangeLabel}`}
+                  emptyState={!hasNonZero(topRepos.map((repo) => repo.total))}
+                >
+                  <Bar data={repoBarData} options={baseAxisOptions} />
+                </ChartCard>
+                <ChartCard
+                  title="Activity mix"
+                  subtitle={`Snapshot for ${dateRangeLabel}`}
+                  emptyState={!hasNonZero(githubMixValues)}
+                >
+                  <Doughnut data={githubMixData} options={doughnutOptions} />
+                </ChartCard>
+              </>
+            );
+          })()}
+
+          {reportType === 'developers' && (() => {
+            const developers = Array.isArray(details) ? details : [];
+            const topDevelopers = [...developers]
+              .sort((a, b) => (b.total_tasks || 0) - (a.total_tasks || 0))
+              .slice(0, 6);
+            const developerBarData = {
+              labels: topDevelopers.map((dev) => dev.name || 'Developer'),
+              datasets: [
+                {
+                  label: 'Total Tasks',
+                  data: topDevelopers.map((dev) => dev.total_tasks || 0),
+                  backgroundColor: chartPalette.purple
+                },
+                {
+                  label: 'Completed Tasks',
+                  data: topDevelopers.map((dev) => dev.completed_tasks || 0),
+                  backgroundColor: chartPalette.green
+                }
+              ]
+            };
+
+            const idleCount = Math.max(
+              (summarySnapshot.team_members || 0) - (summarySnapshot.active_devs || 0),
+              0
+            );
+            const developerMixValues = [summarySnapshot.active_devs || 0, idleCount];
+            const developerMixData = {
+              labels: ['Active', 'Idle'],
+              datasets: [
+                {
+                  data: developerMixValues,
+                  backgroundColor: [chartPalette.green, chartPalette.gray],
+                  borderColor: '#ffffff',
+                  borderWidth: 2
+                }
+              ]
+            };
+
+            return (
+              <>
+                <ChartCard
+                  title="Task volume by developer"
+                  subtitle={`Top contributors · ${dateRangeLabel}`}
+                  emptyState={!hasNonZero(topDevelopers.map((dev) => dev.total_tasks || 0))}
+                >
+                  <Bar data={developerBarData} options={baseAxisOptions} />
+                </ChartCard>
+                <ChartCard
+                  title="Developer activity"
+                  subtitle={`Active vs idle · ${dateRangeLabel}`}
+                  emptyState={!hasNonZero(developerMixValues)}
+                >
+                  <Doughnut data={developerMixData} options={doughnutOptions} />
+                </ChartCard>
+              </>
+            );
+          })()}
         </div>
         
         {/* Detailed Report Table + Generated Reports */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-lg shadow-md overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-800">Report Details</h2>
+          <div className="bg-slate-900/70 rounded-2xl shadow-md overflow-hidden border border-slate-800/70">
+            <div className="px-6 py-4 border-b border-slate-800/70">
+              <h2 className="text-lg font-semibold text-slate-100">Report Details</h2>
             </div>
             <ReportTable 
               data={details || []} 
@@ -363,14 +754,14 @@ const Reports = () => {
             />
           </div>
 
-          <div className="bg-white rounded-lg shadow-md">
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-gray-800">Generated Reports</h2>
-              <span className="text-sm text-gray-500">PDF downloads</span>
+          <div className="bg-slate-900/70 rounded-2xl shadow-md border border-slate-800/70">
+            <div className="px-6 py-4 border-b border-slate-800/70 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-100">Generated Reports</h2>
+              <span className="text-sm text-slate-400">PDF downloads</span>
             </div>
             <div className="p-6">
               {generatedReports.length === 0 ? (
-                <div className="text-gray-500 text-sm">
+                <div className="text-slate-400 text-sm">
                   No generated reports yet. Use Generate Report to create one.
                 </div>
               ) : (
@@ -378,24 +769,24 @@ const Reports = () => {
                   {generatedReports.map((report) => (
                     <div
                       key={report.id}
-                      className="border border-gray-200 rounded-lg p-4 flex flex-col gap-3"
+                      className="border border-slate-700/70 rounded-lg p-4 flex flex-col gap-3 bg-slate-800/30"
                     >
                       <div>
-                        <div className="text-sm font-semibold text-gray-900">
+                        <div className="text-sm font-semibold text-slate-100">
                           {getReportLabel(report.type)}
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-slate-400">
                           {getDateRangeLabel(report.dateRange)} · {formatGeneratedAt(report.generatedAt)}
                         </div>
                       </div>
                       <div className="flex items-center justify-between">
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-slate-400">
                           Summary entries: {Object.keys(report.summary || {}).length}
                         </div>
                         <button
                           type="button"
                           onClick={() => handleDownloadPdf(report)}
-                          className="px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                          className="px-3 py-2 bg-rose-500/90 text-white text-sm rounded-full hover:bg-rose-600/90"
                         >
                           Download PDF
                         </button>
@@ -416,13 +807,13 @@ const Reports = () => {
     const colorClasses = {
       blue: 'bg-blue-100 text-blue-500 border-blue-200',
       green: 'bg-green-100 text-green-500 border-green-200',
-      yellow: 'bg-yellow-100 text-yellow-500 border-yellow-200',
-      red: 'bg-red-100 text-red-500 border-red-200',
-      purple: 'bg-purple-100 text-purple-500 border-purple-200',
+      yellow: 'bg-amber-500/20 text-amber-300 border-amber-700/70',
+      red: 'bg-rose-500/20 text-rose-300 border-rose-700/70',
+      purple: 'bg-purple-500/20 text-purple-300 border-purple-700/70',
     };
     
     return (
-      <div className={`border rounded-lg p-4 ${colorClasses[color] || 'bg-gray-100 text-gray-500 border-gray-200'}`}>
+      <div className={`border rounded-lg p-4 ${colorClasses[color] || 'bg-slate-800/50 text-slate-400 border-slate-700/70'}`}>
         <div className="flex items-center">
           <div className="mr-4">
             {icon}
@@ -459,18 +850,18 @@ const Reports = () => {
   }
 
   return (
-    <div className="container mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">Reports & Analytics</h1>
+    <div className="container mx-auto p-6 bg-slate-950 min-h-screen text-slate-100">
+      <h1 className="text-2xl font-bold mb-6 text-slate-100">Reports & Analytics</h1>
       
       {/* Report Controls */}
-      <div className="bg-white rounded-lg shadow-md p-4 mb-6">
+      <div className="bg-slate-900/70 rounded-2xl shadow-md p-4 mb-6 border border-slate-800/70">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Report Type</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1">Report Type</label>
             <select
               value={reportType}
               onChange={(e) => setReportType(e.target.value)}
-              className="w-full p-2 border rounded focus:ring-blue-500 focus:border-blue-500"
+              className="w-full p-2 border border-slate-700/70 bg-slate-800/50 text-slate-100 rounded focus:ring-rose-500 focus:border-rose-500"
             >
               <option value="tasks">Task Reports</option>
               <option value="github">GitHub Activity</option>
@@ -479,11 +870,11 @@ const Reports = () => {
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date Range</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1">Date Range</label>
             <select
               value={dateRange}
               onChange={(e) => setDateRange(e.target.value)}
-              className="w-full p-2 border rounded focus:ring-blue-500 focus:border-blue-500"
+              className="w-full p-2 border border-slate-700/70 bg-slate-800/50 text-slate-100 rounded focus:ring-rose-500 focus:border-rose-500"
             >
               <option value="week">Last Week</option>
               <option value="month">Last Month</option>
@@ -496,7 +887,7 @@ const Reports = () => {
         <div className="mt-4 flex justify-end">
           <button 
             onClick={handleGenerateReport}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            className="px-4 py-2 bg-rose-500/90 text-white rounded-full hover:bg-rose-600/90"
           >
             Generate Report
           </button>
