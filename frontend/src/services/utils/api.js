@@ -400,6 +400,24 @@ const normalizeTaskStatus = (status) => {
   return status;
 };
 
+const normalizeAdminDashboardTasks = (tasks = {}) => {
+  const todo = toSafeMetricValue(tasks.todo, 0);
+  const inProgress = toSafeMetricValue(tasks.in_progress, 0);
+  const review = toSafeMetricValue(tasks.review, 0);
+  const done = toSafeMetricValue(tasks.done, 0);
+
+  return {
+    ...tasks,
+    total: toSafeMetricValue(tasks.total, todo + inProgress + review + done),
+    active: todo + inProgress + review,
+    completed: done,
+    todo,
+    in_progress: inProgress,
+    review,
+    done,
+  };
+};
+
 const buildDeveloperProgress = (users, tasks) => {
   const progressTrackingRoles = new Set(['developer', 'team_lead']);
   const tasksByAssignee = new Map();
@@ -449,7 +467,12 @@ const buildDeveloperProgress = (users, tasks) => {
 const dashboardService = {
   getAdminDashboardStats: async (timeRange = 'week') => {
     try {
-      return await fetchWithAuth(`dashboard/admin?timeRange=${timeRange}`);
+      const response = await fetchWithAuth(`dashboard/admin?timeRange=${timeRange}`);
+
+      return {
+        ...response,
+        tasks: normalizeAdminDashboardTasks(response?.tasks),
+      };
     } catch (error) {
       console.error("Dashboard fetch error:", error);
       // Return fallback data structure

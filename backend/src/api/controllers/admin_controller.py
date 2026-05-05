@@ -4,41 +4,55 @@ from flask import jsonify, request
 from ...db.models import db, User, Project, Task
 from ..validators.admin_validator import validate_system_settings, validate_user_role_update
 from ...auth.rbac import Role
+from sqlalchemy import func, case
 
 def get_system_stats():
     """Controller function to get system statistics for admin dashboard"""
-    # Count users by role
-    users = User.query.all()
-    user_stats = {
-        'total': len(users),
-        'admins': len([u for u in users if u.role == Role.ADMIN.value]),
-        'team_leads': len([u for u in users if u.role == Role.TEAM_LEAD.value]),
-        'developers': len([u for u in users if u.role == Role.DEVELOPER.value]),
-    }
     
-    # Count projects by status
-    projects = Project.query.all()
-    project_stats = {
-        'total': len(projects),
-        'active': len([p for p in projects if p.status == 'active']),
-        'completed': len([p for p in projects if p.status == 'completed']),
-        'on_hold': len([p for p in projects if p.status == 'on_hold'])
-    }
-    
-    # Count tasks by status
-    tasks = Task.query.all()
-    task_stats = {
-        'total': len(tasks),
-        'todo': len([t for t in tasks if t.status == 'todo']),
-        'in_progress': len([t for t in tasks if t.status == 'in_progress']),
-        'review': len([t for t in tasks if t.status == 'review']),
-        'done': len([t for t in tasks if t.status == 'done'])
-    }
-    
+    # Single query per table instead of loading all rows into memory
+    user_stats = db.session.query(
+        func.count(User.id).label('total'),
+        func.count(case((User.role == Role.ADMIN.value,     1))).label('admins'),
+        func.count(case((User.role == Role.TEAM_LEAD.value, 1))).label('team_leads'),
+        func.count(case((User.role == Role.DEVELOPER.value, 1))).label('developers'),
+    ).one()
+
+    project_stats = db.session.query(
+        func.count(Project.id).label('total'),
+        func.count(case((Project.status == 'active',    1))).label('active'),
+        func.count(case((Project.status == 'completed', 1))).label('completed'),
+        func.count(case((Project.status == 'on_hold',   1))).label('on_hold'),
+    ).one()
+
+    task_stats = db.session.query(
+        func.count(Task.id).label('total'),
+        func.count(case((Task.status == 'todo',        1))).label('todo'),
+        func.count(case((Task.status == 'in_progress', 1))).label('in_progress'),
+        func.count(case((Task.status == 'review',      1))).label('review'),
+        # Cover both 'done' and 'completed' in case of mixed data
+        func.count(case((Task.status.in_(['done', 'completed']), 1))).label('done'),
+    ).one()
+
     return jsonify({
-        'users': user_stats,
-        'projects': project_stats,
-        'tasks': task_stats
+        'users': {
+            'total':      user_stats.total,
+            'admins':     user_stats.admins,
+            'team_leads': user_stats.team_leads,
+            'developers': user_stats.developers,
+        },
+        'projects': {
+            'total':     project_stats.total,
+            'active':    project_stats.active,
+            'completed': project_stats.completed,
+            'on_hold':   project_stats.on_hold,
+        },
+        'tasks': {
+            'total':       task_stats.total,
+            'todo':        task_stats.todo,
+            'in_progress': task_stats.in_progress,
+            'review':      task_stats.review,
+            'done':        task_stats.done,  # ← frontend reads tasks.done
+        }
     })
 
 def get_system_settings():

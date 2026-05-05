@@ -475,6 +475,29 @@ describe('api utilities', () => {
     expect(stats.tasks.active).toBe(0);
   });
 
+  test('dashboardService.getAdminDashboardStats normalizes backend task stats', async () => {
+    global.fetch.mockResolvedValue(
+      buildResponse({
+        projects: { total: 3 },
+        tasks: {
+          total: 9,
+          todo: 2,
+          in_progress: 3,
+          review: 1,
+          done: 3,
+        },
+        users: { total: 4 },
+        recentProjects: [],
+      })
+    );
+
+    const stats = await dashboardService.getAdminDashboardStats('week');
+
+    expect(stats.tasks.active).toBe(6);
+    expect(stats.tasks.completed).toBe(3);
+    expect(stats.tasks.total).toBe(9);
+  });
+
   test('dashboardService.getBasicDashboardStats returns fallback on error', async () => {
     global.fetch.mockRejectedValue(new Error('client down'));
 

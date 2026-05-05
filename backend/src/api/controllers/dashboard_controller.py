@@ -6,6 +6,7 @@ from ...auth.rbac import Role  # Changed to relative import
 from datetime import datetime, timedelta
 import traceback
 import logging
+from sqlalchemy import func, case
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -186,12 +187,20 @@ def get_client_dashboard():
         assigned_tasks = get_user_tasks(user_id)
         
         # Get task statistics
+        counts = db.session.query(
+            func.count(Task.id).label('total'),
+            func.count(case((Task.status == 'todo',                          1))).label('todo'),
+            func.count(case((Task.status == 'in_progress',                   1))).label('in_progress'),
+            func.count(case((Task.status == 'review',                        1))).label('review'),
+            func.count(case((Task.status.in_(['done', 'completed']),         1))).label('done'),
+        ).one()
+
         task_stats = {
-            'total': len(assigned_tasks),
-            'todo': len([t for t in assigned_tasks if t.status == 'todo']),
-            'in_progress': len([t for t in assigned_tasks if t.status == 'in_progress']),
-            'review': len([t for t in assigned_tasks if t.status == 'review']),
-            'done': len([t for t in assigned_tasks if t.status == 'done'])
+            'total':       counts.total,
+            'todo':        counts.todo,
+            'in_progress': counts.in_progress,
+            'review':      counts.review,
+            'done':        counts.done,
         }
         
         # Get tasks due soon
@@ -245,11 +254,19 @@ def get_admin_dashboard():
             logger.error(f"User not found: {user_id}")
             return jsonify({'message': 'User not found'}), 404
         
-        # Get all tasks
-        all_tasks = Task.query.all()
+        # Get all tasks (guard against schema mismatches in local DB)
+        try:
+            all_tasks = Task.query.all()
+        except Exception as e:
+            logger.error(f"Error querying tasks for admin dashboard (fallback to empty): {str(e)}")
+            all_tasks = []
         
         # Get user counts by role
-        users = User.query.all()
+        try:
+            users = User.query.all()
+        except Exception as e:
+            logger.error(f"Error querying users for admin dashboard (fallback to empty): {str(e)}")
+            users = []
         user_counts = {
             'total': len(users),
             'admin': len([u for u in users if u.role == Role.ADMIN.value]),
@@ -274,6 +291,22 @@ def get_admin_dashboard():
                 'total': Project.query.count()
             }
         }
+        # Include recent projects (top 3 by updated_at)
+        try:
+            recent_projects_query = Project.query.order_by(Project.updated_at.desc()).limit(3).all()
+            dashboard_data['recentProjects'] = [
+                {
+                    'id': p.id,
+                    'name': p.name,
+                    'status': p.status,
+                    'created_at': p.created_at.isoformat() if p.created_at else None,
+                    'task_count': len(p.tasks) if getattr(p, 'tasks', None) is not None else 0
+                }
+                for p in recent_projects_query
+            ]
+        except Exception as e:
+            logger.error(f"Error fetching recent projects for admin dashboard: {str(e)}")
+            dashboard_data['recentProjects'] = []
         
         return jsonify(dashboard_data)
     except Exception as e:
