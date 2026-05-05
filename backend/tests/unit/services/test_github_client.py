@@ -201,6 +201,43 @@ class TestGitHubClient(unittest.TestCase):
         self.assertIn('since', called_kwargs['params'])
         self.assertEqual(called_kwargs['headers'], self.client.get_headers())
 
+    @patch('backend.src.services.github_client.requests.get')
+    def test_get_open_pulls_count_uses_repository_pulls_endpoint(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [{'number': 1}, {'number': 2}]
+        mock_response.headers = {}
+        mock_get.return_value = mock_response
+
+        pull_count = self.client.get_open_pulls_count('owner', 'repo1')
+
+        self.assertEqual(pull_count, 2)
+        called_url = mock_get.call_args.args[0]
+        called_kwargs = mock_get.call_args.kwargs
+        self.assertEqual(called_url, 'https://api.github.com/repos/owner/repo1/pulls')
+        self.assertEqual(called_kwargs['params']['state'], 'open')
+        self.assertEqual(called_kwargs['params']['page'], 1)
+        self.assertEqual(called_kwargs['params']['per_page'], 100)
+
+    @patch('backend.src.services.github_client.requests.get')
+    def test_get_open_issues_count_filters_out_pull_requests(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [
+            {'number': 11, 'title': 'Issue only'},
+            {'number': 12, 'pull_request': {'url': 'https://api.github.com/repos/owner/repo1/pulls/12'}},
+        ]
+        mock_response.headers = {}
+        mock_get.return_value = mock_response
+
+        issue_count = self.client.get_open_issues_count('owner', 'repo1')
+
+        self.assertEqual(issue_count, 1)
+        called_url = mock_get.call_args.args[0]
+        called_kwargs = mock_get.call_args.kwargs
+        self.assertEqual(called_url, 'https://api.github.com/repos/owner/repo1/issues')
+        self.assertEqual(called_kwargs['params']['state'], 'open')
+
     @patch.object(GitHubClient, 'get_recent_commits', return_value=None)
     @patch.object(GitHubClient, 'get_open_pulls_count', return_value=3)
     @patch.object(GitHubClient, 'get_open_issues_count', return_value=None)

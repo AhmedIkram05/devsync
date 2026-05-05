@@ -8,7 +8,7 @@ import time
 import json
 import base64
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from flask import current_app, g, request, redirect
 
 # Configure logging
@@ -340,42 +340,73 @@ class GitHubClient:
             use_cache=False  # Don't cache POST requests
         )
     
-    def _get_issue_search_count(self, owner, repo, query_fragment):
-        """Get a repository-scoped count from the GitHub issues search API."""
+    def _count_paginated_results(self, url, params=None, item_filter=None):
+        """Count items across a paginated GitHub collection endpoint."""
         try:
-            result = self._make_request(
-                'GET',
-                f"{self.BASE_API_URL}/search/issues",
-                params={
-                    'q': f'repo:{owner}/{repo} is:open {query_fragment}',
-                    'per_page': 1,
-                },
-                use_cache=True,
-                cache_ttl=300
-            )
+            total_items = 0
+            page = 1
+            per_page = 100
+            base_params = params or {}
 
-            if result is not None and 'total_count' in result:
-                return result['total_count']
+            while True:
+                page_items = self._make_request(
+                    'GET',
+                    url,
+                    params={
+                        **base_params,
+                        'page': page,
+                        'per_page': per_page,
+                    },
+                    use_cache=True,
+                    cache_ttl=300
+                )
 
-            return None
+                if page_items is None or not isinstance(page_items, list):
+                    return None
+
+                matching_items = (
+                    [item for item in page_items if item_filter(item)]
+                    if item_filter is not None
+                    else page_items
+                )
+                total_items += len(matching_items)
+
+                if len(page_items) < per_page:
+                    break
+
+                page += 1
+
+            return total_items
         except Exception:
             return None
 
     def get_open_issues_count(self, owner, repo):
         """Get count of open issues for a repository."""
-        return self._get_issue_search_count(owner, repo, 'is:issue')
+        return self._count_paginated_results(
+            f"{self.BASE_API_URL}/repos/{owner}/{repo}/issues",
+            params={'state': 'open'},
+            item_filter=lambda item: 'pull_request' not in item,
+        )
 
     def get_open_pulls_count(self, owner, repo):
         """Get count of open pull requests for a repository."""
-        return self._get_issue_search_count(owner, repo, 'is:pr')
+        return self._count_paginated_results(
+            f"{self.BASE_API_URL}/repos/{owner}/{repo}/pulls",
+            params={'state': 'open'},
+        )
     
     def get_recent_commits(self, owner, repo, since_days=7):
         """Get count of commits pushed to a repository within the given window."""
-        from datetime import datetime, timedelta
 
         try:
             window_days = max(int(since_days or 0), 1)
-            since_date = (datetime.utcnow() - timedelta(days=window_days)).replace(microsecond=0).isoformat() + 'Z'
+            # Use timezone-aware UTC datetimes instead of deprecated utcnow()
+            since_date = (
+                (datetime.now(timezone.utc) - timedelta(days=window_days))
+                .replace(microsecond=0)
+                .isoformat()
+                .replace('+00:00', 'Z')
+            )
             total_commits = 0
             page = 1
             per_page = 100
