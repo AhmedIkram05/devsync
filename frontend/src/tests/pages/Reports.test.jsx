@@ -10,6 +10,12 @@ jest.mock('../../services/utils/api', () => ({
   },
 }));
 
+jest.mock('react-chartjs-2', () => ({
+  Bar: () => <div data-testid="bar-chart" />,
+  Doughnut: () => <div data-testid="doughnut-chart" />,
+  Line: () => <div data-testid="line-chart" />,
+}));
+
 jest.mock('../../components/LoadingSpinner', () => () => <div>Loading spinner</div>);
 
 jest.mock('../../components/ReportTable', () => ({ data, type }) => (
