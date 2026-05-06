@@ -114,6 +114,21 @@ def get_task_by_id(task_id):
     creator = User.query.get(task.created_by)
     if creator:
         task_data['creator_name'] = creator.name
+
+    github_links = []
+    for link in getattr(task, 'github_links', []) or []:
+        repo = getattr(link, 'repository', None)
+        github_links.append({
+            'id': link.id,
+            'task_id': link.task_id,
+            'repo_id': link.repo_id,
+            'repo_name': repo.repo_name if repo else None,
+            'repo_url': repo.repo_url if repo else None,
+            'issue_number': link.issue_number,
+            'pull_request_number': link.pull_request_number,
+            'created_at': link.created_at.isoformat() if link.created_at else None,
+        })
+    task_data['github_links'] = github_links
     
     return jsonify({'task': task_data})
 

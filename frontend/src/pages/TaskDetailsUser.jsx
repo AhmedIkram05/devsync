@@ -53,10 +53,8 @@ function TaskDetailsUser() {
         const commentsData = await taskService.getTaskComments(id);
         setComments(commentsData || []);
         
-        // Check if task has any GitHub links
-        if (taskData && taskData.github_links && taskData.github_links.length > 0) {
-          setGithubLinks(taskData.github_links);
-        }
+        const linkedGithubItems = await githubService.getTaskGithubLinks(id);
+        setGithubLinks(linkedGithubItems || taskData?.github_links || []);
         
       } catch (err) {
         console.error('Task details fetch error:', err);
@@ -250,12 +248,8 @@ function TaskDetailsUser() {
       };
       
       await githubService.linkTaskToGithub(id, linkData);
-      
-      // Update the local state with the new link
-      setGithubLinks(prevLinks => [...prevLinks, {
-        id: Date.now(), // Temporary ID until we refresh data
-        ...linkData
-      }]);
+      const linkedGithubItems = await githubService.getTaskGithubLinks(id);
+      setGithubLinks(linkedGithubItems || []);
       
       // Reset selections
       setSelectedRepo('');

@@ -694,6 +694,17 @@ const githubService = {
       body: JSON.stringify(linkData)
     });
   },
+
+  getTaskGithubLinks: async (taskId) => {
+    try {
+      const response = await fetchWithAuth(`tasks/${taskId}/github`);
+      const links = response?.links ?? response;
+      return Array.isArray(links) ? links : [];
+    } catch (error) {
+      console.error(`Failed to get GitHub links for task ${taskId}:`, error);
+      return [];
+    }
+  },
   
   // Unlink task from GitHub issue
   unlinkTaskFromGithub: async (taskId, linkId) => {
