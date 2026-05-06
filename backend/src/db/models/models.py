@@ -19,6 +19,7 @@ class User(db.Model):
     password = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(20), nullable=False)
     github_username = db.Column(db.String(100))
+    github_connected = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Fix __table_args__ by creating a tuple containing all indices
@@ -46,6 +47,7 @@ class Task(db.Model):
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
     status = db.Column(db.String(20), nullable=False)
+    priority = db.Column(db.String(20), default='medium')
     progress = db.Column(db.Integer, default=0)
     assigned_to = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)

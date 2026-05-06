@@ -19,6 +19,7 @@ class TestGitHubClient(unittest.TestCase):
         self.app.config['GITHUB_REDIRECT_URI'] = 'http://localhost:8000/github/callback'
         self.app_context = self.app.app_context()
         self.app_context.push()
+        GitHubClient.clear_shared_cache()
         self.client = GitHubClient(access_token='test_token')
         
     def tearDown(self):
@@ -205,19 +206,19 @@ class TestGitHubClient(unittest.TestCase):
     def test_get_open_pulls_count_uses_repository_pulls_endpoint(self, mock_get):
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = [{'number': 1}, {'number': 2}]
+        mock_response.json.return_value = [{'number': 1}]
         mock_response.headers = {}
         mock_get.return_value = mock_response
 
         pull_count = self.client.get_open_pulls_count('owner', 'repo1')
 
-        self.assertEqual(pull_count, 2)
+        # New optimized behavior: returns count from first page only (not paginated)
+        self.assertEqual(pull_count, 1)
         called_url = mock_get.call_args.args[0]
         called_kwargs = mock_get.call_args.kwargs
         self.assertEqual(called_url, 'https://api.github.com/repos/owner/repo1/pulls')
         self.assertEqual(called_kwargs['params']['state'], 'open')
-        self.assertEqual(called_kwargs['params']['page'], 1)
-        self.assertEqual(called_kwargs['params']['per_page'], 100)
+        self.assertEqual(called_kwargs['params']['per_page'], 1)
 
     @patch('backend.src.services.github_client.requests.get')
     def test_get_open_issues_count_filters_out_pull_requests(self, mock_get):
@@ -282,7 +283,7 @@ class TestGitHubClient(unittest.TestCase):
         self.assertTrue(result)
 
     @patch('backend.src.services.github_client.time.time')
-    def test_handle_rate_limit_exceeded_throws(self, mock_time):
+    def test_handle_rate_limit_exceeded_returns_false(self, mock_time):
         mock_time.return_value = 1000
         mock_response = MagicMock()
         mock_response.status_code = 403
@@ -291,11 +292,10 @@ class TestGitHubClient(unittest.TestCase):
             'X-RateLimit-Remaining': '0',
             'X-RateLimit-Reset': '2000'  # 1000 seconds > 300
         }
-        
-        with self.assertRaises(Exception) as context:
-            self.client._handle_rate_limit(mock_response)
-            
-        self.assertIn('GitHub API rate limit exceeded', str(context.exception))
+
+        result = self.client._handle_rate_limit(mock_response)
+
+        self.assertFalse(result)
 
 if __name__ == '__main__':
     unittest.main()

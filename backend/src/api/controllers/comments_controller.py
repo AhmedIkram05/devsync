@@ -19,14 +19,16 @@ def get_task_comments(task_id):
     for comment in comments:
         user = User.query.get(comment.user_id)
         
+        updated_at = getattr(comment, 'updated_at', None)
         comment_data = {
             'id': comment.id,
             'content': comment.content,
             'user_id': comment.user_id,
             'user_name': user.name if user else 'Unknown',
+            'author_name': user.name if user else 'Unknown',
             'user_avatar': getattr(user, 'avatar', None) if user else None,
             'created_at': comment.created_at.isoformat() if comment.created_at else None,
-            'updated_at': comment.updated_at.isoformat() if comment.updated_at else None
+            'updated_at': updated_at.isoformat() if updated_at else None
         }
         comments_data.append(comment_data)
     
@@ -66,6 +68,7 @@ def add_comment(task_id):
             'content': new_comment.content,
             'user_id': user_id,
             'user_name': user.name if user else 'Unknown',
+            'author_name': user.name if user else 'Unknown',
             'user_avatar': getattr(user, 'avatar', None) if user else None,
             'created_at': new_comment.created_at.isoformat() if new_comment.created_at else None
         }

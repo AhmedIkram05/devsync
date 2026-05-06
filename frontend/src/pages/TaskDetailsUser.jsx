@@ -22,6 +22,8 @@ function TaskDetailsUser() {
   const [issues, setIssues] = useState([]);
   const [githubLinks, setGithubLinks] = useState([]);
   const [loadingIssues, setLoadingIssues] = useState(false);
+  const [loadingRepos, setLoadingRepos] = useState(false);
+  const [showGithubLink, setShowGithubLink] = useState(false);
   
   // Comments state
   const [comments, setComments] = useState([]);
@@ -51,19 +53,8 @@ function TaskDetailsUser() {
         const commentsData = await taskService.getTaskComments(id);
         setComments(commentsData || []);
         
-        // Try to fetch GitHub repositories and linked issues
-        try {
-          const repos = await githubService.getUserRepos();
-          setRepositories(repos || []);
-          
-          // Check if task has any GitHub links
-          if (taskData.github_links && taskData.github_links.length > 0) {
-            setGithubLinks(taskData.github_links);
-          }
-        } catch (githubError) {
-          console.warn('Could not fetch GitHub data:', githubError);
-          // Don't fail the entire task load if GitHub data fails
-        }
+        const linkedGithubItems = await githubService.getTaskGithubLinks(id);
+        setGithubLinks(linkedGithubItems || taskData?.github_links || []);
         
       } catch (err) {
         console.error('Task details fetch error:', err);
@@ -75,6 +66,24 @@ function TaskDetailsUser() {
 
     fetchTaskDetails();
   }, [id]);
+
+  useEffect(() => {
+    const loadRepositories = async () => {
+      setLoadingRepos(true);
+      try {
+        const result = await githubService.getUserRepos();
+        setRepositories(result || []);
+      } catch (err) {
+        console.error('Failed to fetch repositories:', err);
+        setRepositories([]);
+      } finally {
+        setShowGithubLink(true);
+        setLoadingRepos(false);
+      }
+    };
+
+    loadRepositories();
+  }, []);
 
   const handleProgressUpdate = async (newProgress) => {
     try {
@@ -201,6 +210,21 @@ function TaskDetailsUser() {
     }
   };
 
+  const handleOpenGithubLink = async () => {
+    setShowGithubLink(true);
+    if (repositories.length === 0) {
+      setLoadingRepos(true);
+      try {
+        const result = await githubService.getUserRepos(); // no activityWindowDays = fast path
+        setRepositories(result || []);
+      } catch (err) {
+        console.error('Failed to fetch repositories:', err);
+      } finally {
+        setLoadingRepos(false);
+      }
+    }
+  };
+
   const handleLinkIssue = async (issueId) => {
     if (!issueId) return;
     
@@ -224,12 +248,8 @@ function TaskDetailsUser() {
       };
       
       await githubService.linkTaskToGithub(id, linkData);
-      
-      // Update the local state with the new link
-      setGithubLinks(prevLinks => [...prevLinks, {
-        id: Date.now(), // Temporary ID until we refresh data
-        ...linkData
-      }]);
+      const linkedGithubItems = await githubService.getTaskGithubLinks(id);
+      setGithubLinks(linkedGithubItems || []);
       
       // Reset selections
       setSelectedRepo('');
@@ -504,13 +524,30 @@ function TaskDetailsUser() {
                   </>
                 ) : (
                   <div className="text-center py-4">
-                    <p className="text-slate-400 mb-4">Connect your GitHub account to link issues</p>
-                    <a 
-                      href="/github" 
-                      className="px-4 py-2 rounded-full bg-rose-500/90 text-white hover:bg-rose-400"
-                    >
-                      Connect GitHub Account
-                    </a>
+                    {loadingRepos ? (
+                      <p className="text-slate-400">Loading repositories...</p>
+                    ) : !showGithubLink ? (
+                      <>
+                        <p className="text-slate-400 mb-4">Load your GitHub repositories to link issues</p>
+                        <button 
+                          onClick={handleOpenGithubLink}
+                          disabled={loadingRepos}
+                          className="px-4 py-2 rounded-full bg-rose-500/90 text-white hover:bg-rose-400 disabled:opacity-60"
+                        >
+                          {loadingRepos ? 'Loading...' : 'Load Repositories'}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-slate-400 mb-4">Connect your GitHub account to link issues</p>
+                        <a 
+                          href="/github" 
+                          className="px-4 py-2 rounded-full bg-rose-500/90 text-white hover:bg-rose-400"
+                        >
+                          Connect GitHub Account
+                        </a>
+                      </>
+                    )}
                   </div>
                 )}
               </div>

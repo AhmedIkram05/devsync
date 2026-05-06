@@ -252,6 +252,10 @@ export const AuthProvider = ({ children }) => {
         ...userData,
         // Only use userData.token if it exists and is not empty
         token: userData.token && userData.token.trim() ? userData.token : prevUser.token,
+        github_username:
+          userData.github_connected === false
+            ? ''
+            : (userData.github_username ?? prevUser.github_username ?? ''),
       };
       
       // Also update localStorage
@@ -364,34 +368,31 @@ export const AuthProvider = ({ children }) => {
     }
   }, [location.pathname, location.search, navigate]);
   
-  // Check GitHub connection status when user changes
+  // Check GitHub connection status when user changes - verify with server to detect stale state
   useEffect(() => {
-    // Only check if we have a user that claims to be connected
-    if (currentUser && currentUser.github_connected) {
-      // Verify GitHub connection status with API
-      (async () => {
-        try {
-          const status = await githubService.checkConnection();
-          
-          // If API says not connected but local state says connected, update local state
-          if (!status.connected && currentUser.github_connected) {
-            const updatedUser = {
-              ...currentUser,
-              github_connected: false,
-              github_username: ''
-            };
-            
-            // Update localStorage and state
-            localStorage.setItem('user', JSON.stringify(updatedUser));
-            updateUser(updatedUser);
-            setGithubConnected(false);
-          }
-        } catch (error) {
-          console.error("Error verifying GitHub connection:", error);
+    if (!currentUser?.id) return;
+    
+    // Always verify against the server — don't trust the localStorage snapshot alone
+    const verify = async () => {
+      try {
+        const status = await githubService.checkConnection();
+        const serverConnected = Boolean(status?.connected);
+        if (serverConnected !== Boolean(currentUser.github_connected)) {
+          const updatedUser = {
+            ...currentUser,
+            github_connected: serverConnected,
+            github_username: serverConnected ? (status?.username || '') : '',
+          };
+          localStorage.setItem('user', JSON.stringify(updatedUser));
+          updateUser(updatedUser);
+          setGithubConnected(serverConnected);
         }
-      })();
-    }
-  }, [currentUser]);
+      } catch (e) {
+        console.error('Error verifying GitHub connection', e);
+      }
+    };
+    verify();
+  }, [currentUser?.id]); // Only re-run when the user *changes*, not on every state update
 
   const value = {
     currentUser,

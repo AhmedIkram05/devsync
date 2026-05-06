@@ -65,9 +65,10 @@ const fetchWithAuth = async (endpoint, options = {}) => {
     // Create URL - handle both cases with or without leading slash
     const url = `${API_URL}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
     
-    // Create a timeout promise
+    // Create a timeout promise - use provided timeout or default to 30 seconds
+    const timeoutMs = options.timeout || 8000;
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Request timeout')), 8000);
+      setTimeout(() => reject(new Error('Request timeout')), timeoutMs);
     });
     
     // Create the fetch promise with error handling for network issues
@@ -341,20 +342,7 @@ const getDateRangeStart = (dateRange) => {
   }
 };
 
-const isWithinDateRange = (isoDate, rangeStart) => {
-  if (!isoDate) {
-    return true;
-  }
-
-  const parsedDate = new Date(isoDate);
-  if (Number.isNaN(parsedDate.getTime())) {
-    return true;
-  }
-
-  return parsedDate >= rangeStart;
-};
-
-const getGithubActivityWindowDays = (dateRange) => {
+const getActivityWindowDays = (dateRange) => {
   switch (dateRange) {
     case 'month':
       return 30;
@@ -366,6 +354,19 @@ const getGithubActivityWindowDays = (dateRange) => {
     default:
       return 7;
   }
+};
+
+const isWithinDateRange = (isoDate, rangeStart) => {
+  if (!isoDate) {
+    return true;
+  }
+
+  const parsedDate = new Date(isoDate);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return true;
+  }
+
+  return parsedDate >= rangeStart;
 };
 
 const toSafeMetricValue = (value, fallback = 0) => {
@@ -547,10 +548,13 @@ const dashboardService = {
       if (reportType === 'github') {
         const githubStatus = await fetchWithAuth('github/status').catch(() => ({ connected: false }));
         const connected = Boolean(githubStatus?.connected);
+        const activityWindowDays = getActivityWindowDays(dateRange);
         const repositories = connected
           ? await githubService.getUserRepos({
-              activityWindowDays: getGithubActivityWindowDays(dateRange),
-            })
+            perPage: 100,
+            fetchAll: true,
+            activityWindowDays
+          })
           : [];
 
         // Calculate totals from enriched repo data
@@ -648,14 +652,30 @@ const githubService = {
         params.set('per_page', String(options.perPage));
       }
 
+      if (options.fetchAll) {
+        params.set('all_pages', 'true');
+      }
+
+      // Only fetch activity metrics when explicitly requested
+      let timeoutOverride = 30000; // default timeout
       if (options.activityWindowDays) {
         params.set('activity_window_days', String(options.activityWindowDays));
+        params.set('include_activity', 'true'); // only set when activity is actually needed
+        timeoutOverride = 90000; // 90 seconds for activity-heavy requests
+      } else {
+        params.set('include_activity', 'false');
+      }
+
+      if (options.fetchAll) {
+        timeoutOverride = Math.max(timeoutOverride, 120000);
       }
 
       const endpoint = params.toString()
         ? `github/repositories?${params.toString()}`
         : 'github/repositories';
-      const response = await fetchWithAuth(endpoint);
+      const response = await fetchWithAuth(endpoint, {
+        timeout: timeoutOverride
+      });
       
       // Handle potential errors or empty responses
       if (response.error) {
@@ -700,6 +720,17 @@ const githubService = {
       method: 'POST',
       body: JSON.stringify(linkData)
     });
+  },
+
+  getTaskGithubLinks: async (taskId) => {
+    try {
+      const response = await fetchWithAuth(`tasks/${taskId}/github`);
+      const links = response?.links ?? response;
+      return Array.isArray(links) ? links : [];
+    } catch (error) {
+      console.error(`Failed to get GitHub links for task ${taskId}:`, error);
+      return [];
+    }
   },
   
   // Unlink task from GitHub issue

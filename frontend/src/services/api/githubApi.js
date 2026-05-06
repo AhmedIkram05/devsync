@@ -62,7 +62,7 @@ export const githubApi = {
   // Get user's repositories
   getRepositories: async () => {
     try {
-      return await fetchWithAuth(`${BASE_URL}/repositories`);
+      return await fetchWithAuth(`${BASE_URL}/repositories?include_activity=false`);
     } catch (error) {
       console.error('Error fetching repositories:', error);
       throw error;

@@ -291,6 +291,7 @@ def get_project_tasks(project_id):
         'title': task.title,
         'description': task.description,
         'status': task.status,
+        'priority': task.priority,
         'progress': task.progress,
         'assigned_to': task.assigned_to,
         'created_by': task.created_by,

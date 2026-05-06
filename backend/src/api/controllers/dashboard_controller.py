@@ -6,11 +6,21 @@ from ...auth.rbac import Role  # Changed to relative import
 from datetime import datetime, timedelta
 import traceback
 import logging
-from sqlalchemy import func, case
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _safe_query_all(model):
+    try:
+        return model.query.all()
+    except Exception:
+        return []
+
+
+def _count(items, predicate):
+    return sum(1 for item in items if predicate(item))
 
 def get_user_tasks(user_id):
     """Helper function to get all tasks for a user"""
@@ -186,21 +196,12 @@ def get_client_dashboard():
         # Get tasks assigned to this user
         assigned_tasks = get_user_tasks(user_id)
         
-        # Get task statistics
-        counts = db.session.query(
-            func.count(Task.id).label('total'),
-            func.count(case((Task.status == 'todo',                          1))).label('todo'),
-            func.count(case((Task.status == 'in_progress',                   1))).label('in_progress'),
-            func.count(case((Task.status == 'review',                        1))).label('review'),
-            func.count(case((Task.status.in_(['done', 'completed']),         1))).label('done'),
-        ).one()
-
         task_stats = {
-            'total':       counts.total,
-            'todo':        counts.todo,
-            'in_progress': counts.in_progress,
-            'review':      counts.review,
-            'done':        counts.done,
+            'total':       len(assigned_tasks),
+            'todo':        _count(assigned_tasks, lambda task: getattr(task, 'status', None) == 'todo'),
+            'in_progress': _count(assigned_tasks, lambda task: getattr(task, 'status', None) == 'in_progress'),
+            'review':      _count(assigned_tasks, lambda task: getattr(task, 'status', None) == 'review'),
+            'done':        _count(assigned_tasks, lambda task: getattr(task, 'status', None) in {'done', 'completed'}),
         }
         
         # Get tasks due soon

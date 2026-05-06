@@ -16,7 +16,7 @@ def validate_task_data(data):
         return jsonify({'message': 'Title must be between 3 and 100 characters'}), 400
     
     # Validate status enum
-    valid_statuses = ['todo', 'in_progress', 'review', 'done']
+    valid_statuses = ['backlog', 'todo', 'in_progress', 'review', 'done']
     if data['status'] not in valid_statuses:
         return jsonify({'message': f'Status must be one of: {", ".join(valid_statuses)}'}), 400
     

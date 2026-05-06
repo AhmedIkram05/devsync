@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -35,6 +35,8 @@ const Reports = () => {
   const [reportType, setReportType] = useState('tasks');
   const [dateRange, setDateRange] = useState('week');
   const [generatedReports, setGeneratedReports] = useState([]);
+  const reportCacheRef = useRef({});
+  const latestRequestRef = useRef(0);
 
   const getReportLabel = (type) => {
     switch (type) {
@@ -152,18 +154,40 @@ const Reports = () => {
   };
 
   const loadReportData = useCallback(async () => {
+    const cacheKey = `${reportType}:${dateRange}`;
+    const cachedReport = reportCacheRef.current[cacheKey];
+    const requestId = latestRequestRef.current + 1;
+    latestRequestRef.current = requestId;
+
+    if (cachedReport) {
+      setReportData(cachedReport);
+      setLoading(false);
+      setError(null);
+      return cachedReport;
+    }
+
     try {
       setLoading(true);
       setError(null);
       const data = await dashboardService.getReportData(reportType, dateRange);
+      // Ignore stale responses from previous report/date selections.
+      if (requestId !== latestRequestRef.current) {
+        return null;
+      }
+      reportCacheRef.current[cacheKey] = data;
       setReportData(data);
       return data;
     } catch (err) {
+      if (requestId !== latestRequestRef.current) {
+        return null;
+      }
       console.error('Failed to fetch report data:', err);
       setError('Failed to load report data. Please try again.');
       return null;
     } finally {
-      setLoading(false);
+      if (requestId === latestRequestRef.current) {
+        setLoading(false);
+      }
     }
   }, [reportType, dateRange]);
 
