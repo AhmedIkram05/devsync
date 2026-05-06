@@ -193,3 +193,40 @@ class Project(db.Model):
     
     def __repr__(self):
         return f'<Project {self.name}>'
+
+class Report(db.Model):
+    """Report model for storing generated reports"""
+    __tablename__ = 'reports'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    report_type = db.Column(db.String(50), nullable=False)  # 'tasks', 'developers', 'github'
+    date_range = db.Column(db.String(50), nullable=False)  # 'week', 'month', 'quarter', 'year'
+    summary = db.Column(db.JSON, nullable=False)  # JSON object with summary metrics
+    details = db.Column(db.JSON, nullable=False)  # JSON array with detailed data
+    generated_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('idx_reports_user_id', 'user_id'),
+        Index('idx_reports_user_generated', 'user_id', 'generated_at'),
+        Index('idx_reports_type', 'report_type'),
+        Index('idx_reports_generated_at', 'generated_at'),
+    )
+    
+    # Relationships
+    user = db.relationship('User', backref='reports')
+    
+    def to_dict(self):
+        """Convert report to dictionary"""
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'type': self.report_type,
+            'dateRange': self.date_range,
+            'summary': self.summary,
+            'details': self.details,
+            'generatedAt': self.generated_at.isoformat() if self.generated_at else None
+        }
+    
+    def __repr__(self):
+        return f'<Report {self.id} ({self.report_type}) by User {self.user_id}>'
