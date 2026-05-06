@@ -12,7 +12,7 @@ import {
   Filler
 } from 'chart.js';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
-import { dashboardService } from '../services/utils/api';
+import { dashboardService, reportService } from '../services/utils/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ReportTable from '../components/ReportTable';
 
@@ -195,6 +195,45 @@ const Reports = () => {
     loadReportData();
   }, [loadReportData]);
 
+  useEffect(() => {
+    const loadSavedReports = async () => {
+      try {
+        const response = await reportService.getSavedReports();
+        if (response.error) {
+          console.warn('Failed to load saved reports:', response.error);
+        } else if (response.reports) {
+          setGeneratedReports(response.reports);
+        }
+      } catch (err) {
+        console.error('Error loading saved reports:', err);
+      }
+    };
+
+    loadSavedReports();
+  }, []);
+
+  const handleViewSavedReport = (report) => {
+    setReportData({
+      summary: report.summary,
+      details: report.details
+    });
+    setReportType(report.type);
+    setDateRange(report.dateRange);
+  };
+
+  const handleDeleteReport = async (reportId) => {
+    try {
+      const response = await reportService.deleteReport(reportId);
+      if (response.error) {
+        console.error('Failed to delete report:', response.error);
+      } else {
+        setGeneratedReports((prev) => prev.filter((r) => r.id !== reportId));
+      }
+    } catch (err) {
+      console.error('Error deleting report:', err);
+    }
+  };
+
   const handleGenerateReport = async () => {
     const data = reportData || await loadReportData();
     if (!data) return;
@@ -208,6 +247,26 @@ const Reports = () => {
       summary: data.summary || {},
       details: data.details || []
     };
+
+    try {
+      const saveResponse = await reportService.saveReport(
+        reportType,
+        dateRange,
+        reportEntry.summary,
+        reportEntry.details
+      );
+
+      if (saveResponse?.report) {
+        setGeneratedReports((prev) => [saveResponse.report, ...prev]);
+        return;
+      }
+
+      if (saveResponse?.error) {
+        console.warn('Failed to save report to backend:', saveResponse.error);
+      }
+    } catch (err) {
+      console.error('Error saving report to backend:', err);
+    }
 
     setGeneratedReports((prev) => [reportEntry, ...prev]);
   };
@@ -718,7 +777,6 @@ const Reports = () => {
     );
   }
 
-  // ─── Main render ───────────────────────────────────────────────────────────
   return (
     <div className="container mx-auto p-6 bg-slate-950 min-h-screen text-slate-100">
       <h1 className="text-2xl font-bold mb-6 text-slate-100">Reports & Analytics</h1>
