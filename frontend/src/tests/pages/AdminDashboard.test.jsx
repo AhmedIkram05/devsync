@@ -10,6 +10,9 @@ jest.mock('../../services/utils/api', () => ({
   dashboardService: {
     getAdminDashboardStats: jest.fn(),
   },
+  projectService: {
+    getAllProjects: jest.fn(),
+  },
 }));
 
 jest.mock('../../context/AuthContext', () => ({
@@ -68,6 +71,8 @@ describe('AdminDashboard page', () => {
 
     dashboardService.getAdminDashboardStats.mockReset();
     dashboardService.getAdminDashboardStats.mockResolvedValue(adminStatsPayload);
+    require('../../services/utils/api').projectService.getAllProjects.mockReset();
+    require('../../services/utils/api').projectService.getAllProjects.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -85,6 +90,37 @@ describe('AdminDashboard page', () => {
 
     expect(screen.getByText('DevSync Core')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /DevSync Core/i })).toHaveAttribute('href', '/projects/1');
+  });
+
+  test('renders review tasks in the task breakdown', async () => {
+    dashboardService.getAdminDashboardStats.mockResolvedValueOnce({
+      projects: { total: 5 },
+      tasks: {
+        total: 10,
+        backlog: 2,
+        todo: 2,
+        in_progress: 3,
+        review: 1,
+        done: 2,
+      },
+      users: { total: 8 },
+      recentProjects: [
+        {
+          id: 99,
+          name: 'Recent Project',
+          status: 'active',
+          created_at: '2099-01-01T00:00:00.000Z',
+          task_count: 4,
+        },
+      ],
+    });
+
+    renderAdminDashboard();
+
+    expect(await screen.findByText('In Review')).toBeInTheDocument();
+    expect(screen.getByText('Backlog')).toBeInTheDocument();
+    expect(screen.getAllByText('1', { selector: '.text-slate-400' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('2', { selector: '.text-slate-400' }).length).toBeGreaterThan(0);
   });
 
   test('refetches dashboard data when time range changes and when refresh is clicked', async () => {

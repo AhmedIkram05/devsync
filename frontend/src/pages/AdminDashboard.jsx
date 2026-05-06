@@ -319,29 +319,36 @@ const AdminDashboard = () => {
               <Panel>
                 <PanelHeader title="Task Breakdown" />
                 <div className="p-5 space-y-4">
-                  {[
-                    { label: 'To Do',       value: dashboardData?.tasks?.todo      || 0, color: 'bg-slate-500'   },
-                    { label: 'In Progress', value: dashboardData?.tasks?.active     || 0, color: 'bg-sky-500'     },
-                    { label: 'In Review',   value: dashboardData?.tasks?.inReview   || 0, color: 'bg-amber-500'   },
-                    { label: 'Done',        value: dashboardData?.tasks?.done       || 0, color: 'bg-emerald-500' },
-                  ].map(({ label, value, color }) => {
-                    const total = (dashboardData?.tasks?.todo || 0)
-                      + (dashboardData?.tasks?.active || 0)
-                      + (dashboardData?.tasks?.inReview || 0)
-                      + (dashboardData?.tasks?.done || 0);
-                    const pct = total > 0 ? Math.round((value / total) * 100) : 0;
-                    return (
-                      <div key={label}>
-                        <div className="flex justify-between text-sm mb-1.5">
-                          <span className="text-slate-300">{label}</span>
-                          <span className="text-slate-400">{value} <span className="text-slate-600">({pct}%)</span></span>
+                  {(() => {
+                    const backlog = dashboardData?.tasks?.backlog || 0;
+                    const todo = dashboardData?.tasks?.todo || 0;
+                    const inProgress = dashboardData?.tasks?.in_progress ?? dashboardData?.tasks?.active ?? 0;
+                    const inReview = dashboardData?.tasks?.review ?? dashboardData?.tasks?.inReview ?? 0;
+                    const done = dashboardData?.tasks?.done || 0;
+                    const total = backlog + todo + inProgress + inReview + done;
+
+                    return [
+                      { label: 'Backlog', value: backlog, color: 'bg-orange-500' },
+                      { label: 'To Do', value: todo, color: 'bg-slate-500' },
+                      { label: 'In Progress', value: inProgress, color: 'bg-sky-500' },
+                      { label: 'In Review', value: inReview, color: 'bg-amber-500' },
+                      { label: 'Done', value: done, color: 'bg-emerald-500' },
+                    ].map(({ label, value, color }) => {
+                      const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+
+                      return (
+                        <div key={label}>
+                          <div className="flex justify-between text-sm mb-1.5">
+                            <span className="text-slate-300">{label}</span>
+                            <span className="text-slate-400">{value} <span className="text-slate-600">({pct}%)</span></span>
+                          </div>
+                          <div className="w-full bg-slate-800 rounded-full h-1.5">
+                            <div className={`${color} h-1.5 rounded-full transition-all`} style={{ width: `${pct}%` }} />
+                          </div>
                         </div>
-                        <div className="w-full bg-slate-800 rounded-full h-1.5">
-                          <div className={`${color} h-1.5 rounded-full transition-all`} style={{ width: `${pct}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
                 </div>
               </Panel>
 

@@ -11,6 +11,8 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+COMPLETED_TASK_STATUSES = {'done', 'completed'}
+
 
 def _safe_query_all(model):
     try:
@@ -21,6 +23,14 @@ def _safe_query_all(model):
 
 def _count(items, predicate):
     return sum(1 for item in items if predicate(item))
+
+
+def _is_completed_status(status):
+    return status in COMPLETED_TASK_STATUSES
+
+
+def _is_completed_task(task):
+    return _is_completed_status(getattr(task, 'status', None))
 
 def get_user_tasks(user_id):
     """Helper function to get all tasks for a user"""
@@ -38,7 +48,7 @@ def get_tasks_due_soon(user_id):
         return Task.query.filter_by(assigned_to=user_id)\
             .filter(Task.deadline.isnot(None))\
             .filter(Task.deadline.between(today, week_later))\
-            .filter(Task.status != 'done').all()
+            .filter(~Task.status.in_(COMPLETED_TASK_STATUSES)).all()
     except Exception as e:
         logger.error(f"Error fetching tasks due soon: {str(e)}")
         return []
@@ -61,8 +71,11 @@ def get_recent_completed_tasks(user_id, timeframe='month'):
             days = 30
 
         time_ago = today - timedelta(days=days)
-        return Task.query.filter_by(assigned_to=user_id, status='done')\
-            .filter(Task.updated_at >= time_ago).all()
+        return Task.query.filter_by(assigned_to=user_id)\
+            .filter(
+                Task.status.in_(COMPLETED_TASK_STATUSES),
+                Task.updated_at >= time_ago,
+            ).all()
     except Exception as e:
         logger.error(f"Error fetching completed tasks: {str(e)}")
         return []
@@ -83,7 +96,7 @@ def get_project_tasks_due_soon(project_id):
         return Task.query.filter_by(project_id=project_id)\
             .filter(Task.deadline.isnot(None))\
             .filter(Task.deadline.between(today, week_later))\
-            .filter(Task.status != 'done').all()
+            .filter(~Task.status.in_(COMPLETED_TASK_STATUSES)).all()
     except Exception as e:
         logger.error(f"Error fetching project tasks due soon: {str(e)}")
         return []
@@ -134,8 +147,8 @@ def get_user_dashboard():
             },
             'tasks': {
                 'assigned_count': len(assigned_tasks),
-                'pending_count': len([t for t in assigned_tasks if t.status != 'done']),
-                'completed_count': len([t for t in assigned_tasks if t.status == 'done']),
+                'pending_count': len([t for t in assigned_tasks if not _is_completed_task(t)]),
+                'completed_count': len([t for t in assigned_tasks if _is_completed_task(t)]),
                 'due_soon': [{
                     'id': task.id,
                     'title': task.title,
@@ -165,7 +178,7 @@ def get_user_dashboard():
             
             dashboard_data['team'] = {
                 'total_tasks': len(team_tasks),
-                'completed_tasks': len([t for t in team_tasks if t.status == 'done']),
+                'completed_tasks': len([t for t in team_tasks if _is_completed_task(t)]),
                 'in_progress_tasks': len([t for t in team_tasks if t.status == 'in_progress']),
                 'pending_tasks': len([t for t in team_tasks if t.status == 'todo'])
             }
@@ -278,10 +291,11 @@ def get_admin_dashboard():
         # Calculate task statistics
         task_stats = {
             'total': len(all_tasks),
+            'backlog': len([t for t in all_tasks if t.status == 'backlog']),
             'todo': len([t for t in all_tasks if t.status == 'todo']),
             'in_progress': len([t for t in all_tasks if t.status == 'in_progress']),
             'review': len([t for t in all_tasks if t.status == 'review']),
-            'done': len([t for t in all_tasks if t.status == 'done'])
+            'done': len([t for t in all_tasks if _is_completed_task(t)])
         }
         
         # Format response data
@@ -333,7 +347,7 @@ def get_project_dashboard(project_id):
             'todo': len([t for t in tasks if t.status == 'todo']),
             'in_progress': len([t for t in tasks if t.status == 'in_progress']),
             'review': len([t for t in tasks if t.status == 'review']),
-            'done': len([t for t in tasks if t.status == 'done'])
+            'done': len([t for t in tasks if _is_completed_task(t)])
         }
         
         # Calculate completion percentage
