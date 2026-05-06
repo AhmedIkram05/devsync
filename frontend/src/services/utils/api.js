@@ -402,6 +402,7 @@ const normalizeTaskStatus = (status) => {
 };
 
 const normalizeAdminDashboardTasks = (tasks = {}) => {
+  const backlog = toSafeMetricValue(tasks.backlog, 0);
   const todo = toSafeMetricValue(tasks.todo, 0);
   const inProgress = toSafeMetricValue(tasks.in_progress, 0);
   const review = toSafeMetricValue(tasks.review, 0);
@@ -409,9 +410,10 @@ const normalizeAdminDashboardTasks = (tasks = {}) => {
 
   return {
     ...tasks,
-    total: toSafeMetricValue(tasks.total, todo + inProgress + review + done),
+    total: toSafeMetricValue(tasks.total, backlog + todo + inProgress + review + done),
     active: todo + inProgress + review,
     completed: done,
+    backlog,
     todo,
     in_progress: inProgress,
     review,
@@ -834,6 +836,73 @@ const notificationService = {
   }
 };
 
+
+// Report service
+const reportService = {
+  saveReport: async (reportType, dateRange, summary, details) => {
+    try {
+      const response = await fetchWithAuth('reports', {
+        method: 'POST',
+        body: JSON.stringify({
+          report_type: reportType,
+          date_range: dateRange,
+          summary,
+          details
+        })
+      });
+      return response;
+    } catch (error) {
+      console.error('Failed to save report:', error);
+      return { error: error.message };
+    }
+  },
+
+  getSavedReports: async (filter = {}) => {
+    try {
+      let endpoint = 'reports';
+      const params = new URLSearchParams();
+      
+      if (filter.type) params.append('type', filter.type);
+      if (filter.dateRange) params.append('dateRange', filter.dateRange);
+      if (filter.page) params.append('page', filter.page);
+      if (filter.per_page) params.append('per_page', filter.per_page);
+      
+      const queryString = params.toString();
+      if (queryString) {
+        endpoint = `${endpoint}?${queryString}`;
+      }
+      
+      const response = await fetchWithAuth(endpoint);
+      return response;
+    } catch (error) {
+      console.error('Failed to fetch saved reports:', error);
+      return { error: error.message, reports: [] };
+    }
+  },
+
+  getReportById: async (reportId) => {
+    try {
+      const response = await fetchWithAuth(`reports/${reportId}`);
+      return response;
+    } catch (error) {
+      console.error(`Failed to fetch report ${reportId}:`, error);
+      return { error: error.message };
+    }
+  },
+
+  deleteReport: async (reportId) => {
+    try {
+      const response = await fetchWithAuth(`reports/${reportId}`, {
+        method: 'DELETE'
+      });
+      return response;
+    } catch (error) {
+      console.error(`Failed to delete report ${reportId}:`, error);
+      return { error: error.message };
+    }
+  }
+};
+
 export {
   fetchWithAuth,
   taskService,
@@ -841,5 +910,6 @@ export {
   githubService,
   userService,
   dashboardService,
-  notificationService
+  notificationService,
+  reportService
 };

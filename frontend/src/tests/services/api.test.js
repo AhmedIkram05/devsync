@@ -483,6 +483,7 @@ describe('api utilities', () => {
         projects: { total: 3 },
         tasks: {
           total: 9,
+          backlog: 1,
           todo: 2,
           in_progress: 3,
           review: 1,
@@ -498,6 +499,7 @@ describe('api utilities', () => {
     expect(stats.tasks.active).toBe(6);
     expect(stats.tasks.completed).toBe(3);
     expect(stats.tasks.total).toBe(9);
+    expect(stats.tasks.backlog).toBe(1);
   });
 
   test('dashboardService.getBasicDashboardStats returns fallback on error', async () => {

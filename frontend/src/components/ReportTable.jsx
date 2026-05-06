@@ -70,7 +70,7 @@ const ReportTable = ({ data = [], type }) => {
         case 'Actions':
           return (
             <Link 
-              to={`/TaskDetailUser/${item.id}`}
+              to={`/Tasks/${item.id}`}
               className="text-rose-400 hover:text-rose-300"
             >
               View
