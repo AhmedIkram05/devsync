@@ -30,6 +30,8 @@ TEAM_LEAD_PERMISSIONS = [
     *DEVELOPER_PERMISSIONS,
     'can_create_tasks',
     'can_assign_tasks',
+    'can_update_any_task',
+    'can_delete_tasks',
     'can_view_team_metrics',
     'can_view_team_reports',
     'can_generate_reports',

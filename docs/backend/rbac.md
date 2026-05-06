@@ -27,6 +27,8 @@ All Developer permissions, plus:
 
 - Create new tasks
 - Assign tasks to team members
+- Update any task
+- Delete any task
 - View team statistics and metrics
 - Generate reports
 - View all team member profiles
@@ -35,7 +37,6 @@ All Developer permissions, plus:
 
 All Team Lead permissions, plus:
 
-- Delete tasks
 - Manage users (create, update, delete)
 - Modify system settings
 - View audit logs

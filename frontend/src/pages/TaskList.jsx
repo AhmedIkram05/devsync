@@ -140,7 +140,7 @@ const TaskList = () => {
       <div className="max-w-7xl mx-auto">
         <div className="bg-slate-900/70 rounded-2xl border border-slate-800/70 p-6 mb-6">
           <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-6">
-            <h1 className="text-2xl font-bold mb-4 md:mb-0 text-slate-100">Your Tasks</h1>
+            <h1 className="text-2xl font-bold mb-4 md:mb-0 text-slate-100">Tasks</h1>
             <div className="flex flex-col md:flex-row gap-4">
               <button 
                 onClick={() => fetchTasks()}
