@@ -172,6 +172,7 @@ describe('githubService', () => {
     expect(repos).toEqual([{ id: 9, full_name: 'org/repo' }]);
     const [url] = global.fetch.mock.calls[0];
     expect(url).toContain('/api/v1/github/repositories?page=2&per_page=15');
+    expect(url).toContain('include_activity=false');
   });
 
   test('getRepositoryIssues returns an empty list when request fails', async () => {

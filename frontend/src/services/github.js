@@ -261,9 +261,44 @@ export const githubService = {
   },
   
   // Get user's GitHub repositories
-  getUserRepos: async () => {
+  getUserRepos: async (options = {}) => {
     try {
-      const data = await fetchWithAuth(`${BASE_URL}/repositories`);
+      const params = new URLSearchParams();
+
+      if (options.page) {
+        params.set('page', String(options.page));
+      }
+
+      if (options.perPage) {
+        params.set('per_page', String(options.perPage));
+      }
+
+      // Only fetch activity metrics when explicitly requested
+      let url = `${BASE_URL}/repositories`;
+      let timeoutMs = 30000; // default 30 second timeout
+      
+      if (options.activityWindowDays) {
+        params.set('activity_window_days', String(options.activityWindowDays));
+        params.set('include_activity', 'true'); // only set when activity is actually needed
+        timeoutMs = 90000; // 90 seconds for activity-heavy requests
+      } else {
+        params.set('include_activity', 'false');
+      }
+
+      if (params.toString()) {
+        url += `?${params.toString()}`;
+      }
+
+      // Create a timeout promise
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Request timeout')), timeoutMs);
+      });
+
+      // Create the fetch promise
+      const fetchPromise = fetchWithAuth(url);
+
+      // Race between fetch and timeout
+      const data = await Promise.race([fetchPromise, timeoutPromise]);
       return data.repositories || data;
     } catch (error) {
       console.error('Error fetching GitHub repositories:', error);
@@ -276,7 +311,8 @@ export const githubService = {
     try {
       const queryParams = new URLSearchParams({
         page: page.toString(),
-        per_page: perPage.toString()
+        per_page: perPage.toString(),
+        include_activity: 'false'
       }).toString();
       
       const data = await fetchWithAuth(`${BASE_URL}/repositories?${queryParams}`);

@@ -3,6 +3,8 @@
 import logging
 import uuid
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 
 from flask import current_app, jsonify, redirect, request
 from flask_jwt_extended import get_jwt_identity
@@ -168,8 +170,11 @@ def github_callback():
     return redirect(redirect_url)
 
 def get_github_repositories():
-    """Get repositories for the authenticated user"""
+    """Get repositories for the authenticated user. Lazy-loads activity metrics when requested."""
+    start_time = time.time()
+    
     user_id = get_jwt_identity()['user_id']
+    logger.info(f"[PERF] get_github_repositories START - user_id: {user_id}")
     
     # Check if user has a GitHub token
     token = GitHubToken.query.filter_by(user_id=user_id).first()
@@ -183,18 +188,33 @@ def get_github_repositories():
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 30, type=int)
     activity_window_days = max(request.args.get('activity_window_days', 7, type=int) or 7, 1)
+    include_activity_arg = request.args.get('include_activity')
+    include_activity = False if include_activity_arg is None else include_activity_arg.lower() == 'true'
     
+    api_start = time.time()
     repositories = github_client.get_user_repositories(page=page, per_page=per_page)
+    api_time = time.time() - api_start
+    logger.info(f"[PERF] GitHub API call took {api_time:.2f}s - got {len(repositories)} repos")
 
     # Keep a local mapping so downstream endpoints can reference stable local repository IDs.
     github_ids = [repo['id'] for repo in repositories]
     existing_repos = {}
     if github_ids:
+        db_query_start = time.time()
         stored_repos = GitHubRepository.query.filter(GitHubRepository.github_id.in_(github_ids)).all()
+        db_query_time = time.time() - db_query_start
+        logger.info(f"[PERF] Database query for existing repos took {db_query_time:.2f}s - found {len(stored_repos)} existing")
         existing_repos = {stored_repo.github_id: stored_repo for stored_repo in stored_repos}
 
     formatted_repos = []
     should_commit = False
+    new_repos = []
+    loop_start = time.time()
+    
+    # Collect repos that need activity fetching
+    repos_needing_activity = []
+    repo_data_map = {}  # Map to store local_repo and repo data
+    
     for repo in repositories:
         local_repo = existing_repos.get(repo['id'])
         if not local_repo:
@@ -203,8 +223,8 @@ def get_github_repositories():
                 repo_url=repo['html_url'],
                 github_id=repo['id'],
             )
+            new_repos.append(local_repo)
             db.session.add(local_repo)
-            db.session.flush()
             should_commit = True
         else:
             # Keep local metadata up to date when repository names/URLs change.
@@ -215,14 +235,106 @@ def get_github_repositories():
 
         owner = repo['owner']['login']
         repo_name = repo['name']
-        activity_metrics = github_client.get_repository_activity_summary(
-            owner,
-            repo_name,
-            fallback_open_issues=repo.get('open_issues_count', 0),
-            since_days=activity_window_days,
-        )
         
+        # Store metadata for later use
+        repo_data_map[f"{owner}/{repo_name}"] = {
+            'local_repo': local_repo,
+            'repo': repo,
+        }
+        
+        # Queue for concurrent fetching if activity is requested
+        if include_activity:
+            repos_needing_activity.append({
+                'owner': owner,
+                'repo_name': repo_name,
+                'fallback_open_issues': repo.get('open_issues_count', 0),
+                'since_days': activity_window_days,
+            })
+
+    # Fetch activity metrics concurrently
+    activity_results = {}
+    if repos_needing_activity:
+        activity_fetch_start = time.time()
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {}
+            for repo_info in repos_needing_activity:
+                key = f"{repo_info['owner']}/{repo_info['repo_name']}"
+                future = executor.submit(
+                    github_client.get_repository_activity_summary,
+                    repo_info['owner'],
+                    repo_info['repo_name'],
+                    fallback_open_issues=repo_info['fallback_open_issues'],
+                    since_days=repo_info['since_days'],
+                )
+                futures[future] = key
+            
+            # Collect results as they complete
+            for future in as_completed(futures):
+                key = futures[future]
+                try:
+                    activity_results[key] = future.result()
+                except Exception as e:
+                    logger.warning(f"Failed to fetch activity for {key}: {str(e)}")
+                    # Use fallback metrics on error
+                    repo_info = next((r for r in repos_needing_activity if f"{r['owner']}/{r['repo_name']}" == key), {})
+                    activity_results[key] = {
+                        'open_issues': repo_info.get('fallback_open_issues', 0),
+                        'open_prs': 0,
+                        'recent_commits': 0,
+                    }
+        
+        activity_fetch_time = time.time() - activity_fetch_start
+        logger.info(f"[PERF] Concurrent activity fetch took {activity_fetch_time:.2f}s for {len(repos_needing_activity)} repos")
+
+    # Now build formatted repos with activity metrics
+    for repo in repositories:
+        owner = repo['owner']['login']
+        repo_name = repo['name']
+        key = f"{owner}/{repo_name}"
+        
+        repo_data = repo_data_map.get(key, {})
+        local_repo = repo_data.get('local_repo')
+        
+        if include_activity:
+            activity_metrics = activity_results.get(key, {
+                'open_issues': repo.get('open_issues_count', 0),
+                'open_prs': 0,
+                'recent_commits': 0,
+            })
+        else:
+            # Return lightweight metrics without making additional GitHub API calls
+            activity_metrics = {
+                'open_issues': repo.get('open_issues_count', 0),
+                'open_prs': 0,
+                'recent_commits': 0,
+            }
+        
+        # Store repo data for later formatting after flush
         formatted_repos.append({
+            'local_repo': local_repo,
+            'repo': repo,
+            'activity_metrics': activity_metrics,
+        })
+
+
+    loop_time = time.time() - loop_start
+    logger.info(f"[PERF] Loop processing took {loop_time:.2f}s - processed {len(repositories)} repos, include_activity={include_activity}")
+
+    # Flush once after adding all new repos to assign IDs
+    if should_commit:
+        flush_start = time.time()
+        db.session.flush()
+        flush_time = time.time() - flush_start
+        logger.info(f"[PERF] Database flush took {flush_time:.2f}s - added {len(new_repos)} new repos")
+    
+    # Now build the final formatted response with IDs
+    formatted_response = []
+    for repo_data in formatted_repos:
+        local_repo = repo_data['local_repo']
+        repo = repo_data['repo']
+        activity_metrics = repo_data['activity_metrics']
+        
+        formatted_response.append({
             'id': local_repo.id,
             'github_id': repo['id'],
             'name': repo['name'],
@@ -249,8 +361,11 @@ def get_github_repositories():
     if should_commit:
         db.session.commit()
     
+    total_time = time.time() - start_time
+    logger.info(f"[PERF] get_github_repositories COMPLETE - total time: {total_time:.2f}s")
+    
     return jsonify({
-        'repositories': formatted_repos
+        'repositories': formatted_response
     })
 
 def add_github_repository():

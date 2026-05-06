@@ -15,6 +15,10 @@ from flask import current_app, g, request, redirect
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+class GitHubRateLimitError(Exception):
+    """Raised when GitHub rate limits block further requests."""
+
 class GitHubClient:
     """Client for the GitHub API with rate limit handling"""
     
@@ -29,6 +33,11 @@ class GitHubClient:
         # Keep cache scoped to a client instance so tests/requests do not cross-contaminate.
         self._cache = {}
         self._cache_expiry = {}
+
+    @classmethod
+    def clear_shared_cache(cls):
+        """Compatibility hook for tests; cache is instance-scoped."""
+        return None
     
     @staticmethod
     def create_state_param(user_id):
@@ -193,8 +202,9 @@ class GitHubClient:
                     time.sleep(sleep_time)
                     return True  # Retry
             
-            # If we can't sleep or sleep time is too long, raise exception
-            raise Exception("GitHub API rate limit exceeded. Please try again later.")
+            # If we can't sleep (or shouldn't), fail this request gracefully.
+            logger.warning("GitHub API rate limit exceeded and retry window is too long; returning fallback response")
+            return False
             
         return False
         
@@ -264,6 +274,9 @@ class GitHubClient:
                     logger.error(f"GitHub API error: {response.status_code} - {response.text}")
                     return None
                     
+            except GitHubRateLimitError as e:
+                logger.error(f"Request error: {str(e)}")
+                return None
             except Exception as e:
                 logger.error(f"Request error: {str(e)}")
                 if retry_count <= max_retries:
@@ -390,10 +403,24 @@ class GitHubClient:
 
     def get_open_pulls_count(self, owner, repo):
         """Get count of open pull requests for a repository."""
-        return self._count_paginated_results(
-            f"{self.BASE_API_URL}/repos/{owner}/{repo}/pulls",
-            params={'state': 'open'},
-        )
+        try:
+            pulls = self._make_request(
+                'GET',
+                f"{self.BASE_API_URL}/repos/{owner}/{repo}/pulls",
+                params={
+                    'state': 'open',
+                    'per_page': 1,
+                },
+                use_cache=True,
+                cache_ttl=300,
+            )
+
+            if pulls is None or not isinstance(pulls, list):
+                return None
+
+            return len(pulls)
+        except Exception:
+            return None
     
     def get_recent_commits(self, owner, repo, since_days=7):
         """Get count of commits pushed to a repository within the given window."""
@@ -443,15 +470,11 @@ class GitHubClient:
 
     def get_repository_activity_summary(self, owner, repo, fallback_open_issues=0, since_days=7):
         """Build the report activity metrics for a repository."""
+        # The repository list payload already includes open_issues_count.
+        # Reusing it prevents an extra API call per repo and reduces rate-limit pressure.
         open_issues = fallback_open_issues or 0
         open_prs = 0
         recent_commits = 0
-
-        issue_count = self.get_open_issues_count(owner, repo)
-        if issue_count is None:
-            logger.warning(f"Failed to fetch open issues for {owner}/{repo}; using fallback count")
-        else:
-            open_issues = issue_count
 
         pull_count = self.get_open_pulls_count(owner, repo)
         if pull_count is None:
