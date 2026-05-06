@@ -31,6 +31,7 @@ jest.mock('../../services/utils/api', () => ({
     getUserRepos: jest.fn(),
     getIssues: jest.fn(),
     linkTaskToGithub: jest.fn(),
+    getTaskGithubLinks: jest.fn(),
     unlinkTaskFromGithub: jest.fn(),
   },
 }));
@@ -78,6 +79,7 @@ describe('TaskDetailsUser page', () => {
     githubService.getUserRepos.mockReset();
     githubService.getIssues.mockReset();
     githubService.linkTaskToGithub.mockReset();
+    githubService.getTaskGithubLinks.mockReset();
     githubService.unlinkTaskFromGithub.mockReset();
 
     taskService.getTaskById.mockResolvedValue(baseTask);
@@ -102,6 +104,7 @@ describe('TaskDetailsUser page', () => {
     githubService.getUserRepos.mockResolvedValue([]);
     githubService.getIssues.mockResolvedValue([]);
     githubService.linkTaskToGithub.mockResolvedValue({ success: true });
+    githubService.getTaskGithubLinks.mockResolvedValue([]);
     githubService.unlinkTaskFromGithub.mockResolvedValue({ success: true });
 
     window.confirm = jest.fn(() => false);
@@ -218,14 +221,16 @@ describe('TaskDetailsUser page', () => {
   });
 
   test('shows existing github links and unlinks them', async () => {
+    const existingLinks = [{ id: 42, repo_name: 'org/repo', issue_number: 7, issue_title: 'Fix bug' }];
     const linkedTask = {
       ...baseTask,
       status: 'in_progress',
-      github_links: [{ id: 42, repo_name: 'org/repo', issue_number: 7, issue_title: 'Fix bug' }],
+      github_links: existingLinks,
     };
     taskService.getTaskById.mockResolvedValue(linkedTask);
     taskService.getTaskComments.mockResolvedValue([]);
     githubService.getUserRepos.mockResolvedValue([]);
+    githubService.getTaskGithubLinks.mockResolvedValue(existingLinks);
     githubService.unlinkTaskFromGithub.mockResolvedValue({ success: true });
 
     render(<TaskDetailsUser />);

@@ -191,10 +191,8 @@ def get_github_repositories():
     fetch_all_pages = all_pages_arg is not None and all_pages_arg.lower() == 'true'
     activity_window_days = max(request.args.get('activity_window_days', 7, type=int) or 7, 1)
     include_activity_arg = request.args.get('include_activity')
-    # Default to including activity metrics when the parameter is not provided.
-    # Reports and dashboards rely on enriched metrics; make explicit calls opt-out
-    # by setting include_activity=false when needed.
-    include_activity = True if include_activity_arg is None else include_activity_arg.lower() == 'true'
+    # Default to lightweight repository data unless activity is explicitly requested.
+    include_activity = include_activity_arg is not None and include_activity_arg.lower() == 'true'
     
     api_start = time.time()
     if fetch_all_pages:
