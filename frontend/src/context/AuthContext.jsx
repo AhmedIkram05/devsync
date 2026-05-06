@@ -368,23 +368,23 @@ export const AuthProvider = ({ children }) => {
     }
   }, [location.pathname, location.search, navigate]);
   
+  const currentUserId = currentUser?.id;
+  const currentGithubConnected = Boolean(currentUser?.github_connected);
+
   // Check GitHub connection status when user changes - verify with server to detect stale state
   useEffect(() => {
-    if (!currentUser?.id) return;
+    if (!currentUserId) return;
     
     // Always verify against the server — don't trust the localStorage snapshot alone
     const verify = async () => {
       try {
         const status = await githubService.checkConnection();
         const serverConnected = Boolean(status?.connected);
-        if (serverConnected !== Boolean(currentUser.github_connected)) {
-          const updatedUser = {
-            ...currentUser,
+        if (serverConnected !== currentGithubConnected) {
+          updateUser({
             github_connected: serverConnected,
             github_username: serverConnected ? (status?.username || '') : '',
-          };
-          localStorage.setItem('user', JSON.stringify(updatedUser));
-          updateUser(updatedUser);
+          });
           setGithubConnected(serverConnected);
         }
       } catch (e) {
@@ -392,7 +392,7 @@ export const AuthProvider = ({ children }) => {
       }
     };
     verify();
-  }, [currentUser?.id]); // Only re-run when the user *changes*, not on every state update
+  }, [currentUserId, currentGithubConnected]);
 
   const value = {
     currentUser,
