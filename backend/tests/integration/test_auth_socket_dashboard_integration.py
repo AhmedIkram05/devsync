@@ -286,6 +286,7 @@ def test_dashboard_client_route_returns_computed_task_stats(client, app, monkeyp
     assigned_tasks = [
         SimpleNamespace(status='todo'),
         SimpleNamespace(status='done'),
+        SimpleNamespace(status='completed'),
     ]
 
     class StubUser:
@@ -301,9 +302,9 @@ def test_dashboard_client_route_returns_computed_task_stats(client, app, monkeyp
 
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload['tasks']['total'] == 2
+    assert payload['tasks']['total'] == 3
     assert payload['tasks']['todo'] == 1
-    assert payload['tasks']['done'] == 1
+    assert payload['tasks']['done'] == 2
     assert payload['tasks_due_soon'][0]['id'] == 9
     assert payload['projects'][0]['name'] == 'Project A'
 
@@ -316,10 +317,12 @@ def test_dashboard_admin_route_returns_user_and_task_totals(client, app, monkeyp
         SimpleNamespace(role='team_lead'),
     ]
     tasks = [
+        SimpleNamespace(status='backlog'),
         SimpleNamespace(status='todo'),
         SimpleNamespace(status='in_progress'),
         SimpleNamespace(status='review'),
         SimpleNamespace(status='done'),
+        SimpleNamespace(status='completed'),
     ]
 
     class StubUser:
@@ -348,7 +351,9 @@ def test_dashboard_admin_route_returns_user_and_task_totals(client, app, monkeyp
     assert payload['users']['admin'] == 1
     assert payload['users']['developer'] == 1
     assert payload['users']['team_lead'] == 1
-    assert payload['tasks']['total'] == 4
+    assert payload['tasks']['total'] == 6
+    assert payload['tasks']['backlog'] == 1
+    assert payload['tasks']['done'] == 2
     assert payload['projects']['total'] == 4
 
 
