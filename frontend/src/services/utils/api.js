@@ -342,6 +342,20 @@ const getDateRangeStart = (dateRange) => {
   }
 };
 
+const getActivityWindowDays = (dateRange) => {
+  switch (dateRange) {
+    case 'month':
+      return 30;
+    case 'quarter':
+      return 90;
+    case 'year':
+      return 365;
+    case 'week':
+    default:
+      return 7;
+  }
+};
+
 const isWithinDateRange = (isoDate, rangeStart) => {
   if (!isoDate) {
     return true;
@@ -534,8 +548,13 @@ const dashboardService = {
       if (reportType === 'github') {
         const githubStatus = await fetchWithAuth('github/status').catch(() => ({ connected: false }));
         const connected = Boolean(githubStatus?.connected);
+        const activityWindowDays = getActivityWindowDays(dateRange);
         const repositories = connected
-          ? await githubService.getUserRepos()
+          ? await githubService.getUserRepos({
+            perPage: 100,
+            fetchAll: true,
+            activityWindowDays
+          })
           : [];
 
         // Calculate totals from enriched repo data
@@ -633,6 +652,10 @@ const githubService = {
         params.set('per_page', String(options.perPage));
       }
 
+      if (options.fetchAll) {
+        params.set('all_pages', 'true');
+      }
+
       // Only fetch activity metrics when explicitly requested
       let timeoutOverride = 30000; // default timeout
       if (options.activityWindowDays) {
@@ -641,6 +664,10 @@ const githubService = {
         timeoutOverride = 90000; // 90 seconds for activity-heavy requests
       } else {
         params.set('include_activity', 'false');
+      }
+
+      if (options.fetchAll) {
+        timeoutOverride = Math.max(timeoutOverride, 120000);
       }
 
       const endpoint = params.toString()

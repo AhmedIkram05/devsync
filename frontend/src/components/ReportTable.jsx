@@ -35,17 +35,18 @@ const ReportTable = ({ data = [], type }) => {
             </div>
           );
         case 'Status':
+          const taskStatus = String(item.status || 'unknown');
           return (
             <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-              item.status === 'completed' ? 'bg-emerald-500/20 text-emerald-300' :
-              item.status === 'in_progress' ? 'bg-sky-500/20 text-sky-300' :
+              taskStatus === 'completed' ? 'bg-emerald-500/20 text-emerald-300' :
+              taskStatus === 'in_progress' ? 'bg-sky-500/20 text-sky-300' :
               'bg-slate-700/50 text-slate-300'
             }`}>
-              {item.status === 'in_progress' ? 'In Progress' : 
-              item.status === 'todo' ? 'To Do' :
-              item.status === 'review' ? 'Review' :
-              item.status === 'backlog' ? 'Backlog' :
-              item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+              {taskStatus === 'in_progress' ? 'In Progress' : 
+              taskStatus === 'todo' ? 'To Do' :
+              taskStatus === 'review' ? 'Review' :
+              taskStatus === 'backlog' ? 'Backlog' :
+              taskStatus.charAt(0).toUpperCase() + taskStatus.slice(1)}
             </span>
           );
         case 'Assignee':

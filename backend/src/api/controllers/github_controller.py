@@ -187,12 +187,34 @@ def get_github_repositories():
     # Fetch repositories (with pagination support)
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 30, type=int)
+    all_pages_arg = request.args.get('all_pages')
+    fetch_all_pages = all_pages_arg is not None and all_pages_arg.lower() == 'true'
     activity_window_days = max(request.args.get('activity_window_days', 7, type=int) or 7, 1)
     include_activity_arg = request.args.get('include_activity')
-    include_activity = False if include_activity_arg is None else include_activity_arg.lower() == 'true'
+    # Default to including activity metrics when the parameter is not provided.
+    # Reports and dashboards rely on enriched metrics; make explicit calls opt-out
+    # by setting include_activity=false when needed.
+    include_activity = True if include_activity_arg is None else include_activity_arg.lower() == 'true'
     
     api_start = time.time()
-    repositories = github_client.get_user_repositories(page=page, per_page=per_page)
+    if fetch_all_pages:
+        repositories = []
+        effective_per_page = min(max(per_page, 1), 100)
+        current_page = max(page, 1)
+        max_pages = 10
+
+        while current_page < page + max_pages:
+            current_batch = github_client.get_user_repositories(page=current_page, per_page=effective_per_page)
+            if not current_batch:
+                break
+
+            repositories.extend(current_batch)
+            if len(current_batch) < effective_per_page:
+                break
+
+            current_page += 1
+    else:
+        repositories = github_client.get_user_repositories(page=page, per_page=per_page)
     api_time = time.time() - api_start
     logger.info(f"[PERF] GitHub API call took {api_time:.2f}s - got {len(repositories)} repos")
 
@@ -255,7 +277,8 @@ def get_github_repositories():
     activity_results = {}
     if repos_needing_activity:
         activity_fetch_start = time.time()
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        max_workers = min(5, max(2, len(repos_needing_activity)))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {}
             for repo_info in repos_needing_activity:
                 key = f"{repo_info['owner']}/{repo_info['repo_name']}"
@@ -578,6 +601,7 @@ def link_task_with_github(task_id):
             existing_link.issue_number = data['issue_number']
         if 'pull_request_number' in data:
             existing_link.pull_request_number = data['pull_request_number']
+        persisted_link = existing_link
     else:
         # Create new link
         new_link = TaskGitHubLink(
@@ -587,6 +611,7 @@ def link_task_with_github(task_id):
             pull_request_number=data.get('pull_request_number')
         )
         db.session.add(new_link)
+        persisted_link = new_link
     
     db.session.commit()
     
@@ -614,11 +639,14 @@ def link_task_with_github(task_id):
     return jsonify({
         'message': 'Task linked with GitHub successfully',
         'link': {
+            'id': persisted_link.id,
             'task_id': task_id,
             'repo_id': data['repo_id'],
             'repo_name': repo.repo_name,
+            'repo_url': repo.repo_url,
             'issue_number': data.get('issue_number'),
-            'pull_request_number': data.get('pull_request_number')
+            'pull_request_number': data.get('pull_request_number'),
+            'created_at': persisted_link.created_at.isoformat() if persisted_link.created_at else None
         }
     })
 

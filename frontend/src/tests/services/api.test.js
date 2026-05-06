@@ -364,8 +364,9 @@ describe('api utilities', () => {
     expect(report.summary.open_issues).toBe(5);
     expect(report.details[0].open_issues).toBe(5);
     expect(report.details[0].last_updated).toBe('2099-01-01T00:00:00.000Z');
-    // Reports now use lightweight repo fetch (no activity enrichment)
-    expect(global.fetch.mock.calls[3][0]).toContain('include_activity=false');
+    expect(global.fetch.mock.calls[3][0]).toContain('include_activity=true');
+    expect(global.fetch.mock.calls[3][0]).toContain('all_pages=true');
+    expect(global.fetch.mock.calls[3][0]).toContain('per_page=100');
   });
 
   test('buildDeveloperProgress: task with no assigned_to is skipped', async () => {
