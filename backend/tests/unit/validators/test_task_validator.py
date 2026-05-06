@@ -100,6 +100,11 @@ def test_valid_data():
         data = {'title': 'Valid Title', 'description': 'Test Description', 'status': 'todo'}
         result = validate_task_data(data)
         assert result is None
+
+        # Backlog should also be accepted on create
+        data = {'title': 'Backlog Task', 'description': 'Queued work item', 'status': 'backlog'}
+        result = validate_task_data(data)
+        assert result is None
         
         # Complete valid data
         data = {
