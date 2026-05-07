@@ -6,6 +6,7 @@ from flask_jwt_extended import jwt_required
 from ...auth.auth import login, register_user, refresh_token, logout_user, get_token  # Added get_token
 from ..middlewares.validation_middleware import validate_json  # Changed to relative import
 from ..validators.auth_validator import validate_login_data, validate_registration_data  # Changed to relative import
+from ...auth.rbac import ROLE_PERMISSIONS
 
 def register_routes(bp):
     """Register all authentication routes with the provided Blueprint"""
@@ -58,3 +59,17 @@ def register_routes(bp):
         if validation_error:
             return validation_error
         return get_token()
+
+    @bp.route('/auth/permissions', methods=['GET'])
+    @jwt_required()
+    def get_permissions():
+        """Route to get permissions for the current user"""
+        from flask_jwt_extended import get_jwt
+        claims = get_jwt()
+        role = claims.get('role', 'developer')
+        permissions = ROLE_PERMISSIONS.get(role, [])
+        from flask import jsonify
+        return jsonify({
+            'role': role,
+            'permissions': permissions
+        })

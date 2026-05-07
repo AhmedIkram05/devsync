@@ -73,6 +73,7 @@ def test_auth_register_success_contract(client, monkeypatch):
             self.role = role
 
     StubUser.query.filter_by.return_value.first.return_value = None
+    StubUser.query.count.return_value = 1
 
     session = MagicMock()
     hash_password = MagicMock(return_value='hashed-password')
@@ -82,6 +83,8 @@ def test_auth_register_success_contract(client, monkeypatch):
     })
 
     monkeypatch.setattr(auth_module, 'User', StubUser)
+    monkeypatch.setattr(auth_module.settings_service, 'get_default_role', MagicMock(return_value='developer'))
+    monkeypatch.setattr(auth_module.audit_service, 'record', MagicMock())
     monkeypatch.setattr(auth_module, 'hash_password', hash_password)
     monkeypatch.setattr(auth_module, 'generate_tokens', generate_tokens)
     monkeypatch.setattr(auth_module.db, 'session', session, raising=False)
