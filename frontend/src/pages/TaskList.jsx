@@ -87,11 +87,11 @@ const TaskList = () => {
   // Get status badge color and format status text
   const getStatusInfo = (status) => {
     const statusMap = {
-      'todo': { class: 'bg-slate-800/70 text-slate-300', text: 'To Do' },
-      'backlog': { class: 'bg-slate-800/70 text-slate-300', text: 'Backlog' },
-      'in_progress': { class: 'bg-amber-500/15 text-amber-200', text: 'In Progress' },
-      'review': { class: 'bg-sky-500/15 text-sky-200', text: 'Review' },
-      'completed': { class: 'bg-emerald-500/15 text-emerald-200', text: 'Completed' }
+      'todo': { class: 'text-slate-300', text: 'To Do' },
+      'backlog': { class: 'text-slate-300', text: 'Backlog' },
+      'in_progress': { class: 'text-amber-200', text: 'In Progress' },
+      'review': { class: 'text-sky-200', text: 'Review' },
+      'completed': { class: 'text-emerald-200', text: 'Completed' }
     };
     
     return statusMap[status] || { class: 'bg-gray-100 text-gray-800', text: status };

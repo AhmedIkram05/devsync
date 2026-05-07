@@ -39,7 +39,6 @@ All Developer permissions, plus:
 - Create new tasks / assign tasks (`can_assign_tasks`)
 - Update any task (`can_update_any_task`)
 - View all users (`can_view_all_users`)
-- View system statistics (`can_view_system_stats`)
 - Manage projects (`can_manage_projects`)
 - Generate and view reports
 - View developer progress
