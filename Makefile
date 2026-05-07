@@ -5,7 +5,7 @@ DC_DB := docker compose -f $(COMPOSE_DB)
 DC_ALL := docker compose -f $(COMPOSE_DB) -f $(COMPOSE_BACKEND)
 
 .PHONY: db-up db-down db-inspect db-logs db-reset
-.PHONY: backend-build backend-up backend-down backend-logs
+.PHONY: backend-build backend-up backend-down backend-logs backend-rebuild
 .PHONY: up down reset
 
 # Database
@@ -37,6 +37,11 @@ backend-down:
 
 backend-logs:
 	$(DC_ALL) logs -f backend
+
+backend-rebuild:
+	$(DC_ALL) down
+	$(DC_ALL) build backend
+	$(DC_ALL) up -d --wait
 
 # Combined
 up:
