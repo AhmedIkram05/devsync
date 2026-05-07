@@ -161,15 +161,21 @@ class Notification(db.Model):
 
     def to_dict(self):
         """Convert notification to dictionary"""
+        created_at = self.created_at.isoformat() if self.created_at else None
         return {
             'id': self.id,
             'user_id': self.user_id,
+            'notification_type': self.notification_type,
             'type': self.notification_type,
             'title': self.title,
             'message': self.message,
+            'content': self.message,
             'reference_id': self.reference_id,
-            'read': self.is_read,  # Changed to use is_read but keep API compatibility
-            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'task_id': self.task_id,
+            'is_read': self.is_read,
+            'read': self.is_read,  # Keep API compatibility with older frontend code.
+            'created_at': created_at,
+            'timestamp': created_at,
             'read_at': self.read_at.isoformat() if self.read_at else None
         }
 
@@ -272,4 +278,3 @@ class SystemSetting(db.Model):
 
     def __repr__(self):
         return f'<SystemSetting {self.key}>'
-

@@ -10,24 +10,61 @@ socketio = SocketIO(cors_allowed_origins="*")
 # Store for connected users and project rooms
 connected_users = {}  # user_id -> session_id
 project_rooms = {}    # project_id -> [user_ids]
+sid_users = {}        # session_id -> user_id
+
+
+def _normalize_user_id(user_id):
+    """Keep JWT numeric identities consistent with database integer IDs."""
+    if isinstance(user_id, str) and user_id.isdigit():
+        return int(user_id)
+    return user_id
+
+
+def _extract_token(auth_payload=None):
+    """Read a bearer token from either Socket.IO auth payloads or headers."""
+    token = None
+
+    if isinstance(auth_payload, dict):
+        token = auth_payload.get('token') or auth_payload.get('access_token')
+        authorization = auth_payload.get('Authorization') or auth_payload.get('authorization')
+        if not token and isinstance(authorization, str):
+            token = authorization
+    elif isinstance(auth_payload, str):
+        token = auth_payload
+
+    if not token:
+        token = request.headers.get('Authorization')
+
+    if isinstance(token, str) and token.startswith('Bearer '):
+        token = token.split(' ', 1)[1]
+
+    return token
+
+
+def _decode_user_id(auth_payload=None):
+    token = _extract_token(auth_payload)
+    if not token:
+        return None
+
+    decoded_token = decode_token(token)
+    identity = decoded_token.get('identity', decoded_token.get('sub'))
+    user_id = identity.get('user_id') if isinstance(identity, dict) else identity
+    user_id = _normalize_user_id(user_id)
+    if not isinstance(user_id, (int, str)) or user_id in ('', None):
+        raise ValueError('Invalid user identity in token')
+    return user_id
 
 def authenticated_only(f):
     """Decorator that verifies JWT token for socket connections"""
     @functools.wraps(f)
     def wrapped(*args, **kwargs):
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            disconnect()
-            return False
-        
+        user_id = sid_users.get(request.sid)
+
         try:
-            token = auth_header.split(' ')[1]
-            decoded_token = decode_token(token)
-            identity = decoded_token.get('identity', decoded_token.get('sub'))
-            user_id = identity.get('user_id') if isinstance(identity, dict) else identity
-            if not isinstance(user_id, (int, str)) or user_id in ('', None):
-                raise ValueError('Invalid user identity in token')
-            
+            if user_id is None:
+                user_id = _decode_user_id()
+                sid_users[request.sid] = user_id
+
             # Add user_id to the kwargs so event handlers can use it
             kwargs['user_id'] = user_id
             return f(*args, **kwargs)
@@ -38,19 +75,33 @@ def authenticated_only(f):
 
 # Connection event handlers
 @socketio.on('connect')
-def handle_connect():
+def handle_connect(auth=None):
     """Handle new connections"""
-    # Authentication is handled separately via @authenticated_only decorator
-    print("Client connected:", request.sid)
+    try:
+        user_id = _decode_user_id(auth)
+    except (InvalidTokenError, TypeError, ValueError):
+        print("Client rejected due to invalid socket token:", request.sid)
+        return False
+
+    if user_id is not None:
+        sid_users[request.sid] = user_id
+        connected_users[user_id] = request.sid
+        print(f"User {user_id} connected with socket ID {request.sid}")
+    else:
+        # Keep unauthenticated connections possible for tests/legacy clients; protected events still verify auth.
+        print("Client connected without socket auth:", request.sid)
     return True
 
 @socketio.on('disconnect')
 def handle_disconnect():
     """Handle client disconnections"""
     # Remove user from connected_users
-    user_id = next((uid for uid, sid in connected_users.items() if sid == request.sid), None)
+    user_id = sid_users.pop(request.sid, None)
+    if user_id is None:
+        user_id = next((uid for uid, sid in connected_users.items() if sid == request.sid), None)
+
     if user_id:
-        del connected_users[user_id]
+        connected_users.pop(user_id, None)
         
         # Remove user from all project rooms
         for project_id, members in project_rooms.items():
@@ -63,6 +114,7 @@ def handle_disconnect():
 @authenticated_only
 def handle_register(data, user_id):
     """Register a user's socket connection"""
+    sid_users[request.sid] = user_id
     connected_users[user_id] = request.sid
     print(f"User {user_id} registered with socket ID {request.sid}")
     return {"status": "success", "message": "Registered successfully"}

@@ -13,6 +13,8 @@ const RECONNECT_RETRY_DELAY = _isTestEnv ? 50 : 60000; // ms
 
 export const useNotifications = () => useContext(NotificationContext);
 
+const isNotificationRead = (notification) => Boolean(notification?.is_read || notification?.read);
+
 export const NotificationProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -223,6 +225,14 @@ export const NotificationProvider = ({ children }) => {
             clearTimeout(reconnectTimeoutRef.current);
             reconnectTimeoutRef.current = null;
           }
+
+          if (typeof socketConnection.emit === 'function') {
+            socketConnection.emit('register', {}, (ack) => {
+              if (ack?.status && ack.status !== 'success') {
+                console.warn('Socket.IO registration did not succeed:', ack);
+              }
+            });
+          }
         });
         
         socketConnection.on('disconnect', () => {
@@ -323,7 +333,7 @@ export const NotificationProvider = ({ children }) => {
   }, [currentUser, refreshNotifications, serverDown]);
   
   // Calculate unread count
-  const unreadCount = notifications.filter(notification => !notification.read).length;
+  const unreadCount = notifications.filter(notification => !isNotificationRead(notification)).length;
   
   // Mark a notification as read
   const markAsRead = async (notificationId) => {
@@ -334,9 +344,9 @@ export const NotificationProvider = ({ children }) => {
     
     try {
       // Optimistic UI update
-      setNotifications(notifications.map(notification => 
+      setNotifications(prev => prev.map(notification =>
         notification.id === notificationId 
-          ? { ...notification, read: true }
+          ? { ...notification, read: true, is_read: true }
           : notification
       ));
       
@@ -358,7 +368,7 @@ export const NotificationProvider = ({ children }) => {
     
     try {
       // Update UI immediately for better UX
-      setNotifications(notifications.map(notification => ({ ...notification, read: true })));
+      setNotifications(prev => prev.map(notification => ({ ...notification, read: true, is_read: true })));
       
       // API call to mark all as read
       await notificationService.markAllAsRead();

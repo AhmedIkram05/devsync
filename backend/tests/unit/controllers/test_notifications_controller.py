@@ -19,11 +19,22 @@ def mock_db_session():
 def mock_notification():
     notification = MagicMock()
     notification.id = 1
-    notification.content = "Test notification"
+    notification.title = "Test notification"
+    notification.message = "Test notification"
     notification.is_read = False
     notification.task_id = 2
     notification.user_id = 1
     notification.created_at = datetime.now(timezone.utc)
+    notification.to_dict.return_value = {
+        'id': 1,
+        'title': 'Test notification',
+        'message': 'Test notification',
+        'content': 'Test notification',
+        'is_read': False,
+        'read': False,
+        'task_id': 2,
+        'created_at': notification.created_at.isoformat(),
+    }
     return notification
 
 @pytest.fixture
@@ -45,10 +56,21 @@ def test_get_user_notifications(mock_get_jwt_identity, mock_db_session, app_cont
         
         notification = MagicMock()
         notification.id = 1
-        notification.content = "Test notification"
+        notification.title = "Test notification"
+        notification.message = "Test notification"
         notification.is_read = False
         notification.task_id = 2
         notification.created_at = datetime.now(timezone.utc)
+        notification.to_dict.return_value = {
+            'id': 1,
+            'title': 'Test notification',
+            'message': 'Test notification',
+            'content': 'Test notification',
+            'is_read': False,
+            'read': False,
+            'task_id': 2,
+            'created_at': notification.created_at.isoformat(),
+        }
         
         mock_order.all.return_value = [notification]
         
@@ -72,14 +94,19 @@ def test_create_notification(mock_db_session, app_context):
         'task_id': 2
     }
     with patch('src.api.controllers.notifications_controller.validate_notification_data') as mock_validate, \
-         patch('src.api.controllers.notifications_controller.Notification') as MockNotification:
+         patch('src.api.controllers.notifications_controller.NotificationService.send_to_user') as mock_send_to_user:
         # Setup mocks
         mock_validate.return_value = None  # No validation errors
         
         new_notification = MagicMock()
         new_notification.id = 1
-        new_notification.content = 'Test notification'
-        MockNotification.return_value = new_notification
+        new_notification.to_dict.return_value = {
+            'id': 1,
+            'title': 'Test notification',
+            'message': 'Test notification',
+            'content': 'Test notification',
+        }
+        mock_send_to_user.return_value = new_notification
         
         # Import inside test to use patched modules
         from src.api.controllers.notifications_controller import create_notification
@@ -91,9 +118,14 @@ def test_create_notification(mock_db_session, app_context):
         assert data['message'] == 'Notification created successfully'
         assert data['notification']['id'] == 1
         
-        # Verify database interaction
-        mock_db_session.add.assert_called_once()
-        mock_db_session.commit.assert_called_once()
+        mock_send_to_user.assert_called_once_with(
+            user_id=1,
+            notification_type='general',
+            title='Test notification',
+            message='Test notification',
+            reference_id=2,
+            task_id=2
+        )
 
 def test_mark_notification_read(mock_get_jwt_identity, mock_db_session, mock_notification, app_context):
     with patch('src.api.controllers.notifications_controller.Notification.query') as mock_query:
@@ -105,6 +137,7 @@ def test_mark_notification_read(mock_get_jwt_identity, mock_db_session, mock_not
         
         # Verify notification was marked as read
         assert mock_notification.is_read == True
+        assert mock_notification.read_at is not None
         mock_db_session.commit.assert_called_once()
         
         # Verify response
