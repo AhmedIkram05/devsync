@@ -18,8 +18,10 @@ notifications_routes.register_routes(api_bp)
 dashboard_routes.register_routes(api_bp)
 admin_routes.register_routes(api_bp)
 from .routes import report_routes
+from .routes import audit_routes
 
 report_routes.register_routes(api_bp)
+audit_routes.register_routes(api_bp)
 github_routes.register_routes(api_bp)  # Add GitHub routes
 
 def init_app(app):
