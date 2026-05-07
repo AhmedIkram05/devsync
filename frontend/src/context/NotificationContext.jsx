@@ -358,6 +358,23 @@ export const NotificationProvider = ({ children }) => {
       refreshNotifications(true);
     }
   };
+
+  const deleteNotification = async (notificationId) => {
+    if (serverDown) {
+      console.log('Server appears to be down, cannot delete notification');
+      return;
+    }
+
+    const previousNotifications = notifications;
+
+    try {
+      setNotifications((prev) => prev.filter((notification) => notification.id !== notificationId));
+      await notificationService.deleteNotification(notificationId);
+    } catch (error) {
+      console.error('Failed to delete notification:', error);
+      setNotifications(previousNotifications);
+    }
+  };
   
   // Mark all notifications as read
   const markAllAsRead = async () => {
@@ -391,6 +408,7 @@ export const NotificationProvider = ({ children }) => {
     notifications,
     unreadCount,
     markAsRead,
+    deleteNotification,
     markAllAsRead,
     refreshNotifications,
     isConnected,

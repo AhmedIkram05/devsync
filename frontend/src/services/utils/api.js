@@ -518,6 +518,29 @@ const getReportCacheScope = () => {
 
 const getReportCacheKey = (reportType, dateRange) => `${getReportCacheScope()}:${reportType}:${dateRange}`;
 
+const normalizeTaskReportDetails = (tasks = [], users = []) => {
+  const usersById = new Map(
+    (Array.isArray(users) ? users : []).map((user) => [Number(user?.id), user?.name])
+  );
+
+  return (Array.isArray(tasks) ? tasks : []).map((task) => {
+    const assigneeId = task?.assigned_to ?? task?.assignedTo ?? null;
+    const explicitAssigneeName = typeof task?.assignee === 'object'
+      ? task?.assignee?.name
+      : null;
+
+    return {
+      ...task,
+      assignee_name:
+        task?.assignee_name
+        || task?.assigneeName
+        || explicitAssigneeName
+        || usersById.get(Number(assigneeId))
+        || null,
+    };
+  });
+};
+
 const addReportMeta = (reportData, meta = {}) => ({
   ...reportData,
   meta: {
@@ -611,7 +634,7 @@ const getReportDataFromNetwork = async (reportType = 'tasks', dateRange = 'week'
       overdue,
       team_members: users.length
     },
-    details: scopedTasks
+    details: normalizeTaskReportDetails(scopedTasks, users)
   };
 };
 
@@ -1104,6 +1127,12 @@ const notificationService = {
     return await fetchWithAuth('notifications/read-all', {
       method: 'PUT'
     });
+  },
+
+  deleteNotification: async (notificationId) => {
+    return await fetchWithAuth(`notifications/${notificationId}`, {
+      method: 'DELETE'
+    });
   }
 };
 
@@ -1279,5 +1308,6 @@ export {
   reportService,
   adminUserService,
   settingsService,
-  auditLogService
+  auditLogService,
+  normalizeTaskReportDetails
 };
