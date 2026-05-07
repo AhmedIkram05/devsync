@@ -4,6 +4,8 @@ from flask import jsonify, request
 from ...db.models import db, User, Project, Task
 from ..validators.admin_validator import validate_system_settings, validate_user_role_update
 from ...auth.rbac import Role
+from flask_jwt_extended import get_jwt_identity
+from ...services import audit_service, settings_service
 
 
 def _safe_query_all(model):
@@ -53,20 +55,7 @@ def get_system_stats():
 
 def get_system_settings():
     """Controller function to get system settings"""
-    # This would typically retrieve settings from a database
-    # For now, return placeholder settings
-    settings = {
-        'app_name': 'DevSync',
-        'allow_registration': True,
-        'default_user_role': Role.DEVELOPER.value,
-        'github_integration_enabled': True,
-        'notification_settings': {
-            'email_notifications': True,
-            'task_assignments': True,
-            'project_updates': True
-        }
-    }
-    
+    settings = settings_service.get_settings()
     return jsonify({'settings': settings})
 
 def update_system_settings():
@@ -78,8 +67,16 @@ def update_system_settings():
     if validation_result:
         return validation_result
     
-    # This would typically update settings in a database
-    # For now, just return success response
+    current_user = get_jwt_identity()
+    user_id = current_user.get('user_id') if isinstance(current_user, dict) else current_user
+
+    settings_service.update_settings(data, user_id)
+    
+    audit_service.record(
+        action='settings_updated',
+        resource_type='settings',
+        metadata={'settings_updated': list(data.keys())}
+    )
     
     return jsonify({
         'message': 'System settings updated successfully',
@@ -100,8 +97,16 @@ def update_user_role(user_id):
         return validation_result
     
     # Update user role
+    old_role = user.role
     user.role = data['role']
     db.session.commit()
+    
+    audit_service.record(
+        action='user_role_changed',
+        resource_type='user',
+        resource_id=user.id,
+        metadata={'old_role': old_role, 'new_role': user.role}
+    )
     
     return jsonify({
         'message': 'User role updated successfully',

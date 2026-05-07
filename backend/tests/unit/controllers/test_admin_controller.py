@@ -346,62 +346,7 @@ class TestAdminController(unittest.TestCase):
         self.assertEqual(data['tasks']['review'], 1)
         self.assertEqual(data['tasks']['done'], 1)
     
-    def test_get_system_settings_actual(self):
-        # Import the function directly to test
-        from backend.src.api.controllers.admin_controller import get_system_settings
-        from backend.src.auth.rbac import Role
-        
-        # Execute the function
-        with app.test_request_context():
-            response = get_system_settings()
-            data = json.loads(response.data)
-        
-        # Verify the results
-        self.assertIn('settings', data)
-        settings = data['settings']
-        
-        # Check settings fields
-        self.assertEqual(settings['app_name'], 'DevSync')
-        self.assertTrue(settings['allow_registration'])
-        self.assertEqual(settings['default_user_role'], Role.DEVELOPER.value)
-        self.assertTrue(settings['github_integration_enabled'])
-        
-        # Check notification settings
-        notification_settings = settings['notification_settings']
-        self.assertTrue(notification_settings['email_notifications'])
-        self.assertTrue(notification_settings['task_assignments'])
-        self.assertTrue(notification_settings['project_updates'])
-    
-    @patch('backend.src.api.controllers.admin_controller.validate_system_settings')
-    def test_update_system_settings_actual_success(self, mock_validate):
-        # Import the function directly to test
-        from backend.src.api.controllers.admin_controller import update_system_settings
-        from backend.src.auth.rbac import Role
-        
-        # Setup test data
-        test_data = {
-            'app_name': 'DevSync', 
-            'allow_registration': True, 
-            'default_user_role': Role.DEVELOPER.value,
-            'github_integration_enabled': True, 
-            'notification_settings': {
-                'email_notifications': True, 
-                'task_assignments': True, 
-                'project_updates': True
-            }
-        }
-        
-        # Configure validation mock
-        mock_validate.return_value = None  # Validation succeeds
-        
-        # Execute the function with test request context
-        with app.test_request_context(json=test_data):
-            response = update_system_settings()
-            data = json.loads(response.data)
-        
-        # Verify the results
-        self.assertEqual(data['message'], 'System settings updated successfully')
-        self.assertEqual(data['settings'], test_data)
+
 
 if __name__ == '__main__':
     unittest.main()

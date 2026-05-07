@@ -81,9 +81,9 @@ const AdminProjects = () => {
   }
 
   return (
-    <div className="bg-slate-950 min-h-screen p-4 md:p-6 text-slate-100">
-      <div className="max-w-7xl mx-auto">
-        <div className="bg-slate-900/70 border border-slate-800/70 rounded-2xl shadow-md p-6">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
+      <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
+        <div className="bg-slate-900/70 border border-slate-800/70 rounded-2xl shadow-md p-6 backdrop-blur-sm">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
             <div>
               <h1 className="text-2xl font-bold text-slate-100">Projects</h1>

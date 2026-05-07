@@ -1,48 +1,50 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { dashboardService, projectService } from '../services/utils/api';
+import { dashboardService, projectService, userService } from '../services/utils/api';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { useAuth } from '../context/AuthContext';
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 const StatCard = ({ title, value, change, icon, color, currentTimeRange }) => {
-  const iconClass = {
-    primary:   'bg-rose-500/10    text-rose-300    border border-rose-400/20',
-    secondary: 'bg-sky-500/10     text-sky-300     border border-sky-400/20',
-    success:   'bg-emerald-500/10 text-emerald-300 border border-emerald-400/20',
-    warning:   'bg-amber-500/10   text-amber-300   border border-amber-400/20',
-    error:     'bg-rose-500/10    text-rose-300    border border-rose-400/20',
-  }[color] ?? 'bg-slate-800 text-slate-300 border border-slate-700';
+  const colorClasses = {
+    primary:   'bg-sky-500/15 text-sky-300 border border-sky-400/20',
+    secondary: 'bg-rose-500/15 text-rose-300 border border-rose-400/20',
+    success:   'bg-emerald-500/15 text-emerald-300 border border-emerald-400/20',
+    warning:   'bg-amber-500/15 text-amber-300 border border-amber-400/20',
+    error:     'bg-rose-500/15 text-rose-300 border border-rose-400/20',
+    purple:    'bg-purple-500/15 text-purple-300 border border-purple-400/20',
+  };
 
   return (
-    <div className="bg-slate-900/70 border border-slate-800/70 rounded-2xl overflow-hidden">
-      <div className="p-5 flex items-center">
-        <div className={`flex-shrink-0 rounded-xl p-3 ${iconClass}`}>
+    <div className={`rounded-2xl p-6 shadow-md backdrop-blur-sm ${colorClasses[color] || 'bg-slate-900/70 text-slate-400 border border-slate-800/70'}`}>
+      <div className="flex items-center gap-5">
+        <div className="p-3 rounded-xl bg-slate-950/40 border border-white/5 text-slate-100">
           {icon}
         </div>
-        <div className="ml-5 w-0 flex-1">
-          <p className="text-sm font-medium text-slate-400 truncate">{title}</p>
-          <p className="text-xl font-bold text-slate-100 mt-0.5">{value}</p>
+        <div className="flex-1">
+          <p className="text-xs font-medium opacity-75 uppercase tracking-wider">{title}</p>
+          <p className="text-2xl font-bold mt-1 text-white">{value}</p>
           {change !== undefined && (
-            <p className="flex items-center text-xs mt-1">
+            <div className="flex items-center mt-1.5 text-[10px] font-bold uppercase tracking-tight">
               {change > 0 ? (
-                <span className="flex items-center text-emerald-300">
-                  <svg className="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                <span className="text-emerald-400 flex items-center">
+                  <svg className="w-3 h-3 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 10l7-7m0 0l7 7m-7-7v18" />
                   </svg>
-                  {change}% increase
+                  {change}%
                 </span>
               ) : change < 0 ? (
-                <span className="flex items-center text-rose-300">
-                  <svg className="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                <span className="text-rose-400 flex items-center">
+                  <svg className="w-3 h-3 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                   </svg>
-                  {Math.abs(change)}% decrease
+                  {Math.abs(change)}%
                 </span>
               ) : (
                 <span className="text-slate-500">No change</span>
               )}
-              <span className="ml-2 text-slate-500">since last {currentTimeRange}</span>
-            </p>
+              <span className="ml-1.5 text-slate-500 opacity-60">vs last {currentTimeRange}</span>
+            </div>
           )}
         </div>
       </div>
@@ -73,7 +75,7 @@ const StatusBadge = ({ status }) => {
 
 // ─── Panel wrapper ─────────────────────────────────────────────────────────────
 const Panel = ({ children, className = '' }) => (
-  <div className={`bg-slate-900/70 border border-slate-800/70 rounded-2xl overflow-hidden ${className}`}>
+  <div className={`bg-slate-900/70 border border-slate-800/70 rounded-2xl overflow-hidden shadow-md backdrop-blur-sm ${className}`}>
     {children}
   </div>
 );
@@ -91,7 +93,9 @@ const PanelHeader = ({ title, linkTo, linkLabel }) => (
 
 // ─── Admin Dashboard ───────────────────────────────────────────────────────────
 const AdminDashboard = () => {
+  const { currentUser } = useAuth();
   const [dashboardData, setDashboardData] = useState(null);
+  const [teamUsers, setTeamUsers]         = useState([]);
   const [loading, setLoading]             = useState(true);
   const [error, setError]                 = useState(null);
   const [timeRange, setTimeRange]         = useState('week');
@@ -101,6 +105,15 @@ const AdminDashboard = () => {
       setLoading(true);
       const data = await dashboardService.getAdminDashboardStats(timeRange);
       setDashboardData(data);
+      
+      // Fetch team users for the overview
+      try {
+        const users = await userService.getAllUsers();
+        setTeamUsers(users || []);
+      } catch (userErr) {
+        console.error('Failed to fetch team users:', userErr);
+      }
+      
       setError(null);
     } catch (err) {
       console.error('Dashboard fetch error:', err);
@@ -141,13 +154,15 @@ const AdminDashboard = () => {
   }, [dashboardData]);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
+      <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
 
         {/* ── Header ── */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-slate-100">Admin Dashboard</h1>
+            <h1 className="text-2xl font-bold text-slate-100">
+              {currentUser?.role === 'team_lead' ? 'Management Dashboard' : 'Admin Dashboard'}
+            </h1>
             <p className="mt-1 text-sm text-slate-400">Overview of projects, tasks, and team progress</p>
           </div>
 
@@ -357,9 +372,13 @@ const AdminDashboard = () => {
                 <PanelHeader title="Admin Quick Actions" />
                 <div className="p-5 space-y-2">
                   {[
-                    { label: 'Manage Users',    to: '/admin/users'},
-                    { label: 'All Tasks',       to: '/tasks'},
-                  ].map(({ label, to, icon }) => (
+                    { label: 'Create New Task', to: '/admin/create-task', show: true },
+                    { label: 'Manage Projects', to: '/admin/projects',    show: true },
+                    { label: 'Manage Users',    to: '/admin/users',       show: true },
+                    { label: 'All Tasks',       to: '/tasks',             show: true },
+                    { label: 'Audit Logs',      to: '/admin/audit-logs',  show: currentUser?.role === 'admin' },
+                    { label: 'System Settings', to: '/admin/settings',    show: currentUser?.role === 'admin' },
+                  ].filter(action => action.show).map(({ label, to, icon }) => (
                     <Link
                       key={to}
                       to={to}
@@ -376,6 +395,51 @@ const AdminDashboard = () => {
                 </div>
               </Panel>
 
+            </div>
+
+            {/* Team Overview Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Panel>
+                <PanelHeader 
+                  title="Team Overview" 
+                  linkTo={currentUser?.role === 'admin' ? "/admin/users" : undefined} 
+                  linkLabel={currentUser?.role === 'admin' ? "Manage Users" : undefined} 
+                />
+                {teamUsers.length > 0 ? (
+                  <ul className="divide-y divide-slate-800">
+                    {teamUsers.slice(0, 5).map((user) => (
+                      <li key={user.id} className="px-5 py-4 flex items-center justify-between">
+                        <div className="flex items-center">
+                          <div className="h-9 w-9 rounded-full bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-400 border border-slate-700">
+                            {user.name?.charAt(0) || 'U'}
+                          </div>
+                          <div className="ml-4">
+                            <p className="text-sm font-medium text-slate-200">{user.name}</p>
+                            <p className="text-xs text-slate-500 capitalize">{user.role}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-xs text-slate-400">Active</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="px-5 py-10 text-center text-slate-500 text-sm">
+                    No team members found.
+                  </div>
+                )}
+              </Panel>
+
+              {/* Reports/Stats Placeholder */}
+              {currentUser?.role === 'admin' && (
+                <Panel>
+                  <PanelHeader title="Recent Activity" linkTo="/admin/audit-logs" />
+                  <div className="px-5 py-10 text-center text-slate-500 text-sm italic">
+                    Additional system metrics and audit highlights will appear here.
+                  </div>
+                </Panel>
+              )}
             </div>
           </div>
         )}
