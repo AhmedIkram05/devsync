@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { useAuth } from '../context/AuthContext';
 import { projectService } from '../services/utils/api';
 
 const statusClasses = {
@@ -35,10 +36,12 @@ const formatDate = (value) => {
 };
 
 const AdminProjects = () => {
+  const { currentUser } = useAuth();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
+  const dashboardPath = currentUser?.role === 'admin' ? '/admin' : '/BasicDashboard';
 
   const loadProjects = async () => {
     try {
@@ -103,7 +106,7 @@ const AdminProjects = () => {
                 Create Project
               </Link>
               <Link
-                to="/admin"
+                to={dashboardPath}
                 className="inline-flex items-center px-4 py-2 rounded-full border border-slate-700/70 text-slate-300 hover:text-slate-100 hover:border-slate-500"
               >
                 Back to Dashboard
