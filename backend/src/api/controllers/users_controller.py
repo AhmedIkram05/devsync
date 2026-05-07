@@ -5,6 +5,7 @@ from flask_jwt_extended import get_jwt_identity
 from ...db.models import db, User  # Changed to relative import
 from ...auth.helpers import hash_password, verify_password  # Changed to relative import
 from ..validators.user_validator import validate_user_data, validate_profile_update  # Changed to relative import
+from ...services import audit_service
 
 def get_all_users():
     """Controller function to get all users"""
@@ -21,6 +22,47 @@ def get_all_users():
     } for user in users]
     
     return jsonify({'users': users_data})
+
+def create_user():
+    """Controller function to create a new user (admin only)"""
+    data = request.get_json()
+    
+    # Validate user data
+    validation_result = validate_user_data(data)
+    if validation_result:
+        return validation_result
+        
+    # Check if email is already taken
+    if User.query.filter_by(email=data['email']).first():
+        return jsonify({'message': 'Email already in use'}), 409
+        
+    # Create new user
+    new_user = User(
+        name=data['name'],
+        email=data['email'],
+        password=hash_password(data.get('password', 'DevSync123!')), # Default password if none provided
+        role=data.get('role', 'developer')
+    )
+    
+    db.session.add(new_user)
+    db.session.commit()
+    
+    audit_service.record(
+        action='user_created',
+        resource_type='user',
+        resource_id=new_user.id,
+        metadata={'role': new_user.role}
+    )
+    
+    return jsonify({
+        'message': 'User created successfully',
+        'user': {
+            'id': new_user.id,
+            'name': new_user.name,
+            'email': new_user.email,
+            'role': new_user.role
+        }
+    }), 201
 
 def get_user_by_id(user_id):
     """Controller function to get a specific user"""
@@ -85,6 +127,12 @@ def delete_user(user_id):
     
     db.session.delete(user)
     db.session.commit()
+    
+    audit_service.record(
+        action='user_deleted',
+        resource_type='user',
+        resource_id=user_id
+    )
     
     return jsonify({'message': 'User deleted successfully'})
 

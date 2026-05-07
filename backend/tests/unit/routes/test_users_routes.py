@@ -26,9 +26,12 @@ def app(monkeypatch):
     app.config['JWT_SECRET_KEY'] = 'test-secret-key'
 
     monkeypatch.setattr(users_routes, 'jwt_required', passthrough_decorator)
-    monkeypatch.setattr(users_routes, 'admin_required', passthrough_decorator)
-    monkeypatch.setattr(users_routes, 'role_required', passthrough_decorator)
-    monkeypatch.setattr(users_routes, 'validate_json', passthrough_decorator)
+    monkeypatch.setattr(users_routes, 'admin_required', passthrough_decorator, raising=False)
+    monkeypatch.setattr(users_routes, 'role_required', passthrough_decorator, raising=False)
+    monkeypatch.setattr(users_routes, 'role_at_least', passthrough_decorator, raising=False)
+    monkeypatch.setattr(users_routes, 'validate_json', passthrough_decorator, raising=False)
+    monkeypatch.setattr(users_routes, 'get_jwt_identity', lambda: 1, raising=False)
+    monkeypatch.setattr(users_routes, 'get_jwt', lambda: {'role': 'admin'}, raising=False)
 
     bp = Blueprint('api', __name__, url_prefix='/api/v1')
     users_routes.register_routes(bp)
