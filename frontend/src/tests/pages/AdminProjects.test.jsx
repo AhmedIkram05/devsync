@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 import AdminProjects from '../../pages/AdminProjects';
+import { useAuth } from '../../context/AuthContext';
 import { projectService } from '../../services/utils/api';
 
 jest.mock('../../services/utils/api', () => ({
@@ -12,6 +13,10 @@ jest.mock('../../services/utils/api', () => ({
 }));
 
 jest.mock('../../components/LoadingSpinner', () => () => <div>Loading spinner</div>);
+
+jest.mock('../../context/AuthContext', () => ({
+  useAuth: jest.fn(),
+}));
 
 const renderAdminProjects = () => {
   return render(
@@ -24,6 +29,10 @@ const renderAdminProjects = () => {
 describe('AdminProjects page', () => {
   beforeEach(() => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    useAuth.mockReturnValue({
+      currentUser: { id: 1, role: 'admin' },
+    });
 
     projectService.getAllProjects.mockReset();
     projectService.getAllProjects.mockResolvedValue([

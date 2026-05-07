@@ -88,7 +88,7 @@ const AdminAuditLogs = () => {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-sm">
-                        {log.actor_user_id ? `User ${log.actor_user_id}` : 'System'}
+                        {log.actor_name || (log.actor_user_id ? `User ${log.actor_user_id}` : 'System')}
                         {log.actor_role && <span className="ml-1 text-xs text-slate-500">({log.actor_role})</span>}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-300">
@@ -129,7 +129,7 @@ const AdminAuditLogs = () => {
             <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
               <h2 className="text-lg font-semibold mb-4">Audit Log Detail</h2>
               <dl className="space-y-3 text-sm">
-                {[['ID', selectedLog.id], ['Action', selectedLog.action], ['Actor', selectedLog.actor_user_id],
+                {[['ID', selectedLog.id], ['Action', selectedLog.action], ['Actor', selectedLog.actor_name || selectedLog.actor_user_id],
                   ['Role', selectedLog.actor_role], ['Resource', `${selectedLog.resource_type || ''} ${selectedLog.resource_id || ''}`],
                   ['IP', selectedLog.ip], ['User Agent', selectedLog.user_agent],
                   ['Timestamp', selectedLog.created_at ? new Date(selectedLog.created_at).toLocaleString() : '—']

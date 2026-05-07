@@ -706,20 +706,22 @@ const Reports = () => {
         </div>
 
         {/* Report Details + Generated Reports */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-slate-900/70 rounded-2xl shadow-md overflow-hidden border border-slate-800/70">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:items-stretch">
+          <div className="bg-slate-900/70 rounded-2xl shadow-md overflow-hidden border border-slate-800/70 flex h-full flex-col lg:h-[36rem]">
             <div className="px-6 py-4 border-b border-slate-800">
               <h2 className="text-lg font-semibold text-slate-100">Report Details</h2>
             </div>
-            <ReportTable data={details || []} type={reportType} />
+            <div className="flex-1 min-h-0">
+              <ReportTable data={details || []} type={reportType} />
+            </div>
           </div>
 
-          <div className="bg-slate-900/70 rounded-2xl shadow-md border border-slate-800/70">
+          <div className="bg-slate-900/70 rounded-2xl shadow-md border border-slate-800/70 flex h-full flex-col lg:h-[36rem]">
             <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-slate-100">Generated Reports</h2>
               <span className="text-xs text-slate-500 uppercase tracking-wide">PDF downloads</span>
             </div>
-            <div className="p-6">
+            <div className="flex-1 min-h-0 overflow-y-auto p-6 pr-4">
               {generatedReports.length === 0 ? (
                 <p className="text-sm text-slate-500">
                   No generated reports yet. Use Generate Report to create one.

@@ -173,15 +173,15 @@ const ReportTable = ({ data = [], type }) => {
   
   if (!data || data.length === 0) {
     return (
-      <div className="text-center py-6 text-slate-400">
+      <div className="flex h-full items-center justify-center text-center py-6 text-slate-400">
         No data available for this report
       </div>
     );
   }
   
   return (
-    <div>
-      <div className="overflow-x-auto">
+    <div className="flex h-full flex-col">
+      <div className="flex-1 min-h-0 overflow-auto">
         <table className="min-w-full divide-y divide-slate-700/70">
           <thead className="bg-slate-800/60">
             <tr>

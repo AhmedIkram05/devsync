@@ -45,6 +45,7 @@ describe('ReportTable', () => {
     expect(screen.getByText('Review')).toBeInTheDocument();
     expect(screen.getByText('Backlog')).toBeInTheDocument();
     expect(screen.getByText('Completed')).toBeInTheDocument();
+    expect(screen.getByText('Assignee 2')).toBeInTheDocument();
     expect(screen.getAllByText('View').length).toBe(5);
     expect(screen.getAllByText('Unassigned').length).toBeGreaterThan(0);
   });
