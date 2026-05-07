@@ -5,6 +5,7 @@ from flask_jwt_extended import get_jwt_identity, get_jwt
 from ...db.models import db, Project, Task, User  # Changed to relative import
 from ...auth.rbac import Role  # Changed to relative import
 from ..validators.project_validator import validate_project_data  # Changed to relative import
+from ...services import audit_service
 import json
 import time
 import uuid
@@ -193,6 +194,12 @@ def create_project():
                 new_project.team_members.append(member)
     
     db.session.commit()
+    
+    audit_service.record(
+        action='project_created',
+        resource_type='project',
+        resource_id=new_project.id
+    )
     # region agent log
     _debug_log(
         'H1-H2',
@@ -264,6 +271,12 @@ def delete_project(project_id):
     
     db.session.delete(project)
     db.session.commit()
+    
+    audit_service.record(
+        action='project_deleted',
+        resource_type='project',
+        resource_id=project_id
+    )
     
     # Updated to return 204
     return '', 204

@@ -32,7 +32,7 @@ def register_routes(bp):
     
     @bp.route('/projects', methods=['POST'])
     @jwt_required()
-    @role_required([Role.ADMIN])
+    @role_required([Role.TEAM_LEAD, Role.ADMIN])
     @validate_json()
     @log_api_usage()
     @log_request()
@@ -50,7 +50,7 @@ def register_routes(bp):
     
     @bp.route('/projects/<int:project_id>', methods=['PUT'])
     @jwt_required()
-    @role_required([Role.ADMIN])
+    @role_required([Role.TEAM_LEAD, Role.ADMIN])
     @validate_json()
     @log_api_usage()
     def update_project_route(project_id):
@@ -59,7 +59,7 @@ def register_routes(bp):
     
     @bp.route('/projects/<int:project_id>', methods=['DELETE'])
     @jwt_required()
-    @role_required([Role.ADMIN])
+    @role_required([Role.TEAM_LEAD, Role.ADMIN])
     @log_api_usage()
     def delete_project_route(project_id):
         """Route to delete a project"""
