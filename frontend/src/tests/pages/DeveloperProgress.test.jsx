@@ -4,11 +4,16 @@ import { MemoryRouter } from 'react-router-dom';
 
 import DeveloperProgress from '../../pages/DeveloperProgress';
 import { dashboardService } from '../../services/utils/api';
+import { useAuth } from '../../context/AuthContext';
 
 jest.mock('../../services/utils/api', () => ({
   dashboardService: {
     getDeveloperProgressStats: jest.fn(),
   },
+}));
+
+jest.mock('../../context/AuthContext', () => ({
+  useAuth: jest.fn(),
 }));
 
 jest.mock('../../components/LoadingSpinner', () => () => <div>Loading spinner</div>);
@@ -24,6 +29,11 @@ const renderDeveloperProgress = () => {
 describe('DeveloperProgress page', () => {
   beforeEach(() => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    useAuth.mockReturnValue({
+      currentUser: { id: 1, role: 'admin' },
+      is: jest.fn().mockReturnValue(false),
+    });
 
     dashboardService.getDeveloperProgressStats.mockReset();
     dashboardService.getDeveloperProgressStats.mockResolvedValue([
@@ -124,5 +134,16 @@ describe('DeveloperProgress page', () => {
     renderDeveloperProgress();
 
     expect(await screen.findByText(/Failed to load developer progress data. Please try again./i)).toBeInTheDocument();
+  });
+
+  test('shows team lead scope message when the user is a team lead', async () => {
+    useAuth.mockReturnValue({
+      currentUser: { id: 2, role: 'team_lead' },
+      is: (role) => role === 'team_lead',
+    });
+
+    renderDeveloperProgress();
+
+    expect(await screen.findByText(/Showing developers on your shared project teams/i)).toBeInTheDocument();
   });
 });

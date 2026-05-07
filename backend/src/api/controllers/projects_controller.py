@@ -59,6 +59,11 @@ def get_all_projects():
         'status': project.status,
         'github_repo': project.github_repo,
         'created_by': project.created_by,
+        'team_members': [{
+            'id': member.id,
+            'name': member.name,
+            'role': member.role,
+        } for member in _relationship_items(project.team_members)],
         'created_at': project.created_at.isoformat() if project.created_at else None,
         'updated_at': project.updated_at.isoformat() if project.updated_at else None
     } for project in projects]

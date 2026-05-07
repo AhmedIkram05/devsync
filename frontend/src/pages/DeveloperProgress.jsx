@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { dashboardService } from '../services/utils/api';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { useAuth } from '../context/AuthContext';
 
 const DeveloperProgress = () => {
   const [developers, setDevelopers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState('all'); // all, active, completed
+  const { currentUser, is } = useAuth();
+  const isTeamLead = is('team_lead');
 
   useEffect(() => {
     const fetchDevelopersProgress = async () => {
@@ -15,7 +18,7 @@ const DeveloperProgress = () => {
         setLoading(true);
         
         // Fetch developers with their tasks and progress stats
-        const developersData = await dashboardService.getDeveloperProgressStats();
+        const developersData = await dashboardService.getDeveloperProgressStats({ currentUser });
         setDevelopers(developersData || []);
         
       } catch (err) {
@@ -27,7 +30,7 @@ const DeveloperProgress = () => {
     };
     
     fetchDevelopersProgress();
-  }, []);
+  }, [currentUser]);
 
   // Filter developers based on selected filter
   const filteredDevelopers = developers.filter(developer => {
@@ -62,7 +65,12 @@ const DeveloperProgress = () => {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
       <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
-        <h1 className="text-2xl font-bold mb-10 text-slate-100">Developer Progress</h1>
+        <div className="mb-10">
+          <h1 className="text-2xl font-bold text-slate-100">Developer Progress</h1>
+          <p className="mt-2 text-sm text-slate-400">
+            {isTeamLead ? 'Showing developers on your shared project teams.' : 'Showing all developers.'}
+          </p>
+        </div>
         
         {/* Filter Controls */}
         <div className="mb-10 flex flex-wrap gap-2">

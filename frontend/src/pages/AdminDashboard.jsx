@@ -115,10 +115,14 @@ const AdminDashboard = () => {
         console.error('Failed to fetch team users:', userErr);
       }
       
-      // Fetch recent audit logs
+      // Fetch recent audit logs (admin-only)
       try {
-        const auditResponse = await auditLogService.getLogs({ per_page: 3, page: 1 });
-        setRecentAuditLogs(auditResponse?.logs || []);
+        if (currentUser?.role === 'admin') {
+          const auditResponse = await auditLogService.getLogs({ per_page: 3, page: 1 });
+          setRecentAuditLogs(auditResponse?.logs || []);
+        } else {
+          setRecentAuditLogs([]);
+        }
       } catch (auditErr) {
         console.error('Failed to fetch audit logs:', auditErr);
       }
@@ -130,7 +134,7 @@ const AdminDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [timeRange]);
+  }, [currentUser?.role, timeRange]);
 
   useEffect(() => { fetchDashboardData(); }, [fetchDashboardData]);
 

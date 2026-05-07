@@ -69,6 +69,7 @@ def _serialize_task(task):
         'status': _task_value(task, 'status'),
         'priority': _task_value(task, 'priority', 'medium'),
         'progress': _task_value(task, 'progress', 0),
+        'project_id': _task_value(task, 'project_id'),
         'assigned_to': _task_value(task, 'assigned_to'),
         'created_by': _task_value(task, 'created_by'),
         'deadline': _task_datetime(task, 'deadline'),
