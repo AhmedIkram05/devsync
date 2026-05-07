@@ -13,6 +13,12 @@ jest.mock('../../services/utils/api', () => ({
   projectService: {
     getAllProjects: jest.fn(),
   },
+  userService: {
+    getAllUsers: jest.fn(),
+  },
+  auditLogService: {
+    getLogs: jest.fn(),
+  },
 }));
 
 jest.mock('../../context/AuthContext', () => ({
@@ -73,6 +79,10 @@ describe('AdminDashboard page', () => {
     dashboardService.getAdminDashboardStats.mockResolvedValue(adminStatsPayload);
     require('../../services/utils/api').projectService.getAllProjects.mockReset();
     require('../../services/utils/api').projectService.getAllProjects.mockResolvedValue([]);
+    require('../../services/utils/api').userService.getAllUsers.mockReset();
+    require('../../services/utils/api').userService.getAllUsers.mockResolvedValue([]);
+    require('../../services/utils/api').auditLogService.getLogs.mockReset();
+    require('../../services/utils/api').auditLogService.getLogs.mockResolvedValue({ logs: [] });
   });
 
   afterEach(() => {

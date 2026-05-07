@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { dashboardService, projectService, userService } from '../services/utils/api';
+import { dashboardService, projectService, userService, auditLogService } from '../services/utils/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { useAuth } from '../context/AuthContext';
 
@@ -96,6 +96,7 @@ const AdminDashboard = () => {
   const { currentUser } = useAuth();
   const [dashboardData, setDashboardData] = useState(null);
   const [teamUsers, setTeamUsers]         = useState([]);
+  const [recentAuditLogs, setRecentAuditLogs] = useState([]);
   const [loading, setLoading]             = useState(true);
   const [error, setError]                 = useState(null);
   const [timeRange, setTimeRange]         = useState('week');
@@ -112,6 +113,14 @@ const AdminDashboard = () => {
         setTeamUsers(users || []);
       } catch (userErr) {
         console.error('Failed to fetch team users:', userErr);
+      }
+      
+      // Fetch recent audit logs
+      try {
+        const auditResponse = await auditLogService.getLogs({ per_page: 3, page: 1 });
+        setRecentAuditLogs(auditResponse?.logs || []);
+      } catch (auditErr) {
+        console.error('Failed to fetch audit logs:', auditErr);
       }
       
       setError(null);
@@ -367,34 +376,6 @@ const AdminDashboard = () => {
                 </div>
               </Panel>
 
-              {/* Admin Functions */}
-              <Panel>
-                <PanelHeader title="Admin Quick Actions" />
-                <div className="p-5 space-y-2">
-                  {[
-                    { label: 'Create New Task', to: '/admin/create-task', show: true },
-                    { label: 'Manage Projects', to: '/admin/projects',    show: true },
-                    { label: 'Manage Users',    to: '/admin/users',       show: true },
-                    { label: 'All Tasks',       to: '/tasks',             show: true },
-                    { label: 'Audit Logs',      to: '/admin/audit-logs',  show: currentUser?.role === 'admin' },
-                    { label: 'System Settings', to: '/admin/settings',    show: currentUser?.role === 'admin' },
-                  ].filter(action => action.show).map(({ label, to, icon }) => (
-                    <Link
-                      key={to}
-                      to={to}
-                      className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-slate-300
-                                 hover:bg-slate-800/70 hover:text-slate-100 transition-colors"
-                    >
-                      <span>{icon}</span>
-                      {label}
-                      <svg className="h-4 w-4 ml-auto text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                      </svg>
-                    </Link>
-                  ))}
-                </div>
-              </Panel>
-
             </div>
 
             {/* Team Overview Row */}
@@ -406,8 +387,8 @@ const AdminDashboard = () => {
                   linkLabel={currentUser?.role === 'admin' ? "Manage Users" : undefined} 
                 />
                 {teamUsers.length > 0 ? (
-                  <ul className="divide-y divide-slate-800">
-                    {teamUsers.slice(0, 5).map((user) => (
+                  <ul className="divide-y divide-slate-800 max-h-56 overflow-y-auto">
+                    {teamUsers.map((user) => (
                       <li key={user.id} className="px-5 py-4 flex items-center justify-between">
                         <div className="flex items-center">
                           <div className="h-9 w-9 rounded-full bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-400 border border-slate-700">
@@ -435,9 +416,37 @@ const AdminDashboard = () => {
               {currentUser?.role === 'admin' && (
                 <Panel>
                   <PanelHeader title="Recent Activity" linkTo="/admin/audit-logs" />
-                  <div className="px-5 py-10 text-center text-slate-500 text-sm italic">
-                    Additional system metrics and audit highlights will appear here.
-                  </div>
+                  {recentAuditLogs.length > 0 ? (
+                    <ul className="divide-y divide-slate-800">
+                      {recentAuditLogs.slice(0, 5).map(log => (
+                        <li key={log.id} className="px-5 py-3 hover:bg-slate-800/50 transition-colors">
+                          <div className="flex items-start gap-3">
+                            <div className="flex-shrink-0 pt-0.5">
+                              <div className="flex items-center justify-center h-8 w-8 rounded-full bg-slate-800">
+                                <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                              </div>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-slate-100 truncate">{log.action}</p>
+                              <p className="text-xs text-slate-400 mt-0.5">
+                                {log.resource_type && `${log.resource_type}`}
+                                {log.resource_type && log.resource_id && ` #${log.resource_id}`}
+                              </p>
+                              <p className="text-xs text-slate-500 mt-1">
+                                {new Date(log.created_at).toLocaleDateString()} {new Date(log.created_at).toLocaleTimeString()}
+                              </p>
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="px-5 py-10 text-center text-slate-500 text-sm">
+                      No recent activity found.
+                    </div>
+                  )}
                 </Panel>
               )}
             </div>

@@ -40,7 +40,7 @@ def create_user():
     new_user = User(
         name=data['name'],
         email=data['email'],
-        password=hash_password(data.get('password', 'DevSync123!')), # Default password if none provided
+        password=hash_password(data.get('password')),
         role=data.get('role', 'developer')
     )
     
