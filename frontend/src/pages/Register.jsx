@@ -19,7 +19,6 @@ const Register = () => {
     email: "",
     password: "",
     confirmPassword: "",
-    role: "developer",
   });
   const [formError, setFormError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -96,7 +95,6 @@ const Register = () => {
         email: "",
         password: "",
         confirmPassword: "",
-        role: "developer",
       });
       
       // Redirect to login page after success
@@ -112,7 +110,7 @@ const Register = () => {
   };
 
   return (
-    <div className="flex justify-center items-center min-h-screen bg-slate-950">
+    <div className="flex justify-center items-center min-h-screen bg-slate-950 font-['Space_Grotesk']">
       <div className="w-full max-w-md rounded-2xl border border-slate-800/80 bg-slate-900/80 p-8 shadow-2xl">
         <div className="text-center mb-6">
           <p className="text-xs uppercase tracking-[0.35em] text-slate-500">DevSync</p>
@@ -192,22 +190,6 @@ const Register = () => {
               placeholder="********"
               required
             />
-          </div>
-          
-          <div className="mb-6">
-            <label className="block text-slate-300 text-sm font-medium mb-2">
-              Role
-            </label>
-            <select
-              name="role"
-              value={formData.role}
-              onChange={handleChange}
-              className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
-            >
-              <option value="developer">Developer</option>
-              <option value="team_lead">Team Lead</option>
-              <option value="admin">Admin</option>
-            </select>
           </div>
           
           <div className="flex items-center justify-between">

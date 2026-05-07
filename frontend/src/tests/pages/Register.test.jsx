@@ -125,9 +125,6 @@ describe('Register page', () => {
     renderRegister();
 
     fillRequiredFields();
-    fireEvent.change(screen.getByRole('combobox'), {
-      target: { name: 'role', value: 'admin' },
-    });
 
     fireEvent.click(screen.getByRole('button', { name: /register/i }));
 
@@ -142,7 +139,6 @@ describe('Register page', () => {
       name: 'Dev User',
       email: 'dev@example.com',
       password: 'password123',
-      role: 'admin',
     });
 
     expect(await screen.findByText(/Registration successful! Redirecting to login/i)).toBeInTheDocument();
