@@ -18,7 +18,7 @@ const TaskList = () => {
     scope: 'all'
   });
   
-  const canCreateTasks = currentUser?.role === 'admin' || currentUser?.role === 'team_lead';
+  const canCreateTasks = Boolean(currentUser);
 
   // Fetch tasks when component mounts
   useEffect(() => {
@@ -100,9 +100,9 @@ const TaskList = () => {
   // Get priority badge
   const getPriorityBadge = (priority) => {
     const priorityMap = {
-      'high': { class: 'bg-rose-500/15 text-rose-200', text: 'High', icon: '❗' },
-      'medium': { class: 'bg-amber-500/15 text-amber-200', text: 'Medium', icon: '⚠️' },
-      'low': { class: 'bg-sky-500/15 text-sky-200', text: 'Low', icon: '🔽' }
+      'high': { class: 'bg-rose-500/15 text-rose-200', text: 'High'},
+      'medium': { class: 'bg-amber-500/15 text-amber-200', text: 'Medium' },
+      'low': { class: 'bg-sky-500/15 text-sky-200', text: 'Low' }
     };
     
     return priorityMap[priority] || { class: 'bg-gray-100 text-gray-800', text: priority };

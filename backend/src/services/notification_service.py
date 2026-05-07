@@ -63,7 +63,7 @@ class NotificationService:
         user_ids = set()
 
         try:
-            project = Project.query.get(project_id)
+            project = db.session.get(Project, project_id)
             if project:
                 if getattr(project, 'created_by', None) is not None:
                     user_ids.add(project.created_by)

@@ -172,7 +172,7 @@ const fetchWithAuth = async (endpoint, options = {}) => {
       // For non-critical endpoints, return gracefully instead of throwing
       if (isNonCriticalEndpoint) {
         console.error(`Returning empty data for non-critical endpoint due to error`);
-        return { error: error.message };
+        return { error: error.message, status: error.status };
       }
       
       throw error;
@@ -506,9 +506,12 @@ const dashboardService = {
       console.error("Dashboard fetch error:", error);
       // Return fallback data structure
       return {
-        tasks: { active: 0, completed: 0 },
-        repositories: [],
-        recentActivity: []
+        taskCounts: { assigned: 0, inProgress: 0, completed: 0, dueSoon: 0 },
+        tasks: { assigned: 0, inProgress: 0, completed: 0, dueSoon: 0 },
+        recentTasks: [],
+        githubActivity: [],
+        projects: [],
+        upcomingDeadlines: []
       };
     }
   },
@@ -834,14 +837,30 @@ const notificationService = {
       const response = await fetchWithAuth('notifications');
       
       // Handle potential auth errors
-      if (response.error) {
+      if (response?.isConnectionError) {
+        return response;
+      }
+
+      if (response?.isAuthError || (response?.error && !response?.status)) {
         return [];
+      }
+
+      if (response?.error) {
+        const error = new Error(response.error);
+        error.status = response.status;
+        throw error;
       }
       
       return response?.notifications || response || [];
     } catch (error) {
       console.error("Failed to fetch notifications:", error);
-      return [];
+      if (error?.isConnectionError) {
+        return {
+          error: error.message,
+          isConnectionError: true
+        };
+      }
+      throw error;
     }
   },
   

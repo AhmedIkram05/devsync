@@ -1,12 +1,16 @@
 # Task controller - business logic
 
+import logging
 from flask import request, jsonify
 from flask_jwt_extended import get_jwt_identity, get_jwt
 from ...db.models import db, Task, User  # Changed to relative import
 from ...auth.rbac import Role  # Changed to relative import
 from ..validators.task_validator import validate_task_data  # Changed to relative import
 from ...services import audit_service
+from ...services.notification_service import NotificationService
 from unittest.mock import Mock
+
+logger = logging.getLogger(__name__)
 
 MEMBER_ROLES = {
     Role.DEVELOPER.value,
@@ -17,6 +21,25 @@ TASK_MANAGER_ROLES = {
     Role.TEAM_LEAD.value,
     Role.ADMIN.value,
 }
+
+
+def _run_notification(callback, *args, **kwargs):
+    """Create notifications without making the primary task mutation fail."""
+    try:
+        callback(*args, **kwargs)
+    except Exception:
+        db.session.rollback()
+        logger.exception("Failed to create task notification")
+
+
+def _coerce_int(value):
+    if value in (None, ''):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return value
 
 
 def _task_value(task, field, default=None):
@@ -140,18 +163,18 @@ def create_new_task():
     if not identity or 'user_id' not in identity:
         return jsonify({'message': 'Invalid authentication token'}), 401
     user_id = identity['user_id']
+    user_role = get_jwt().get('role')
 
-    assigned_to = data.get('assigned_to')
-    if assigned_to in (None, ''):
+    assigned_to = _coerce_int(data.get('assigned_to'))
+    if user_role == Role.DEVELOPER.value:
+        assigned_to = user_id
+    elif assigned_to is None and user_role in TASK_MANAGER_ROLES:
         assigned_to = None
-    elif isinstance(assigned_to, str) and assigned_to.isdigit():
-        assigned_to = int(assigned_to)
 
-    project_id = data.get('project_id')
-    if project_id in (None, ''):
-        project_id = None
-    elif isinstance(project_id, str) and project_id.isdigit():
-        project_id = int(project_id)
+    project_id = _coerce_int(data.get('project_id'))
+
+    if user_role == Role.DEVELOPER.value and data.get('assigned_to') not in (None, '', user_id, str(user_id)):
+        return jsonify({'message': 'Developers can only create tasks assigned to themselves'}), 403
     
     # Create new task
     new_task = Task()
@@ -167,6 +190,15 @@ def create_new_task():
     
     db.session.add(new_task)
     db.session.commit()
+
+    _run_notification(
+        NotificationService.task_created_notification,
+        new_task.id,
+        new_task.title,
+        new_task.project_id,
+        user_id,
+        new_task.assigned_to
+    )
     
     return jsonify({
         'message': 'Task created successfully',
@@ -185,6 +217,7 @@ def update_task_by_id(task_id):
     user_role = claims.get('role')
     
     task = Task.query.get_or_404(task_id)
+    old_assignee_id = task.assigned_to
     
     # Check if user has permission to update this task
     # Admins and Team Leads can update any task (can_update_any_task)
@@ -209,11 +242,21 @@ def update_task_by_id(task_id):
     if 'assigned_to' in data:
         # Only TL or Admins can change the assignee
         if can_assign_task:
-            task.assigned_to = data['assigned_to']
-        elif data['assigned_to'] != task.assigned_to:
+            task.assigned_to = _coerce_int(data['assigned_to'])
+        elif _coerce_int(data['assigned_to']) != task.assigned_to:
             return jsonify({'message': 'You do not have permission to reassign tasks'}), 403
     
     db.session.commit()
+
+    _run_notification(
+        NotificationService.task_updated_notification,
+        task.id,
+        task.title,
+        task.project_id,
+        user_id,
+        old_assignee_id,
+        task.assigned_to
+    )
     
     return jsonify({
         'message': 'Task updated successfully',
@@ -228,7 +271,15 @@ def update_task_by_id(task_id):
 
 def delete_task_by_id(task_id):
     """Controller function to delete a task"""
+    user_id = get_jwt_identity()['user_id']
+    claims = get_jwt()
+    user_role = claims.get('role')
+
     task = Task.query.get_or_404(task_id)
+
+    can_delete_task = user_role in TASK_MANAGER_ROLES or task.assigned_to == user_id or task.created_by == user_id
+    if not can_delete_task:
+        return jsonify({'message': 'You can only delete tasks assigned to you'}), 403
     
     db.session.delete(task)
     db.session.commit()

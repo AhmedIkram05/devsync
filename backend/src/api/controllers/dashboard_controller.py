@@ -1,7 +1,7 @@
 # Dashboard controller - business logic for user dashboards
 from flask import jsonify
 from flask_jwt_extended import get_jwt_identity, get_jwt
-from ...db.models import db, User, Task, Project  # Changed to relative import
+from ...db.models import db, User, Task, Project, TaskGitHubLink, GitHubRepository  # Changed to relative import
 from ...auth.rbac import Role  # Changed to relative import
 from datetime import datetime, timedelta
 import traceback
@@ -31,6 +31,46 @@ def _is_completed_status(status):
 
 def _is_completed_task(task):
     return _is_completed_status(getattr(task, 'status', None))
+
+
+def _task_to_dashboard_item(task):
+    project = getattr(task, 'project', None)
+    return {
+        'id': getattr(task, 'id', None),
+        'title': getattr(task, 'title', None),
+        'description': getattr(task, 'description', None),
+        'status': getattr(task, 'status', None),
+        'priority': getattr(task, 'priority', None),
+        'progress': getattr(task, 'progress', 0) or 0,
+        'deadline': getattr(task, 'deadline', None).isoformat() if getattr(task, 'deadline', None) else None,
+        'project_id': getattr(task, 'project_id', None),
+        'project_name': project.name if project else None,
+        'updated_at': getattr(task, 'updated_at', None).isoformat() if getattr(task, 'updated_at', None) else None,
+        'created_at': getattr(task, 'created_at', None).isoformat() if getattr(task, 'created_at', None) else None,
+    }
+
+
+def _github_activity_to_item(link):
+    task = getattr(link, 'task', None)
+    repository = getattr(link, 'repository', None)
+    event_type = 'pull_request' if link.pull_request_number else 'issue' if link.issue_number else 'repository'
+    label_number = link.pull_request_number or link.issue_number
+    repo_url = repository.repo_url if repository else None
+    if repo_url and label_number:
+        if link.pull_request_number:
+            repo_url = f'{repo_url.rstrip("/")}/pull/{link.pull_request_number}'
+        elif link.issue_number:
+            repo_url = f'{repo_url.rstrip("/")}/issues/{link.issue_number}'
+
+    return {
+        'id': link.id,
+        'type': event_type,
+        'title': task.title if task else 'GitHub linked task',
+        'repo': repository.repo_name if repository else 'Unknown repository',
+        'url': repo_url,
+        'date': link.created_at.isoformat() if link.created_at else None,
+        'label': f'#{label_number}' if label_number else 'Linked repository',
+    }
 
 def get_user_tasks(user_id):
     """Helper function to get all tasks for a user"""
@@ -208,24 +248,44 @@ def get_client_dashboard():
         
         # Get tasks assigned to this user
         assigned_tasks = get_user_tasks(user_id)
-        
-        task_stats = {
-            'total':       len(assigned_tasks),
-            'todo':        _count(assigned_tasks, lambda task: getattr(task, 'status', None) == 'todo'),
-            'in_progress': _count(assigned_tasks, lambda task: getattr(task, 'status', None) == 'in_progress'),
-            'review':      _count(assigned_tasks, lambda task: getattr(task, 'status', None) == 'review'),
-            'done':        _count(assigned_tasks, lambda task: getattr(task, 'status', None) in {'done', 'completed'}),
-        }
-        
         # Get tasks due soon
         tasks_due_soon = get_tasks_due_soon(user_id)
+
+        recent_tasks = sorted(
+            assigned_tasks,
+            key=lambda task: getattr(task, 'updated_at', None) or getattr(task, 'created_at', None) or datetime.min,
+            reverse=True,
+        )[:5]
+
+        task_stats = {
+            'total': len(assigned_tasks),
+            'assigned': len(assigned_tasks),
+            'todo': _count(assigned_tasks, lambda task: getattr(task, 'status', None) == 'todo'),
+            'in_progress': _count(assigned_tasks, lambda task: getattr(task, 'status', None) == 'in_progress'),
+            'review': _count(assigned_tasks, lambda task: getattr(task, 'status', None) == 'review'),
+            'done': _count(assigned_tasks, lambda task: getattr(task, 'status', None) in {'done', 'completed'}),
+            'due_soon': len(tasks_due_soon),
+        }
+
+        github_activity = []
+        try:
+            recent_links = TaskGitHubLink.query.join(Task).outerjoin(GitHubRepository).filter(
+                Task.assigned_to == user_id
+            ).order_by(TaskGitHubLink.created_at.desc()).limit(5).all()
+            github_activity = [_github_activity_to_item(link) for link in recent_links]
+        except Exception as e:
+            logger.error(f"Error fetching GitHub activity for client dashboard: {str(e)}")
+            github_activity = []
         
         # Get projects user is part of
         user_projects = user.projects.all()
         
         # Format response data
         dashboard_data = {
+            'taskCounts': task_stats,
             'tasks': task_stats,
+            'recentTasks': [_task_to_dashboard_item(task) for task in recent_tasks],
+            'upcomingDeadlines': [_task_to_dashboard_item(task) for task in tasks_due_soon],
             'tasks_due_soon': [{
                 'id': task.id,
                 'title': task.title,
@@ -233,6 +293,7 @@ def get_client_dashboard():
                 'status': task.status,
                 'project_id': task.project_id
             } for task in tasks_due_soon],
+            'githubActivity': github_activity,
             'projects': [{
                 'id': project.id,
                 'name': project.name,

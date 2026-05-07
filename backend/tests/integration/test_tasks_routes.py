@@ -87,6 +87,33 @@ def test_developer_can_update_own_assigned_task(client, app, monkeypatch):
     handler.assert_called_once_with(1)
 
 
+def test_developer_can_create_task(client, app, monkeypatch):
+    handler = MagicMock(return_value=({'message': 'Task created'}, 201))
+    monkeypatch.setattr(tasks_routes, 'create_new_task', handler)
+
+    resp = client.post(
+        '/api/v1/tasks',
+        headers=auth_headers(app, 'developer'),
+        json={'title': 'New Task', 'description': 'Desc', 'status': 'todo'}
+    )
+
+    assert resp.status_code == 201
+    handler.assert_called_once_with()
+
+
+def test_developer_can_delete_task_route(client, app, monkeypatch):
+    handler = MagicMock(return_value=({'message': 'Task deleted'}, 200))
+    monkeypatch.setattr(tasks_routes, 'delete_task_by_id', handler)
+
+    resp = client.delete(
+        '/api/v1/tasks/1',
+        headers=auth_headers(app, 'developer')
+    )
+
+    assert resp.status_code == 200
+    handler.assert_called_once_with(1)
+
+
 def test_unauthenticated_cannot_update_task(client):
     """Unauthenticated requests must be rejected."""
     resp = client.put('/api/v1/tasks/1', json={'title': 'hack'})

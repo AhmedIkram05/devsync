@@ -50,7 +50,7 @@ const Navbar = () => {
   const canCreateTasks = isAdmin || isTeamLead;
 
   return (
-    <header className="bg-slate-950/80 backdrop-blur-md border-b border-slate-800/50 sticky top-0 z-50 font-['Space_Grotesk']">
+    <header className="bg-slate-950/80 backdrop-blur-md sticky top-0 z-50 font-['Space_Grotesk']">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4 md:px-10">
         <Link to="/" className="flex-shrink-0 mr-8 text-lg font-semibold tracking-wide text-white hover:text-slate-300 transition">
           DevSync

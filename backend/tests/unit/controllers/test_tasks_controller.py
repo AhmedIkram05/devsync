@@ -149,7 +149,7 @@ def test_get_task_by_id(app, mock_jwt_identity, mock_jwt, mock_task):
             assert data['task']['creator_name'] == "Creator User"
             assert data['task']['assignee_name'] == "Assignee User"
 
-def test_create_new_task(app, client, mock_jwt_identity, mock_db):
+def test_create_new_task(app, client, mock_jwt_identity, mock_jwt, mock_db):
     # Test data for task creation
     test_data = {
         'title': 'New Task',
@@ -183,6 +183,41 @@ def test_create_new_task(app, client, mock_jwt_identity, mock_db):
             # Assert results
             assert status_code == 201
             assert response.get_json()['task']['title'] == 'New Task'
+            mock_db.session.add.assert_called_once()
+            mock_db.session.commit.assert_called_once()
+
+
+def test_create_new_task_developer_forces_self_assignment(app, mock_jwt_identity, mock_db, mock_jwt):
+    mock_jwt.return_value = {'role': 'developer'}
+
+    test_data = {
+        'title': 'New Task',
+        'description': 'Task Description',
+        'status': 'todo',
+        'progress': 0,
+        'assigned_to': 1,
+    }
+
+    with app.test_request_context(json=test_data):
+        with patch('backend.src.api.controllers.tasks_controller.Task') as mock_task_class, \
+             patch('backend.src.api.controllers.tasks_controller.validate_task_data') as mock_validate:
+
+            mock_validate.return_value = None
+
+            new_task = MagicMock()
+            new_task.id = 1
+            new_task.title = 'New Task'
+            new_task.status = 'todo'
+
+            mock_task_class.return_value = new_task
+
+            from backend.src.api.controllers.tasks_controller import create_new_task
+
+            response, status_code = create_new_task()
+
+            assert status_code == 201
+            assert response.get_json()['task']['title'] == 'New Task'
+            assert new_task.assigned_to == 1
             mock_db.session.add.assert_called_once()
             mock_db.session.commit.assert_called_once()
 
@@ -254,8 +289,11 @@ def test_team_lead_can_assign_unassigned_task(app, mock_jwt_identity, mock_jwt, 
             mock_db.session.commit.assert_called_once()
 
 def test_delete_task_by_id(app, mock_jwt_identity, mock_db):
+    
     with app.test_request_context():
-        with patch('backend.src.api.controllers.tasks_controller.Task.query') as mock_query:
+        with patch('backend.src.api.controllers.tasks_controller.Task.query') as mock_query, \
+             patch('backend.src.api.controllers.tasks_controller.get_jwt') as mock_get_jwt:
+            mock_get_jwt.return_value = {'role': 'admin'}
             
             mock_task = MagicMock()
             mock_query.get_or_404.return_value = mock_task
@@ -270,3 +308,21 @@ def test_delete_task_by_id(app, mock_jwt_identity, mock_db):
             assert 'Task deleted successfully' in response.get_json()['message']
             mock_db.session.delete.assert_called_once_with(mock_task)
             mock_db.session.commit.assert_called_once()
+
+
+def test_delete_task_permission_denied_for_non_owner(app, mock_jwt_identity, mock_db, mock_jwt):
+    mock_jwt.return_value = {'role': 'developer'}
+
+    with app.test_request_context():
+        with patch('backend.src.api.controllers.tasks_controller.Task.query') as mock_query:
+            mock_task = MagicMock()
+            mock_task.assigned_to = 999
+            mock_task.created_by = 998
+            mock_query.get_or_404.return_value = mock_task
+
+            from backend.src.api.controllers.tasks_controller import delete_task_by_id
+
+            response, status_code = delete_task_by_id(1)
+
+            assert status_code == 403
+            assert 'You can only delete tasks assigned to you' in response.get_json()['message']

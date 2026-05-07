@@ -40,6 +40,7 @@ function TaskDetailsUser() {
   const isManager = currentUser?.role === 'admin' || currentUser?.role === 'team_lead';
   const isAssigned = task?.assigned_to === currentUser?.id;
   const canEditTask = isManager || isAssigned;
+  const canDeleteTask = isManager || isAssigned;
 
   useEffect(() => {
     const fetchTaskDetails = async () => {
@@ -160,6 +161,24 @@ function TaskDetailsUser() {
   const handleCancelTaskEdit = () => {
     setIsEditingTask(false);
     setEditError(null);
+  };
+
+  const handleDeleteTask = async () => {
+    const confirmDelete = window.confirm('Delete this task? This action cannot be undone.');
+    if (!confirmDelete) {
+      return;
+    }
+
+    try {
+      setUpdateLoading(true);
+      await taskService.deleteTask(id);
+      navigate('/tasks');
+    } catch (err) {
+      console.error('Failed to delete task:', err);
+      alert('Failed to delete task. Please try again.');
+    } finally {
+      setUpdateLoading(false);
+    }
   };
 
   const handleTaskEditSubmit = async (editedTask) => {
@@ -335,19 +354,31 @@ function TaskDetailsUser() {
                 )}
               </div>
             </div>
-            <span 
-              className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                (task.status === 'completed' || task.status === 'done') ? 'bg-emerald-500/15 text-emerald-200' : 
-                task.status === 'in_progress' ? 'bg-amber-500/15 text-amber-200' : 
-                'bg-slate-800/70 text-slate-300'
-              }`}
-            >
-              {task.status === 'in_progress' ? 'In Progress' : 
-               (task.status === 'completed' || task.status === 'done') ? 'Completed' : 
-               task.status === 'todo' ? 'To Do' : 
-               task.status === 'backlog' ? 'Backlog' : 
-               task.status}
-            </span>
+            <div className="flex flex-col items-end gap-3">
+              <span 
+                className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                  (task.status === 'completed' || task.status === 'done') ? 'bg-emerald-500/15 text-emerald-200' : 
+                  task.status === 'in_progress' ? 'bg-amber-500/15 text-amber-200' : 
+                  'bg-slate-800/70 text-slate-300'
+                }`}
+              >
+                {task.status === 'in_progress' ? 'In Progress' : 
+                 (task.status === 'completed' || task.status === 'done') ? 'Completed' : 
+                 task.status === 'todo' ? 'To Do' : 
+                 task.status === 'backlog' ? 'Backlog' : 
+                 task.status}
+              </span>
+              {canDeleteTask && (
+                <button
+                  type="button"
+                  onClick={handleDeleteTask}
+                  disabled={updateLoading}
+                  className="px-4 py-2 rounded-full border border-rose-400/30 text-rose-200 hover:bg-rose-500/10 disabled:opacity-60"
+                >
+                  Delete Task
+                </button>
+              )}
+            </div>
           </div>
         </div>
         

@@ -506,8 +506,9 @@ describe('api utilities', () => {
     global.fetch.mockRejectedValue(new Error('client down'));
 
     const stats = await dashboardService.getBasicDashboardStats();
-    expect(stats.tasks.active).toBe(0);
-    expect(stats.repositories).toEqual([]);
+    expect(stats.taskCounts.assigned).toBe(0);
+    expect(stats.recentTasks).toEqual([]);
+    expect(stats.githubActivity).toEqual([]);
   });
 
   test('dashboardService.getDeveloperProgressStats returns empty array on error', async () => {

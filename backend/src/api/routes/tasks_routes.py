@@ -27,7 +27,7 @@ def register_routes(bp):
     
     @bp.route('/tasks', methods=['POST'])
     @jwt_required()
-    @role_required([Role.TEAM_LEAD, Role.ADMIN])
+    @role_required([Role.DEVELOPER, Role.TEAM_LEAD, Role.ADMIN])
     @validate_json()
     def create_task():
         """Route to create a new task"""
@@ -50,7 +50,7 @@ def register_routes(bp):
     
     @bp.route('/tasks/<int:task_id>', methods=['DELETE'])
     @jwt_required()
-    @role_required([Role.ADMIN])
+    @role_required([Role.DEVELOPER, Role.TEAM_LEAD, Role.ADMIN])
     def delete_task(task_id):
         """Route to delete a task"""
         return delete_task_by_id(task_id)

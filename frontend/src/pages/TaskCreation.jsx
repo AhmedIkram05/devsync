@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import TaskForm from "../components/TaskForm";
 import { taskService } from "../services/utils/api";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { useAuth } from '../context/AuthContext';
 
 const TaskCreation = () => {
   const navigate = useNavigate();
@@ -10,13 +11,20 @@ const TaskCreation = () => {
   const [users, setUsers] = useState([]);
   const [error, setError] = useState(null);
   const [projects, setProjects] = useState([]);
+  const { currentUser } = useAuth();
+
+  const canAssignTasks = currentUser?.role === 'team_lead' || currentUser?.role === 'admin';
 
   useEffect(() => {
     // Fetch users and projects for the task assignment
     const fetchData = async () => {
       try {
-        const usersData = await taskService.getUsers();
-        setUsers(usersData || []);
+        if (canAssignTasks) {
+          const usersData = await taskService.getUsers();
+          setUsers(usersData || []);
+        } else if (currentUser) {
+          setUsers([currentUser]);
+        }
         
         const projectsData = await taskService.getProjects();
         setProjects(projectsData || []);
@@ -27,7 +35,7 @@ const TaskCreation = () => {
     };
 
     fetchData();
-  }, []);
+  }, [canAssignTasks, currentUser]);
 
   const handleSubmit = async (task) => {
     try {
@@ -40,7 +48,7 @@ const TaskCreation = () => {
         description: task.description,
         status: task.status || "todo",
         priority: task.priority || "medium",
-        assigned_to: task.assignee,
+        assigned_to: canAssignTasks ? task.assignee : currentUser?.id,
         project_id: task.project,
         deadline: task.deadline ? new Date(task.deadline).toISOString() : null
       };
@@ -81,6 +89,8 @@ const TaskCreation = () => {
               onSubmit={handleSubmit} 
               users={users}
               projects={projects}
+              assigneeLocked={!canAssignTasks}
+              initialData={!canAssignTasks && currentUser ? { assigned_to: currentUser.id } : {}}
             />
           </div>
         )}

@@ -82,7 +82,7 @@ describe('TaskColumns component', () => {
 
     expect(screen.getByText('Untitled Task')).toBeInTheDocument();
     expect(screen.getByText(/Due: No date set/i)).toBeInTheDocument();
-    expect(screen.getByText(/⚠️ Medium/i)).toBeInTheDocument();
+    expect(screen.getByText(/Medium/i)).toBeInTheDocument();
   });
 
   test('flags overdue tasks that are not completed', () => {
@@ -97,6 +97,6 @@ describe('TaskColumns component', () => {
     ]);
 
     expect(screen.getByText(/Due:/i)).toBeInTheDocument();
-    expect(screen.getByText(/❗ High/i)).toBeInTheDocument();
+    expect(screen.getByText(/High/i)).toBeInTheDocument();
   });
 });

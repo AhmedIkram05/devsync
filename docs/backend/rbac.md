@@ -27,7 +27,7 @@ The `role_at_least(min_role)` decorator uses this hierarchy to enforce minimum-l
 ### Developer Permissions
 
 - View all tasks
-- Update tasks assigned to them
+- Create and update tasks assigned to them
 - Add comments to all tasks (`can_comment_on_tasks`)
 - View and manage personal notifications (`can_manage_personal_notifications`)
 - Link personal GitHub account (`can_link_github_account`)

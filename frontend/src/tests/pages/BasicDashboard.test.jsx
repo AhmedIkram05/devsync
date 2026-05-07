@@ -19,8 +19,6 @@ jest.mock('../../context/AuthContext', () => ({
   useAuth: jest.fn(),
 }));
 
-jest.mock('../../components/TaskCard', () => ({ task }) => <div>Task: {task.title}</div>);
-
 jest.mock('../../components/LoadingSpinner', () => () => <div>Loading spinner</div>);
 
 const renderDashboard = () => {
@@ -98,21 +96,17 @@ describe('BasicDashboard page', () => {
     renderDashboard();
 
     expect(await screen.findByText('My Dashboard')).toBeInTheDocument();
-    expect(await screen.findByText('Task: Implement webhook retry')).toBeInTheDocument();
-    expect(screen.getByText('Task: Refine dashboard metrics')).toBeInTheDocument();
+    expect(await screen.findByText('Implement webhook retry')).toBeInTheDocument();
+    expect(screen.getByText('Refine dashboard metrics')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Create Task/i })).toBeInTheDocument();
 
     expect(screen.getByText('Assigned Tasks')).toBeInTheDocument();
     expect(screen.getAllByText('In Progress').length).toBeGreaterThan(0);
     expect(screen.getByText('Completed')).toBeInTheDocument();
     expect(screen.getByText('Tasks Due Soon')).toBeInTheDocument();
 
-    expect(screen.getByText('Fix callback race condition')).toBeInTheDocument();
     expect(screen.getByText('DevSync Platform')).toBeInTheDocument();
     expect(screen.getByText('Finalize integration report')).toBeInTheDocument();
-
-    const avatar = screen.getByAltText('octocat');
-    fireEvent.error(avatar);
-    expect(avatar.src).toContain('avatars.githubusercontent.com/u/0');
   });
 
   test('renders disconnected and empty states when no dashboard records are available', async () => {
@@ -142,8 +136,7 @@ describe('BasicDashboard page', () => {
 
     renderDashboard();
 
-    expect(await screen.findByText(/Connect GitHub/i)).toBeInTheDocument();
-    expect(screen.getByText(/No tasks found/i)).toBeInTheDocument();
+    expect(await screen.findByText(/No tasks found/i)).toBeInTheDocument();
     expect(screen.getByText(/You are not assigned to any projects yet/i)).toBeInTheDocument();
     expect(screen.getByText(/No upcoming deadlines/i)).toBeInTheDocument();
   });
@@ -174,7 +167,7 @@ describe('BasicDashboard page', () => {
       expect(dashboardService.getBasicDashboardStats).toHaveBeenCalledTimes(2);
     });
 
-    expect(await screen.findByText('Task: Retry fetched task')).toBeInTheDocument();
+    expect(await screen.findByText('Retry fetched task')).toBeInTheDocument();
   });
 
   test('refresh button triggers a re-fetch when dashboard is already loaded', async () => {

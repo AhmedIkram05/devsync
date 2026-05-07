@@ -102,14 +102,15 @@ describe('TaskList page', () => {
     expect(await screen.findByText(/Failed to load tasks/i)).toBeInTheDocument();
   });
 
-  test('does NOT show New Task button for developers', async () => {
+  test('shows New Task button for developers', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
     taskService.getAllTasks.mockResolvedValue([]);
 
     render(<TaskList />);
     await screen.findByText(/No tasks found/i);
 
-    expect(screen.queryByRole('button', { name: /new task/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /new task/i }));
+    expect(mockNavigate).toHaveBeenCalledWith('/admin/create-task');
   });
 
   test('shows New Task button for team leads', async () => {
