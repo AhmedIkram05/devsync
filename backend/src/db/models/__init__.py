@@ -7,7 +7,7 @@ Import and expose all models for easy access.
 from ..db_connection import db
 
 # Import models to make them available when importing the package
-from .models import User, Task, Project, Comment, GitHubToken, GitHubRepository, TaskGitHubLink, Notification, Report
+from .models import User, Task, Project, Comment, GitHubToken, GitHubRepository, TaskGitHubLink, Notification, Report, AuditLog, SystemSetting
 
 # Export all models for easy importing
 __all__ = [
@@ -20,5 +20,7 @@ __all__ = [
     'GitHubToken',
     'GitHubRepository',
     'TaskGitHubLink',
-    'Report'
+    'Report',
+    'AuditLog',
+    'SystemSetting'
 ]

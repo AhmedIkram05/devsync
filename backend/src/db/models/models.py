@@ -1,7 +1,7 @@
 # This file contains the models for the database tables.
 
-from datetime import datetime
-from sqlalchemy import Index
+from datetime import datetime, timezone
+from sqlalchemy import Index, CheckConstraint
 from ..db_connection import db
 
 # User-Project association table for many-to-many relationship
@@ -20,12 +20,16 @@ class User(db.Model):
     role = db.Column(db.String(20), nullable=False)
     github_username = db.Column(db.String(100))
     github_connected = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Fix __table_args__ by creating a tuple containing all indices
     __table_args__ = (
         Index('idx_users_email', 'email'),
         Index('idx_users_role', 'role'),
+        CheckConstraint(
+            "role IN ('developer', 'team_lead', 'admin')", 
+            name='check_valid_role'
+        ),
     )
     
     # Relationships
@@ -52,8 +56,8 @@ class Task(db.Model):
     assigned_to = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     deadline = db.Column(db.DateTime)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     project_id = db.Column(db.Integer, db.ForeignKey('projects.id'))
     
     # Fix __table_args__ format
@@ -85,7 +89,7 @@ class GitHubToken(db.Model):
     access_token = db.Column(db.String(255), nullable=False)
     refresh_token = db.Column(db.String(255))
     token_expires_at = db.Column(db.DateTime)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def __repr__(self):
         return f'<GitHubToken {self.id} for User {self.user_id}>'
@@ -112,7 +116,7 @@ class TaskGitHubLink(db.Model):
     repo_id = db.Column(db.Integer, db.ForeignKey('github_repositories.id'), nullable=False)
     issue_number = db.Column(db.Integer)
     pull_request_number = db.Column(db.Integer)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def __repr__(self):
         return f'<TaskGitHubLink task:{self.task_id} repo:{self.repo_id}>'
@@ -124,7 +128,7 @@ class Comment(db.Model):
     task_id = db.Column(db.Integer, db.ForeignKey('tasks.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     content = db.Column(db.Text, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def __repr__(self):
         return f'<Comment {self.id} on Task {self.task_id}>'
@@ -140,7 +144,7 @@ class Notification(db.Model):
     message = db.Column(db.Text, nullable=False)
     reference_id = db.Column(db.String(50), nullable=True)  # ID of related object (task_id, etc.)
     is_read = db.Column(db.Boolean, default=False)  # Changed from 'read' to 'is_read'
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     read_at = db.Column(db.DateTime, nullable=True)
     task_id = db.Column(db.Integer, db.ForeignKey('tasks.id'))
 
@@ -179,8 +183,8 @@ class Project(db.Model):
     status = db.Column(db.String(20), default='active')
     github_repo = db.Column(db.String(255))
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         Index('idx_projects_created_by', 'created_by'),
@@ -204,7 +208,7 @@ class Report(db.Model):
     date_range = db.Column(db.String(50), nullable=False)  # 'week', 'month', 'quarter', 'year'
     summary = db.Column(db.JSON, nullable=False)  # JSON object with summary metrics
     details = db.Column(db.JSON, nullable=False)  # JSON array with detailed data
-    generated_at = db.Column(db.DateTime, default=datetime.utcnow)
+    generated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     __table_args__ = (
         Index('idx_reports_user_id', 'user_id'),
@@ -230,3 +234,42 @@ class Report(db.Model):
     
     def __repr__(self):
         return f'<Report {self.id} ({self.report_type}) by User {self.user_id}>'
+
+class AuditLog(db.Model):
+    __tablename__ = 'audit_logs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    actor_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    actor_role = db.Column(db.String(20))
+    action = db.Column(db.String(100), nullable=False)
+    resource_type = db.Column(db.String(50))
+    resource_id = db.Column(db.String(50), nullable=True)
+    ip = db.Column(db.String(45))
+    user_agent = db.Column(db.String(255))
+    metadata_info = db.Column(db.JSON)  # Using metadata_info instead of metadata to avoid conflict with SQLAlchemy
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index('idx_audit_logs_actor_time', 'actor_user_id', 'created_at'),
+        Index('idx_audit_logs_action', 'action'),
+        Index('idx_audit_logs_resource', 'resource_type'),
+    )
+
+    actor = db.relationship('User', backref='audit_logs')
+
+    def __repr__(self):
+        return f'<AuditLog {self.action} by {self.actor_user_id}>'
+
+class SystemSetting(db.Model):
+    __tablename__ = 'system_settings'
+
+    key = db.Column(db.String(100), primary_key=True)
+    value = db.Column(db.JSON, nullable=False)
+    updated_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    updater = db.relationship('User', backref='updated_settings')
+
+    def __repr__(self):
+        return f'<SystemSetting {self.key}>'
+
