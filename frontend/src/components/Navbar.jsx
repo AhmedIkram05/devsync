@@ -92,7 +92,7 @@ const Navbar = () => {
           ) : (
             <>
               <Link to="/BasicDashboard" className="transition hover:text-white">Dashboard</Link>
-              <Link to="/tasks" className="transition hover:text-white">My Tasks</Link>
+              <Link to="/tasks" className="transition hover:text-white">Tasks</Link>
               <Link to="/github" className="transition hover:text-white">GitHub</Link>
             </>
           )}
