@@ -36,7 +36,8 @@ const AUTHENTICATED_ROLES = [ROLES.DEVELOPER, ROLES.TEAM_LEAD, ROLES.ADMIN];
 const TASK_CREATOR_ROLES = [ROLES.DEVELOPER, ROLES.TEAM_LEAD, ROLES.ADMIN];
 const TEAM_LEAD_OR_ADMIN = [ROLES.TEAM_LEAD, ROLES.ADMIN];
 
-const getDashboardPath = (role) => (role === ROLES.ADMIN || role === ROLES.TEAM_LEAD ? '/admin' : '/BasicDashboard');
+// Team Leads should see the basic developer dashboard by default.
+const getDashboardPath = (role) => (role === ROLES.ADMIN ? '/admin' : '/BasicDashboard');
 
 const ProtectedRoute = ({ children, allowedRoles = [], requiredPermission = null }) => {
   const { currentUser, loading, can } = useAuth();

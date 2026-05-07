@@ -47,7 +47,7 @@ const Navbar = () => {
   
   const isAdmin = is('admin');
   const isTeamLead = is('team_lead');
-  const canCreateTasks = isAdmin || isTeamLead;
+  const dashboardPath = isAdmin ? '/admin' : '/BasicDashboard';
 
   return (
     <header className="bg-slate-950/80 backdrop-blur-md sticky top-0 z-50 font-['Space_Grotesk']">
@@ -63,7 +63,6 @@ const Navbar = () => {
               <Link to="/admin" className="transition hover:text-white">Dashboard</Link>
               <Link to="/tasks" className="transition hover:text-white">Tasks</Link>
               <Link to="/admin/projects" className="transition hover:text-white">Projects</Link>
-              <Link to="/admin/create-task" className="transition hover:text-white">Create Task</Link>
               <Link to="/admin/developer-progress" className="transition hover:text-white text-nowrap">Developer Progress</Link>
               <Link to="/admin/reports" className="transition hover:text-white">Reports</Link>
               <div className="relative group/dropdown">
@@ -81,10 +80,9 @@ const Navbar = () => {
             </>
           ) : isTeamLead ? (
             <>
-              <Link to="/admin" className="transition hover:text-white">Dashboard</Link>
+              <Link to={dashboardPath} className="transition hover:text-white">Dashboard</Link>
               <Link to="/tasks" className="transition hover:text-white">Tasks</Link>
               <Link to="/admin/projects" className="transition hover:text-white">Projects</Link>
-              <Link to="/admin/create-task" className="transition hover:text-white text-nowrap">Create Task</Link>
               <Link to="/admin/developer-progress" className="transition hover:text-white text-nowrap">Developer Progress</Link>
               <Link to="/admin/reports" className="transition hover:text-white">Reports</Link>
               <Link to="/github" className="transition hover:text-white">GitHub</Link>
@@ -177,7 +175,6 @@ const Navbar = () => {
             {isAdmin ? (
               <>
                 <Link to="/admin" className="text-slate-300 py-2 hover:text-white transition">Dashboard</Link>
-                <Link to="/admin/create-task" className="text-slate-300 py-2 hover:text-white transition">Create Task</Link>
                 <Link to="/admin/developer-progress" className="text-slate-300 py-2 hover:text-white transition">Developer Progress</Link>
                 <Link to="/admin/reports" className="text-slate-300 py-2 hover:text-white transition">Reports</Link>
                 <Link to="/admin/users" className="text-slate-300 py-2 hover:text-white transition">Users</Link>
@@ -187,11 +184,8 @@ const Navbar = () => {
               </>
             ) : isTeamLead ? (
               <>
-                <Link to="/admin" className="text-slate-300 py-2 hover:text-white transition">Dashboard</Link>
+                <Link to={dashboardPath} className="text-slate-300 py-2 hover:text-white transition">Dashboard</Link>
                 <Link to="/tasks" className="text-slate-300 py-2 hover:text-white transition">Tasks</Link>
-                {canCreateTasks && (
-                  <Link to="/admin/create-task" className="text-slate-300 py-2 hover:text-white transition">Create Task</Link>
-                )}
                 <Link to="/admin/reports" className="text-slate-300 py-2 hover:text-white transition">Reports</Link>
                 <Link to="/github" className="text-slate-300 py-2 hover:text-white transition">GitHub</Link>
               </>

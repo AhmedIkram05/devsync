@@ -234,8 +234,9 @@ describe('api utilities', () => {
 
     const progress = await dashboardService.getDeveloperProgressStats();
 
-    expect(progress).toHaveLength(2);
+    expect(progress).toHaveLength(3);
     expect(progress.find((item) => item.id === 1).completed_tasks).toBe(1);
+    expect(progress.find((item) => item.id === 2)).toBeDefined();
     expect(progress.find((item) => item.id === 3).completed_tasks).toBe(1);
   });
 
@@ -467,7 +468,7 @@ describe('api utilities', () => {
     expect(cachedReport.meta.cache_hit).toBe(true);
   });
 
-  test('buildDeveloperProgress: admin role is excluded, team_lead included', async () => {
+  test('buildDeveloperProgress: admin role is included along with team_lead', async () => {
     global.fetch.mockResolvedValueOnce(
       buildResponse({ users: [
         { id: 1, name: 'Admin', role: 'admin' },
@@ -477,7 +478,7 @@ describe('api utilities', () => {
     global.fetch.mockResolvedValueOnce(buildResponse({ tasks: [] }));
 
     const progress = await dashboardService.getDeveloperProgressStats();
-    expect(progress.find((p) => p.id === 1)).toBeUndefined();
+    expect(progress.find((p) => p.id === 1)).toBeDefined();
     expect(progress.find((p) => p.id === 2)).toBeDefined();
   });
 

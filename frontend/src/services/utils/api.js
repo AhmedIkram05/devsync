@@ -200,8 +200,23 @@ const fetchWithAuth = async (endpoint, options = {}) => {
 // Task related API calls
 const taskService = {
   getAllTasks: async () => {
+    getAllTasks: async (params) => {
     try {
-      const response = await fetchWithAuth('tasks');
+      let endpoint = 'tasks';
+      if (params) {
+        if (typeof params === 'string') {
+          endpoint = `tasks${params.startsWith('?') ? params : `?${params}`}`;
+        } else if (typeof params === 'object') {
+          const ps = new URLSearchParams();
+          Object.keys(params).forEach((k) => {
+            if (params[k] !== undefined && params[k] !== null) ps.set(k, String(params[k]));
+          });
+          const qs = ps.toString();
+          if (qs) endpoint = `tasks?${qs}`;
+        }
+      }
+
+      const response = await fetchWithAuth(endpoint);
       const tasks = response?.tasks ?? response;
       return Array.isArray(tasks) ? tasks : [];
     } catch (error) {
@@ -433,26 +448,34 @@ const normalizeAdminDashboardTasks = (tasks = {}) => {
 };
 
 const buildDeveloperProgress = (users, tasks) => {
-  const progressTrackingRoles = new Set(['developer', 'team_lead']);
+  const progressTrackingRoles = new Set(['admin', 'developer', 'team_lead']);
   const tasksByAssignee = new Map();
 
+  const getAssigneeId = (task) => {
+    if (!task) return null;
+    if (task.assigned_to !== undefined && task.assigned_to !== null) return task.assigned_to;
+    if (task.assignedTo !== undefined && task.assignedTo !== null) return task.assignedTo;
+    if (task.assignee !== undefined && task.assignee !== null) return task.assignee;
+    return null;
+  };
+
   tasks.forEach((task) => {
-    if (task?.assigned_to === null || task?.assigned_to === undefined) {
-      return;
-    }
-
-    const assigneeKey = String(task.assigned_to);
-    if (!tasksByAssignee.has(assigneeKey)) {
-      tasksByAssignee.set(assigneeKey, []);
-    }
-
+    const assignee = getAssigneeId(task);
+    if (assignee === null || assignee === undefined) return;
+    const assigneeKey = String(assignee);
+    if (!tasksByAssignee.has(assigneeKey)) tasksByAssignee.set(assigneeKey, []);
     tasksByAssignee.get(assigneeKey).push(task);
   });
+
+  console.log('[buildDeveloperProgress] Tasks by assignee:', tasksByAssignee);
+  console.log('[buildDeveloperProgress] Total tasks with assignees:', Array.from(tasksByAssignee.values()).flat().length);
 
   return users
     .filter((user) => progressTrackingRoles.has(user.role))
     .map((user) => {
       const userTasks = tasksByAssignee.get(String(user.id)) || [];
+      console.log(`[buildDeveloperProgress] User ${user.id} (${user.name}): ${userTasks.length} tasks`);
+      
       let completedCount = 0;
 
       userTasks.forEach((task) => {
@@ -627,17 +650,110 @@ const dashboardService = {
     }
   },
 
-  getDeveloperProgressStats: async () => {
+  getDeveloperProgressStats: async (options = {}) => {
     try {
-      const [usersResponse, tasks] = await Promise.all([
+      const [usersResponse, tasks, projects] = await Promise.all([
         fetchWithAuth('users'),
-        taskService.getAllTasks()
+        taskService.getAllTasks(),
+        projectService.getAllProjects()
       ]);
 
       const users = Array.isArray(usersResponse?.users) ? usersResponse.users : [];
       const allTasks = Array.isArray(tasks) ? tasks : [];
+      const allProjects = Array.isArray(projects) ? projects : [];
+      const currentUser = options.currentUser || null;
 
-      return buildDeveloperProgress(users, allTasks);
+      console.log('[getDeveloperProgressStats] Users:', users.length);
+      console.log('[getDeveloperProgressStats] Tasks:', allTasks.length, allTasks.slice(0, 3));
+      console.log('[getDeveloperProgressStats] Projects:', allProjects.length);
+      console.log('[getDeveloperProgressStats] currentUser:', currentUser);
+
+      const scopedProjectIds = new Set();
+      if (currentUser?.role === 'team_lead' && currentUser?.id) {
+        allProjects.forEach((project) => {
+          const teamMembers = Array.isArray(project?.team_members) ? project.team_members : [];
+          const teamMemberIds = teamMembers.map((member) => Number(member?.id)).filter(Number.isFinite);
+          const isProjectCreator = Number(project?.created_by) === Number(currentUser.id);
+          const isOnProjectTeam = teamMemberIds.includes(Number(currentUser.id));
+
+          if (isProjectCreator || isOnProjectTeam) {
+            scopedProjectIds.add(Number(project.id));
+          }
+        });
+      }
+
+      const isTeamLead = currentUser?.role === 'team_lead';
+      // Debug: show sample task/project fields to help diagnose scoping issues
+      try {
+        console.log('[getDeveloperProgressStats] Sample tasks:', allTasks.slice(0, 5).map(t => ({ id: t.id, project_id: t.project_id, assigned_to: t.assigned_to })));
+        console.log('[getDeveloperProgressStats] Sample projects:', allProjects.map(p => ({ id: p.id, created_by: p.created_by, team_members: (p.team_members || []).map(m => ({ id: m.id, role: m.role })) })).slice(0,5));
+      } catch (e) {
+        console.warn('[getDeveloperProgressStats] Debug logging failed', e);
+      }
+
+      if (isTeamLead && scopedProjectIds.size === 0) {
+        console.log('[getDeveloperProgressStats] TL with no scoped projects, returning []');
+        return [];
+      }
+
+      const scopedUsers = isTeamLead && scopedProjectIds.size > 0
+        ? users.filter((user) => {
+          if (!['admin', 'developer', 'team_lead'].includes(user.role)) {
+            return false;
+          }
+
+          return allProjects.some((project) => {
+            if (!scopedProjectIds.has(Number(project.id))) {
+              return false;
+            }
+
+            return Array.isArray(project?.team_members)
+              ? project.team_members.some((member) => Number(member?.id) === Number(user.id) && ['admin', 'developer', 'team_lead'].includes(member?.role))
+              : false;
+          });
+        })
+        : users;
+
+      const getTaskProjectId = (task) => {
+        if (!task) return null;
+        if (task.project_id !== undefined && task.project_id !== null) return task.project_id;
+        if (task.projectId !== undefined && task.projectId !== null) return task.projectId;
+        if (task.project && task.project.id !== undefined && task.project.id !== null) return task.project.id;
+        return null;
+      };
+
+      const scopedUserIds = new Set((isTeamLead ? scopedUsers.map(u => Number(u.id)).filter(Number.isFinite) : []));
+
+      const getTaskAssigneeId = (task) => {
+        if (!task) return null;
+        if (task.assigned_to !== undefined && task.assigned_to !== null) return task.assigned_to;
+        if (task.assignedTo !== undefined && task.assignedTo !== null) return task.assignedTo;
+        if (task.assignee !== undefined && task.assignee !== null) return task.assignee;
+        return null;
+      };
+
+      const scopedTasks = isTeamLead && scopedProjectIds.size > 0
+        ? allTasks.filter((task) => {
+          const pid = getTaskProjectId(task);
+          const aid = getTaskAssigneeId(task);
+          const inProject = pid !== null && scopedProjectIds.has(Number(pid));
+          const assignedToTeam = aid !== null && scopedUserIds.has(Number(aid));
+          return inProject || assignedToTeam;
+        })
+        : allTasks;
+      if (isTeamLead && scopedProjectIds.size > 0 && scopedTasks.length === 0) {
+        console.warn('[getDeveloperProgressStats] No scoped tasks found for TL - inspecting all tasks vs scopedProjectIds', Array.from(scopedProjectIds));
+        allTasks.forEach((task) => {
+          console.log('[getDeveloperProgressStats] task:', task.id, 'project_id:', task.project_id, 'Number(project_id):', Number(task.project_id));
+        });
+      }
+
+      console.log('[getDeveloperProgressStats] Scoped users:', scopedUsers.length);
+      console.log('[getDeveloperProgressStats] Scoped tasks:', scopedTasks.length, scopedTasks.slice(0, 3));
+
+      const result = buildDeveloperProgress(scopedUsers, scopedTasks);
+      console.log('[getDeveloperProgressStats] Result:', result);
+      return result;
     } catch (error) {
       console.error('Failed to fetch developer progress stats:', error);
       return [];
