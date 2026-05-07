@@ -10,6 +10,9 @@ jest.mock('../../services/utils/api', () => ({
   dashboardService: {
     getBasicDashboardStats: jest.fn(),
   },
+  userService: {
+    getAllUsers: jest.fn().mockResolvedValue([]),
+  },
 }));
 
 jest.mock('../../context/AuthContext', () => ({
@@ -41,6 +44,8 @@ describe('BasicDashboard page', () => {
         github_connected: true,
         github_username: 'octocat',
       },
+      is: jest.fn().mockReturnValue(false),
+      can: jest.fn().mockReturnValue(false),
     });
 
     dashboardService.getBasicDashboardStats.mockReset();
@@ -118,6 +123,8 @@ describe('BasicDashboard page', () => {
         github_connected: false,
         github_username: '',
       },
+      is: jest.fn().mockReturnValue(false),
+      can: jest.fn().mockReturnValue(false),
     });
 
     dashboardService.getBasicDashboardStats.mockResolvedValue({
@@ -193,5 +200,34 @@ describe('BasicDashboard page', () => {
     await waitFor(() => {
       expect(dashboardService.getBasicDashboardStats).toHaveBeenCalledTimes(2);
     });
+  });
+
+  test('renders Team Overview for users with team_lead role', async () => {
+    const { userService } = require('../../services/utils/api');
+    userService.getAllUsers.mockResolvedValue([
+      { id: 1, name: 'Alice Developer', role: 'developer' },
+      { id: 2, name: 'Bob Developer', role: 'developer' },
+    ]);
+
+    useAuth.mockReturnValue({
+      currentUser: { id: 10, name: 'Lead User', role: 'team_lead' },
+      is: (role) => role === 'team_lead',
+      can: jest.fn(),
+    });
+
+    dashboardService.getBasicDashboardStats.mockResolvedValue({
+      taskCounts: { assigned: 0, inProgress: 0, completed: 0, dueSoon: 0 },
+      recentTasks: [],
+      githubActivity: [],
+      projects: [],
+      upcomingDeadlines: [],
+    });
+
+    renderDashboard();
+
+    expect(await screen.findByText('Team Overview')).toBeInTheDocument();
+    expect(await screen.findByText('Alice Developer')).toBeInTheDocument();
+    expect(screen.getByText('Bob Developer')).toBeInTheDocument();
+    expect(screen.getByText('View Progress')).toBeInTheDocument();
   });
 });

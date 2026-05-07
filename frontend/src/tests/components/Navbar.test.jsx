@@ -47,6 +47,8 @@ describe('Navbar component', () => {
         email: 'admin@example.com',
       },
       logout: mockLogout,
+      is: (role) => role === 'admin',
+      can: (perm) => true,
     });
 
     useNotifications.mockReturnValue({
@@ -123,6 +125,8 @@ describe('Navbar component', () => {
         email: 'developer@example.com',
       },
       logout: mockLogout,
+      is: (role) => role === 'developer',
+      can: (perm) => false,
     });
 
     renderNavbar();
@@ -150,6 +154,8 @@ describe('Navbar component', () => {
         email: 'lead@example.com',
       },
       logout: mockLogout,
+      is: (role) => role === 'team_lead',
+      can: (perm) => perm === 'can_assign_tasks',
     });
 
     renderNavbar();

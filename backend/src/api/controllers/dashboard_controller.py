@@ -254,9 +254,9 @@ def get_admin_dashboard():
         claims = get_jwt()
         user_role = claims.get('role')
         
-        # Check if user is admin
-        if user_role != Role.ADMIN.value:
-            logger.warning(f"Non-admin user {user_id} attempted to access admin dashboard")
+        # Check if user is admin or team lead
+        if user_role not in [Role.ADMIN.value, Role.TEAM_LEAD.value]:
+            logger.warning(f"Unauthorized user {user_id} with role {user_role} attempted to access admin dashboard")
             return jsonify({'message': 'Unauthorized access'}), 403
         
         # Log the request details for debugging

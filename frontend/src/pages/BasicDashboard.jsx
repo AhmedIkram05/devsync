@@ -5,23 +5,34 @@ import TaskCard from '../components/TaskCard';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { useAuth } from '../context/AuthContext';
 
-const panelClass = "bg-slate-900/70 border border-slate-800/70 rounded-2xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.25)]";
-const panelHeaderClass = "px-4 py-5 sm:px-6 border-b border-slate-800 flex justify-between items-center";
+const panelClass = "bg-slate-900/70 border border-slate-800/70 rounded-2xl overflow-hidden shadow-md backdrop-blur-sm";
+const panelHeaderClass = "px-6 py-5 border-b border-slate-800/70 flex justify-between items-center";
 const sectionTitleClass = "text-lg font-semibold text-slate-100";
 
 const BasicDashboard = () => {
   const [dashboardData, setDashboardData] = useState(null);
+  const [teamUsers, setTeamUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const { currentUser } = useAuth();
+  const { currentUser, is } = useAuth();
 
   const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
-      console.log("Fetching dashboard data with token:", JSON.stringify(currentUser?.token).substring(0, 20) + "...");
-      console.log("Fetching dashboard stats...");
       const data = await dashboardService.getBasicDashboardStats();
       setDashboardData(data);
+      
+      // Fetch team data if Team Lead or Admin
+      if (is('team_lead') || is('admin')) {
+        try {
+          const { userService } = await import('../services/utils/api');
+          const users = await userService.getAllUsers();
+          setTeamUsers(users);
+        } catch (err) {
+          console.error("Failed to fetch team users:", err);
+        }
+      }
+      
       setError(null);
     } catch (err) {
       console.error("Dashboard fetch error:", err);
@@ -29,7 +40,7 @@ const BasicDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentUser]);
+  }, [is]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -40,8 +51,8 @@ const BasicDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
+      <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-slate-100">My Dashboard</h1>
@@ -214,7 +225,6 @@ const BasicDashboard = () => {
                           <p className="text-sm font-medium text-slate-100">
                             @{currentUser.github_username}
                           </p>
-                          <p className="text-xs text-emerald-400">Connected</p>
                         </div>
                       </div>
 
@@ -298,7 +308,7 @@ const BasicDashboard = () => {
 
                 {/* Upcoming Deadlines */}
                 <div className={panelClass}>
-                  <div className="px-4 py-5 sm:px-6 border-b border-slate-800">
+                  <div className={panelHeaderClass}>
                     <h3 className={sectionTitleClass}>Upcoming Deadlines</h3>
                   </div>
 
@@ -326,6 +336,42 @@ const BasicDashboard = () => {
                     </div>
                   )}
                 </div>
+
+                {/* Team Overview - Visible to Team Leads and Admins */}
+                {(is('team_lead') || is('admin')) && (
+                  <div className={panelClass}>
+                    <div className={panelHeaderClass}>
+                      <h3 className={sectionTitleClass}>Team Overview</h3>
+                      <Link to="/admin/developer-progress" className="text-xs text-rose-300 hover:text-rose-200">
+                        View Progress
+                      </Link>
+                    </div>
+                    {teamUsers.length > 0 ? (
+                      <ul className="divide-y divide-slate-800">
+                        {teamUsers.slice(0, 5).map((user) => (
+                          <li key={user.id} className="px-4 py-3 flex items-center justify-between">
+                            <div className="flex items-center">
+                              <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-400 border border-slate-700">
+                                {user.name?.charAt(0) || 'U'}
+                              </div>
+                              <div className="ml-3">
+                                <p className="text-sm font-medium text-slate-200">{user.name}</p>
+                                <p className="text-xs text-slate-500 capitalize">{user.role}</p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-xs text-slate-400">Active</span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="p-6 text-center text-slate-400">
+                        <p>No team members found</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -338,41 +384,27 @@ const BasicDashboard = () => {
 // Helper Components
 const StatCard = ({ title, value, icon, color }) => {
   const colorClasses = {
-    primary: {
-      light: 'bg-sky-500/15 border-sky-400/20',
-      text: 'text-sky-300'
-    },
-    success: {
-      light: 'bg-emerald-500/15 border-emerald-400/20',
-      text: 'text-emerald-300'
-    },
-    warning: {
-      light: 'bg-amber-500/15 border-amber-400/20',
-      text: 'text-amber-300'
-    },
-    error: {
-      light: 'bg-rose-500/15 border-rose-400/20',
-      text: 'text-rose-300'
-    }
+    blue:   'bg-sky-500/15 text-sky-300 border border-sky-400/20',
+    green:  'bg-emerald-500/15 text-emerald-300 border border-emerald-400/20',
+    yellow: 'bg-amber-500/15 text-amber-300 border border-amber-400/20',
+    red:    'bg-rose-500/15 text-rose-300 border border-rose-400/20',
+    purple: 'bg-purple-500/15 text-purple-300 border border-purple-400/20',
   };
 
-  const classes = colorClasses[color] || colorClasses.primary;
+  const selectedColor = color === 'primary' ? 'blue' : 
+                       color === 'success' ? 'green' :
+                       color === 'warning' ? 'yellow' :
+                       color === 'error' ? 'red' : color;
 
   return (
-    <div className="bg-slate-900/70 overflow-hidden rounded-2xl border border-slate-800/70">
-      <div className="p-5">
-        <div className="flex items-center">
-          <div className={`flex-shrink-0 rounded-xl ${classes.light} p-3 border`}>
-            <div className={`${classes.text}`}>{icon}</div>
-          </div>
-          <div className="ml-5 w-0 flex-1">
-            <dl>
-              <dt className="text-sm font-medium text-slate-400 truncate">{title}</dt>
-              <dd>
-                <div className="text-xl font-bold text-slate-100">{value}</div>
-              </dd>
-            </dl>
-          </div>
+    <div className={`rounded-2xl p-6 shadow-md backdrop-blur-sm ${colorClasses[selectedColor] || 'bg-slate-900/70 text-slate-400 border border-slate-800/70'}`}>
+      <div className="flex items-center gap-5">
+        <div className="p-3 rounded-xl bg-slate-950/40 border border-white/5">
+          {icon}
+        </div>
+        <div>
+          <p className="text-xs font-medium opacity-75 uppercase tracking-wider">{title}</p>
+          <p className="text-2xl font-bold mt-1 text-white">{value}</p>
         </div>
       </div>
     </div>

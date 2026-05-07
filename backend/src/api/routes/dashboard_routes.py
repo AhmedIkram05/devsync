@@ -31,7 +31,7 @@ def register_routes(bp):
     
     @bp.route('/dashboard/admin', methods=['GET'])
     @jwt_required()
-    @role_required(Role.ADMIN)
+    @role_required([Role.ADMIN, Role.TEAM_LEAD])
     def admin_dashboard():
         """Route to get admin-specific dashboard data"""
         return get_admin_dashboard()
