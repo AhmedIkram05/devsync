@@ -62,27 +62,21 @@ const getStatusLabel = (status) => {
 
 const BasicDashboard = () => {
   const [dashboardData, setDashboardData] = useState(null);
-  const [teamUsers, setTeamUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const { is } = useAuth();
+  const { is, currentUser } = useAuth();
+  const isTeamLead = is('team_lead');
+  const isAdmin = is('admin');
+  const dashboardTitle = isTeamLead ? 'Team Lead Workspace' : 'My Dashboard';
+  const dashboardSubtitle = isTeamLead
+    ? 'Track your own work and keep an eye on the team without switching into the admin console.'
+    : 'View your tasks, projects, and GitHub activity';
 
   const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
       const data = await dashboardService.getBasicDashboardStats();
       setDashboardData(data);
-      
-      // Fetch team data if Team Lead or Admin
-      if (is('team_lead') || is('admin')) {
-        try {
-          const { userService } = await import('../services/utils/api');
-          const users = await userService.getAllUsers();
-          setTeamUsers(users);
-        } catch (err) {
-          console.error("Failed to fetch team users:", err);
-        }
-      }
       
       setError(null);
     } catch (err) {
@@ -91,7 +85,7 @@ const BasicDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [is]);
+  }, []);
 
   useEffect(() => {
     fetchDashboardData();
@@ -103,23 +97,21 @@ const BasicDashboard = () => {
 
   // Use full tasks list if provided by API, otherwise fall back to recentTasks
   // Limit to last 10 most recent tasks, sorted by most recent first
-  const tasksToShow = ((dashboardData?.tasks && dashboardData.tasks.length) ? dashboardData.tasks : (dashboardData?.recentTasks || []))
+  const orderedTasksToShow = ((dashboardData?.tasks && dashboardData.tasks.length) ? dashboardData.tasks : (dashboardData?.recentTasks || []))
     .sort((a, b) => {
       const dateA = new Date(a.updated_at || a.created_at || 0).getTime();
       const dateB = new Date(b.updated_at || b.created_at || 0).getTime();
       return dateB - dateA;
-    })
-    .slice(0, 10);
+    });
+  const tasksToShow = isTeamLead ? orderedTasksToShow : orderedTasksToShow.slice(0, 10);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
       <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-slate-100">My Dashboard</h1>
-            <p className="mt-1 text-sm text-slate-400">
-              View your tasks, projects, and GitHub activity
-            </p>
+            <h1 className="text-2xl font-bold text-slate-100">{dashboardTitle}</h1>
+            <p className="mt-1 text-sm text-slate-400">{dashboardSubtitle}</p>
           </div>
 
           <div className="mt-4 md:mt-0 flex items-center gap-3">
@@ -159,6 +151,36 @@ const BasicDashboard = () => {
           </div>
         ) : (
           <div className="space-y-6">
+            {(isTeamLead || isAdmin) && (
+              <div className="rounded-2xl border border-slate-800/70 bg-slate-900/70 p-5 shadow-md backdrop-blur-sm">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-rose-300">Management Snapshot</p>
+                    <h2 className="mt-1 text-lg font-semibold text-slate-100">Keep the team moving without leaving this dashboard</h2>
+                    <p className="mt-1 text-sm text-slate-400">
+                      {isAdmin
+                        ? 'Admin users can manage users, reports, and progress from the admin console.'
+                        : 'Team Leads can review progress, spot blockers, and create tasks from the same workspace.'}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3">
+                    <Link to="/admin/developer-progress" className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/40 px-4 py-2 text-sm font-medium text-slate-100 hover:border-slate-600 hover:bg-slate-800/60">
+                      Developer progress
+                    </Link>
+                    <Link to="/admin/reports" className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/40 px-4 py-2 text-sm font-medium text-slate-100 hover:border-slate-600 hover:bg-slate-800/60">
+                      Reports
+                    </Link>
+                    {currentUser?.role === 'admin' && (
+                      <Link to="/admin/users" className="inline-flex items-center rounded-full border border-slate-700 bg-slate-950/40 px-4 py-2 text-sm font-medium text-slate-100 hover:border-slate-600 hover:bg-slate-800/60">
+                        Manage users
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Stats Summary */}
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
               <StatCard
@@ -272,7 +294,7 @@ const BasicDashboard = () => {
               </div>
 
               <div className="flex flex-col gap-6 h-full">
-                <div className={`${panelClass} flex-1 min-h-[220px] max-h-[70vh]`}>
+                <div className={`${panelClass} flex-1 min-h-[220px] max-h-[68vh]`}>
                   <div className="px-4 py-5 sm:px-6 border-b border-slate-800">
                     <h3 className={sectionTitleClass}>My Projects</h3>
                   </div>
@@ -308,7 +330,7 @@ const BasicDashboard = () => {
                   )}
                 </div>
 
-                <div className={`${panelClass} flex-1 min-h-[220px] max-h-[70vh]`}>
+                <div className={`${panelClass} flex-1 min-h-[200px] max-h-[68vh]`}>
                   <div className="px-4 py-5 sm:px-6 border-b border-slate-800">
                     <h3 className={sectionTitleClass}>Upcoming Deadlines</h3>
                   </div>
@@ -337,40 +359,6 @@ const BasicDashboard = () => {
                   )}
                 </div>
 
-                {(is('team_lead') || is('admin')) && (
-                  <div className={`${panelClass} flex-1 min-h-[220px] max-h-[70vh]`}>
-                    <div className={panelHeaderClass}>
-                      <h3 className={sectionTitleClass}>Team Overview</h3>
-                      <Link to="/admin/developer-progress" className="text-xs text-rose-300 hover:text-rose-200">
-                        View Progress
-                      </Link>
-                    </div>
-                    {teamUsers.length > 0 ? (
-                      <ul className="divide-y divide-slate-800 overflow-y-auto" style={{ maxHeight: 'calc(100% - 96px)' }}>
-                        {teamUsers.slice(0, 5).map((user) => (
-                          <li key={user.id} className="px-4 py-3 flex items-center justify-between">
-                            <div className="flex items-center">
-                              <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-400 border border-slate-700">
-                                {user.name?.charAt(0) || 'U'}
-                              </div>
-                              <div className="ml-3">
-                                <p className="text-sm font-medium text-slate-200">{user.name}</p>
-                                <p className="text-xs text-slate-500 capitalize">{user.role}</p>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-xs text-slate-400">Active</span>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="p-6 text-center text-slate-400">
-                        <p>No team members found</p>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
           </div>

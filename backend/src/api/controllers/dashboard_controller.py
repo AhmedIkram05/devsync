@@ -80,15 +80,21 @@ def get_user_tasks(user_id):
         logger.error(f"Error fetching user tasks: {str(e)}")
         return []
 
-def get_tasks_due_soon(user_id):
-    """Helper function to get tasks due soon for a user"""
+def get_tasks_due_soon(user_id=None, project_ids=None):
+    """Helper function to get tasks due soon for a user or a set of projects"""
     try:
         today = datetime.now().date()
         week_later = today + timedelta(days=7)
-        return Task.query.filter_by(assigned_to=user_id)\
-            .filter(Task.deadline.isnot(None))\
+        query = Task.query.filter(Task.deadline.isnot(None))\
             .filter(Task.deadline.between(today, week_later))\
-            .filter(~Task.status.in_(COMPLETED_TASK_STATUSES)).all()
+            .filter(~Task.status.in_(COMPLETED_TASK_STATUSES))
+
+        if project_ids:
+            query = query.filter(Task.project_id.in_(project_ids))
+        elif user_id is not None:
+            query = query.filter(Task.assigned_to == user_id)
+
+        return query.all()
     except Exception as e:
         logger.error(f"Error fetching tasks due soon: {str(e)}")
         return []
@@ -245,40 +251,57 @@ def get_client_dashboard():
         if not user:
             logger.error(f"User not found: {user_id}")
             return jsonify({'message': 'User not found'}), 404
-        
-        # Get tasks assigned to this user
-        assigned_tasks = get_user_tasks(user_id)
-        # Get tasks due soon
-        tasks_due_soon = get_tasks_due_soon(user_id)
+
+        user_projects = list(user.projects.all())
+        if user_role == Role.TEAM_LEAD.value:
+            seen_project_ids = {project.id for project in user_projects}
+            for project in Project.query.filter_by(created_by=user_id).all():
+                if project.id not in seen_project_ids:
+                    user_projects.append(project)
+                    seen_project_ids.add(project.id)
+
+        project_ids = [project.id for project in user_projects]
+        is_team_lead = user_role == Role.TEAM_LEAD.value
+
+        # Get tasks in the correct scope for the current role
+        if is_team_lead:
+            scoped_tasks = Task.query.filter(Task.project_id.in_(project_ids)).all() if project_ids else []
+            tasks_due_soon = get_tasks_due_soon(project_ids=project_ids)
+        else:
+            scoped_tasks = get_user_tasks(user_id)
+            tasks_due_soon = get_tasks_due_soon(user_id=user_id)
 
         recent_tasks = sorted(
-            assigned_tasks,
+            scoped_tasks,
             key=lambda task: getattr(task, 'updated_at', None) or getattr(task, 'created_at', None) or datetime.min,
             reverse=True,
-        )[:5]
+        )
+        if not is_team_lead:
+            recent_tasks = recent_tasks[:10]
 
         task_stats = {
-            'total': len(assigned_tasks),
-            'assigned': len(assigned_tasks),
-            'todo': _count(assigned_tasks, lambda task: getattr(task, 'status', None) == 'todo'),
-            'in_progress': _count(assigned_tasks, lambda task: getattr(task, 'status', None) == 'in_progress'),
-            'review': _count(assigned_tasks, lambda task: getattr(task, 'status', None) == 'review'),
-            'done': _count(assigned_tasks, lambda task: getattr(task, 'status', None) in {'done', 'completed'}),
+            'total': len(scoped_tasks),
+            'assigned': len(scoped_tasks),
+            'todo': _count(scoped_tasks, lambda task: getattr(task, 'status', None) == 'todo'),
+            'in_progress': _count(scoped_tasks, lambda task: getattr(task, 'status', None) == 'in_progress'),
+            'review': _count(scoped_tasks, lambda task: getattr(task, 'status', None) == 'review'),
+            'done': _count(scoped_tasks, lambda task: getattr(task, 'status', None) in {'done', 'completed'}),
             'due_soon': len(tasks_due_soon),
         }
 
         github_activity = []
         try:
-            recent_links = TaskGitHubLink.query.join(Task).outerjoin(GitHubRepository).filter(
-                Task.assigned_to == user_id
-            ).order_by(TaskGitHubLink.created_at.desc()).limit(5).all()
+            recent_links_query = TaskGitHubLink.query.join(Task).outerjoin(GitHubRepository)
+            if is_team_lead and project_ids:
+                recent_links_query = recent_links_query.filter(Task.project_id.in_(project_ids))
+            else:
+                recent_links_query = recent_links_query.filter(Task.assigned_to == user_id)
+
+            recent_links = recent_links_query.order_by(TaskGitHubLink.created_at.desc()).limit(5).all()
             github_activity = [_github_activity_to_item(link) for link in recent_links]
         except Exception as e:
             logger.error(f"Error fetching GitHub activity for client dashboard: {str(e)}")
             github_activity = []
-        
-        # Get projects user is part of
-        user_projects = user.projects.all()
         
         # Format response data
         dashboard_data = {

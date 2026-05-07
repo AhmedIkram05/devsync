@@ -195,13 +195,7 @@ describe('BasicDashboard page', () => {
     });
   });
 
-  test('renders Team Overview for users with team_lead role', async () => {
-    const { userService } = require('../../services/utils/api');
-    userService.getAllUsers.mockResolvedValue([
-      { id: 1, name: 'Alice Developer', role: 'developer' },
-      { id: 2, name: 'Bob Developer', role: 'developer' },
-    ]);
-
+  test('shows the TL management snapshot without the old team overview card', async () => {
     useAuth.mockReturnValue({
       currentUser: { id: 10, name: 'Lead User', role: 'team_lead' },
       is: (role) => role === 'team_lead',
@@ -218,9 +212,8 @@ describe('BasicDashboard page', () => {
 
     renderDashboard();
 
-    expect(await screen.findByText('Team Overview')).toBeInTheDocument();
-    expect(await screen.findByText('Alice Developer')).toBeInTheDocument();
-    expect(screen.getByText('Bob Developer')).toBeInTheDocument();
-    expect(screen.getByText('View Progress')).toBeInTheDocument();
+    expect(await screen.findByText('Management Snapshot')).toBeInTheDocument();
+    expect(screen.queryByText('Team Overview')).not.toBeInTheDocument();
+    expect(screen.getByText('Developer progress')).toBeInTheDocument();
   });
 });
