@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 const TaskList = () => {
+  const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
@@ -12,22 +14,33 @@ const TaskList = () => {
   const [filters, setFilters] = useState({
     status: 'all',
     priority: 'all',
-    search: ''
+    search: '',
+    scope: 'all'
   });
   
-  const navigate = useNavigate();
-  const { currentUser } = useAuth();
-  const canCreateTasks = currentUser?.role === 'admin' || currentUser?.role === 'team_lead';
+  const canCreateTasks = Boolean(currentUser);
 
-  // Fetch tasks when component mounts
+  const urlParams = new URLSearchParams(window.location.search);
+  const requestedAssignee = urlParams.get('assigned_to') || urlParams.get('assignee');
+
+  // Fetch tasks once; honor deep-link assignee query if provided
   useEffect(() => {
+    const initialUrlParams = new URLSearchParams(window.location.search);
+    const initialAssignee = initialUrlParams.get('assigned_to') || initialUrlParams.get('assignee');
+
+    if (initialAssignee) {
+      setFilters((prev) => ({ ...prev, scope: 'my' }));
+      fetchTasks({ assigned_to: initialAssignee });
+      return;
+    }
+
     fetchTasks();
   }, []);
 
-  const fetchTasks = async () => {
+  const fetchTasks = async (params = null) => {
     try {
       setLoading(true);
-      const tasksData = await taskService.getAllTasks();
+      const tasksData = await taskService.getAllTasks(params);
       setTasks(Array.isArray(tasksData) ? tasksData : []);
       setError(null);
     } catch (err) {
@@ -86,11 +99,11 @@ const TaskList = () => {
   // Get status badge color and format status text
   const getStatusInfo = (status) => {
     const statusMap = {
-      'todo': { class: 'bg-slate-800/70 text-slate-300', text: 'To Do' },
-      'backlog': { class: 'bg-slate-800/70 text-slate-300', text: 'Backlog' },
-      'in_progress': { class: 'bg-amber-500/15 text-amber-200', text: 'In Progress' },
-      'review': { class: 'bg-sky-500/15 text-sky-200', text: 'Review' },
-      'completed': { class: 'bg-emerald-500/15 text-emerald-200', text: 'Completed' }
+      'todo': { class: 'text-slate-300', text: 'To Do' },
+      'backlog': { class: 'text-slate-300', text: 'Backlog' },
+      'in_progress': { class: 'text-amber-200', text: 'In Progress' },
+      'review': { class: 'text-sky-200', text: 'Review' },
+      'completed': { class: 'text-emerald-200', text: 'Completed' }
     };
     
     return statusMap[status] || { class: 'bg-gray-100 text-gray-800', text: status };
@@ -99,9 +112,9 @@ const TaskList = () => {
   // Get priority badge
   const getPriorityBadge = (priority) => {
     const priorityMap = {
-      'high': { class: 'bg-rose-500/15 text-rose-200', text: 'High', icon: '❗' },
-      'medium': { class: 'bg-amber-500/15 text-amber-200', text: 'Medium', icon: '⚠️' },
-      'low': { class: 'bg-sky-500/15 text-sky-200', text: 'Low', icon: '🔽' }
+      'high': { class: 'bg-rose-500/15 text-rose-200', text: 'High'},
+      'medium': { class: 'bg-amber-500/15 text-amber-200', text: 'Medium' },
+      'low': { class: 'bg-sky-500/15 text-sky-200', text: 'Low' }
     };
     
     return priorityMap[priority] || { class: 'bg-gray-100 text-gray-800', text: priority };
@@ -124,6 +137,18 @@ const TaskList = () => {
       return false;
     }
     
+    // Filter by scope (My Tasks vs All Tasks)
+    if (filters.scope === 'my') {
+      const targetAssigneeId = requestedAssignee ?? currentUser?.id;
+      if (targetAssigneeId === undefined || targetAssigneeId === null) {
+        return false;
+      }
+
+      if (Number(task.assigned_to) !== Number(targetAssigneeId)) {
+        return false;
+      }
+    }
+    
     return true;
   });
 
@@ -136,11 +161,11 @@ const TaskList = () => {
   }
 
   return (
-    <div className="bg-slate-950 min-h-screen p-4 md:p-6 text-slate-100">
-      <div className="max-w-7xl mx-auto">
-        <div className="bg-slate-900/70 rounded-2xl border border-slate-800/70 p-6 mb-6">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
+      <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
+        <div className="bg-slate-900/70 rounded-2xl border border-slate-800/70 p-6 mb-10 shadow-md backdrop-blur-sm">
           <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-6">
-            <h1 className="text-2xl font-bold mb-4 md:mb-0 text-slate-100">Your Tasks</h1>
+            <h1 className="text-2xl font-bold mb-4 md:mb-0 text-slate-100">Tasks</h1>
             <div className="flex flex-col md:flex-row gap-4">
               <button 
                 onClick={() => fetchTasks()}
@@ -235,6 +260,32 @@ const TaskList = () => {
               />
             </div>
           </div>
+
+          {/* Scope Toggle for Developers */}
+          <div className="mb-6 flex justify-end">
+            <div className="inline-flex bg-slate-950/60 border border-slate-800 p-1 rounded-xl shadow-inner">
+              <button
+                onClick={() => setFilters({...filters, scope: 'my'})}
+                className={`px-6 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-all ${
+                  filters.scope === 'my' 
+                    ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20' 
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                My Tasks
+              </button>
+              <button
+                onClick={() => setFilters({...filters, scope: 'all'})}
+                className={`px-6 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-all ${
+                  filters.scope === 'all' 
+                    ? 'bg-slate-900 text-white border border-slate-800' 
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                All Tasks
+              </button>
+            </div>
+          </div>
           
           {/* Task List */}
           {filteredTasks.length === 0 ? (
@@ -245,7 +296,7 @@ const TaskList = () => {
               <p className="mt-2 text-lg">No tasks found matching your filters</p>
               {filters.status !== 'all' || filters.priority !== 'all' || filters.search ? (
                 <button
-                  onClick={() => setFilters({ status: 'all', priority: 'all', search: '' })}
+                  onClick={() => setFilters({ status: 'all', priority: 'all', search: '', scope: requestedAssignee ? 'my' : 'all' })}
                   className="mt-3 text-rose-300 hover:text-rose-200"
                 >
                   Clear filters
@@ -346,7 +397,7 @@ const TaskList = () => {
                                 e.stopPropagation();
                                 handleUpdateStatus(task.id, e.target.value);
                               }}
-                              disabled={updating}
+                              disabled={updating || (currentUser.role === 'developer' && task.assigned_to !== currentUser.id)}
                               className="text-sm border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60 mr-2"
                             >
                               <option value="todo">To Do</option>

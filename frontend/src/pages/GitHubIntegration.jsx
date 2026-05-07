@@ -331,10 +331,10 @@ const GitHubIntegration = () => {
   }
   
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="container mx-auto p-4 md:p-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold mb-4">GitHub Integration</h1>
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
+      <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
+        <div className="mb-10">
+          <h1 className="text-2xl font-bold mb-6 text-slate-100">GitHub Integration</h1>
         
         {connectionStatus.rateLimitError ? renderRateLimitError() : connectionStatus.error && (
           <div className="bg-rose-500/10 border border-rose-400/40 text-rose-200 px-4 py-3 rounded mb-4">

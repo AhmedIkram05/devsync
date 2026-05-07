@@ -2,8 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import GitHubIntegrationDetail from '../../pages/GithubIntegrationDetail';
-import { githubService } from '../../services/github';
-import { taskService } from '../../services/utils/api';
+import { githubService, taskService } from '../../services/utils/api';
 
 const mockNavigate = jest.fn();
 const mockUseParams = jest.fn();
@@ -19,16 +18,13 @@ jest.mock('react-router-dom', () => ({
   useParams: () => mockUseParams(),
 }));
 
-jest.mock('../../services/github', () => ({
+jest.mock('../../services/utils/api', () => ({
   githubService: {
     getUserRepos: jest.fn(),
     getIssues: jest.fn(),
     getPullRequests: jest.fn(),
     linkTaskToGithub: jest.fn(),
   },
-}));
-
-jest.mock('../../services/utils/api', () => ({
   taskService: {
     getAllTasks: jest.fn(),
   },

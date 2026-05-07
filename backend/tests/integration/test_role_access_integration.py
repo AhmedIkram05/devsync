@@ -55,7 +55,7 @@ def auth_headers(app, role, user_id=1):
     return {'Authorization': f'Bearer {token}'}
 
 
-def test_users_route_requires_admin_role(client, app, monkeypatch):
+def test_users_route_allows_developers(client, app, monkeypatch):
     handler = MagicMock(return_value=({'users': []}, 200))
     monkeypatch.setattr(users_routes, 'get_all_users', handler)
 
@@ -63,15 +63,22 @@ def test_users_route_requires_admin_role(client, app, monkeypatch):
     assert unauthorized_response.status_code == 401
     assert handler.call_count == 0
 
-    forbidden_response = client.get('/api/v1/users', headers=auth_headers(app, 'developer'))
-    assert forbidden_response.status_code == 403
-    assert forbidden_response.get_json()['message'] == 'Insufficient permissions'
-    assert handler.call_count == 0
+    # Developer should be allowed
+    dev_response = client.get('/api/v1/users', headers=auth_headers(app, 'developer'))
+    assert dev_response.status_code == 200
+    assert dev_response.get_json() == {'users': []}
+    assert handler.call_count == 1
 
+    # Team Lead should be allowed
+    team_lead_response = client.get('/api/v1/users', headers=auth_headers(app, 'team_lead'))
+    assert team_lead_response.status_code == 200
+    assert team_lead_response.get_json() == {'users': []}
+    
+    # Admin should also be allowed (hierarchy)
     allowed_response = client.get('/api/v1/users', headers=auth_headers(app, 'admin'))
     assert allowed_response.status_code == 200
     assert allowed_response.get_json() == {'users': []}
-    handler.assert_called_once_with()
+    assert handler.call_count == 3
 
 
 def test_admin_stats_route_requires_admin_role(client, app, monkeypatch):
@@ -84,13 +91,18 @@ def test_admin_stats_route_requires_admin_role(client, app, monkeypatch):
 
     forbidden_response = client.get('/api/v1/admin/stats', headers=auth_headers(app, 'developer'))
     assert forbidden_response.status_code == 403
-    assert forbidden_response.get_json()['message'] == 'Admin access required'
+    assert forbidden_response.get_json()['message'] == 'Insufficient permissions'
     assert handler.call_count == 0
+
+    # Team Lead should be allowed
+    team_lead_response = client.get('/api/v1/admin/stats', headers=auth_headers(app, 'team_lead'))
+    assert team_lead_response.status_code == 200
+    assert team_lead_response.get_json()['users']['total'] == 5
 
     allowed_response = client.get('/api/v1/admin/stats', headers=auth_headers(app, 'admin'))
     assert allowed_response.status_code == 200
     assert allowed_response.get_json()['users']['total'] == 5
-    handler.assert_called_once_with()
+    assert handler.call_count == 2
 
 
 def test_member_dashboard_route_requires_member_role(client, app, monkeypatch):
@@ -112,7 +124,7 @@ def test_member_dashboard_route_requires_member_role(client, app, monkeypatch):
     handler.assert_called_once_with()
 
 
-def test_task_create_route_requires_team_lead_or_admin_role(client, app, monkeypatch):
+def test_task_create_route_allows_developer_role(client, app, monkeypatch):
     handler = MagicMock(return_value=({'message': 'Task created'}, 201))
     monkeypatch.setattr(tasks_routes, 'create_new_task', handler)
 
@@ -120,14 +132,14 @@ def test_task_create_route_requires_team_lead_or_admin_role(client, app, monkeyp
     assert unauthorized_response.status_code == 401
     assert handler.call_count == 0
 
-    forbidden_response = client.post(
+    allowed_response = client.post(
         '/api/v1/tasks',
         headers=auth_headers(app, 'developer'),
         json={'title': 'New'},
     )
-    assert forbidden_response.status_code == 403
-    assert forbidden_response.get_json()['message'] == 'Insufficient permissions'
-    assert handler.call_count == 0
+    assert allowed_response.status_code == 201
+    assert allowed_response.get_json()['message'] == 'Task created'
+    handler.assert_called_once_with()
 
     allowed_response = client.post(
         '/api/v1/tasks',
@@ -136,10 +148,10 @@ def test_task_create_route_requires_team_lead_or_admin_role(client, app, monkeyp
     )
     assert allowed_response.status_code == 201
     assert allowed_response.get_json()['message'] == 'Task created'
-    handler.assert_called_once_with()
+    assert handler.call_count == 2
 
 
-def test_task_delete_route_requires_admin_role(client, app, monkeypatch):
+def test_task_delete_route_allows_developer_role(client, app, monkeypatch):
     handler = MagicMock(return_value=('', 204))
     monkeypatch.setattr(tasks_routes, 'delete_task_by_id', handler)
 
@@ -147,14 +159,13 @@ def test_task_delete_route_requires_admin_role(client, app, monkeypatch):
     assert unauthorized_response.status_code == 401
     assert handler.call_count == 0
 
-    forbidden_response = client.delete('/api/v1/tasks/1', headers=auth_headers(app, 'developer'))
-    assert forbidden_response.status_code == 403
-    assert forbidden_response.get_json()['message'] == 'Insufficient permissions'
-    assert handler.call_count == 0
+    allowed_response = client.delete('/api/v1/tasks/1', headers=auth_headers(app, 'developer'))
+    assert allowed_response.status_code == 204
+    handler.assert_called_once_with(1)
 
     allowed_response = client.delete('/api/v1/tasks/1', headers=auth_headers(app, 'admin'))
     assert allowed_response.status_code == 204
-    handler.assert_called_once_with(1)
+    assert handler.call_count == 2
 
 
 def test_project_create_route_requires_admin_role(client, app, monkeypatch):

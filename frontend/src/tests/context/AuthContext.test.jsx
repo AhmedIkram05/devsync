@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 
 import { AuthProvider, useAuth } from '../../context/AuthContext';
 import { authApi } from '../../services/utils/auth';
+import { dashboardService } from '../../services/utils/api';
 import { githubService } from '../../services/github';
 
 jest.mock('../../services/utils/auth', () => ({
@@ -12,6 +13,13 @@ jest.mock('../../services/utils/auth', () => ({
     login: jest.fn(),
     register: jest.fn(),
     logout: jest.fn(),
+  },
+}));
+
+jest.mock('../../services/utils/api', () => ({
+  dashboardService: {
+    prefetchReportData: jest.fn(),
+    clearReportDataCache: jest.fn(),
   },
 }));
 
@@ -105,6 +113,9 @@ describe('AuthContext', () => {
     authApi.login.mockReset();
     authApi.register.mockReset();
     authApi.logout.mockReset();
+    dashboardService.prefetchReportData.mockReset();
+    dashboardService.prefetchReportData.mockResolvedValue(null);
+    dashboardService.clearReportDataCache.mockReset();
     githubService.initiateOAuthFlow.mockReset();
     githubService.completeOAuthFlow.mockReset();
     githubService.checkConnection.mockResolvedValue({ connected: false });
@@ -344,7 +355,9 @@ describe('AuthContext', () => {
     renderWithProvider();
 
     fireEvent.click(screen.getByRole('button', { name: 'Login' }));
-    await waitFor(() => screen.getByTestId('show-prompt').textContent === 'true');
+    await waitFor(() => {
+      expect(screen.getByTestId('show-prompt')).toHaveTextContent('true');
+    });
 
     // Clicking prompt with connect=true should call connectGitHub
     const acceptBtn = screen.queryByRole('button', { name: /Skip Prompt/i });

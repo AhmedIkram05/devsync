@@ -80,16 +80,7 @@ class TestAuthValidator(unittest.TestCase):
             assert code == 400
             assert json.loads(response.data)['message'] == 'Password must be at least 8 characters long'
             
-            # Test invalid role
-            invalid_role = {
-                'name': 'Test User',
-                'email': 'test@example.com',
-                'password': 'password123',
-                'role': 'superuser'
-            }
-            response, code = validate_registration_data(invalid_role)
-            assert code == 400
-            assert 'Role must be one of' in json.loads(response.data)['message']
+
 
 if __name__ == '__main__':
     unittest.main()

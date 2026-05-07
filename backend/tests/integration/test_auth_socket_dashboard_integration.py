@@ -73,6 +73,7 @@ def test_auth_register_success_contract(client, monkeypatch):
             self.role = role
 
     StubUser.query.filter_by.return_value.first.return_value = None
+    StubUser.query.count.return_value = 1
 
     session = MagicMock()
     hash_password = MagicMock(return_value='hashed-password')
@@ -82,6 +83,8 @@ def test_auth_register_success_contract(client, monkeypatch):
     })
 
     monkeypatch.setattr(auth_module, 'User', StubUser)
+    monkeypatch.setattr(auth_module.settings_service, 'get_default_role', MagicMock(return_value='developer'))
+    monkeypatch.setattr(auth_module.audit_service, 'record', MagicMock())
     monkeypatch.setattr(auth_module, 'hash_password', hash_password)
     monkeypatch.setattr(auth_module, 'generate_tokens', generate_tokens)
     monkeypatch.setattr(auth_module.db, 'session', session, raising=False)
@@ -286,6 +289,7 @@ def test_dashboard_client_route_returns_computed_task_stats(client, app, monkeyp
     assigned_tasks = [
         SimpleNamespace(status='todo'),
         SimpleNamespace(status='done'),
+        SimpleNamespace(status='completed'),
     ]
 
     class StubUser:
@@ -301,11 +305,82 @@ def test_dashboard_client_route_returns_computed_task_stats(client, app, monkeyp
 
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload['tasks']['total'] == 2
+    assert payload['tasks']['total'] == 3
     assert payload['tasks']['todo'] == 1
-    assert payload['tasks']['done'] == 1
+    assert payload['tasks']['done'] == 2
     assert payload['tasks_due_soon'][0]['id'] == 9
     assert payload['projects'][0]['name'] == 'Project A'
+
+
+def test_dashboard_client_route_scopes_team_leads_to_their_projects(client, app, monkeypatch):
+    shared_project = SimpleNamespace(id=5, name='Shared Project', status='active', created_by=21)
+    created_project = SimpleNamespace(id=8, name='Created Project', status='active', created_by=21)
+    user = SimpleNamespace(
+        id=21,
+        name='Team Lead',
+        role='team_lead',
+        projects=SimpleNamespace(all=lambda: [shared_project]),
+    )
+
+    scoped_tasks = [
+        SimpleNamespace(id=1, title='One', status='todo', project_id=5, updated_at=datetime(2099, 1, 3), created_at=datetime(2099, 1, 2), deadline=datetime(2099, 1, 6), assigned_to=None),
+        SimpleNamespace(id=2, title='Two', status='done', project_id=8, updated_at=datetime(2099, 1, 4), created_at=datetime(2099, 1, 1), deadline=datetime(2099, 1, 7), assigned_to=None),
+        SimpleNamespace(id=3, title='Three', status='in_progress', project_id=8, updated_at=datetime(2099, 1, 5), created_at=datetime(2099, 1, 5), deadline=datetime(2099, 1, 8), assigned_to=None),
+    ]
+    due_tasks = [SimpleNamespace(id=2, title='Two', deadline=datetime(2099, 1, 7), status='done', project_id=8)]
+    github_link = SimpleNamespace(id=1, task=SimpleNamespace(title='Two'), repository=SimpleNamespace(repo_name='Repo', repo_url='https://github.com/org/repo'), pull_request_number=None, issue_number=7, created_at=datetime(2099, 1, 6))
+
+    class StubUser:
+        query = MagicMock()
+
+    class StubProject:
+        query = MagicMock()
+
+    class StubTask:
+        query = MagicMock()
+        project_id = MagicMock()
+        assigned_to = MagicMock()
+
+    class StubLink:
+        query = MagicMock()
+
+    class StubRepo:
+        pass
+
+    StubUser.query.get.return_value = user
+    StubProject.query.filter_by.return_value.all.return_value = [created_project]
+
+    task_query = MagicMock()
+    task_query.filter.return_value = task_query
+    task_query.all.return_value = scoped_tasks
+    StubTask.query = task_query
+    StubTask.project_id.in_.return_value = MagicMock()
+
+    link_query = MagicMock()
+    link_query.join.return_value = link_query
+    link_query.outerjoin.return_value = link_query
+    link_query.filter.return_value = link_query
+    link_query.order_by.return_value = link_query
+    link_query.limit.return_value = link_query
+    link_query.all.return_value = [github_link]
+    StubLink.query = link_query
+
+    monkeypatch.setattr(dashboard_controller, 'User', StubUser)
+    monkeypatch.setattr(dashboard_controller, 'Project', StubProject)
+    monkeypatch.setattr(dashboard_controller, 'Task', StubTask)
+    monkeypatch.setattr(dashboard_controller, 'TaskGitHubLink', StubLink)
+    monkeypatch.setattr(dashboard_controller, 'GitHubRepository', StubRepo)
+    monkeypatch.setattr(dashboard_controller, 'get_tasks_due_soon', MagicMock(return_value=due_tasks))
+
+    response = client.get('/api/v1/dashboard/client', headers=auth_headers(app, role='team_lead', user_id=21))
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload['tasks']['total'] == 3
+    assert payload['tasks']['done'] == 1
+    assert [project['name'] for project in payload['projects']] == ['Shared Project', 'Created Project']
+    assert len(payload['recentTasks']) == 3
+    assert payload['tasks_due_soon'][0]['id'] == 2
 
 
 def test_dashboard_admin_route_returns_user_and_task_totals(client, app, monkeypatch):
@@ -316,10 +391,12 @@ def test_dashboard_admin_route_returns_user_and_task_totals(client, app, monkeyp
         SimpleNamespace(role='team_lead'),
     ]
     tasks = [
+        SimpleNamespace(status='backlog'),
         SimpleNamespace(status='todo'),
         SimpleNamespace(status='in_progress'),
         SimpleNamespace(status='review'),
         SimpleNamespace(status='done'),
+        SimpleNamespace(status='completed'),
     ]
 
     class StubUser:
@@ -348,7 +425,9 @@ def test_dashboard_admin_route_returns_user_and_task_totals(client, app, monkeyp
     assert payload['users']['admin'] == 1
     assert payload['users']['developer'] == 1
     assert payload['users']['team_lead'] == 1
-    assert payload['tasks']['total'] == 4
+    assert payload['tasks']['total'] == 6
+    assert payload['tasks']['backlog'] == 1
+    assert payload['tasks']['done'] == 2
     assert payload['projects']['total'] == 4
 
 

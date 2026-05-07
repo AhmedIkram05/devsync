@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import TaskCreation from '../../pages/TaskCreation';
 import { taskService } from '../../services/utils/api';
+import { useAuth } from '../../context/AuthContext';
 
 const mockNavigate = jest.fn();
 
@@ -19,12 +20,17 @@ jest.mock('../../services/utils/api', () => ({
   },
 }));
 
+jest.mock('../../context/AuthContext', () => ({
+  useAuth: jest.fn(),
+}));
+
 jest.mock('../../components/LoadingSpinner', () => () => <div>Loading spinner</div>);
 
-jest.mock('../../components/TaskForm', () => ({ onSubmit, users, projects }) => (
+jest.mock('../../components/TaskForm', () => ({ onSubmit, users, projects, assigneeLocked }) => (
   <div>
     <div>users loaded: {users.length}</div>
     <div>projects loaded: {projects.length}</div>
+    <div>assignee locked: {String(assigneeLocked)}</div>
     <button
       onClick={() =>
         onSubmit({
@@ -48,13 +54,13 @@ describe('TaskCreation page', () => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
 
     mockNavigate.mockReset();
+    useAuth.mockReturnValue({
+      currentUser: { id: 11, name: 'Developer One', role: 'developer' },
+    });
     taskService.getUsers.mockReset();
     taskService.getProjects.mockReset();
     taskService.createTask.mockReset();
 
-    taskService.getUsers.mockResolvedValue([
-      { id: 4, name: 'Developer One' },
-    ]);
     taskService.getProjects.mockResolvedValue([
       { id: 7, name: 'Core Platform' },
     ]);
@@ -72,7 +78,8 @@ describe('TaskCreation page', () => {
 
     expect(await screen.findByText('Create New Task')).toBeInTheDocument();
     expect(await screen.findByText('users loaded: 1')).toBeInTheDocument();
-    expect(screen.getByText('projects loaded: 1')).toBeInTheDocument();
+    expect(await screen.findByText('projects loaded: 1')).toBeInTheDocument();
+    expect(screen.getByText('assignee locked: true')).toBeInTheDocument();
   });
 
   test('submits formatted task payload and navigates to task details on success', async () => {
@@ -88,7 +95,7 @@ describe('TaskCreation page', () => {
         description: 'Task details',
         status: 'in_progress',
         priority: 'high',
-        assigned_to: '4',
+        assigned_to: 11,
         project_id: '7',
         deadline: '2099-03-10T00:00:00.000Z',
       });
@@ -102,7 +109,7 @@ describe('TaskCreation page', () => {
   });
 
   test('shows preload error when users/projects fetch fails', async () => {
-    taskService.getUsers.mockRejectedValueOnce(new Error('users failed'));
+    taskService.getProjects.mockRejectedValueOnce(new Error('projects failed'));
 
     render(<TaskCreation />);
 

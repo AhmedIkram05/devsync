@@ -4,55 +4,67 @@ from flask import Blueprint, request, jsonify, make_response, current_app
 from flask_jwt_extended import (
     jwt_required, get_jwt_identity, get_jwt, 
     set_access_cookies, set_refresh_cookies, unset_jwt_cookies,
-    create_access_token  # Added missing import
+    create_access_token
 )
 from sqlalchemy.exc import IntegrityError
 
 from ..db.models import db, User  # Fix import path
 from .helpers import hash_password, verify_password, generate_tokens
 from .rbac import Role
+from ..services import audit_service, settings_service
 
-auth_bp = Blueprint('auth', __name__)
 
+def register_user():
+    """Function to register a new user.
 
-def _validate_role(role):
-    valid_roles = [item.value for item in Role]
-    if role not in valid_roles:
-        return jsonify({'message': f'Role must be one of: {", ".join(valid_roles)}'}), 400
-    return None
-
-@auth_bp.route('/register', methods=['POST'])
-def register():
+    Security: the role field from the request body is **ignored**.
+    All new accounts are created with the 'developer' role.
+    Admins can promote users after registration via PUT /admin/users/<id>/role.
+    """
     data = request.get_json()
-    
-    # Validate required fields
-    if not all(k in data for k in ['name', 'email', 'password', 'role']):
+
+    # Validate required fields (role is no longer required from the client)
+    if not all(k in data for k in ['name', 'email', 'password']):
         return jsonify({'message': 'Missing required fields'}), 400
 
-    role_validation = _validate_role(data['role'])
-    if role_validation:
-        return role_validation
-    
     # Check if email already exists
     existing_user = User.query.filter_by(email=data['email']).first()
     if existing_user:
         return jsonify({'message': 'Email already registered'}), 409
-    
-    # Create new user
+
+    # If this is the very first user, automatically make them an admin
+    user_count = User.query.count()
+    if user_count == 0:
+        forced_role = Role.ADMIN.value
+        print(f"First user registration detected! Automatically granting admin role to {data['email']}")
+    else:
+        # Otherwise get default role from settings
+        forced_role = settings_service.get_default_role()
+        
+    print(f"Registering user: {data['email']} with role: {forced_role} (ignoring any client-supplied role)")
+
     try:
         new_user = User(
             name=data['name'],
             email=data['email'],
             password=hash_password(data['password']),
-            role=data['role']
+            role=forced_role
         )
-        
+
         db.session.add(new_user)
         db.session.commit()
-        
+
+        # Record audit log
+        audit_service.record(
+            action='user_registered',
+            actor={'user_id': new_user.id, 'role': new_user.role},
+            resource_type='user',
+            resource_id=new_user.id
+        )
+
         # Generate tokens for the new user
         tokens = generate_tokens(new_user.id, {'role': new_user.role})
-        
+
         # Create response with tokens
         resp = jsonify({
             'message': 'User registered successfully',
@@ -60,21 +72,22 @@ def register():
                 'id': new_user.id,
                 'name': new_user.name,
                 'email': new_user.email,
-                'role': new_user.role
+                'role': new_user.role,
+                'token': tokens['access_token']
             }
         })
-        
+
         # Set cookies
         set_access_cookies(resp, tokens['access_token'])
         set_refresh_cookies(resp, tokens['refresh_token'])
-        
-        return resp, 201
-    
-    except IntegrityError:
-        db.session.rollback()
-        return jsonify({'message': 'An error occurred while registering the user'}), 500
 
-@auth_bp.route('/login', methods=['POST'])
+        return resp, 201
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"Registration error: {str(e)}")
+        return jsonify({'message': f'An error occurred while registering the user: {str(e)}'}), 500
+
 def login():
     """Function to authenticate a user and create a session"""
     data = request.get_json()
@@ -106,6 +119,14 @@ def login():
     github_connected = github_token is not None
     github_username = user.github_username
     
+    # Record audit log
+    audit_service.record(
+        action='user_login',
+        actor={'user_id': user.id, 'role': user.role},
+        resource_type='user',
+        resource_id=user.id
+    )
+
     # Create response
     resp = jsonify({
         'message': 'Login successful',
@@ -125,114 +146,6 @@ def login():
     set_refresh_cookies(resp, tokens['refresh_token'])
     
     return resp
-
-@auth_bp.route('/refresh', methods=['POST'])
-@jwt_required(refresh=True)
-def refresh():
-    """Endpoint for refreshing an access token"""
-    current_user = get_jwt_identity()
-    
-    # Create new access token
-    access_token = create_access_token(identity=current_user)
-    
-    # Create response
-    resp = jsonify({
-        'message': 'Token refreshed successfully',
-        'token': access_token
-    })
-    
-    # Set new access cookie
-    set_access_cookies(resp, access_token)
-    
-    return resp
-
-@auth_bp.route('/logout', methods=['POST'])
-def logout():
-    """Endpoint for logging out a user"""
-    resp = jsonify({'message': 'Logout successful'})
-    
-    # Remove JWT cookies
-    unset_jwt_cookies(resp)
-    
-    return resp
-
-@auth_bp.route('/me', methods=['GET'])
-@jwt_required()
-def me():
-    """Get current user information"""
-    current_user = get_jwt_identity()
-    
-    user = User.query.get(current_user['user_id'])
-    if not user:
-        return jsonify({'message': 'User not found'}), 404
-    
-    return jsonify({
-        'user': {
-            'id': user.id,
-            'name': user.name,
-            'email': user.email,
-            'role': user.role
-        }
-    })
-
-def register_user():
-    """Function to register a new user"""
-    data = request.get_json()
-    
-    # Validate required fields
-    if not all(k in data for k in ['name', 'email', 'password', 'role']):
-        return jsonify({'message': 'Missing required fields'}), 400
-
-    role_validation = _validate_role(data['role'])
-    if role_validation:
-        return role_validation
-    
-    # Check if email already exists
-    existing_user = User.query.filter_by(email=data['email']).first()
-    if existing_user:
-        return jsonify({'message': 'Email already registered'}), 409
-    
-    # Create new user
-    try:
-        # Print debug information
-        print(f"Attempting to register user: {data['email']} with role: {data['role']}")
-        
-        new_user = User(
-            name=data['name'],
-            email=data['email'],
-            password=hash_password(data['password']),
-            role=data['role']
-        )
-        
-        db.session.add(new_user)
-        db.session.commit()
-        
-        # Generate tokens for the new user
-        tokens = generate_tokens(new_user.id, {'role': new_user.role})
-        
-        # Create response with tokens
-        resp = jsonify({
-            'message': 'User registered successfully',
-            'user': {
-                'id': new_user.id,
-                'name': new_user.name,
-                'email': new_user.email,
-                'role': new_user.role,
-                'token': tokens['access_token']  # Include token in response for frontend
-            }
-        })
-        
-        # Set cookies
-        set_access_cookies(resp, tokens['access_token'])
-        set_refresh_cookies(resp, tokens['refresh_token'])
-        
-        return resp, 201
-    
-    except Exception as e:
-        # Enhanced error handling to catch all exceptions
-        db.session.rollback()
-        print(f"Registration error: {str(e)}")
-        return jsonify({'message': f'An error occurred while registering the user: {str(e)}'}), 500
 
 def refresh_token():
     """Function to refresh an access token"""

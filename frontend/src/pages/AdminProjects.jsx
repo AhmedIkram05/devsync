@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { useAuth } from '../context/AuthContext';
 import { projectService } from '../services/utils/api';
 
 const statusClasses = {
@@ -35,10 +36,12 @@ const formatDate = (value) => {
 };
 
 const AdminProjects = () => {
+  const { currentUser } = useAuth();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
+  const dashboardPath = currentUser?.role === 'admin' ? '/admin' : '/BasicDashboard';
 
   const loadProjects = async () => {
     try {
@@ -81,9 +84,9 @@ const AdminProjects = () => {
   }
 
   return (
-    <div className="bg-slate-950 min-h-screen p-4 md:p-6 text-slate-100">
-      <div className="max-w-7xl mx-auto">
-        <div className="bg-slate-900/70 border border-slate-800/70 rounded-2xl shadow-md p-6">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
+      <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
+        <div className="bg-slate-900/70 border border-slate-800/70 rounded-2xl shadow-md p-6 backdrop-blur-sm">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
             <div>
               <h1 className="text-2xl font-bold text-slate-100">Projects</h1>
@@ -103,7 +106,7 @@ const AdminProjects = () => {
                 Create Project
               </Link>
               <Link
-                to="/admin"
+                to={dashboardPath}
                 className="inline-flex items-center px-4 py-2 rounded-full border border-slate-700/70 text-slate-300 hover:text-slate-100 hover:border-slate-500"
               >
                 Back to Dashboard

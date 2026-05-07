@@ -1,9 +1,11 @@
 # Notification controller - business logic
 
+from datetime import datetime, timezone
 from flask import jsonify, request
 from flask_jwt_extended import get_jwt_identity
-from ...db.models import db, Notification, User  # Changed to relative import
+from ...db.models import db, Notification  # Changed to relative import
 from ..validators.notification_validator import validate_notification_data  # Changed to relative import
+from ...services.notification_service import NotificationService
 
 def get_user_notifications():
     """Controller function to get all notifications for the current user"""
@@ -13,13 +15,7 @@ def get_user_notifications():
     notifications = Notification.query.filter_by(user_id=user_id)\
         .order_by(Notification.created_at.desc()).all()
     
-    notifications_data = [{
-        'id': notification.id,
-        'content': notification.content,
-        'is_read': notification.is_read,
-        'task_id': notification.task_id,
-        'created_at': notification.created_at.isoformat() if notification.created_at else None
-    } for notification in notifications]
+    notifications_data = [notification.to_dict() for notification in notifications]
     
     return jsonify({
         'notifications': notifications_data,
@@ -35,23 +31,30 @@ def create_notification():
     if validation_result:
         return validation_result
     
-    # Create new notification
-    new_notification = Notification(
-        content=data['content'],
+    message = data.get('message') or data.get('content')
+    title = data.get('title') or message[:80]
+    notification_type = data.get('notification_type') or data.get('type') or 'general'
+    task_id = data.get('task_id')
+    reference_id = data.get('reference_id') or task_id
+
+    # Create new notification and emit it when the target user is connected.
+    new_notification = NotificationService.send_to_user(
         user_id=data['user_id'],
-        task_id=data.get('task_id'),
-        is_read=data.get('is_read', False)
+        notification_type=notification_type,
+        title=title,
+        message=message,
+        reference_id=reference_id,
+        task_id=task_id
     )
-    
-    db.session.add(new_notification)
-    db.session.commit()
-    
+
+    if data.get('is_read') and new_notification:
+        new_notification.is_read = True
+        new_notification.read_at = datetime.now(timezone.utc)
+        db.session.commit()
+
     return jsonify({
         'message': 'Notification created successfully',
-        'notification': {
-            'id': new_notification.id,
-            'content': new_notification.content
-        }
+        'notification': new_notification.to_dict()
     }), 201
 
 def mark_notification_read(notification_id):
@@ -67,6 +70,7 @@ def mark_notification_read(notification_id):
     
     # Mark as read
     notification.is_read = True
+    notification.read_at = datetime.now(timezone.utc)
     db.session.commit()
     
     return jsonify({'message': 'Notification marked as read'})
@@ -74,10 +78,14 @@ def mark_notification_read(notification_id):
 def mark_all_notifications_read():
     """Controller function to mark all notifications as read for the current user"""
     user_id = get_jwt_identity()['user_id']
+    now = datetime.now(timezone.utc)
     
     # Update all unread notifications for this user
     Notification.query.filter_by(user_id=user_id, is_read=False)\
-        .update({Notification.is_read: True})
+        .update({
+            Notification.is_read: True,
+            Notification.read_at: now
+        })
     
     db.session.commit()
     

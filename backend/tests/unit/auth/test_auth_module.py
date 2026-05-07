@@ -37,7 +37,7 @@ def test_register_returns_400_for_missing_fields(monkeypatch):
     app = build_test_app()
 
     with app.test_request_context(json={'email': 'incomplete@example.com'}):
-        response, status = auth_module.register()
+        response, status = auth_module.register_user()
 
     assert status == 400
     assert response.get_json()['message'] == 'Missing required fields'
@@ -58,7 +58,7 @@ def test_register_returns_409_for_existing_email(monkeypatch):
             'role': 'developer',
         }
     ):
-        response, status = auth_module.register()
+        response, status = auth_module.register_user()
 
     assert status == 409
     assert response.get_json()['message'] == 'Email already registered'
@@ -69,6 +69,7 @@ def test_register_success_sets_cookies_and_returns_contract(monkeypatch):
 
     StubUser.query = MagicMock()
     StubUser.query.filter_by.return_value.first.return_value = None
+    StubUser.query.count.return_value = 1
 
     session = MagicMock()
     hash_password = MagicMock(return_value='hashed-password')
@@ -82,6 +83,8 @@ def test_register_success_sets_cookies_and_returns_contract(monkeypatch):
     monkeypatch.setattr(auth_module.db, 'session', session, raising=False)
     monkeypatch.setattr(auth_module, 'set_access_cookies', set_access_cookies)
     monkeypatch.setattr(auth_module, 'set_refresh_cookies', set_refresh_cookies)
+    monkeypatch.setattr(auth_module.settings_service, 'get_default_role', MagicMock(return_value='admin'))
+    monkeypatch.setattr(auth_module.audit_service, 'record', MagicMock())
 
     with app.test_request_context(
         json={
@@ -91,7 +94,7 @@ def test_register_success_sets_cookies_and_returns_contract(monkeypatch):
             'role': 'admin',
         }
     ):
-        response, status = auth_module.register()
+        response, status = auth_module.register_user()
 
     assert status == 201
     payload = response.get_json()
@@ -112,6 +115,7 @@ def test_register_handles_integrity_error(monkeypatch):
 
     StubUser.query = MagicMock()
     StubUser.query.filter_by.return_value.first.return_value = None
+    StubUser.query.count.return_value = 1
 
     session = MagicMock()
     session.commit.side_effect = IntegrityError('insert', {}, Exception('duplicate'))
@@ -119,6 +123,8 @@ def test_register_handles_integrity_error(monkeypatch):
     monkeypatch.setattr(auth_module, 'User', StubUser)
     monkeypatch.setattr(auth_module, 'hash_password', MagicMock(return_value='hashed-password'))
     monkeypatch.setattr(auth_module.db, 'session', session, raising=False)
+    monkeypatch.setattr(auth_module.settings_service, 'get_default_role', MagicMock(return_value='developer'))
+    monkeypatch.setattr(auth_module.audit_service, 'record', MagicMock())
 
     with app.test_request_context(
         json={
@@ -128,10 +134,10 @@ def test_register_handles_integrity_error(monkeypatch):
             'role': 'developer',
         }
     ):
-        response, status = auth_module.register()
+        response, status = auth_module.register_user()
 
     assert status == 500
-    assert response.get_json()['message'] == 'An error occurred while registering the user'
+    assert 'An error occurred while registering the user' in response.get_json()['message']
     session.rollback.assert_called_once_with()
 
 

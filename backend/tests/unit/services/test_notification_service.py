@@ -11,7 +11,7 @@ def mock_db_session():
 
 @pytest.fixture
 def mock_emit():
-    with patch('src.services.notification_service.emit') as mock:
+    with patch('src.services.notification_service.socketio.emit') as mock:
         yield mock
 
 @pytest.fixture
@@ -63,14 +63,17 @@ def test_send_to_user(mock_db_session, mock_emit, mock_connected_users, notifica
     mock_db_session.commit.assert_called_once()
     
     # Verify the emit was called with right parameters
-    mock_emit.assert_called_once_with('notification', {
-        'id': 1,
-        'type': notification_data['notification_type'],
-        'title': notification_data['title'],
-        'message': notification_data['message'],
-        'reference_id': notification_data['reference_id'],
-        'timestamp': mock_notification.created_at.isoformat()
-    }, to='socket1')
+    mock_emit.assert_called_once()
+    event_name, payload = mock_emit.call_args.args
+    assert event_name == 'notification'
+    assert payload['id'] == 1
+    assert payload['type'] == notification_data['notification_type']
+    assert payload['title'] == notification_data['title']
+    assert payload['message'] == notification_data['message']
+    assert payload['content'] == notification_data['message']
+    assert payload['reference_id'] == notification_data['reference_id']
+    assert payload['timestamp'] == mock_notification.created_at.isoformat()
+    assert mock_emit.call_args.kwargs == {'to': 'socket1'}
 
 
 def test_send_to_user_not_connected(mock_db_session, mock_emit, mock_connected_users, notification_data):
@@ -127,7 +130,7 @@ def test_send_to_project(mock_project_rooms, notification_data):
     from src.services.notification_service import NotificationService
     
     with patch.object(NotificationService, 'send_to_user') as mock_send_to_user:
-        mock_send_to_user.return_value = MagicMock()
+        mock_send_to_user.return_value = object()
         
         # Call the method
         results = NotificationService.send_to_project(
@@ -143,14 +146,14 @@ def test_send_to_project(mock_project_rooms, notification_data):
         mock_send_to_user.assert_has_calls([
             call(user_id='user1', notification_type=notification_data['notification_type'],
                 title=notification_data['title'], message=notification_data['message'], 
-                reference_id=notification_data['reference_id']),
+                reference_id=notification_data['reference_id'], task_id=None),
             call(user_id='user2', notification_type=notification_data['notification_type'],
                 title=notification_data['title'], message=notification_data['message'], 
-                reference_id=notification_data['reference_id']),
+                reference_id=notification_data['reference_id'], task_id=None),
             call(user_id='user3', notification_type=notification_data['notification_type'],
                 title=notification_data['title'], message=notification_data['message'], 
-                reference_id=notification_data['reference_id'])
-        ])
+                reference_id=notification_data['reference_id'], task_id=None)
+        ], any_order=True)
         
         # Test exclusion logic
         mock_send_to_user.reset_mock()

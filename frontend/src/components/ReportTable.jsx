@@ -70,7 +70,7 @@ const ReportTable = ({ data = [], type }) => {
         case 'Actions':
           return (
             <Link 
-              to={`/TaskDetailUser/${item.id}`}
+              to={`/Tasks/${item.id}`}
               className="text-rose-400 hover:text-rose-300"
             >
               View
@@ -91,7 +91,7 @@ const ReportTable = ({ data = [], type }) => {
         case 'Issues':
           return item.open_issues ?? item.open_issues_count ?? 0;
         case 'PRs':
-          return item.open_prs || 0;
+          return item.total_prs || 0;
         case 'Commits':
           return item.recent_commits || 0;
         case 'Last Updated':
@@ -173,15 +173,15 @@ const ReportTable = ({ data = [], type }) => {
   
   if (!data || data.length === 0) {
     return (
-      <div className="text-center py-6 text-slate-400">
+      <div className="flex h-full items-center justify-center text-center py-6 text-slate-400">
         No data available for this report
       </div>
     );
   }
   
   return (
-    <div>
-      <div className="overflow-x-auto">
+    <div className="flex h-full flex-col">
+      <div className="flex-1 min-h-0 overflow-auto">
         <table className="min-w-full divide-y divide-slate-700/70">
           <thead className="bg-slate-800/60">
             <tr>

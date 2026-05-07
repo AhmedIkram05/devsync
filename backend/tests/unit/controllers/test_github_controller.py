@@ -136,7 +136,7 @@ class TestGitHubController(unittest.TestCase):
         mock_github_client.return_value = mock_client_instance
         mock_client_instance.get_repository_activity_summary.return_value = {
             'open_issues': 4,
-            'open_prs': 2,
+            'total_prs': 2,
             'recent_commits': 7,
         }
         
@@ -180,14 +180,14 @@ class TestGitHubController(unittest.TestCase):
         self.assertEqual(result['repositories'][0]['id'], 101)
         self.assertEqual(result['repositories'][0]['name'], 'repo1')
         self.assertEqual(result['repositories'][0]['open_issues'], 4)
-        self.assertEqual(result['repositories'][0]['open_prs'], 2)
+        self.assertEqual(result['repositories'][0]['total_prs'], 2)
         self.assertEqual(result['repositories'][0]['recent_commits'], 7)
         mock_client_instance.get_user_repositories.assert_called_with(page=1, per_page=10)
         mock_client_instance.get_repository_activity_summary.assert_called_with(
             'user',
             'repo1',
             fallback_open_issues=5,
-            since_days=7,
+            since_days=365,
         )
         mock_db.session.add.assert_called_once()
         mock_db.session.commit.assert_called_once()
@@ -247,7 +247,7 @@ class TestGitHubController(unittest.TestCase):
 
         self.assertEqual(len(result['repositories']), 1)
         self.assertEqual(result['repositories'][0]['open_issues'], 5)
-        self.assertEqual(result['repositories'][0]['open_prs'], 0)
+        self.assertEqual(result['repositories'][0]['total_prs'], 0)
         self.assertEqual(result['repositories'][0]['recent_commits'], 0)
         mock_client_instance.get_repository_activity_summary.assert_not_called()
 

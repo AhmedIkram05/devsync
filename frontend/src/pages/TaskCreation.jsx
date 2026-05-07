@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import TaskForm from "../components/TaskForm";
 import { taskService } from "../services/utils/api";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { useAuth } from '../context/AuthContext';
 
 const TaskCreation = () => {
   const navigate = useNavigate();
@@ -10,13 +11,20 @@ const TaskCreation = () => {
   const [users, setUsers] = useState([]);
   const [error, setError] = useState(null);
   const [projects, setProjects] = useState([]);
+  const { currentUser } = useAuth();
+
+  const canAssignTasks = currentUser?.role === 'team_lead' || currentUser?.role === 'admin';
 
   useEffect(() => {
     // Fetch users and projects for the task assignment
     const fetchData = async () => {
       try {
-        const usersData = await taskService.getUsers();
-        setUsers(usersData || []);
+        if (canAssignTasks) {
+          const usersData = await taskService.getUsers();
+          setUsers(usersData || []);
+        } else if (currentUser) {
+          setUsers([currentUser]);
+        }
         
         const projectsData = await taskService.getProjects();
         setProjects(projectsData || []);
@@ -27,7 +35,7 @@ const TaskCreation = () => {
     };
 
     fetchData();
-  }, []);
+  }, [canAssignTasks, currentUser]);
 
   const handleSubmit = async (task) => {
     try {
@@ -40,7 +48,7 @@ const TaskCreation = () => {
         description: task.description,
         status: task.status || "todo",
         priority: task.priority || "medium",
-        assigned_to: task.assignee,
+        assigned_to: canAssignTasks ? task.assignee : currentUser?.id,
         project_id: task.project,
         deadline: task.deadline ? new Date(task.deadline).toISOString() : null
       };
@@ -61,9 +69,9 @@ const TaskCreation = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="container mx-auto p-6 max-w-4xl">
-        <h1 className="text-2xl font-bold mb-6">Create New Task</h1>
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
+      <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
+        <h1 className="text-2xl font-bold mb-10 text-slate-100">Create New Task</h1>
       
         {error && (
           <div className="bg-rose-500/10 border border-rose-400/40 text-rose-200 px-4 py-3 rounded mb-4">
@@ -81,6 +89,8 @@ const TaskCreation = () => {
               onSubmit={handleSubmit} 
               users={users}
               projects={projects}
+              assigneeLocked={!canAssignTasks}
+              initialData={!canAssignTasks && currentUser ? { assigned_to: currentUser.id } : {}}
             />
           </div>
         )}

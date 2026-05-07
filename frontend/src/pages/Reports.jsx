@@ -12,7 +12,7 @@ import {
   Filler
 } from 'chart.js';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
-import { dashboardService } from '../services/utils/api';
+import { dashboardService, reportService } from '../services/utils/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ReportTable from '../components/ReportTable';
 
@@ -35,6 +35,7 @@ const Reports = () => {
   const [reportType, setReportType] = useState('tasks');
   const [dateRange, setDateRange] = useState('week');
   const [generatedReports, setGeneratedReports] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
   const reportCacheRef = useRef({});
   const latestRequestRef = useRef(0);
 
@@ -106,7 +107,7 @@ const Reports = () => {
       });
     } else if (report.type === 'github') {
       details.slice(0, 8).forEach((repo) => {
-        lines.push(`- ${repo.name || 'Repo'} (${repo.owner || 'owner'}) issues: ${repo.open_issues || 0} prs: ${repo.open_prs || 0}`);
+        lines.push(`- ${repo.name || 'Repo'} (${repo.owner || 'owner'}) issues: ${repo.open_issues || 0} prs: ${repo.total_prs || 0}`);
       });
     } else {
       details.slice(0, 8).forEach((item) => {
@@ -153,13 +154,13 @@ const Reports = () => {
     return new Blob([pdf], { type: 'application/pdf' });
   };
 
-  const loadReportData = useCallback(async () => {
+  const loadReportData = useCallback(async ({ forceRefresh = false } = {}) => {
     const cacheKey = `${reportType}:${dateRange}`;
     const cachedReport = reportCacheRef.current[cacheKey];
     const requestId = latestRequestRef.current + 1;
     latestRequestRef.current = requestId;
 
-    if (cachedReport) {
+    if (cachedReport && reportType !== 'github' && !forceRefresh) {
       setReportData(cachedReport);
       setLoading(false);
       setError(null);
@@ -167,9 +168,13 @@ const Reports = () => {
     }
 
     try {
-      setLoading(true);
+      if (forceRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
       setError(null);
-      const data = await dashboardService.getReportData(reportType, dateRange);
+      const data = await dashboardService.getReportData(reportType, dateRange, { forceRefresh });
       // Ignore stale responses from previous report/date selections.
       if (requestId !== latestRequestRef.current) {
         return null;
@@ -187,6 +192,7 @@ const Reports = () => {
     } finally {
       if (requestId === latestRequestRef.current) {
         setLoading(false);
+        setRefreshing(false);
       }
     }
   }, [reportType, dateRange]);
@@ -194,6 +200,36 @@ const Reports = () => {
   useEffect(() => {
     loadReportData();
   }, [loadReportData]);
+
+  useEffect(() => {
+    const loadSavedReports = async () => {
+      try {
+        const response = await reportService.getSavedReports();
+        if (response.error) {
+          console.warn('Failed to load saved reports:', response.error);
+        } else if (response.reports) {
+          setGeneratedReports(response.reports);
+        }
+      } catch (err) {
+        console.error('Error loading saved reports:', err);
+      }
+    };
+
+    loadSavedReports();
+  }, []);
+
+  const handleDeleteReport = async (reportId) => {
+    try {
+      const response = await reportService.deleteReport(reportId);
+      if (response.error) {
+        console.error('Failed to delete report:', response.error);
+      } else {
+        setGeneratedReports((prev) => prev.filter((r) => r.id !== reportId));
+      }
+    } catch (err) {
+      console.error('Error deleting report:', err);
+    }
+  };
 
   const handleGenerateReport = async () => {
     const data = reportData || await loadReportData();
@@ -209,7 +245,31 @@ const Reports = () => {
       details: data.details || []
     };
 
+    try {
+      const saveResponse = await reportService.saveReport(
+        reportType,
+        dateRange,
+        reportEntry.summary,
+        reportEntry.details
+      );
+
+      if (saveResponse?.report) {
+        setGeneratedReports((prev) => [saveResponse.report, ...prev]);
+        return;
+      }
+
+      if (saveResponse?.error) {
+        console.warn('Failed to save report to backend:', saveResponse.error);
+      }
+    } catch (err) {
+      console.error('Error saving report to backend:', err);
+    }
+
     setGeneratedReports((prev) => [reportEntry, ...prev]);
+  };
+
+  const handleRefreshReport = async () => {
+    await loadReportData({ forceRefresh: true });
   };
 
   const handleDownloadPdf = (report) => {
@@ -298,12 +358,12 @@ const Reports = () => {
     if (type === 'github') {
       const repos = Array.isArray(details) ? details : [];
       const openIssues = repos.reduce((sum, repo) => sum + getGithubRepoMetrics(repo).openIssues, 0);
-      const openPrs = repos.reduce((sum, repo) => sum + getGithubRepoMetrics(repo).openPrs, 0);
+      const totalPrs = repos.reduce((sum, repo) => sum + getGithubRepoMetrics(repo).totalPrs, 0);
       const recentCommits = repos.reduce((sum, repo) => sum + getGithubRepoMetrics(repo).recentCommits, 0);
       return {
         repos: summary?.repos ?? repos.length,
         open_issues: summary?.open_issues ?? openIssues,
-        open_prs: summary?.open_prs ?? openPrs,
+        total_prs: summary?.total_prs ?? totalPrs,
         recent_commits: summary?.recent_commits ?? recentCommits
       };
     }
@@ -326,12 +386,21 @@ const Reports = () => {
   };
 
   const hasNonZero = (values = []) => values.some((v) => Number(v) > 0);
+  const getGithubUpdatedLabel = () => {
+    if (reportType !== 'github') {
+      return null;
+    }
+
+    const fetchedAt = reportData?.meta?.fetched_at;
+    return fetchedAt ? `GitHub stats updated ${formatGeneratedAt(fetchedAt)}` : 'GitHub stats ready for live refresh';
+  };
+
   const getRepoLabel = (repo) => repo?.name || repo?.full_name || 'Repo';
   const getGithubRepoMetrics = (repo) => {
     const openIssues = Number(repo?.open_issues ?? repo?.open_issues_count ?? 0) || 0;
-    const openPrs = Number(repo?.open_prs ?? 0) || 0;
+    const totalPrs = Number(repo?.total_prs ?? 0) || 0;
     const recentCommits = Number(repo?.recent_commits ?? 0) || 0;
-    return { openIssues, openPrs, recentCommits, total: openIssues + openPrs + recentCommits };
+    return { openIssues, totalPrs, recentCommits, total: openIssues + totalPrs + recentCommits };
   };
 
   // ─── Chart theme tokens ───────────────────────────────────────────────────
@@ -482,7 +551,7 @@ const Reports = () => {
               <SummaryCard title="Open Issues" value={summarySnapshot.open_issues || 0} color="blue"
                 icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>}
               />
-              <SummaryCard title="Open PRs" value={summarySnapshot.open_prs || 0} color="green"
+              <SummaryCard title="Total PRs" value={summarySnapshot.total_prs || 0} color="green"
                 icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" /></svg>}
               />
               <SummaryCard title="Recent Commits" value={summarySnapshot.recent_commits || 0} color="yellow"
@@ -569,17 +638,17 @@ const Reports = () => {
               labels: topRepos.map((r) => r.label),
               datasets: [
                 { label: 'Open Issues',     data: topRepos.map((r) => r.openIssues),    backgroundColor: chartPalette.blue   },
-                { label: 'Open PRs',        data: topRepos.map((r) => r.openPrs),       backgroundColor: chartPalette.green  },
+                { label: 'Total PRs',        data: topRepos.map((r) => r.totalPrs),       backgroundColor: chartPalette.green  },
                 { label: 'Recent Commits',  data: topRepos.map((r) => r.recentCommits), backgroundColor: chartPalette.yellow }
               ]
             };
 
             const issuesTotal  = repos.reduce((s, r) => s + getGithubRepoMetrics(r).openIssues, 0);
-            const prsTotal     = repos.reduce((s, r) => s + getGithubRepoMetrics(r).openPrs, 0);
+            const prsTotal     = repos.reduce((s, r) => s + getGithubRepoMetrics(r).totalPrs, 0);
             const commitsTotal = repos.reduce((s, r) => s + getGithubRepoMetrics(r).recentCommits, 0);
             const githubMixValues = [issuesTotal, prsTotal, commitsTotal];
             const githubMixData = {
-              labels: ['Open Issues', 'Open PRs', 'Recent Commits'],
+              labels: ['Open Issues', 'Total PRs', 'Recent Commits'],
               datasets: [{
                 data: githubMixValues,
                 backgroundColor: [chartPalette.blue, chartPalette.green, chartPalette.yellow],
@@ -637,20 +706,22 @@ const Reports = () => {
         </div>
 
         {/* Report Details + Generated Reports */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-slate-900/70 rounded-2xl shadow-md overflow-hidden border border-slate-800/70">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:items-stretch">
+          <div className="bg-slate-900/70 rounded-2xl shadow-md overflow-hidden border border-slate-800/70 flex h-full flex-col lg:h-[36rem]">
             <div className="px-6 py-4 border-b border-slate-800">
               <h2 className="text-lg font-semibold text-slate-100">Report Details</h2>
             </div>
-            <ReportTable data={details || []} type={reportType} />
+            <div className="flex-1 min-h-0">
+              <ReportTable data={details || []} type={reportType} />
+            </div>
           </div>
 
-          <div className="bg-slate-900/70 rounded-2xl shadow-md border border-slate-800/70">
+          <div className="bg-slate-900/70 rounded-2xl shadow-md border border-slate-800/70 flex h-full flex-col lg:h-[36rem]">
             <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-slate-100">Generated Reports</h2>
               <span className="text-xs text-slate-500 uppercase tracking-wide">PDF downloads</span>
             </div>
-            <div className="p-6">
+            <div className="flex-1 min-h-0 overflow-y-auto p-6 pr-4">
               {generatedReports.length === 0 ? (
                 <p className="text-sm text-slate-500">
                   No generated reports yet. Use Generate Report to create one.
@@ -660,8 +731,19 @@ const Reports = () => {
                   {generatedReports.map((report) => (
                     <div
                       key={report.id}
-                      className="border border-slate-700/70 rounded-xl p-4 flex flex-col gap-3 bg-slate-800/30"
+                      className="group relative border border-slate-700/70 rounded-xl p-4 flex flex-col gap-3 bg-slate-800/30 hover:border-slate-600/70 transition-all"
                     >
+                      {/* Delete Button */}
+                      <button
+                        onClick={() => handleDeleteReport(report.id)}
+                        className="absolute top-3 right-3 p-1.5 text-slate-500 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-rose-500/10"
+                        title="Delete Report"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+
                       <div>
                         <div className="text-sm font-semibold text-slate-100">
                           {getReportLabel(report.type)}
@@ -677,7 +759,7 @@ const Reports = () => {
                         <button
                           type="button"
                           onClick={() => handleDownloadPdf(report)}
-                          className="px-3 py-1.5 bg-rose-500/90 text-white text-xs font-medium rounded-full hover:bg-rose-400 transition-colors"
+                          className="px-3 py-1.5 bg-indigo-600/90 text-white text-xs font-medium rounded-full hover:bg-indigo-500 transition-colors shadow-sm"
                         >
                           Download PDF
                         </button>
@@ -718,10 +800,10 @@ const Reports = () => {
     );
   }
 
-  // ─── Main render ───────────────────────────────────────────────────────────
   return (
-    <div className="container mx-auto p-6 bg-slate-950 min-h-screen text-slate-100">
-      <h1 className="text-2xl font-bold mb-6 text-slate-100">Reports & Analytics</h1>
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
+      <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
+        <h1 className="text-2xl font-bold mb-10 text-slate-100">Reports & Analytics</h1>
 
       {/* Controls */}
       <div className="bg-slate-900/70 rounded-2xl shadow-md p-5 mb-6 border border-slate-800/70">
@@ -758,17 +840,36 @@ const Reports = () => {
           </div>
         </div>
 
-        <div className="mt-4 flex justify-end">
-          <button
-            onClick={handleGenerateReport}
-            className="px-5 py-2 bg-rose-500/90 text-white text-sm font-medium rounded-full hover:bg-rose-400 transition-colors focus:outline-none focus:ring-2 focus:ring-rose-400/60"
-          >
-            Generate Report
-          </button>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-h-[1.25rem] text-xs text-slate-500">
+            {reportType === 'github' && (
+              <span>{refreshing ? 'Refreshing GitHub stats...' : getGithubUpdatedLabel()}</span>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            {reportType === 'github' && (
+              <button
+                type="button"
+                onClick={handleRefreshReport}
+                disabled={refreshing}
+                className="px-4 py-2 border border-slate-700/70 text-slate-200 text-sm font-medium rounded-full hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-500/50"
+              >
+                Refresh GitHub Stats
+              </button>
+            )}
+            <button
+              onClick={handleGenerateReport}
+              className="px-5 py-2 bg-rose-500/90 text-white text-sm font-medium rounded-full hover:bg-rose-400 transition-colors focus:outline-none focus:ring-2 focus:ring-rose-400/60"
+            >
+              Generate Report
+            </button>
+          </div>
         </div>
       </div>
 
       {renderCharts()}
+      </div>
     </div>
   );
 };

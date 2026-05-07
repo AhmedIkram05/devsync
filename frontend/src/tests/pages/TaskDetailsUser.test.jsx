@@ -56,6 +56,7 @@ describe('TaskDetailsUser page', () => {
     progress: 40,
     priority: 'high',
     assignee_name: 'Dev User',
+    assigned_to: 5,
     created_at: '2099-01-01T00:00:00.000Z',
     deadline: '2099-02-01T00:00:00.000Z',
     github_links: [],
@@ -357,6 +358,7 @@ describe('TaskDetailsUser page', () => {
   test('Connect GitHub account link shown when no repos available', async () => {
     taskService.getTaskComments.mockResolvedValue([]);
     githubService.getUserRepos.mockResolvedValue([]);
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer', name: 'Dev User', email: 'dev@example.com' } });
 
     render(<TaskDetailsUser />);
     expect(await screen.findByText(/Connect GitHub Account/i)).toBeInTheDocument();
@@ -407,8 +409,8 @@ describe('TaskDetailsUser page', () => {
     expect(await screen.findByText('Updated notifications task')).toBeInTheDocument();
   });
 
-  test('hides edit task button for non-admin and non-team-lead users', async () => {
-    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer', name: 'Dev User', email: 'dev@example.com' } });
+  test('hides edit task button for non-admin and non-team-lead users who are not assigned', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 999, role: 'developer', name: 'Other User', email: 'other@example.com' } });
 
     render(<TaskDetailsUser />);
 

@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [] }) => {
+const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [], assigneeLocked = false }) => {
   const [task, setTask] = useState({
     title: initialData.title || "",
     description: initialData.description || "",
@@ -10,6 +10,15 @@ const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [] }) => 
     status: initialData.status || "todo",
     priority: initialData.priority || "medium"
   });
+
+  useEffect(() => {
+    if (assigneeLocked && task.assignee === "" && users.length > 0) {
+      setTask((currentTask) => ({
+        ...currentTask,
+        assignee: initialData.assigned_to || users[0].id,
+      }));
+    }
+  }, [assigneeLocked, initialData.assigned_to, task.assignee, users]);
 
   const statusOptions = [
     { value: "todo", label: "To Do" },
@@ -64,6 +73,7 @@ const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [] }) => 
             id="assignee"
             value={task.assignee}
             onChange={(e) => setTask({ ...task, assignee: e.target.value })}
+            disabled={assigneeLocked}
             className="w-full p-2 border border-slate-700/60 rounded bg-slate-950/60 text-slate-100 focus:ring-rose-400/60 focus:border-rose-400/60"
           >
             <option value="">Select Assignee</option>
@@ -73,6 +83,9 @@ const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [] }) => 
               </option>
             ))}
           </select>
+          {assigneeLocked && (
+            <p className="mt-1 text-xs text-slate-500">Developers can only create tasks for themselves.</p>
+          )}
         </div>
         
         <div>

@@ -47,6 +47,8 @@ describe('Navbar component', () => {
         email: 'admin@example.com',
       },
       logout: mockLogout,
+      is: (role) => role === 'admin',
+      can: (perm) => true,
     });
 
     useNotifications.mockReturnValue({
@@ -89,7 +91,6 @@ describe('Navbar component', () => {
     renderNavbar();
 
     expect(screen.getAllByText('Dashboard').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Create Task').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Developer Progress').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Reports').length).toBeGreaterThan(0);
     expect(screen.getAllByText('GitHub').length).toBeGreaterThan(0);
@@ -123,6 +124,8 @@ describe('Navbar component', () => {
         email: 'developer@example.com',
       },
       logout: mockLogout,
+      is: (role) => role === 'developer',
+      can: (perm) => false,
     });
 
     renderNavbar();
@@ -141,7 +144,7 @@ describe('Navbar component', () => {
     expect(screen.queryByText('Create Task')).not.toBeInTheDocument();
   });
 
-  test('shows task creation link for team leads', () => {
+  test('does not show task creation link for team leads', () => {
     useAuth.mockReturnValue({
       currentUser: {
         id: 3,
@@ -150,11 +153,13 @@ describe('Navbar component', () => {
         email: 'lead@example.com',
       },
       logout: mockLogout,
+      is: (role) => role === 'team_lead',
+      can: (perm) => perm === 'can_assign_tasks',
     });
 
     renderNavbar();
 
-    expect(screen.getAllByText('Create Task').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Create Task')).not.toBeInTheDocument();
   });
 
   test('shows logging out state while logout is in progress', async () => {

@@ -71,9 +71,9 @@ function TaskColumns({ tasks = [] }) {
             </div>
           ) : (
             <span className="px-2 py-1 rounded-full bg-slate-700/70 text-slate-300 text-xs">
-              {taskPriority === 'high' ? '❗ High' : 
-               taskPriority === 'medium' ? '⚠️ Medium' : '🔽 Low'}
-            </span>
+                {taskPriority === 'high' ? 'High' : 
+                 taskPriority === 'medium' ? 'Medium' : 'Low'}
+              </span>
           )}
         </div>
       </Link>

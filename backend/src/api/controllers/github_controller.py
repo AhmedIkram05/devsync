@@ -189,7 +189,7 @@ def get_github_repositories():
     per_page = request.args.get('per_page', 30, type=int)
     all_pages_arg = request.args.get('all_pages')
     fetch_all_pages = all_pages_arg is not None and all_pages_arg.lower() == 'true'
-    activity_window_days = max(request.args.get('activity_window_days', 7, type=int) or 7, 1)
+    activity_window_days = max(request.args.get('activity_window_days', 365, type=int) or 365, 1)
     include_activity_arg = request.args.get('include_activity')
     # Default to lightweight repository data unless activity is explicitly requested.
     include_activity = include_activity_arg is not None and include_activity_arg.lower() == 'true'
@@ -300,7 +300,7 @@ def get_github_repositories():
                     repo_info = next((r for r in repos_needing_activity if f"{r['owner']}/{r['repo_name']}" == key), {})
                     activity_results[key] = {
                         'open_issues': repo_info.get('fallback_open_issues', 0),
-                        'open_prs': 0,
+                        'total_prs': 0,
                         'recent_commits': 0,
                     }
         
@@ -319,14 +319,14 @@ def get_github_repositories():
         if include_activity:
             activity_metrics = activity_results.get(key, {
                 'open_issues': repo.get('open_issues_count', 0),
-                'open_prs': 0,
+                'total_prs': 0,
                 'recent_commits': 0,
             })
         else:
             # Return lightweight metrics without making additional GitHub API calls
             activity_metrics = {
                 'open_issues': repo.get('open_issues_count', 0),
-                'open_prs': 0,
+                'total_prs': 0,
                 'recent_commits': 0,
             }
         
@@ -372,7 +372,7 @@ def get_github_repositories():
             'default_branch': repo['default_branch'],
             'open_issues_count': repo['open_issues_count'],
             'open_issues': activity_metrics['open_issues'],
-            'open_prs': activity_metrics['open_prs'],
+            'total_prs': activity_metrics['total_prs'],
             'recent_commits': activity_metrics['recent_commits'],
             'last_updated': repo.get('pushed_at') or repo.get('updated_at'),
             'stargazers_count': repo.get('stargazers_count', 0),

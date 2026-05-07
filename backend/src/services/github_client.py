@@ -10,6 +10,7 @@ import base64
 import uuid
 from datetime import datetime, timedelta, timezone
 from flask import current_app, g, request, redirect
+from urllib.parse import parse_qs, urlparse
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -401,24 +402,104 @@ class GitHubClient:
             item_filter=lambda item: 'pull_request' not in item,
         )
 
-    def get_open_pulls_count(self, owner, repo):
-        """Get count of open pull requests for a repository."""
-        try:
-            pulls = self._make_request(
-                'GET',
-                f"{self.BASE_API_URL}/repos/{owner}/{repo}/pulls",
-                params={
-                    'state': 'open',
-                    'per_page': 1,
-                },
-                use_cache=True,
-                cache_ttl=300,
-            )
+    @staticmethod
+    def _extract_last_page_from_link_header(link_header):
+        """Return the last page number from GitHub's Link header."""
+        if not link_header:
+            return None
 
-            if pulls is None or not isinstance(pulls, list):
+        for link_part in link_header.split(','):
+            if 'rel="last"' not in link_part:
+                continue
+
+            url_start = link_part.find('<')
+            url_end = link_part.find('>')
+            if url_start == -1 or url_end == -1 or url_end <= url_start:
                 return None
 
-            return len(pulls)
+            query = parse_qs(urlparse(link_part[url_start + 1:url_end]).query)
+            page_values = query.get('page')
+            if not page_values:
+                return None
+
+            try:
+                return int(page_values[0])
+            except (TypeError, ValueError):
+                return None
+
+        return None
+
+    def get_total_pulls_count(self, owner, repo, since_days=None):
+        """Get count of pull requests for a repository.
+
+        By default this uses a single-request optimization (per_page=1) and
+        extracts the total from GitHub's Link header. If `since_days` is
+        provided we fall back to iterating the paginated pulls endpoint and
+        filtering by `created_at` to count PRs within the requested window.
+        """
+        try:
+            # Fast path: no time window requested, use Link header optimization
+            if not since_days:
+                url = f"{self.BASE_API_URL}/repos/{owner}/{repo}/pulls"
+                params = {
+                    'state': 'all',
+                    'page': 1,
+                    'per_page': 1,
+                }
+                cache_key = f"COUNT:GET:{url}:{json.dumps(params, sort_keys=True)}"
+
+                if cache_key in self._cache and datetime.now() < self._cache_expiry.get(cache_key, datetime.min):
+                    return self._cache[cache_key]
+
+                response = requests.get(
+                    url,
+                    params=params,
+                    headers=self.get_headers(),
+                )
+
+                if self._handle_rate_limit(response):
+                    response = requests.get(
+                        url,
+                        params=params,
+                        headers=self.get_headers(),
+                    )
+
+                if not 200 <= response.status_code < 300:
+                    logger.error(f"GitHub API error: {response.status_code} - {response.text}")
+                    return None
+
+                pulls = response.json()
+
+                if pulls is None or not isinstance(pulls, list):
+                    return None
+
+                # With per_page=1, the rel="last" page number is the total item count.
+                pull_count = self._extract_last_page_from_link_header(response.headers.get('Link'))
+                if pull_count is None:
+                    pull_count = len(pulls)
+
+                self._cache[cache_key] = pull_count
+                self._cache_expiry[cache_key] = datetime.now() + timedelta(seconds=300)
+                return pull_count
+
+            # Windowed path: count PRs created within the window by filtering pages
+            url = f"{self.BASE_API_URL}/repos/{owner}/{repo}/pulls"
+            params = {'state': 'all'}
+
+            window_days = max(int(since_days or 0), 1)
+            since_dt = datetime.now(timezone.utc) - timedelta(days=window_days)
+
+            def item_filter(item):
+                created_at = item.get('created_at')
+                if not created_at:
+                    return False
+                try:
+                    created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                except Exception:
+                    return False
+                return created_dt >= since_dt
+
+            return self._count_paginated_results(url, params=params, item_filter=item_filter)
         except Exception:
             return None
     
@@ -473,14 +554,14 @@ class GitHubClient:
         # The repository list payload already includes open_issues_count.
         # Reusing it prevents an extra API call per repo and reduces rate-limit pressure.
         open_issues = fallback_open_issues or 0
-        open_prs = 0
+        total_prs = 0
         recent_commits = 0
 
-        pull_count = self.get_open_pulls_count(owner, repo)
+        pull_count = self.get_total_pulls_count(owner, repo, since_days=since_days)
         if pull_count is None:
-            logger.warning(f"Failed to fetch open PRs for {owner}/{repo}; defaulting to 0")
+            logger.warning(f"Failed to fetch total PRs for {owner}/{repo}; defaulting to 0")
         else:
-            open_prs = pull_count
+            total_prs = pull_count
 
         commit_count = self.get_recent_commits(owner, repo, since_days=since_days)
         if commit_count is None:
@@ -490,6 +571,6 @@ class GitHubClient:
 
         return {
             'open_issues': open_issues,
-            'open_prs': open_prs,
+            'total_prs': total_prs,
             'recent_commits': recent_commits,
         }

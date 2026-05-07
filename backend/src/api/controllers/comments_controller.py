@@ -1,10 +1,23 @@
 # Comment controller - business logic
 
+import logging
 from flask import request, jsonify
 from flask_jwt_extended import get_jwt_identity, get_jwt
 from ...db.models import db, Comment, Task, User  # Changed to relative import
 from ...auth.rbac import Role  # Changed to relative import
 from ..validators.comment_validator import validate_comment_data  # Changed to relative import
+from ...services.notification_service import NotificationService
+
+logger = logging.getLogger(__name__)
+
+
+def _run_notification(callback, *args, **kwargs):
+    """Create notifications without making the primary comment mutation fail."""
+    try:
+        callback(*args, **kwargs)
+    except Exception:
+        db.session.rollback()
+        logger.exception("Failed to create comment notification")
 
 def get_task_comments(task_id):
     """Controller function to get all comments for a task"""
@@ -57,6 +70,24 @@ def add_comment(task_id):
     
     db.session.add(new_comment)
     db.session.commit()
+
+    mentioned_user_ids = data.get('mentioned_user_ids') or data.get('mentioned_users') or []
+    recipient_user_ids = {
+        getattr(task, 'assigned_to', None),
+        getattr(task, 'created_by', None),
+    }
+    recipient_user_ids.discard(None)
+
+    _run_notification(
+        NotificationService.comment_added_notification,
+        task_id,
+        getattr(task, 'title', f'Task {task_id}'),
+        getattr(task, 'project_id', None),
+        new_comment.id,
+        user_id,
+        mentioned_user_ids,
+        recipient_user_ids
+    )
     
     # Get user info for response
     user = User.query.get(user_id)

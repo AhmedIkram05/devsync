@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { githubService } from '../services/github';
-import { taskService } from '../services/utils/api';
+import { githubService, taskService } from '../services/utils/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 const panelClass = "bg-slate-900/70 border border-slate-800/70 rounded-2xl p-6 shadow-[0_10px_30px_rgba(0,0,0,0.25)]";

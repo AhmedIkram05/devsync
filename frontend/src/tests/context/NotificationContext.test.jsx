@@ -56,6 +56,7 @@ describe('NotificationContext', () => {
   const socketHandlers = {};
   const socketMock = {
     on: jest.fn(),
+    emit: jest.fn(),
     disconnect: jest.fn(),
   };
 
@@ -66,6 +67,7 @@ describe('NotificationContext', () => {
 
     Object.keys(socketHandlers).forEach((key) => delete socketHandlers[key]);
     socketMock.on.mockReset();
+    socketMock.emit.mockReset();
     socketMock.disconnect.mockReset();
     socketMock.on.mockImplementation((event, callback) => {
       socketHandlers[event] = callback;
@@ -100,6 +102,10 @@ describe('NotificationContext', () => {
       expect(notificationService.getNotifications).toHaveBeenCalled();
     });
 
+    expect(io).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      auth: { token: 'token-1' },
+    }));
+
     await waitFor(() => {
       expect(screen.getByTestId('total-count')).toHaveTextContent('2');
     });
@@ -113,6 +119,7 @@ describe('NotificationContext', () => {
     });
 
     expect(screen.getByTestId('is-connected')).toHaveTextContent('true');
+    expect(socketMock.emit).toHaveBeenCalledWith('register', {}, expect.any(Function));
   });
 
   test('marks notifications as read through API and optimistic state updates', async () => {

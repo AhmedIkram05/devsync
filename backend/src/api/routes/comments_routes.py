@@ -10,8 +10,7 @@ from ..controllers.comments_controller import (
 )
 from ..middlewares.validation_middleware import validate_json
 from ..middlewares import role_required
-from ...auth.rbac import Role
-
+from ...auth.rbac import Role, require_permission
 AUTHENTICATED_ROLES = [Role.DEVELOPER, Role.TEAM_LEAD, Role.ADMIN]
 
 def register_routes(bp):
@@ -27,7 +26,8 @@ def register_routes(bp):
     @bp.route('/tasks/<int:task_id>/comments', methods=['POST'])
     @jwt_required()
     @role_required(AUTHENTICATED_ROLES)
-    @validate_json()  # Fixed: added parentheses
+    @require_permission('can_comment_on_tasks')
+    @validate_json()
     def create_comment(task_id):
         """Route to add a comment to a task"""
         return add_comment(task_id)

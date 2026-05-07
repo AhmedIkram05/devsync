@@ -23,7 +23,6 @@ function TaskDetailsUser() {
   const [githubLinks, setGithubLinks] = useState([]);
   const [loadingIssues, setLoadingIssues] = useState(false);
   const [loadingRepos, setLoadingRepos] = useState(false);
-  const [showGithubLink, setShowGithubLink] = useState(false);
   
   // Comments state
   const [comments, setComments] = useState([]);
@@ -38,7 +37,10 @@ function TaskDetailsUser() {
   const [savingTaskEdit, setSavingTaskEdit] = useState(false);
   const [editError, setEditError] = useState(null);
 
-  const canEditTask = currentUser?.role === 'admin' || currentUser?.role === 'team_lead';
+  const isManager = currentUser?.role === 'admin' || currentUser?.role === 'team_lead';
+  const isAssigned = task?.assigned_to === currentUser?.id;
+  const canEditTask = isManager || isAssigned;
+  const canDeleteTask = isManager || isAssigned;
 
   useEffect(() => {
     const fetchTaskDetails = async () => {
@@ -77,7 +79,6 @@ function TaskDetailsUser() {
         console.error('Failed to fetch repositories:', err);
         setRepositories([]);
       } finally {
-        setShowGithubLink(true);
         setLoadingRepos(false);
       }
     };
@@ -162,6 +163,24 @@ function TaskDetailsUser() {
     setEditError(null);
   };
 
+  const handleDeleteTask = async () => {
+    const confirmDelete = window.confirm('Delete this task? This action cannot be undone.');
+    if (!confirmDelete) {
+      return;
+    }
+
+    try {
+      setUpdateLoading(true);
+      await taskService.deleteTask(id);
+      navigate('/tasks');
+    } catch (err) {
+      console.error('Failed to delete task:', err);
+      alert('Failed to delete task. Please try again.');
+    } finally {
+      setUpdateLoading(false);
+    }
+  };
+
   const handleTaskEditSubmit = async (editedTask) => {
     try {
       setSavingTaskEdit(true);
@@ -211,7 +230,6 @@ function TaskDetailsUser() {
   };
 
   const handleOpenGithubLink = async () => {
-    setShowGithubLink(true);
     if (repositories.length === 0) {
       setLoadingRepos(true);
       try {
@@ -311,9 +329,9 @@ function TaskDetailsUser() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="container mx-auto p-4 md:p-6 max-w-4xl">
-        <div className="bg-slate-900/70 rounded-2xl border border-slate-800/70 overflow-hidden">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
+      <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
+        <div className="bg-slate-900/70 rounded-2xl border border-slate-800/70 overflow-hidden shadow-md backdrop-blur-sm">
         {/* Task Header */}
         <div className="bg-slate-900/90 text-slate-100 p-6 border-b border-slate-800/70">
           <div className="flex justify-between items-start">
@@ -336,19 +354,31 @@ function TaskDetailsUser() {
                 )}
               </div>
             </div>
-            <span 
-              className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                (task.status === 'completed' || task.status === 'done') ? 'bg-emerald-500/15 text-emerald-200' : 
-                task.status === 'in_progress' ? 'bg-amber-500/15 text-amber-200' : 
-                'bg-slate-800/70 text-slate-300'
-              }`}
-            >
-              {task.status === 'in_progress' ? 'In Progress' : 
-               (task.status === 'completed' || task.status === 'done') ? 'Completed' : 
-               task.status === 'todo' ? 'To Do' : 
-               task.status === 'backlog' ? 'Backlog' : 
-               task.status}
-            </span>
+            <div className="flex flex-col items-end gap-3">
+              <span 
+                className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                  (task.status === 'completed' || task.status === 'done') ? 'bg-emerald-500/15 text-emerald-200' : 
+                  task.status === 'in_progress' ? 'bg-amber-500/15 text-amber-200' : 
+                  'bg-slate-800/70 text-slate-300'
+                }`}
+              >
+                {task.status === 'in_progress' ? 'In Progress' : 
+                 (task.status === 'completed' || task.status === 'done') ? 'Completed' : 
+                 task.status === 'todo' ? 'To Do' : 
+                 task.status === 'backlog' ? 'Backlog' : 
+                 task.status}
+              </span>
+              {canDeleteTask && (
+                <button
+                  type="button"
+                  onClick={handleDeleteTask}
+                  disabled={updateLoading}
+                  className="px-4 py-2 rounded-full border border-rose-400/30 text-rose-200 hover:bg-rose-500/10 disabled:opacity-60"
+                >
+                  Delete Task
+                </button>
+              )}
+            </div>
           </div>
         </div>
         
@@ -425,15 +455,15 @@ function TaskDetailsUser() {
             </div>
           </div>
           
-          {/* Progress Update (if task is not completed) */}
-          {task.status !== 'completed' && task.status !== 'done' && (
+          {/* Progress Update (if task is not completed and user can edit) */}
+          {task.status !== 'completed' && task.status !== 'done' && canEditTask && (
             <div className="mb-8">
               <h2 className="text-xl font-semibold mb-4 text-slate-100">Update Progress</h2>
               <div className="bg-slate-950/60 rounded-xl border border-slate-800/70 p-4">
                 <ProgressBar 
                   progress={task.progress || 0}
                   onChange={handleProgressUpdate}
-                  disabled={updateLoading}
+                  disabled={updateLoading || (currentUser.role === 'developer' && !isAssigned)}
                 />
               </div>
             </div>
@@ -480,21 +510,20 @@ function TaskDetailsUser() {
               
               {/* Link new GitHub Issue */}
               <div>
-                <h3 className="font-semibold mb-3 text-slate-100">Link GitHub Issue:</h3>
-                {repositories.length > 0 ? (
+                {canEditTask && repositories.length > 0 ? (
                   <>
-                    <div className="flex flex-col md:flex-row md:items-center gap-2">
+                    <h3 className="font-semibold mb-3 text-slate-100">Link GitHub Issue:</h3>
+                    <div className="flex flex-col sm:flex-row gap-3">
                       <div className="flex-1">
                         <select 
                           className="w-full p-2 border border-slate-700/60 rounded bg-slate-950/60 text-slate-100"
                           value={selectedRepo}
                           onChange={(e) => handleRepoSelect(e.target.value)}
-                          disabled={updateLoading}
                         >
                           <option value="">Select Repository</option>
                           {repositories.map((repo) => (
                             <option key={repo.id} value={repo.id}>
-                              {repo.full_name}
+                              {repo.full_name || repo.name}
                             </option>
                           ))}
                         </select>
@@ -522,11 +551,21 @@ function TaskDetailsUser() {
                       </div>
                     </div>
                   </>
-                ) : (
+                ) : canEditTask ? (
                   <div className="text-center py-4">
                     {loadingRepos ? (
                       <p className="text-slate-400">Loading repositories...</p>
-                    ) : !showGithubLink ? (
+                    ) : repositories.length === 0 ? (
+                      <>
+                        <p className="text-slate-400 mb-4">Connect your GitHub account to link issues</p>
+                        <a 
+                          href="/github" 
+                          className="px-4 py-2 rounded-full bg-rose-500/90 text-white hover:bg-rose-400"
+                        >
+                          Connect GitHub Account
+                        </a>
+                      </>
+                    ) : (
                       <>
                         <p className="text-slate-400 mb-4">Load your GitHub repositories to link issues</p>
                         <button 
@@ -537,18 +576,10 @@ function TaskDetailsUser() {
                           {loadingRepos ? 'Loading...' : 'Load Repositories'}
                         </button>
                       </>
-                    ) : (
-                      <>
-                        <p className="text-slate-400 mb-4">Connect your GitHub account to link issues</p>
-                        <a 
-                          href="/github" 
-                          className="px-4 py-2 rounded-full bg-rose-500/90 text-white hover:bg-rose-400"
-                        >
-                          Connect GitHub Account
-                        </a>
-                      </>
                     )}
                   </div>
+                ) : (
+                  <p className="text-sm text-slate-500 italic text-center py-4">Only the assignee can link GitHub items.</p>
                 )}
               </div>
             </div>

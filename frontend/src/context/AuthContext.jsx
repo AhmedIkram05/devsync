@@ -1,7 +1,9 @@
 import { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { authApi } from '../services/utils/auth';
 import { githubService } from '../services/github';
+import { dashboardService } from '../services/utils/api';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { hasRole, hasPermission } from '../utils/rbac';
 
 const AuthContext = createContext();
 
@@ -9,6 +11,7 @@ export const useAuth = () => useContext(AuthContext);
 
 const VALID_ROLES = new Set(["developer", "team_lead", "admin"]);
 const DEFAULT_ROLE = "developer";
+const REPORT_WARMUP_ROLES = new Set(["team_lead", "admin"]);
 
 const hasValidRole = (user) => user?.role && VALID_ROLES.has(user.role);
 
@@ -38,9 +41,11 @@ export const AuthProvider = ({ children }) => {
   const [githubConnected, setGithubConnected] = useState(initialUser?.github_connected || false);
   const [showGithubPrompt, setShowGithubPrompt] = useState(false);
   const [authInProgress, setAuthInProgress] = useState(false);
+  const [permissions, setPermissions] = useState(initialUser?.permissions || []);
 
   // Keep a ref to track initialization
   const isInitialized = useRef(false);
+  const reportWarmupKeyRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -72,6 +77,22 @@ export const AuthProvider = ({ children }) => {
           if (verifyToken(user) && hasValidRole(user)) {
             // Update the state with the user
             setCurrentUser(user);
+            if (user.permissions) {
+              setPermissions(user.permissions);
+            } else {
+              // Fetch permissions if not in localStorage
+              fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1'}/auth/permissions`, {
+                headers: { 'Authorization': `Bearer ${user.token}` }
+              })
+                .then(res => res.json())
+                .then(data => {
+                  setPermissions(data.permissions || []);
+                  const updatedUser = { ...user, permissions: data.permissions || [] };
+                  localStorage.setItem('user', JSON.stringify(updatedUser));
+                  setCurrentUser(updatedUser);
+                })
+                .catch(err => console.error("Failed to fetch permissions:", err));
+            }
             // Set GitHub connection status if available
             if ("github_connected" in user) {
               setGithubConnected(user.github_connected);
@@ -153,6 +174,19 @@ export const AuthProvider = ({ children }) => {
           throw new Error("This account role is no longer supported. Please contact an administrator.");
         }
         
+        // Fetch permissions
+        try {
+          const permRes = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1'}/auth/permissions`, {
+            headers: { 'Authorization': `Bearer ${userWithToken.token}` }
+          });
+          const permData = await permRes.json();
+          userWithToken.permissions = permData.permissions || [];
+          setPermissions(permData.permissions || []);
+        } catch (err) {
+          console.error("Failed to fetch permissions during login:", err);
+          userWithToken.permissions = [];
+        }
+
         // Save to localStorage first to ensure persistence
         localStorage.setItem("user", JSON.stringify(userWithToken));
         
@@ -226,8 +260,10 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       console.error("Logout error:", err);
     } finally {
+      dashboardService.clearReportDataCache();
       localStorage.removeItem("user");
       setCurrentUser(null);
+      setPermissions([]);
       setGithubConnected(false);
       setShowGithubPrompt(false);
       setAuthInProgress(false);
@@ -265,6 +301,7 @@ export const AuthProvider = ({ children }) => {
     
     // Update GitHub connection status if that information is included
     if (userData && "github_connected" in userData) {
+      dashboardService.clearReportDataCache();
       setGithubConnected(userData.github_connected);
       if (userData.github_connected) {
         // If GitHub is now connected, make sure to hide the prompt
@@ -394,9 +431,58 @@ export const AuthProvider = ({ children }) => {
     verify();
   }, [currentUserId, currentGithubConnected]);
 
+  useEffect(() => {
+    const canAccessReports = currentUser?.role && REPORT_WARMUP_ROLES.has(currentUser.role);
+    const isGithubReady = Boolean(currentUser?.github_connected || githubConnected);
+
+    if (!currentUserId || !canAccessReports || !isGithubReady) {
+      return undefined;
+    }
+
+    const warmupKey = `${currentUserId}:github:week`;
+    if (reportWarmupKeyRef.current === warmupKey) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const runWarmup = () => {
+      if (cancelled) {
+        return;
+      }
+
+      reportWarmupKeyRef.current = warmupKey;
+      dashboardService.prefetchReportData('github', 'week').catch((error) => {
+        console.error('Error warming GitHub report data', error);
+      });
+    };
+
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      const idleId = window.requestIdleCallback(runWarmup, { timeout: 5000 });
+      return () => {
+        cancelled = true;
+        if (typeof window.cancelIdleCallback === 'function') {
+          window.cancelIdleCallback(idleId);
+        }
+      };
+    }
+
+    const timeoutId = window.setTimeout(runWarmup, 1000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [currentUserId, currentUser?.role, currentUser?.github_connected, githubConnected]);
+
+  // RBAC Helpers
+  const can = (permission) => hasPermission(permissions, permission);
+  const is = (role) => hasRole(currentUser?.role, role);
+
   const value = {
     currentUser,
     setCurrentUser: updateUser,
+    permissions,
+    can,
+    is,
     login,
     register,
     logout,

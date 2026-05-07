@@ -10,6 +10,7 @@ from ..controllers.notifications_controller import (
     delete_notification
 )
 from ..middlewares.validation_middleware import validate_json
+from ...auth.rbac import require_permission
 
 def register_routes(bp):
     """Register all notification routes with the provided Blueprint"""
@@ -41,6 +42,7 @@ def register_routes(bp):
     
     @bp.route('/notifications/<int:notification_id>', methods=['DELETE'])
     @jwt_required()
+    @require_permission('can_manage_personal_notifications')
     def delete_notification_route(notification_id):
         """Route to delete a notification"""
         return delete_notification(notification_id)

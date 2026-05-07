@@ -1,21 +1,61 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { notificationService } from '../services/utils/api';
 import { useNotifications } from '../context/NotificationContext';
 
-function Notifications({ notifications = [], onNotificationUpdate }) {
-  const { isLoading, error, rateLimited, refreshNotifications } = useNotifications();
+function Notifications({ notifications = [], onNotificationUpdate, onMarkRead, onDelete }) {
+  const [deletingId, setDeletingId] = useState(null);
+  const {
+    isLoading,
+    error,
+    rateLimited,
+    refreshNotifications,
+    markAsRead: markContextAsRead,
+    deleteNotification: deleteContextNotification
+  } = useNotifications();
 
   const handleNotificationClick = async (notificationId) => {
     if (!notificationId) return;
     
     try {
-      await notificationService.markAsRead(notificationId);
+      if (typeof onMarkRead === 'function') {
+        await onMarkRead(notificationId);
+      } else if (typeof markContextAsRead === 'function') {
+        await markContextAsRead(notificationId);
+      } else {
+        await notificationService.markAsRead(notificationId);
+      }
+
       // Callback to parent to refresh notifications
       if (typeof onNotificationUpdate === 'function') {
         onNotificationUpdate();
       }
     } catch (error) {
       console.error('Failed to mark notification as read:', error);
+    }
+  };
+
+  const handleDeleteNotification = async (event, notificationId) => {
+    event.stopPropagation();
+    if (!notificationId || deletingId === notificationId) return;
+
+    try {
+      setDeletingId(notificationId);
+
+      if (typeof onDelete === 'function') {
+        await onDelete(notificationId);
+      } else if (typeof deleteContextNotification === 'function') {
+        await deleteContextNotification(notificationId);
+      } else {
+        await notificationService.deleteNotification(notificationId);
+      }
+
+      if (typeof onNotificationUpdate === 'function') {
+        onNotificationUpdate();
+      }
+    } catch (error) {
+      console.error('Failed to delete notification:', error);
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -91,7 +131,9 @@ function Notifications({ notifications = [], onNotificationUpdate }) {
           const notificationId = notification?.id || `notification-${Math.random().toString(36).substr(2, 9)}`;
           const isRead = notification?.is_read || notification?.read || false;
           const content = notification?.content || notification?.message || 'No content';
-          const createdAt = notification?.created_at ? new Date(notification.created_at).toLocaleDateString() : 'Unknown date';
+          const title = notification?.title;
+          const timestamp = notification?.created_at || notification?.timestamp;
+          const createdAt = timestamp ? new Date(timestamp).toLocaleDateString() : 'Unknown date';
           
           return (
             <div 
@@ -100,10 +142,23 @@ function Notifications({ notifications = [], onNotificationUpdate }) {
               onClick={() => handleNotificationClick(notificationId)}
             >
               <div className="flex justify-between items-start">
-                <div className="text-slate-200">{content}</div>
+                <div>
+                  {title && <div className="text-sm font-semibold text-slate-100">{title}</div>}
+                  <div className="text-slate-200">{content}</div>
+                </div>
                 <div className="text-xs text-slate-500">
                   {createdAt}
                 </div>
+              </div>
+              <div className="mt-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={(event) => handleDeleteNotification(event, notificationId)}
+                  disabled={deletingId === notificationId}
+                  className="rounded-md border border-rose-400/30 px-2 py-1 text-[11px] font-medium text-rose-300 transition hover:border-rose-300 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {deletingId === notificationId ? 'Deleting...' : 'Delete'}
+                </button>
               </div>
             </div>
           );

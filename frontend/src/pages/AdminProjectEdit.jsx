@@ -120,9 +120,9 @@ const AdminProjectEdit = () => {
   }
 
   return (
-    <div className="bg-slate-950 min-h-screen p-4 md:p-6 text-slate-100">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-slate-900/70 border border-slate-800/70 rounded-2xl shadow-md p-6">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
+      <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
+        <div className="bg-slate-900/70 border border-slate-800/70 rounded-2xl shadow-md p-8 backdrop-blur-sm">
           <div className="mb-6">
             <h1 className="text-2xl font-bold text-slate-100">Edit Project</h1>
             <p className="mt-1 text-sm text-slate-400">Update project details and team assignments.</p>

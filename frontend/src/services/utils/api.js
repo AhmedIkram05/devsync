@@ -113,6 +113,17 @@ const fetchWithAuth = async (endpoint, options = {}) => {
       throw error;
     }
     
+    if (response.status === 403) {
+      const error = new Error('Forbidden. You do not have permission to access this resource.');
+      error.status = 403;
+      error.isAuthError = true;
+      
+      // Redirect to forbidden page
+      window.location.href = '/forbidden';
+      
+      throw error;
+    }
+    
     if (response.status === 400 && isGitHubEndpoint) {
       // Handle GitHub specific errors more gracefully
       let errorData = {};
@@ -161,7 +172,7 @@ const fetchWithAuth = async (endpoint, options = {}) => {
       // For non-critical endpoints, return gracefully instead of throwing
       if (isNonCriticalEndpoint) {
         console.error(`Returning empty data for non-critical endpoint due to error`);
-        return { error: error.message };
+        return { error: error.message, status: error.status };
       }
       
       throw error;
@@ -188,9 +199,28 @@ const fetchWithAuth = async (endpoint, options = {}) => {
 
 // Task related API calls
 const taskService = {
-  getAllTasks: async () => {
+  getAllTasks: async (params = null) => {
     try {
-      const response = await fetchWithAuth('tasks');
+      let endpoint = 'tasks';
+
+      if (params) {
+        if (typeof params === 'string') {
+          endpoint = `tasks${params.startsWith('?') ? params : `?${params}`}`;
+        } else if (typeof params === 'object') {
+          const queryParams = new URLSearchParams();
+          Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+              queryParams.set(key, String(value));
+            }
+          });
+          const queryString = queryParams.toString();
+          if (queryString) {
+            endpoint = `tasks?${queryString}`;
+          }
+        }
+      }
+
+      const response = await fetchWithAuth(endpoint);
       const tasks = response?.tasks ?? response;
       return Array.isArray(tasks) ? tasks : [];
     } catch (error) {
@@ -379,14 +409,14 @@ const normalizeGithubRepository = (repository = {}) => {
     repository.open_issues ?? repository.open_issues_count,
     0
   );
-  const openPrs = toSafeMetricValue(repository.open_prs, 0);
+  const totalPrs = toSafeMetricValue(repository.total_prs, 0);
   const recentCommits = toSafeMetricValue(repository.recent_commits, 0);
 
   return {
     ...repository,
     open_issues: openIssues,
     open_issues_count: toSafeMetricValue(repository.open_issues_count, openIssues),
-    open_prs: openPrs,
+    total_prs: totalPrs,
     recent_commits: recentCommits,
     last_updated: repository.last_updated || repository.pushed_at || repository.updated_at || null,
   };
@@ -402,6 +432,7 @@ const normalizeTaskStatus = (status) => {
 };
 
 const normalizeAdminDashboardTasks = (tasks = {}) => {
+  const backlog = toSafeMetricValue(tasks.backlog, 0);
   const todo = toSafeMetricValue(tasks.todo, 0);
   const inProgress = toSafeMetricValue(tasks.in_progress, 0);
   const review = toSafeMetricValue(tasks.review, 0);
@@ -409,9 +440,10 @@ const normalizeAdminDashboardTasks = (tasks = {}) => {
 
   return {
     ...tasks,
-    total: toSafeMetricValue(tasks.total, todo + inProgress + review + done),
+    total: toSafeMetricValue(tasks.total, backlog + todo + inProgress + review + done),
     active: todo + inProgress + review,
     completed: done,
+    backlog,
     todo,
     in_progress: inProgress,
     review,
@@ -420,26 +452,34 @@ const normalizeAdminDashboardTasks = (tasks = {}) => {
 };
 
 const buildDeveloperProgress = (users, tasks) => {
-  const progressTrackingRoles = new Set(['developer', 'team_lead']);
+  const progressTrackingRoles = new Set(['admin', 'developer', 'team_lead']);
   const tasksByAssignee = new Map();
 
+  const getAssigneeId = (task) => {
+    if (!task) return null;
+    if (task.assigned_to !== undefined && task.assigned_to !== null) return task.assigned_to;
+    if (task.assignedTo !== undefined && task.assignedTo !== null) return task.assignedTo;
+    if (task.assignee !== undefined && task.assignee !== null) return task.assignee;
+    return null;
+  };
+
   tasks.forEach((task) => {
-    if (task?.assigned_to === null || task?.assigned_to === undefined) {
-      return;
-    }
-
-    const assigneeKey = String(task.assigned_to);
-    if (!tasksByAssignee.has(assigneeKey)) {
-      tasksByAssignee.set(assigneeKey, []);
-    }
-
+    const assignee = getAssigneeId(task);
+    if (assignee === null || assignee === undefined) return;
+    const assigneeKey = String(assignee);
+    if (!tasksByAssignee.has(assigneeKey)) tasksByAssignee.set(assigneeKey, []);
     tasksByAssignee.get(assigneeKey).push(task);
   });
+
+  console.log('[buildDeveloperProgress] Tasks by assignee:', tasksByAssignee);
+  console.log('[buildDeveloperProgress] Total tasks with assignees:', Array.from(tasksByAssignee.values()).flat().length);
 
   return users
     .filter((user) => progressTrackingRoles.has(user.role))
     .map((user) => {
       const userTasks = tasksByAssignee.get(String(user.id)) || [];
+      console.log(`[buildDeveloperProgress] User ${user.id} (${user.name}): ${userTasks.length} tasks`);
+      
       let completedCount = 0;
 
       userTasks.forEach((task) => {
@@ -462,6 +502,140 @@ const buildDeveloperProgress = (users, tasks) => {
         recent_tasks: recentTasks
       };
     });
+};
+
+const GITHUB_REPORT_CACHE_TTL_MS = 2 * 60 * 1000;
+const reportDataCache = new Map();
+
+const getReportCacheScope = () => {
+  try {
+    const user = JSON.parse(localStorage.getItem('user') || 'null');
+    return user?.id ? `user:${user.id}` : 'anonymous';
+  } catch {
+    return 'anonymous';
+  }
+};
+
+const getReportCacheKey = (reportType, dateRange) => `${getReportCacheScope()}:${reportType}:${dateRange}`;
+
+const normalizeTaskReportDetails = (tasks = [], users = []) => {
+  const usersById = new Map(
+    (Array.isArray(users) ? users : []).map((user) => [Number(user?.id), user?.name])
+  );
+
+  return (Array.isArray(tasks) ? tasks : []).map((task) => {
+    const assigneeId = task?.assigned_to ?? task?.assignedTo ?? null;
+    const explicitAssigneeName = typeof task?.assignee === 'object'
+      ? task?.assignee?.name
+      : null;
+
+    return {
+      ...task,
+      assignee_name:
+        task?.assignee_name
+        || task?.assigneeName
+        || explicitAssigneeName
+        || usersById.get(Number(assigneeId))
+        || null,
+    };
+  });
+};
+
+const addReportMeta = (reportData, meta = {}) => ({
+  ...reportData,
+  meta: {
+    ...(reportData?.meta || {}),
+    ...meta,
+  },
+});
+
+const getFreshCachedReport = (cacheKey) => {
+  const cached = reportDataCache.get(cacheKey);
+  if (!cached?.data || !cached.fetchedAt) {
+    return null;
+  }
+
+  if (Date.now() - cached.fetchedAt > GITHUB_REPORT_CACHE_TTL_MS) {
+    return null;
+  }
+
+  return addReportMeta(cached.data, { cache_hit: true });
+};
+
+const getReportDataFromNetwork = async (reportType = 'tasks', dateRange = 'week') => {
+  if (reportType === 'github') {
+    const githubStatus = await fetchWithAuth('github/status').catch(() => ({ connected: false }));
+    const connected = Boolean(githubStatus?.connected);
+    const activityWindowDays = getActivityWindowDays(dateRange);
+    const repositories = connected
+      ? await githubService.getUserRepos({
+        perPage: 100,
+        fetchAll: true,
+        activityWindowDays
+      })
+      : [];
+
+    const openIssuesTotal = repositories.reduce((sum, repo) => sum + (repo.open_issues || 0), 0);
+    const totalPrsTotal = repositories.reduce((sum, repo) => sum + (repo.total_prs || 0), 0);
+    const recentCommitsTotal = repositories.reduce((sum, repo) => sum + (repo.recent_commits || 0), 0);
+
+    return {
+      summary: {
+        repos: repositories.length,
+        open_issues: openIssuesTotal,
+        total_prs: totalPrsTotal,
+        recent_commits: recentCommitsTotal
+      },
+      details: repositories
+    };
+  }
+
+  const rangeStart = getDateRangeStart(dateRange);
+  const [tasks, usersResponse] = await Promise.all([
+    taskService.getAllTasks(),
+    fetchWithAuth('users').catch(() => ({ users: [] }))
+  ]);
+
+  const users = Array.isArray(usersResponse?.users) ? usersResponse.users : [];
+  const scopedTasks = tasks.filter((task) => isWithinDateRange(task.created_at, rangeStart));
+
+  if (reportType === 'developers') {
+    const developers = buildDeveloperProgress(users, tasks);
+    const totalTasks = developers.reduce((sum, developer) => sum + (developer.total_tasks || 0), 0);
+    const completedTasks = developers.reduce((sum, developer) => sum + (developer.completed_tasks || 0), 0);
+    const avgCompletion = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+    return {
+      summary: {
+        developers: developers.length,
+        avg_tasks: developers.length > 0 ? Math.round(totalTasks / developers.length) : 0,
+        avg_completion: avgCompletion,
+        active_devs: developers.filter((developer) => developer.active_tasks > 0).length
+      },
+      details: developers
+    };
+  }
+
+  const completed = scopedTasks.filter((task) => normalizeTaskStatus(task.status) === 'done').length;
+  const inProgress = scopedTasks.filter((task) => normalizeTaskStatus(task.status) === 'in_progress').length;
+  const overdue = scopedTasks.filter((task) => {
+    if (!task.deadline) {
+      return false;
+    }
+
+    return new Date(task.deadline) < new Date() && normalizeTaskStatus(task.status) !== 'done';
+  }).length;
+
+  return {
+    summary: {
+      total: scopedTasks.length,
+      completed,
+      in_progress: inProgress,
+      overdue,
+      team_members: users.length
+    },
+    details: normalizeTaskReportDetails(scopedTasks, users)
+  };
 };
 
 // Dashboard service for admin and member dashboards
@@ -493,114 +667,209 @@ const dashboardService = {
       console.error("Dashboard fetch error:", error);
       // Return fallback data structure
       return {
-        tasks: { active: 0, completed: 0 },
-        repositories: [],
-        recentActivity: []
+        taskCounts: { assigned: 0, inProgress: 0, completed: 0, dueSoon: 0 },
+        tasks: { assigned: 0, inProgress: 0, completed: 0, dueSoon: 0 },
+        recentTasks: [],
+        githubActivity: [],
+        projects: [],
+        upcomingDeadlines: []
       };
     }
   },
 
-  getDeveloperProgressStats: async () => {
+  getDeveloperProgressStats: async (options = {}) => {
     try {
-      const [usersResponse, tasks] = await Promise.all([
+      const [usersResponse, tasks, projects] = await Promise.all([
         fetchWithAuth('users'),
-        taskService.getAllTasks()
+        taskService.getAllTasks(),
+        projectService.getAllProjects()
       ]);
 
       const users = Array.isArray(usersResponse?.users) ? usersResponse.users : [];
       const allTasks = Array.isArray(tasks) ? tasks : [];
+      const allProjects = Array.isArray(projects) ? projects : [];
+      const currentUser = options.currentUser || null;
 
-      return buildDeveloperProgress(users, allTasks);
+      console.log('[getDeveloperProgressStats] Users:', users.length);
+      console.log('[getDeveloperProgressStats] Tasks:', allTasks.length, allTasks.slice(0, 3));
+      console.log('[getDeveloperProgressStats] Projects:', allProjects.length);
+      console.log('[getDeveloperProgressStats] currentUser:', currentUser);
+
+      const scopedProjectIds = new Set();
+      if (currentUser?.role === 'team_lead' && currentUser?.id) {
+        allProjects.forEach((project) => {
+          const teamMembers = Array.isArray(project?.team_members) ? project.team_members : [];
+          const teamMemberIds = teamMembers.map((member) => Number(member?.id)).filter(Number.isFinite);
+          const isProjectCreator = Number(project?.created_by) === Number(currentUser.id);
+          const isOnProjectTeam = teamMemberIds.includes(Number(currentUser.id));
+
+          if (isProjectCreator || isOnProjectTeam) {
+            scopedProjectIds.add(Number(project.id));
+          }
+        });
+      }
+
+      const isTeamLead = currentUser?.role === 'team_lead';
+      // Debug: show sample task/project fields to help diagnose scoping issues
+      try {
+        console.log('[getDeveloperProgressStats] Sample tasks:', allTasks.slice(0, 5).map(t => ({ id: t.id, project_id: t.project_id, assigned_to: t.assigned_to })));
+        console.log('[getDeveloperProgressStats] Sample projects:', allProjects.map(p => ({ id: p.id, created_by: p.created_by, team_members: (p.team_members || []).map(m => ({ id: m.id, role: m.role })) })).slice(0,5));
+      } catch (e) {
+        console.warn('[getDeveloperProgressStats] Debug logging failed', e);
+      }
+
+      if (isTeamLead && scopedProjectIds.size === 0) {
+        console.log('[getDeveloperProgressStats] TL with no scoped projects, returning []');
+        return [];
+      }
+
+      const scopedUsers = isTeamLead && scopedProjectIds.size > 0
+        ? users.filter((user) => {
+          if (!['admin', 'developer', 'team_lead'].includes(user.role)) {
+            return false;
+          }
+
+          return allProjects.some((project) => {
+            if (!scopedProjectIds.has(Number(project.id))) {
+              return false;
+            }
+
+            return Array.isArray(project?.team_members)
+              ? project.team_members.some((member) => Number(member?.id) === Number(user.id) && ['admin', 'developer', 'team_lead'].includes(member?.role))
+              : false;
+          });
+        })
+        : users;
+
+      const getTaskProjectId = (task) => {
+        if (!task) return null;
+        if (task.project_id !== undefined && task.project_id !== null) return task.project_id;
+        if (task.projectId !== undefined && task.projectId !== null) return task.projectId;
+        if (task.project && task.project.id !== undefined && task.project.id !== null) return task.project.id;
+        return null;
+      };
+
+      const scopedUserIds = new Set((isTeamLead ? scopedUsers.map(u => Number(u.id)).filter(Number.isFinite) : []));
+
+      const getTaskAssigneeId = (task) => {
+        if (!task) return null;
+        if (task.assigned_to !== undefined && task.assigned_to !== null) return task.assigned_to;
+        if (task.assignedTo !== undefined && task.assignedTo !== null) return task.assignedTo;
+        if (task.assignee !== undefined && task.assignee !== null) return task.assignee;
+        return null;
+      };
+
+      const scopedTasks = isTeamLead && scopedProjectIds.size > 0
+        ? allTasks.filter((task) => {
+          const pid = getTaskProjectId(task);
+          const aid = getTaskAssigneeId(task);
+          const inProject = pid !== null && scopedProjectIds.has(Number(pid));
+          const assignedToTeam = aid !== null && scopedUserIds.has(Number(aid));
+          return inProject || assignedToTeam;
+        })
+        : allTasks;
+      if (isTeamLead && scopedProjectIds.size > 0 && scopedTasks.length === 0) {
+        console.warn('[getDeveloperProgressStats] No scoped tasks found for TL - inspecting all tasks vs scopedProjectIds', Array.from(scopedProjectIds));
+        allTasks.forEach((task) => {
+          console.log('[getDeveloperProgressStats] task:', task.id, 'project_id:', task.project_id, 'Number(project_id):', Number(task.project_id));
+        });
+      }
+
+      console.log('[getDeveloperProgressStats] Scoped users:', scopedUsers.length);
+      console.log('[getDeveloperProgressStats] Scoped tasks:', scopedTasks.length, scopedTasks.slice(0, 3));
+
+      const result = buildDeveloperProgress(scopedUsers, scopedTasks);
+      console.log('[getDeveloperProgressStats] Result:', result);
+      return result;
     } catch (error) {
       console.error('Failed to fetch developer progress stats:', error);
       return [];
     }
   },
 
-  getReportData: async (reportType = 'tasks', dateRange = 'week') => {
-    try {
-      const rangeStart = getDateRangeStart(dateRange);
-      const [tasks, usersResponse] = await Promise.all([
-        taskService.getAllTasks(),
-        fetchWithAuth('users').catch(() => ({ users: [] }))
-      ]);
+  getReportData: async (reportType = 'tasks', dateRange = 'week', options = {}) => {
+    const cacheKey = getReportCacheKey(reportType, dateRange);
+    const isGithubReport = reportType === 'github';
+    const forceRefresh = Boolean(options?.forceRefresh);
 
-      const users = Array.isArray(usersResponse?.users) ? usersResponse.users : [];
-      const scopedTasks = tasks.filter((task) => isWithinDateRange(task.created_at, rangeStart));
-
-      if (reportType === 'developers') {
-        const developers = buildDeveloperProgress(users, tasks);
-        const totalTasks = developers.reduce((sum, developer) => sum + (developer.total_tasks || 0), 0);
-        const completedTasks = developers.reduce((sum, developer) => sum + (developer.completed_tasks || 0), 0);
-        const avgCompletion = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-
-        return {
-          summary: {
-            developers: developers.length,
-            avg_tasks: developers.length > 0 ? Math.round(totalTasks / developers.length) : 0,
-            avg_completion: avgCompletion,
-            active_devs: developers.filter((developer) => developer.active_tasks > 0).length
-          },
-          details: developers
-        };
+    if (isGithubReport && !forceRefresh) {
+      const cachedReport = getFreshCachedReport(cacheKey);
+      if (cachedReport) {
+        return cachedReport;
       }
 
-      if (reportType === 'github') {
-        const githubStatus = await fetchWithAuth('github/status').catch(() => ({ connected: false }));
-        const connected = Boolean(githubStatus?.connected);
-        const activityWindowDays = getActivityWindowDays(dateRange);
-        const repositories = connected
-          ? await githubService.getUserRepos({
-            perPage: 100,
-            fetchAll: true,
-            activityWindowDays
-          })
-          : [];
-
-        // Calculate totals from enriched repo data
-        const openIssuesTotal = repositories.reduce((sum, repo) => sum + (repo.open_issues || 0), 0);
-        const openPrsTotal = repositories.reduce((sum, repo) => sum + (repo.open_prs || 0), 0);
-        const recentCommitsTotal = repositories.reduce((sum, repo) => sum + (repo.recent_commits || 0), 0);
-
-        return {
-          summary: {
-            repos: repositories.length,
-            open_issues: openIssuesTotal,
-            open_prs: openPrsTotal,
-            recent_commits: recentCommitsTotal
-          },
-          details: repositories
-        };
+      const pendingReport = reportDataCache.get(cacheKey)?.promise;
+      if (pendingReport) {
+        return pendingReport;
       }
+    }
 
-      const completed = scopedTasks.filter((task) => normalizeTaskStatus(task.status) === 'done').length;
-      const inProgress = scopedTasks.filter((task) => normalizeTaskStatus(task.status) === 'in_progress').length;
-      const overdue = scopedTasks.filter((task) => {
-        if (!task.deadline) {
-          return false;
+    const reportPromise = (async () => {
+      try {
+        const data = await getReportDataFromNetwork(reportType, dateRange);
+        const fetchedAt = Date.now();
+        const report = addReportMeta(data, {
+          cache_hit: false,
+          fetched_at: new Date(fetchedAt).toISOString(),
+          live: true,
+        });
+
+        if (isGithubReport) {
+          reportDataCache.set(cacheKey, {
+            data: report,
+            fetchedAt,
+          });
         }
 
-        return new Date(task.deadline) < new Date() && normalizeTaskStatus(task.status) !== 'done';
-      }).length;
+        return report;
+      } catch (error) {
+        console.error('Failed to fetch report data:', error);
+        if (isGithubReport) {
+          reportDataCache.delete(cacheKey);
+        }
 
-      return {
-        summary: {
-          total: scopedTasks.length,
-          completed,
-          in_progress: inProgress,
-          overdue,
-          team_members: users.length
-        },
-        details: scopedTasks
-      };
-    } catch (error) {
-      console.error('Failed to fetch report data:', error);
-      return {
-        summary: {},
-        details: []
-      };
+        return {
+          summary: {},
+          details: [],
+          meta: {
+            cache_hit: false,
+            fetched_at: new Date().toISOString(),
+            live: false,
+          },
+        };
+      }
+    })();
+
+    if (isGithubReport) {
+      reportDataCache.set(cacheKey, {
+        promise: reportPromise,
+        fetchedAt: 0,
+      });
     }
-  }
+
+    return reportPromise;
+  },
+
+  prefetchReportData: async (reportType = 'github', dateRange = 'year') => {
+    try {
+      return await dashboardService.getReportData(reportType, dateRange);
+    } catch (error) {
+      console.error('Failed to prefetch report data:', error);
+      return null;
+    }
+  },
+
+  invalidateReportData: (reportType = 'github', dateRange = 'year') => {
+    reportDataCache.delete(getReportCacheKey(reportType, dateRange));
+  },
+
+  clearReportDataCache: () => {
+    reportDataCache.clear();
+  },
+
+  refreshReportData: async (reportType = 'github', dateRange = 'year') => (
+    dashboardService.getReportData(reportType, dateRange, { forceRefresh: true })
+  )
 };
 
 // Enhanced GitHub service with better error handling
@@ -783,6 +1052,17 @@ const githubService = {
 
 // User-related API calls
 const userService = {
+  getAllUsers: async () => {
+    try {
+      const response = await fetchWithAuth('users');
+      const users = response?.users ?? response;
+      return Array.isArray(users) ? users : [];
+    } catch (error) {
+      console.error("Failed to fetch all users:", error);
+      return [];
+    }
+  },
+
   getAllDevelopers: async () => {
     try {
       const response = await fetchWithAuth('users?role=developer');
@@ -810,14 +1090,30 @@ const notificationService = {
       const response = await fetchWithAuth('notifications');
       
       // Handle potential auth errors
-      if (response.error) {
+      if (response?.isConnectionError) {
+        return response;
+      }
+
+      if (response?.isAuthError || (response?.error && !response?.status)) {
         return [];
+      }
+
+      if (response?.error) {
+        const error = new Error(response.error);
+        error.status = response.status;
+        throw error;
       }
       
       return response?.notifications || response || [];
     } catch (error) {
       console.error("Failed to fetch notifications:", error);
-      return [];
+      if (error?.isConnectionError) {
+        return {
+          error: error.message,
+          isConnectionError: true
+        };
+      }
+      throw error;
     }
   },
   
@@ -831,6 +1127,173 @@ const notificationService = {
     return await fetchWithAuth('notifications/read-all', {
       method: 'PUT'
     });
+  },
+
+  deleteNotification: async (notificationId) => {
+    return await fetchWithAuth(`notifications/${notificationId}`, {
+      method: 'DELETE'
+    });
+  }
+};
+
+
+// Report service
+const reportService = {
+  saveReport: async (reportType, dateRange, summary, details) => {
+    try {
+      const response = await fetchWithAuth('reports', {
+        method: 'POST',
+        body: JSON.stringify({
+          report_type: reportType,
+          date_range: dateRange,
+          summary,
+          details
+        })
+      });
+      return response;
+    } catch (error) {
+      console.error('Failed to save report:', error);
+      return { error: error.message };
+    }
+  },
+
+  getSavedReports: async (filter = {}) => {
+    try {
+      let endpoint = 'reports';
+      const params = new URLSearchParams();
+      
+      if (filter.type) params.append('type', filter.type);
+      if (filter.dateRange) params.append('dateRange', filter.dateRange);
+      if (filter.page) params.append('page', filter.page);
+      if (filter.per_page) params.append('per_page', filter.per_page);
+      
+      const queryString = params.toString();
+      if (queryString) {
+        endpoint = `${endpoint}?${queryString}`;
+      }
+      
+      const response = await fetchWithAuth(endpoint);
+      return response;
+    } catch (error) {
+      console.error('Failed to fetch saved reports:', error);
+      return { error: error.message, reports: [] };
+    }
+  },
+
+  getReportById: async (reportId) => {
+    try {
+      const response = await fetchWithAuth(`reports/${reportId}`);
+      return response;
+    } catch (error) {
+      console.error(`Failed to fetch report ${reportId}:`, error);
+      return { error: error.message };
+    }
+  },
+
+  deleteReport: async (reportId) => {
+    try {
+      const response = await fetchWithAuth(`reports/${reportId}`, {
+        method: 'DELETE'
+      });
+      return response;
+    } catch (error) {
+      console.error(`Failed to delete report ${reportId}:`, error);
+      return { error: error.message };
+    }
+  }
+};
+
+// Admin user management service
+const adminUserService = {
+  getAllUsers: async () => {
+    try {
+      const response = await fetchWithAuth('admin/users');
+      const users = response?.users ?? response;
+      return Array.isArray(users) ? users : [];
+    } catch (error) {
+      console.error('Failed to fetch admin users:', error);
+      return [];
+    }
+  },
+
+  createUser: async (data) => {
+    return await fetchWithAuth('admin/users', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  },
+
+  updateUser: async (userId, data) => {
+    return await fetchWithAuth(`admin/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  },
+
+  updateUserRole: async (userId, role) => {
+    return await fetchWithAuth(`admin/users/${userId}/role`, {
+      method: 'PUT',
+      body: JSON.stringify({ role })
+    });
+  },
+
+  deleteUser: async (userId) => {
+    return await fetchWithAuth(`admin/users/${userId}`, {
+      method: 'DELETE'
+    });
+  }
+};
+
+// System settings service
+const settingsService = {
+  getSettings: async () => {
+    try {
+      const response = await fetchWithAuth('admin/settings');
+      return response?.settings ?? response ?? {};
+    } catch (error) {
+      console.error('Failed to fetch settings:', error);
+      return {};
+    }
+  },
+
+  updateSettings: async (data) => {
+    return await fetchWithAuth('admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  }
+};
+
+// Audit log service
+const auditLogService = {
+  getLogs: async (filters = {}) => {
+    try {
+      const params = new URLSearchParams();
+      if (filters.action) params.set('action', filters.action);
+      if (filters.actor) params.set('actor', filters.actor);
+      if (filters.from) params.set('from', filters.from);
+      if (filters.to) params.set('to', filters.to);
+      if (filters.page) params.set('page', String(filters.page));
+      if (filters.per_page) params.set('per_page', String(filters.per_page));
+
+      const qs = params.toString();
+      const endpoint = qs ? `admin/audit-logs?${qs}` : 'admin/audit-logs';
+      const response = await fetchWithAuth(endpoint);
+      return response ?? { logs: [], total: 0, pages: 0, current_page: 1 };
+    } catch (error) {
+      console.error('Failed to fetch audit logs:', error);
+      return { logs: [], total: 0, pages: 0, current_page: 1 };
+    }
+  },
+
+  getLogById: async (logId) => {
+    try {
+      const response = await fetchWithAuth(`admin/audit-logs/${logId}`);
+      return response?.log ?? response ?? null;
+    } catch (error) {
+      console.error(`Failed to fetch audit log ${logId}:`, error);
+      return null;
+    }
   }
 };
 
@@ -841,5 +1304,10 @@ export {
   githubService,
   userService,
   dashboardService,
-  notificationService
+  notificationService,
+  reportService,
+  adminUserService,
+  settingsService,
+  auditLogService,
+  normalizeTaskReportDetails
 };

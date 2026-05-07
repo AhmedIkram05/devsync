@@ -39,7 +39,7 @@ describe('Reports page', () => {
     summary: {
       repos: 4,
       open_issues: 12,
-      open_prs: 3,
+      total_prs: 3,
       recent_commits: 18,
     },
     details: [
@@ -48,7 +48,7 @@ describe('Reports page', () => {
         name: 'devsync',
         owner: 'ahmedikram',
         open_issues_count: 12,
-        open_prs: 3,
+        total_prs: 3,
         recent_commits: 18,
       },
     ],
@@ -101,7 +101,7 @@ describe('Reports page', () => {
     render(<Reports />);
 
     await waitFor(() => {
-      expect(dashboardService.getReportData).toHaveBeenCalledWith('tasks', 'week');
+      expect(dashboardService.getReportData).toHaveBeenCalledWith('tasks', 'week', { forceRefresh: false });
     });
 
     expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
@@ -122,7 +122,7 @@ describe('Reports page', () => {
     });
 
     await waitFor(() => {
-      expect(dashboardService.getReportData).toHaveBeenCalledWith('github', 'week');
+      expect(dashboardService.getReportData).toHaveBeenCalledWith('github', 'week', { forceRefresh: false });
     });
 
     expect(await screen.findByText('Connected Repos')).toBeInTheDocument();
@@ -134,7 +134,7 @@ describe('Reports page', () => {
     });
 
     await waitFor(() => {
-      expect(dashboardService.getReportData).toHaveBeenCalledWith('github', 'month');
+      expect(dashboardService.getReportData).toHaveBeenCalledWith('github', 'month', { forceRefresh: false });
     });
 
     fireEvent.change(await screen.findByDisplayValue('GitHub Activity'), {
@@ -142,7 +142,7 @@ describe('Reports page', () => {
     });
 
     await waitFor(() => {
-      expect(dashboardService.getReportData).toHaveBeenCalledWith('developers', 'month');
+      expect(dashboardService.getReportData).toHaveBeenCalledWith('developers', 'month', { forceRefresh: false });
     });
 
     expect(await screen.findByText('Team Members')).toBeInTheDocument();
@@ -197,5 +197,26 @@ describe('Reports page', () => {
     URL.revokeObjectURL = originalRevokeObjectURL;
     createElementSpy.mockRestore();
     clickSpy.mockRestore();
+  });
+
+  test('github report displays total_prs summary card', async () => {
+    render(<Reports />);
+
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+
+    // Switch to GitHub report using the report type select
+    const reportSelects = screen.getAllByRole('combobox');
+    fireEvent.change(reportSelects[0], { target: { value: 'github' } });
+
+    // Verify GitHub report is displayed with correct summary cards
+    await waitFor(() => {
+      expect(dashboardService.getReportData).toHaveBeenCalledWith('github', 'week', { forceRefresh: false });
+    });
+
+    // Verify all GitHub summary cards are rendered including Total PRs
+    expect(await screen.findByText('Total PRs')).toBeInTheDocument();
+    expect(screen.getByText('Connected Repos')).toBeInTheDocument();
+    expect(screen.getByText('Open Issues')).toBeInTheDocument();
+    expect(screen.getByText('Recent Commits')).toBeInTheDocument();
   });
 });

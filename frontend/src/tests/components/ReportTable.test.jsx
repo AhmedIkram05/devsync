@@ -45,6 +45,7 @@ describe('ReportTable', () => {
     expect(screen.getByText('Review')).toBeInTheDocument();
     expect(screen.getByText('Backlog')).toBeInTheDocument();
     expect(screen.getByText('Completed')).toBeInTheDocument();
+    expect(screen.getByText('Assignee 2')).toBeInTheDocument();
     expect(screen.getAllByText('View').length).toBe(5);
     expect(screen.getAllByText('Unassigned').length).toBeGreaterThan(0);
   });
@@ -55,7 +56,7 @@ describe('ReportTable', () => {
         name: 'devsync',
         owner: 'ahmedikram',
         open_issues_count: 3,
-        open_prs: 2,
+        total_prs: 2,
         recent_commits: 6,
         updated_at: '2099-03-01T00:00:00.000Z',
         html_url: 'https://github.com/AhmedIkram05/devsync',

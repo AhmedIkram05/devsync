@@ -27,6 +27,7 @@ def app(monkeypatch):
 
     monkeypatch.setattr(admin_routes, 'jwt_required', passthrough_decorator)
     monkeypatch.setattr(admin_routes, 'admin_required', passthrough_decorator)
+    monkeypatch.setattr(admin_routes, 'role_at_least', passthrough_decorator)
     monkeypatch.setattr(admin_routes, 'validate_json', passthrough_decorator)
     monkeypatch.setattr(admin_routes, 'rate_limit', passthrough_decorator)
 
