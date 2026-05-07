@@ -12,6 +12,7 @@ from . import notifications_routes
 from . import dashboard_routes
 from . import admin_routes
 from . import github_routes
+from . import audit_routes
 
 """API routes registration"""
 
@@ -25,7 +26,8 @@ from . import (
     dashboard_routes,
     admin_routes,
     notifications_routes,
-    github_routes
+    github_routes,
+    audit_routes
 )
 
 def register_all_routes(app):
@@ -42,6 +44,7 @@ def register_all_routes(app):
     admin_routes.register_routes(api_bp)
     notifications_routes.register_routes(api_bp)
     github_routes.register_routes(api_bp)
+    audit_routes.register_routes(api_bp)
     
     # Register blueprint with app
     app.register_blueprint(api_bp, url_prefix='/api')

@@ -21,7 +21,9 @@ def app(monkeypatch):
     app.config['JWT_SECRET_KEY'] = 'jwt-secret-key'
 
     monkeypatch.setattr(notifications_routes, 'jwt_required', passthrough_decorator)
-    monkeypatch.setattr(notifications_routes, 'validate_json', passthrough_decorator)
+    monkeypatch.setattr(notifications_routes, 'validate_json', passthrough_decorator, raising=False)
+    monkeypatch.setattr(notifications_routes, 'require_permission', passthrough_decorator, raising=False)
+    monkeypatch.setattr(notifications_routes, 'admin_required', passthrough_decorator, raising=False)
 
     bp = Blueprint('api', __name__, url_prefix='/api/v1')
     notifications_routes.register_routes(bp)
