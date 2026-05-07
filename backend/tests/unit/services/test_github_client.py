@@ -203,21 +203,26 @@ class TestGitHubClient(unittest.TestCase):
         self.assertEqual(called_kwargs['headers'], self.client.get_headers())
 
     @patch('backend.src.services.github_client.requests.get')
-    def test_get_open_pulls_count_uses_repository_pulls_endpoint(self, mock_get):
+    def test_get_total_pulls_count_uses_repository_pulls_endpoint(self, mock_get):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = [{'number': 1}]
-        mock_response.headers = {}
+        mock_response.headers = {
+            'Link': (
+                '<https://api.github.com/repos/owner/repo1/pulls?state=all&page=2&per_page=1>; rel="next", '
+                '<https://api.github.com/repos/owner/repo1/pulls?state=all&page=42&per_page=1>; rel="last"'
+            )
+        }
         mock_get.return_value = mock_response
 
-        pull_count = self.client.get_open_pulls_count('owner', 'repo1')
+        pull_count = self.client.get_total_pulls_count('owner', 'repo1')
 
-        # New optimized behavior: returns count from first page only (not paginated)
-        self.assertEqual(pull_count, 1)
+        self.assertEqual(pull_count, 42)
         called_url = mock_get.call_args.args[0]
         called_kwargs = mock_get.call_args.kwargs
         self.assertEqual(called_url, 'https://api.github.com/repos/owner/repo1/pulls')
-        self.assertEqual(called_kwargs['params']['state'], 'open')
+        self.assertEqual(called_kwargs['params']['state'], 'all')
+        self.assertEqual(called_kwargs['params']['page'], 1)
         self.assertEqual(called_kwargs['params']['per_page'], 1)
 
     @patch('backend.src.services.github_client.requests.get')
@@ -240,7 +245,7 @@ class TestGitHubClient(unittest.TestCase):
         self.assertEqual(called_kwargs['params']['state'], 'open')
 
     @patch.object(GitHubClient, 'get_recent_commits', return_value=None)
-    @patch.object(GitHubClient, 'get_open_pulls_count', return_value=3)
+    @patch.object(GitHubClient, 'get_total_pulls_count', return_value=3)
     @patch.object(GitHubClient, 'get_open_issues_count', return_value=None)
     def test_get_repository_activity_summary_keeps_fallback_issue_count(
         self,
@@ -256,7 +261,7 @@ class TestGitHubClient(unittest.TestCase):
         )
 
         self.assertEqual(summary['open_issues'], 9)
-        self.assertEqual(summary['open_prs'], 3)
+        self.assertEqual(summary['total_prs'], 3)
         self.assertEqual(summary['recent_commits'], 0)
 
     def test_parse_state_param_invalid(self):

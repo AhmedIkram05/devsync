@@ -55,7 +55,7 @@ describe('ReportTable', () => {
         name: 'devsync',
         owner: 'ahmedikram',
         open_issues_count: 3,
-        open_prs: 2,
+        total_prs: 2,
         recent_commits: 6,
         updated_at: '2099-03-01T00:00:00.000Z',
         html_url: 'https://github.com/AhmedIkram05/devsync',

@@ -29,6 +29,7 @@ describe('api utilities', () => {
 
     localStorage.clear();
     global.fetch = jest.fn();
+    dashboardService.clearReportDataCache();
   });
 
   afterEach(() => {
@@ -341,8 +342,6 @@ describe('api utilities', () => {
 
   test('getReportData github branch when connected returns normalized repos', async () => {
     global.fetch
-      .mockResolvedValueOnce(buildResponse({ tasks: [] }))
-      .mockResolvedValueOnce(buildResponse({ users: [] }))
       .mockResolvedValueOnce(buildResponse({ connected: true }))
       .mockResolvedValueOnce(
         buildResponse({
@@ -351,7 +350,7 @@ describe('api utilities', () => {
               id: 1,
               full_name: 'org/r',
               open_issues_count: 5,
-              open_prs: 2,
+              total_prs: 2,
               recent_commits: 4,
               updated_at: '2099-01-01T00:00:00.000Z',
             },
@@ -362,11 +361,13 @@ describe('api utilities', () => {
     const report = await dashboardService.getReportData('github', 'month');
     expect(report.summary.repos).toBe(1);
     expect(report.summary.open_issues).toBe(5);
+    expect(report.summary.total_prs).toBe(2);
     expect(report.details[0].open_issues).toBe(5);
+    expect(report.details[0].total_prs).toBe(2);
     expect(report.details[0].last_updated).toBe('2099-01-01T00:00:00.000Z');
-    expect(global.fetch.mock.calls[3][0]).toContain('include_activity=true');
-    expect(global.fetch.mock.calls[3][0]).toContain('all_pages=true');
-    expect(global.fetch.mock.calls[3][0]).toContain('per_page=100');
+    expect(global.fetch.mock.calls[1][0]).toContain('include_activity=true');
+    expect(global.fetch.mock.calls[1][0]).toContain('all_pages=true');
+    expect(global.fetch.mock.calls[1][0]).toContain('per_page=100');
   });
 
   test('buildDeveloperProgress: task with no assigned_to is skipped', async () => {
@@ -385,6 +386,85 @@ describe('api utilities', () => {
     const dev = progress.find((p) => p.id === 1);
     expect(dev.completed_tasks).toBe(1);
     expect(dev.total_tasks).toBe(1);
+  });
+
+  test('getReportData github: aggregates total_prs across multiple repositories', async () => {
+    global.fetch
+      .mockResolvedValueOnce(buildResponse({ connected: true }))
+      .mockResolvedValueOnce(
+        buildResponse({
+          repositories: [
+            {
+              id: 1,
+              name: 'repo1',
+              owner: 'org',
+              full_name: 'org/repo1',
+              open_issues_count: 5,
+              total_prs: 3,
+              recent_commits: 10,
+              updated_at: '2099-01-01T00:00:00.000Z',
+            },
+            {
+              id: 2,
+              name: 'repo2',
+              owner: 'org',
+              full_name: 'org/repo2',
+              open_issues_count: 2,
+              total_prs: 8,
+              recent_commits: 5,
+              updated_at: '2099-01-02T00:00:00.000Z',
+            },
+            {
+              id: 3,
+              name: 'repo3',
+              owner: 'user',
+              full_name: 'user/repo3',
+              open_issues_count: 10,
+              total_prs: 0,
+              recent_commits: 2,
+              updated_at: '2099-01-03T00:00:00.000Z',
+            },
+          ],
+        })
+      );
+
+    const report = await dashboardService.getReportData('github', 'month');
+    
+    expect(report.summary.repos).toBe(3);
+    expect(report.summary.open_issues).toBe(17); // 5 + 2 + 10
+    expect(report.summary.total_prs).toBe(11); // 3 + 8 + 0
+    expect(report.summary.recent_commits).toBe(17); // 10 + 5 + 2
+    expect(report.details).toHaveLength(3);
+    expect(report.details[0].total_prs).toBe(3);
+    expect(report.details[1].total_prs).toBe(8);
+    expect(report.details[2].total_prs).toBe(0);
+  });
+
+  test('prefetchReportData warms the GitHub report cache', async () => {
+    localStorage.setItem('user', JSON.stringify({ id: 77, token: 'token-77' }));
+    global.fetch
+      .mockResolvedValueOnce(buildResponse({ connected: true }))
+      .mockResolvedValueOnce(
+        buildResponse({
+          repositories: [
+            {
+              id: 1,
+              name: 'repo1',
+              open_issues_count: 1,
+              total_prs: 6,
+              recent_commits: 2,
+            },
+          ],
+        })
+      );
+
+    const warmedReport = await dashboardService.prefetchReportData('github', 'week');
+    const cachedReport = await dashboardService.getReportData('github', 'week');
+
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(warmedReport.summary.total_prs).toBe(6);
+    expect(cachedReport.summary.total_prs).toBe(6);
+    expect(cachedReport.meta.cache_hit).toBe(true);
   });
 
   test('buildDeveloperProgress: admin role is excluded, team_lead included', async () => {
@@ -575,7 +655,7 @@ describe('api utilities', () => {
         id: 5,
         open_issues_count: 4,
         open_issues: 4,
-        open_prs: 0,
+        total_prs: 0,
         recent_commits: 0,
         pushed_at: '2099-02-01T00:00:00.000Z',
         last_updated: '2099-02-01T00:00:00.000Z',

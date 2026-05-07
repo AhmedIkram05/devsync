@@ -91,7 +91,7 @@ const ReportTable = ({ data = [], type }) => {
         case 'Issues':
           return item.open_issues ?? item.open_issues_count ?? 0;
         case 'PRs':
-          return item.open_prs || 0;
+          return item.total_prs || 0;
         case 'Commits':
           return item.recent_commits || 0;
         case 'Last Updated':

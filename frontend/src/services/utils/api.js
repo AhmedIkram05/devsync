@@ -390,14 +390,14 @@ const normalizeGithubRepository = (repository = {}) => {
     repository.open_issues ?? repository.open_issues_count,
     0
   );
-  const openPrs = toSafeMetricValue(repository.open_prs, 0);
+  const totalPrs = toSafeMetricValue(repository.total_prs, 0);
   const recentCommits = toSafeMetricValue(repository.recent_commits, 0);
 
   return {
     ...repository,
     open_issues: openIssues,
     open_issues_count: toSafeMetricValue(repository.open_issues_count, openIssues),
-    open_prs: openPrs,
+    total_prs: totalPrs,
     recent_commits: recentCommits,
     last_updated: repository.last_updated || repository.pushed_at || repository.updated_at || null,
   };
@@ -477,6 +477,117 @@ const buildDeveloperProgress = (users, tasks) => {
     });
 };
 
+const GITHUB_REPORT_CACHE_TTL_MS = 2 * 60 * 1000;
+const reportDataCache = new Map();
+
+const getReportCacheScope = () => {
+  try {
+    const user = JSON.parse(localStorage.getItem('user') || 'null');
+    return user?.id ? `user:${user.id}` : 'anonymous';
+  } catch {
+    return 'anonymous';
+  }
+};
+
+const getReportCacheKey = (reportType, dateRange) => `${getReportCacheScope()}:${reportType}:${dateRange}`;
+
+const addReportMeta = (reportData, meta = {}) => ({
+  ...reportData,
+  meta: {
+    ...(reportData?.meta || {}),
+    ...meta,
+  },
+});
+
+const getFreshCachedReport = (cacheKey) => {
+  const cached = reportDataCache.get(cacheKey);
+  if (!cached?.data || !cached.fetchedAt) {
+    return null;
+  }
+
+  if (Date.now() - cached.fetchedAt > GITHUB_REPORT_CACHE_TTL_MS) {
+    return null;
+  }
+
+  return addReportMeta(cached.data, { cache_hit: true });
+};
+
+const getReportDataFromNetwork = async (reportType = 'tasks', dateRange = 'week') => {
+  if (reportType === 'github') {
+    const githubStatus = await fetchWithAuth('github/status').catch(() => ({ connected: false }));
+    const connected = Boolean(githubStatus?.connected);
+    const activityWindowDays = getActivityWindowDays(dateRange);
+    const repositories = connected
+      ? await githubService.getUserRepos({
+        perPage: 100,
+        fetchAll: true,
+        activityWindowDays
+      })
+      : [];
+
+    const openIssuesTotal = repositories.reduce((sum, repo) => sum + (repo.open_issues || 0), 0);
+    const totalPrsTotal = repositories.reduce((sum, repo) => sum + (repo.total_prs || 0), 0);
+    const recentCommitsTotal = repositories.reduce((sum, repo) => sum + (repo.recent_commits || 0), 0);
+
+    return {
+      summary: {
+        repos: repositories.length,
+        open_issues: openIssuesTotal,
+        total_prs: totalPrsTotal,
+        recent_commits: recentCommitsTotal
+      },
+      details: repositories
+    };
+  }
+
+  const rangeStart = getDateRangeStart(dateRange);
+  const [tasks, usersResponse] = await Promise.all([
+    taskService.getAllTasks(),
+    fetchWithAuth('users').catch(() => ({ users: [] }))
+  ]);
+
+  const users = Array.isArray(usersResponse?.users) ? usersResponse.users : [];
+  const scopedTasks = tasks.filter((task) => isWithinDateRange(task.created_at, rangeStart));
+
+  if (reportType === 'developers') {
+    const developers = buildDeveloperProgress(users, tasks);
+    const totalTasks = developers.reduce((sum, developer) => sum + (developer.total_tasks || 0), 0);
+    const completedTasks = developers.reduce((sum, developer) => sum + (developer.completed_tasks || 0), 0);
+    const avgCompletion = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+    return {
+      summary: {
+        developers: developers.length,
+        avg_tasks: developers.length > 0 ? Math.round(totalTasks / developers.length) : 0,
+        avg_completion: avgCompletion,
+        active_devs: developers.filter((developer) => developer.active_tasks > 0).length
+      },
+      details: developers
+    };
+  }
+
+  const completed = scopedTasks.filter((task) => normalizeTaskStatus(task.status) === 'done').length;
+  const inProgress = scopedTasks.filter((task) => normalizeTaskStatus(task.status) === 'in_progress').length;
+  const overdue = scopedTasks.filter((task) => {
+    if (!task.deadline) {
+      return false;
+    }
+
+    return new Date(task.deadline) < new Date() && normalizeTaskStatus(task.status) !== 'done';
+  }).length;
+
+  return {
+    summary: {
+      total: scopedTasks.length,
+      completed,
+      in_progress: inProgress,
+      overdue,
+      team_members: users.length
+    },
+    details: scopedTasks
+  };
+};
+
 // Dashboard service for admin and member dashboards
 const dashboardService = {
   getAdminDashboardStats: async (timeRange = 'week') => {
@@ -533,90 +644,89 @@ const dashboardService = {
     }
   },
 
-  getReportData: async (reportType = 'tasks', dateRange = 'week') => {
-    try {
-      const rangeStart = getDateRangeStart(dateRange);
-      const [tasks, usersResponse] = await Promise.all([
-        taskService.getAllTasks(),
-        fetchWithAuth('users').catch(() => ({ users: [] }))
-      ]);
+  getReportData: async (reportType = 'tasks', dateRange = 'week', options = {}) => {
+    const cacheKey = getReportCacheKey(reportType, dateRange);
+    const isGithubReport = reportType === 'github';
+    const forceRefresh = Boolean(options?.forceRefresh);
 
-      const users = Array.isArray(usersResponse?.users) ? usersResponse.users : [];
-      const scopedTasks = tasks.filter((task) => isWithinDateRange(task.created_at, rangeStart));
-
-      if (reportType === 'developers') {
-        const developers = buildDeveloperProgress(users, tasks);
-        const totalTasks = developers.reduce((sum, developer) => sum + (developer.total_tasks || 0), 0);
-        const completedTasks = developers.reduce((sum, developer) => sum + (developer.completed_tasks || 0), 0);
-        const avgCompletion = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-
-        return {
-          summary: {
-            developers: developers.length,
-            avg_tasks: developers.length > 0 ? Math.round(totalTasks / developers.length) : 0,
-            avg_completion: avgCompletion,
-            active_devs: developers.filter((developer) => developer.active_tasks > 0).length
-          },
-          details: developers
-        };
+    if (isGithubReport && !forceRefresh) {
+      const cachedReport = getFreshCachedReport(cacheKey);
+      if (cachedReport) {
+        return cachedReport;
       }
 
-      if (reportType === 'github') {
-        const githubStatus = await fetchWithAuth('github/status').catch(() => ({ connected: false }));
-        const connected = Boolean(githubStatus?.connected);
-        const activityWindowDays = getActivityWindowDays(dateRange);
-        const repositories = connected
-          ? await githubService.getUserRepos({
-            perPage: 100,
-            fetchAll: true,
-            activityWindowDays
-          })
-          : [];
-
-        // Calculate totals from enriched repo data
-        const openIssuesTotal = repositories.reduce((sum, repo) => sum + (repo.open_issues || 0), 0);
-        const openPrsTotal = repositories.reduce((sum, repo) => sum + (repo.open_prs || 0), 0);
-        const recentCommitsTotal = repositories.reduce((sum, repo) => sum + (repo.recent_commits || 0), 0);
-
-        return {
-          summary: {
-            repos: repositories.length,
-            open_issues: openIssuesTotal,
-            open_prs: openPrsTotal,
-            recent_commits: recentCommitsTotal
-          },
-          details: repositories
-        };
+      const pendingReport = reportDataCache.get(cacheKey)?.promise;
+      if (pendingReport) {
+        return pendingReport;
       }
+    }
 
-      const completed = scopedTasks.filter((task) => normalizeTaskStatus(task.status) === 'done').length;
-      const inProgress = scopedTasks.filter((task) => normalizeTaskStatus(task.status) === 'in_progress').length;
-      const overdue = scopedTasks.filter((task) => {
-        if (!task.deadline) {
-          return false;
+    const reportPromise = (async () => {
+      try {
+        const data = await getReportDataFromNetwork(reportType, dateRange);
+        const fetchedAt = Date.now();
+        const report = addReportMeta(data, {
+          cache_hit: false,
+          fetched_at: new Date(fetchedAt).toISOString(),
+          live: true,
+        });
+
+        if (isGithubReport) {
+          reportDataCache.set(cacheKey, {
+            data: report,
+            fetchedAt,
+          });
         }
 
-        return new Date(task.deadline) < new Date() && normalizeTaskStatus(task.status) !== 'done';
-      }).length;
+        return report;
+      } catch (error) {
+        console.error('Failed to fetch report data:', error);
+        if (isGithubReport) {
+          reportDataCache.delete(cacheKey);
+        }
 
-      return {
-        summary: {
-          total: scopedTasks.length,
-          completed,
-          in_progress: inProgress,
-          overdue,
-          team_members: users.length
-        },
-        details: scopedTasks
-      };
-    } catch (error) {
-      console.error('Failed to fetch report data:', error);
-      return {
-        summary: {},
-        details: []
-      };
+        return {
+          summary: {},
+          details: [],
+          meta: {
+            cache_hit: false,
+            fetched_at: new Date().toISOString(),
+            live: false,
+          },
+        };
+      }
+    })();
+
+    if (isGithubReport) {
+      reportDataCache.set(cacheKey, {
+        promise: reportPromise,
+        fetchedAt: 0,
+      });
     }
-  }
+
+    return reportPromise;
+  },
+
+  prefetchReportData: async (reportType = 'github', dateRange = 'year') => {
+    try {
+      return await dashboardService.getReportData(reportType, dateRange);
+    } catch (error) {
+      console.error('Failed to prefetch report data:', error);
+      return null;
+    }
+  },
+
+  invalidateReportData: (reportType = 'github', dateRange = 'year') => {
+    reportDataCache.delete(getReportCacheKey(reportType, dateRange));
+  },
+
+  clearReportDataCache: () => {
+    reportDataCache.clear();
+  },
+
+  refreshReportData: async (reportType = 'github', dateRange = 'year') => (
+    dashboardService.getReportData(reportType, dateRange, { forceRefresh: true })
+  )
 };
 
 // Enhanced GitHub service with better error handling

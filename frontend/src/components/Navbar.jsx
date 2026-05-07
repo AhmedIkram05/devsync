@@ -127,12 +127,14 @@ const Navbar = () => {
                     Mark all as read
                   </button>
                 </div>
-                <Notifications 
-                  notifications={notifications} 
-                  onClose={() => setShowNotifications(false)}
-                  onMarkRead={markAsRead}
-                  onMarkAllRead={markAllAsRead}
-                />
+                <div className="max-h-64 overflow-y-auto">
+                  <Notifications 
+                    notifications={notifications} 
+                    onClose={() => setShowNotifications(false)}
+                    onMarkRead={markAsRead}
+                    onMarkAllRead={markAllAsRead}
+                  />
+                </div>
               </div>
             )}
           </div>
