@@ -20,6 +20,10 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { NotificationProvider } from "./context/NotificationContext";
 import Register from "./pages/Register";
 import GitHubCallback from './pages/GitHubCallback';
+import Forbidden from './pages/Forbidden';
+import AdminUsers from './pages/AdminUsers';
+import AdminSystemSettings from './pages/AdminSystemSettings';
+import AdminAuditLogs from './pages/AdminAuditLogs';
 
 const ROLES = {
   DEVELOPER: 'developer',
@@ -30,12 +34,12 @@ const ROLES = {
 const MEMBER_ROLES = [ROLES.DEVELOPER, ROLES.TEAM_LEAD];
 const AUTHENTICATED_ROLES = [ROLES.DEVELOPER, ROLES.TEAM_LEAD, ROLES.ADMIN];
 const TASK_CREATOR_ROLES = [ROLES.TEAM_LEAD, ROLES.ADMIN];
+const TEAM_LEAD_OR_ADMIN = [ROLES.TEAM_LEAD, ROLES.ADMIN];
 
-const getDashboardPath = (role) => (role === ROLES.ADMIN ? '/admin' : '/BasicDashboard');
+const getDashboardPath = (role) => (role === ROLES.ADMIN || role === ROLES.TEAM_LEAD ? '/admin' : '/BasicDashboard');
 
-// Protected route wrapper component - Completely rewritten to prevent infinite loops
-const ProtectedRoute = ({ children, allowedRoles = [] }) => {
-  const { currentUser, loading } = useAuth();
+const ProtectedRoute = ({ children, allowedRoles = [], requiredPermission = null }) => {
+  const { currentUser, loading, can } = useAuth();
   
   // Show loading state while authentication is being checked
   if (loading) {
@@ -62,9 +66,13 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
   // If allowedRoles is specified, check if the user has the required role
   if (allowedRoles.length > 0 && !allowedRoles.includes(currentUser.role)) {
     console.log(`User role ${currentUser.role} not allowed for this route`);
-    
-    // Redirect to the appropriate dashboard based on role
-    return <Navigate to={getDashboardPath(currentUser.role)} replace />;
+    return <Navigate to="/forbidden" replace />;
+  }
+
+  // If requiredPermission is specified, check if user has the permission
+  if (requiredPermission && !can(requiredPermission)) {
+    console.log(`User lacks permission ${requiredPermission} for this route`);
+    return <Navigate to="/forbidden" replace />;
   }
 
   // All checks passed, render the protected component
@@ -111,6 +119,8 @@ function AppRoutes() {
             <Register />
           )
         } />
+        
+        <Route path="/forbidden" element={<Forbidden />} />
         
         {/* Developer and Team Lead Routes */}
         <Route path="/BasicDashboard" element={
@@ -168,13 +178,13 @@ function AppRoutes() {
         
         {/* Admin Routes (Project Managers) */}
         <Route path="/admin" element={
-          <ProtectedRoute allowedRoles={['admin']}>
+          <ProtectedRoute allowedRoles={TEAM_LEAD_OR_ADMIN}>
             <AdminDashboard />
           </ProtectedRoute>
         } />
         
         <Route path="/admin/dashboard" element={
-          <ProtectedRoute allowedRoles={['admin']}>
+          <ProtectedRoute allowedRoles={TEAM_LEAD_OR_ADMIN}>
             <AdminDashboard />
           </ProtectedRoute>
         } />
@@ -186,32 +196,50 @@ function AppRoutes() {
         } />
         
         <Route path="/admin/developer-progress" element={
-          <ProtectedRoute allowedRoles={['admin']}>
+          <ProtectedRoute allowedRoles={TEAM_LEAD_OR_ADMIN}>
             <DeveloperProgress />
           </ProtectedRoute>
         } />
         
         <Route path="/admin/reports" element={
-          <ProtectedRoute allowedRoles={['admin']}>
+          <ProtectedRoute allowedRoles={TEAM_LEAD_OR_ADMIN}>
             <Reports />
           </ProtectedRoute>
         } />
 
         <Route path="/admin/projects" element={
-          <ProtectedRoute allowedRoles={['admin']}>
+          <ProtectedRoute allowedRoles={TEAM_LEAD_OR_ADMIN}>
             <AdminProjects />
           </ProtectedRoute>
         } />
 
         <Route path="/admin/projects/new" element={
-          <ProtectedRoute allowedRoles={['admin']}>
+          <ProtectedRoute allowedRoles={TEAM_LEAD_OR_ADMIN}>
             <AdminProjectCreate />
           </ProtectedRoute>
         } />
 
         <Route path="/admin/projects/:id/edit" element={
-          <ProtectedRoute allowedRoles={['admin']}>
+          <ProtectedRoute allowedRoles={TEAM_LEAD_OR_ADMIN}>
             <AdminProjectEdit />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/admin/users" element={
+          <ProtectedRoute allowedRoles={TEAM_LEAD_OR_ADMIN}>
+            <AdminUsers />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/admin/settings" element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminSystemSettings />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/admin/audit-logs" element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminAuditLogs />
           </ProtectedRoute>
         } />
 

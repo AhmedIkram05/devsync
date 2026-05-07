@@ -35,6 +35,7 @@ jest.mock('../pages/TaskDetailsUser', () => () => <div>Task Details User Page</d
 jest.mock('../pages/GithubIntegrationDetail', () => () => <div>GitHub Integration Detail Page</div>);
 jest.mock('../pages/Register', () => () => <div>Register Page</div>);
 jest.mock('../pages/GitHubCallback', () => () => <div>GitHub Callback Page</div>);
+jest.mock('../pages/Forbidden', () => () => <div>Forbidden Page</div>);
 
 const renderAt = (path) => {
   window.history.pushState({}, '', path);
@@ -99,7 +100,7 @@ describe('App route access controls', () => {
 
     renderAt('/admin');
 
-    expect(await screen.findByText('Client Dashboard Page')).toBeInTheDocument();
+    expect(await screen.findByText('Forbidden Page')).toBeInTheDocument();
   });
 
   test('redirects authenticated admin from root path to admin dashboard', async () => {

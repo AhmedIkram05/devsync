@@ -212,15 +212,6 @@ const Reports = () => {
     loadSavedReports();
   }, []);
 
-  const handleViewSavedReport = (report) => {
-    setReportData({
-      summary: report.summary,
-      details: report.details
-    });
-    setReportType(report.type);
-    setDateRange(report.dateRange);
-  };
-
   const handleDeleteReport = async (reportId) => {
     try {
       const response = await reportService.deleteReport(reportId);
@@ -719,8 +710,19 @@ const Reports = () => {
                   {generatedReports.map((report) => (
                     <div
                       key={report.id}
-                      className="border border-slate-700/70 rounded-xl p-4 flex flex-col gap-3 bg-slate-800/30"
+                      className="group relative border border-slate-700/70 rounded-xl p-4 flex flex-col gap-3 bg-slate-800/30 hover:border-slate-600/70 transition-all"
                     >
+                      {/* Delete Button */}
+                      <button
+                        onClick={() => handleDeleteReport(report.id)}
+                        className="absolute top-3 right-3 p-1.5 text-slate-500 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-rose-500/10"
+                        title="Delete Report"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+
                       <div>
                         <div className="text-sm font-semibold text-slate-100">
                           {getReportLabel(report.type)}
@@ -736,7 +738,7 @@ const Reports = () => {
                         <button
                           type="button"
                           onClick={() => handleDownloadPdf(report)}
-                          className="px-3 py-1.5 bg-rose-500/90 text-white text-xs font-medium rounded-full hover:bg-rose-400 transition-colors"
+                          className="px-3 py-1.5 bg-indigo-600/90 text-white text-xs font-medium rounded-full hover:bg-indigo-500 transition-colors shadow-sm"
                         >
                           Download PDF
                         </button>
@@ -778,8 +780,9 @@ const Reports = () => {
   }
 
   return (
-    <div className="container mx-auto p-6 bg-slate-950 min-h-screen text-slate-100">
-      <h1 className="text-2xl font-bold mb-6 text-slate-100">Reports & Analytics</h1>
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
+      <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
+        <h1 className="text-2xl font-bold mb-10 text-slate-100">Reports & Analytics</h1>
 
       {/* Controls */}
       <div className="bg-slate-900/70 rounded-2xl shadow-md p-5 mb-6 border border-slate-800/70">
@@ -827,6 +830,7 @@ const Reports = () => {
       </div>
 
       {renderCharts()}
+      </div>
     </div>
   );
 };
