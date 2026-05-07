@@ -61,9 +61,9 @@ const TaskCreation = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="container mx-auto p-6 max-w-4xl">
-        <h1 className="text-2xl font-bold mb-6">Create New Task</h1>
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
+      <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
+        <h1 className="text-2xl font-bold mb-10 text-slate-100">Create New Task</h1>
       
         {error && (
           <div className="bg-rose-500/10 border border-rose-400/40 text-rose-200 px-4 py-3 rounded mb-4">

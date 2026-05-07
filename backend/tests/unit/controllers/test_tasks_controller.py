@@ -110,8 +110,8 @@ def test_get_all_tasks_developer(app, mock_jwt_identity, mock_jwt):
             # Call the function
             response = get_all_tasks()
             
-            # Assert that filter was called (developer can only see their tasks)
-            mock_query.filter.assert_called_once()
+            # Assert that all() was called on the query (developers can now see all tasks)
+            mock_query.all.assert_called_once()
             
             # Assert the results
             data = response.get_json()

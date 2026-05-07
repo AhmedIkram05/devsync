@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 const TaskList = () => {
+  const navigate = useNavigate();
+  const { currentUser } = useAuth();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
@@ -12,11 +14,10 @@ const TaskList = () => {
   const [filters, setFilters] = useState({
     status: 'all',
     priority: 'all',
-    search: ''
+    search: '',
+    scope: 'all'
   });
   
-  const navigate = useNavigate();
-  const { currentUser } = useAuth();
   const canCreateTasks = currentUser?.role === 'admin' || currentUser?.role === 'team_lead';
 
   // Fetch tasks when component mounts
@@ -124,6 +125,11 @@ const TaskList = () => {
       return false;
     }
     
+    // Filter by scope (My Tasks vs All Tasks)
+    if (filters.scope === 'my' && task.assigned_to !== currentUser?.id) {
+      return false;
+    }
+    
     return true;
   });
 
@@ -136,9 +142,9 @@ const TaskList = () => {
   }
 
   return (
-    <div className="bg-slate-950 min-h-screen p-4 md:p-6 text-slate-100">
-      <div className="max-w-7xl mx-auto">
-        <div className="bg-slate-900/70 rounded-2xl border border-slate-800/70 p-6 mb-6">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
+      <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
+        <div className="bg-slate-900/70 rounded-2xl border border-slate-800/70 p-6 mb-10 shadow-md backdrop-blur-sm">
           <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-6">
             <h1 className="text-2xl font-bold mb-4 md:mb-0 text-slate-100">Tasks</h1>
             <div className="flex flex-col md:flex-row gap-4">
@@ -233,6 +239,32 @@ const TaskList = () => {
                 onChange={(e) => setFilters({...filters, search: e.target.value})}
                 className="w-full p-2 border border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60"
               />
+            </div>
+          </div>
+
+          {/* Scope Toggle for Developers */}
+          <div className="mb-6 flex justify-end">
+            <div className="inline-flex bg-slate-950/60 border border-slate-800 p-1 rounded-xl shadow-inner">
+              <button
+                onClick={() => setFilters({...filters, scope: 'my'})}
+                className={`px-6 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-all ${
+                  filters.scope === 'my' 
+                    ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20' 
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                My Tasks
+              </button>
+              <button
+                onClick={() => setFilters({...filters, scope: 'all'})}
+                className={`px-6 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-all ${
+                  filters.scope === 'all' 
+                    ? 'bg-slate-900 text-white border border-slate-800' 
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                All Tasks
+              </button>
             </div>
           </div>
           
@@ -346,7 +378,7 @@ const TaskList = () => {
                                 e.stopPropagation();
                                 handleUpdateStatus(task.id, e.target.value);
                               }}
-                              disabled={updating}
+                              disabled={updating || (currentUser.role === 'developer' && task.assigned_to !== currentUser.id)}
                               className="text-sm border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60 mr-2"
                             >
                               <option value="todo">To Do</option>

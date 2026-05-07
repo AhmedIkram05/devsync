@@ -49,6 +49,7 @@ describe('TaskList page', () => {
         status: 'todo',
         priority: 'high',
         progress: 10,
+        assigned_to: 5,
         deadline: '2099-02-01T00:00:00.000Z',
       },
       {
@@ -58,6 +59,7 @@ describe('TaskList page', () => {
         status: 'in_progress',
         priority: 'medium',
         progress: 60,
+        assigned_to: 5,
         deadline: '2099-02-03T00:00:00.000Z',
       },
     ]);
@@ -131,6 +133,7 @@ describe('TaskList page', () => {
         status: 'in_progress',
         priority: 'high',
         progress: 20,
+        assigned_to: 5,
         deadline: '2000-01-01T00:00:00.000Z', // past deadline
       },
       {
@@ -140,6 +143,7 @@ describe('TaskList page', () => {
         status: 'completed',
         priority: 'low',
         progress: 100,
+        assigned_to: 5,
         deadline: '2000-01-01T00:00:00.000Z', // past but completed — no overdue badge
       },
     ]);
@@ -159,6 +163,7 @@ describe('TaskList page', () => {
         status: 'todo',
         priority: 'medium',
         progress: 0,
+        assigned_to: 5,
         deadline: null,
       },
     ]);
@@ -173,10 +178,10 @@ describe('TaskList page', () => {
   test('renders all priority badge variants and progress colour thresholds', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
     taskService.getAllTasks.mockResolvedValue([
-      { id: 1, title: 'High P',   status: 'todo',        priority: 'high',   progress: 100, deadline: null },
-      { id: 2, title: 'Med P',    status: 'in_progress', priority: 'medium', progress: 60,  deadline: null },
-      { id: 3, title: 'Low P',    status: 'review',      priority: 'low',    progress: 25,  deadline: null },
-      { id: 4, title: 'Unknown P',status: 'backlog',     priority: 'other',  progress: 0,   deadline: null },
+      { id: 1, title: 'High P',   status: 'todo',        priority: 'high',   progress: 100, assigned_to: 5, deadline: null },
+      { id: 2, title: 'Med P',    status: 'in_progress', priority: 'medium', progress: 60,  assigned_to: 5, deadline: null },
+      { id: 3, title: 'Low P',    status: 'review',      priority: 'low',    progress: 25,  assigned_to: 5, deadline: null },
+      { id: 4, title: 'Unknown P',status: 'backlog',     priority: 'other',  progress: 0,   assigned_to: 5, deadline: null },
     ]);
 
     render(<TaskList />);
@@ -196,11 +201,11 @@ describe('TaskList page', () => {
   test('renders all status badge variants including unknown', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
     taskService.getAllTasks.mockResolvedValue([
-      { id: 1, title: 'T1', status: 'todo',        priority: 'low', progress: 0, deadline: null },
-      { id: 2, title: 'T2', status: 'backlog',     priority: 'low', progress: 0, deadline: null },
-      { id: 3, title: 'T3', status: 'review',      priority: 'low', progress: 0, deadline: null },
-      { id: 4, title: 'T4', status: 'completed',   priority: 'low', progress: 0, deadline: null },
-      { id: 5, title: 'T5', status: 'new_status',  priority: 'low', progress: 0, deadline: null },
+      { id: 1, title: 'T1', status: 'todo',        priority: 'low', progress: 0, assigned_to: 5, deadline: null },
+      { id: 2, title: 'T2', status: 'backlog',     priority: 'low', progress: 0, assigned_to: 5, deadline: null },
+      { id: 3, title: 'T3', status: 'review',      priority: 'low', progress: 0, assigned_to: 5, deadline: null },
+      { id: 4, title: 'T4', status: 'completed',   priority: 'low', progress: 0, assigned_to: 5, deadline: null },
+      { id: 5, title: 'T5', status: 'new_status',  priority: 'low', progress: 0, assigned_to: 5, deadline: null },
     ]);
 
     render(<TaskList />);
@@ -215,7 +220,7 @@ describe('TaskList page', () => {
   test('clear-filters button is shown when a filter is active, hidden when none', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
     taskService.getAllTasks.mockResolvedValue([
-      { id: 1, title: 'Alpha', status: 'todo', priority: 'high', progress: 0, deadline: null },
+      { id: 1, title: 'Alpha', status: 'todo', priority: 'high', progress: 0, assigned_to: 5, deadline: null },
     ]);
 
     render(<TaskList />);
@@ -234,7 +239,7 @@ describe('TaskList page', () => {
   test('updating task status fails and shows update error', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
     taskService.getAllTasks.mockResolvedValue([
-      { id: 1, title: 'Failing Task', status: 'todo', priority: 'medium', progress: 0, deadline: null },
+      { id: 1, title: 'Failing Task', status: 'todo', priority: 'medium', progress: 0, assigned_to: 5, deadline: null },
     ]);
     taskService.updateTask.mockRejectedValue(new Error('update failed'));
 
@@ -265,7 +270,7 @@ describe('TaskList page', () => {
   test('clicking a task row navigates to task detail', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
     taskService.getAllTasks.mockResolvedValue([
-      { id: 7, title: 'Clickable Task', status: 'todo', priority: 'low', progress: 0, deadline: null },
+      { id: 7, title: 'Clickable Task', status: 'todo', priority: 'low', progress: 0, assigned_to: 5, deadline: null },
     ]);
 
     render(<TaskList />);

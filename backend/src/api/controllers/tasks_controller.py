@@ -5,6 +5,7 @@ from flask_jwt_extended import get_jwt_identity, get_jwt
 from ...db.models import db, Task, User  # Changed to relative import
 from ...auth.rbac import Role  # Changed to relative import
 from ..validators.task_validator import validate_task_data  # Changed to relative import
+from ...services import audit_service
 from unittest.mock import Mock
 
 MEMBER_ROLES = {
@@ -74,15 +75,8 @@ def get_all_tasks():
     if created_by:
         query = query.filter(Task.created_by == created_by)
     
-    # Apply role-based filtering
-    if user_role in TASK_MANAGER_ROLES:
-        # Team leads and admins can see all tasks for assignment and reporting.
-        tasks = query.all()
-    else:
-        # Developers can only see tasks assigned to them or created by them.
-        tasks = query.filter(
-            (Task.assigned_to == user_id) | (Task.created_by == user_id)
-        ).all()
+    # Apply role-based filtering - Developers can now see all tasks as well
+    tasks = query.all()
     
     # Convert tasks to JSON response
     tasks_data = [_serialize_task(task) for task in tasks]
@@ -97,11 +91,7 @@ def get_task_by_id(task_id):
     
     task = Task.query.get_or_404(task_id)
     
-    # Apply role-based access control
-    if (user_role in MEMBER_ROLES and 
-        task.assigned_to != user_id and task.created_by != user_id):
-        return jsonify({'message': 'You do not have permission to view this task'}), 403
-    
+    # Authenticated users can view any task
     # Format task data
     task_data = _serialize_task(task)
     
@@ -164,17 +154,16 @@ def create_new_task():
         project_id = int(project_id)
     
     # Create new task
-    new_task = Task(
-        title=data['title'],
-        description=data['description'],
-        status=data['status'],
-        priority=data.get('priority', 'medium'),
-        progress=data.get('progress', 0),
-        assigned_to=assigned_to,
-        created_by=user_id,
-        deadline=data.get('deadline'),
-        project_id=project_id
-    )
+    new_task = Task()
+    new_task.title = data['title']
+    new_task.description = data['description']
+    new_task.status = data['status']
+    new_task.priority = data.get('priority', 'medium')
+    new_task.progress = data.get('progress', 0)
+    new_task.assigned_to = assigned_to
+    new_task.created_by = user_id
+    new_task.deadline = data.get('deadline')
+    new_task.project_id = project_id
     
     db.session.add(new_task)
     db.session.commit()
@@ -198,14 +187,11 @@ def update_task_by_id(task_id):
     task = Task.query.get_or_404(task_id)
     
     # Check if user has permission to update this task
-    can_update_task = user_role == Role.ADMIN.value or task.assigned_to == user_id
+    # Admins and Team Leads can update any task (can_update_any_task)
+    can_update_task = user_role in TASK_MANAGER_ROLES or task.assigned_to == user_id
     can_assign_task = user_role in TASK_MANAGER_ROLES
 
-    if not can_update_task and not can_assign_task:
-        return jsonify({'message': 'You can only update tasks assigned to you'}), 403
-
-    non_assignment_fields = {'title', 'description', 'status', 'progress', 'priority'} & set(data.keys())
-    if non_assignment_fields and not can_update_task:
+    if not can_update_task:
         return jsonify({'message': 'You can only update tasks assigned to you'}), 403
     
     # Update allowed fields
@@ -220,10 +206,12 @@ def update_task_by_id(task_id):
     if 'priority' in data:
         task.priority = data['priority']
     
-    if 'assigned_to' in data and can_assign_task:
-        task.assigned_to = data['assigned_to']
-    elif 'assigned_to' in data:
-        return jsonify({'message': 'You do not have permission to assign tasks'}), 403
+    if 'assigned_to' in data:
+        # Only TL or Admins can change the assignee
+        if can_assign_task:
+            task.assigned_to = data['assigned_to']
+        elif data['assigned_to'] != task.assigned_to:
+            return jsonify({'message': 'You do not have permission to reassign tasks'}), 403
     
     db.session.commit()
     
@@ -244,5 +232,11 @@ def delete_task_by_id(task_id):
     
     db.session.delete(task)
     db.session.commit()
+    
+    audit_service.record(
+        action='task_deleted',
+        resource_type='task',
+        resource_id=task_id
+    )
     
     return jsonify({'message': 'Task deleted successfully'})
