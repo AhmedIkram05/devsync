@@ -20,6 +20,8 @@ from ..controllers.github_controller import (
     delete_task_github_link,
 )
 from ..middlewares.validation_middleware import validate_json
+from ..middlewares import role_required
+from ...auth.rbac import Role, require_permission
 from ...db.models import db, User, GitHubToken
 from ...services.github_client import GitHubClient
 
@@ -133,6 +135,8 @@ def register_routes(bp):
     
     @bp.route('/github/repositories', methods=['POST'])
     @jwt_required()
+    @role_required([Role.ADMIN])
+    @require_permission('can_link_github_repos')
     @validate_json()
     def add_repository():
         """Route to add a GitHub repository for tracking"""

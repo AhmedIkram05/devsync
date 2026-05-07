@@ -21,7 +21,10 @@ def app(monkeypatch):
     app.config['JWT_SECRET_KEY'] = 'jwt-secret-key'
 
     monkeypatch.setattr(github_routes, 'jwt_required', passthrough_decorator)
-    monkeypatch.setattr(github_routes, 'validate_json', passthrough_decorator)
+    monkeypatch.setattr(github_routes, 'validate_json', passthrough_decorator, raising=False)
+    monkeypatch.setattr(github_routes, 'admin_required', passthrough_decorator, raising=False)
+    monkeypatch.setattr(github_routes, 'role_required', passthrough_decorator, raising=False)
+    monkeypatch.setattr(github_routes, 'require_permission', passthrough_decorator, raising=False)
 
     bp = Blueprint('api', __name__, url_prefix='/api/v1')
     github_routes.register_routes(bp)
