@@ -199,20 +199,24 @@ const fetchWithAuth = async (endpoint, options = {}) => {
 
 // Task related API calls
 const taskService = {
-  getAllTasks: async () => {
-    getAllTasks: async (params) => {
+  getAllTasks: async (params = null) => {
     try {
       let endpoint = 'tasks';
+
       if (params) {
         if (typeof params === 'string') {
           endpoint = `tasks${params.startsWith('?') ? params : `?${params}`}`;
         } else if (typeof params === 'object') {
-          const ps = new URLSearchParams();
-          Object.keys(params).forEach((k) => {
-            if (params[k] !== undefined && params[k] !== null) ps.set(k, String(params[k]));
+          const queryParams = new URLSearchParams();
+          Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+              queryParams.set(key, String(value));
+            }
           });
-          const qs = ps.toString();
-          if (qs) endpoint = `tasks?${qs}`;
+          const queryString = queryParams.toString();
+          if (queryString) {
+            endpoint = `tasks?${queryString}`;
+          }
         }
       }
 

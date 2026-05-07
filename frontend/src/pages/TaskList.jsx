@@ -20,15 +20,27 @@ const TaskList = () => {
   
   const canCreateTasks = Boolean(currentUser);
 
-  // Fetch tasks when component mounts
+  const urlParams = new URLSearchParams(window.location.search);
+  const requestedAssignee = urlParams.get('assigned_to') || urlParams.get('assignee');
+
+  // Fetch tasks once; honor deep-link assignee query if provided
   useEffect(() => {
+    const initialUrlParams = new URLSearchParams(window.location.search);
+    const initialAssignee = initialUrlParams.get('assigned_to') || initialUrlParams.get('assignee');
+
+    if (initialAssignee) {
+      setFilters((prev) => ({ ...prev, scope: 'my' }));
+      fetchTasks({ assigned_to: initialAssignee });
+      return;
+    }
+
     fetchTasks();
   }, []);
 
-  const fetchTasks = async () => {
+  const fetchTasks = async (params = null) => {
     try {
       setLoading(true);
-      const tasksData = await taskService.getAllTasks();
+      const tasksData = await taskService.getAllTasks(params);
       setTasks(Array.isArray(tasksData) ? tasksData : []);
       setError(null);
     } catch (err) {
@@ -126,8 +138,15 @@ const TaskList = () => {
     }
     
     // Filter by scope (My Tasks vs All Tasks)
-    if (filters.scope === 'my' && task.assigned_to !== currentUser?.id) {
-      return false;
+    if (filters.scope === 'my') {
+      const targetAssigneeId = requestedAssignee ?? currentUser?.id;
+      if (targetAssigneeId === undefined || targetAssigneeId === null) {
+        return false;
+      }
+
+      if (Number(task.assigned_to) !== Number(targetAssigneeId)) {
+        return false;
+      }
     }
     
     return true;
@@ -277,7 +296,7 @@ const TaskList = () => {
               <p className="mt-2 text-lg">No tasks found matching your filters</p>
               {filters.status !== 'all' || filters.priority !== 'all' || filters.search ? (
                 <button
-                  onClick={() => setFilters({ status: 'all', priority: 'all', search: '' })}
+                  onClick={() => setFilters({ status: 'all', priority: 'all', search: '', scope: requestedAssignee ? 'my' : 'all' })}
                   className="mt-3 text-rose-300 hover:text-rose-200"
                 >
                   Clear filters
