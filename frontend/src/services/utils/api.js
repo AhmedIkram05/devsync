@@ -1261,6 +1261,12 @@ const settingsService = {
       method: 'PUT',
       body: JSON.stringify(data)
     });
+  },
+
+  runRetentionCleanup: async () => {
+    return await fetchWithAuth('admin/settings/retention/run', {
+      method: 'POST'
+    });
   }
 };
 

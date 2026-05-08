@@ -32,8 +32,13 @@ def register_user():
     if existing_user:
         return jsonify({'message': 'Email already registered'}), 409
 
-    # If this is the very first user, automatically make them an admin
+    # Respect admin-controlled registration policy after the first admin bootstrap user
     user_count = User.query.count()
+    allow_self_registration = settings_service.get_bool_setting('allow_self_registration', True)
+    if user_count > 0 and not allow_self_registration:
+        return jsonify({'message': 'User registration is currently disabled by an administrator'}), 403
+
+    # If this is the very first user, automatically make them an admin
     if user_count == 0:
         forced_role = Role.ADMIN.value
         print(f"First user registration detected! Automatically granting admin role to {data['email']}")

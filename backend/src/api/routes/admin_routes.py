@@ -1,6 +1,6 @@
 """Admin API routes"""
 
-from flask import request
+from flask import request, jsonify
 from flask_jwt_extended import jwt_required
 from ..controllers.admin_controller import (
     get_system_stats,
@@ -8,6 +8,8 @@ from ..controllers.admin_controller import (
     update_system_settings,
     update_user_role
 )
+from ..controllers.audit_controller import cleanup_audit_logs
+from ...services import settings_service
 from ..middlewares import admin_required
 from ..middlewares.validation_middleware import validate_json
 from ..middlewares.rate_limiter import rate_limit
@@ -40,6 +42,36 @@ def register_routes(bp):
     def system_settings():
         """Route to get system settings"""
         return get_system_settings()
+
+    @bp.route('/admin/audit-logs/cleanup', methods=['POST'])
+    @jwt_required()
+    @admin_required()
+    @rate_limit(requests_per_window=5, window_seconds=60)
+    def audit_logs_cleanup():
+        """Route to purge expired audit logs"""
+        return cleanup_audit_logs()
+
+    @bp.route('/admin/settings/retention/run', methods=['POST'])
+    @jwt_required()
+    @admin_required()
+    @rate_limit(requests_per_window=5, window_seconds=60)
+    def run_retention_cleanup():
+        """Route to run all retention cleanups immediately"""
+        try:
+            result = settings_service.run_retention_cleanup()
+            return jsonify({
+                'message': 'Retention cleanup completed',
+                'result': result,
+            }), 200
+        except Exception as exc:
+            return jsonify({
+                'message': 'Retention cleanup failed',
+                'error': str(exc),
+                'result': {
+                    'audit_logs_deleted': 0,
+                    'projects_deleted': 0,
+                },
+            }), 200
     
     @bp.route('/admin/settings', methods=['PUT'])
     @jwt_required()

@@ -6,6 +6,7 @@ from ...db.models import db, User  # Changed to relative import
 from ...auth.helpers import hash_password, verify_password  # Changed to relative import
 from ..validators.user_validator import validate_user_data, validate_profile_update  # Changed to relative import
 from ...services import audit_service
+from src.socketio_server import emit_dashboard_refresh
 
 def get_all_users():
     """Controller function to get all users"""
@@ -52,6 +53,12 @@ def create_user():
         resource_type='user',
         resource_id=new_user.id,
         metadata={'role': new_user.role}
+    )
+    emit_dashboard_refresh(
+        'user_created',
+        resource_type='user',
+        resource_id=new_user.id,
+        payload={'role': new_user.role}
     )
     
     return jsonify({
@@ -110,6 +117,19 @@ def update_user(user_id):
         user.avatar = data['avatar']
     
     db.session.commit()
+
+    audit_service.record(
+        action='user_updated',
+        resource_type='user',
+        resource_id=user.id,
+        metadata={'role': user.role}
+    )
+    emit_dashboard_refresh(
+        'user_updated',
+        resource_type='user',
+        resource_id=user.id,
+        payload={'role': user.role}
+    )
     
     return jsonify({
         'message': 'User updated successfully',
@@ -130,6 +150,11 @@ def delete_user(user_id):
     
     audit_service.record(
         action='user_deleted',
+        resource_type='user',
+        resource_id=user_id
+    )
+    emit_dashboard_refresh(
+        'user_deleted',
         resource_type='user',
         resource_id=user_id
     )

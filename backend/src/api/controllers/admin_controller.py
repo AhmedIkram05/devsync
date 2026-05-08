@@ -6,6 +6,7 @@ from ..validators.admin_validator import validate_system_settings, validate_user
 from ...auth.rbac import Role
 from flask_jwt_extended import get_jwt_identity
 from ...services import audit_service, settings_service
+from src.socketio_server import emit_dashboard_refresh
 
 
 def _safe_query_all(model):
@@ -77,6 +78,11 @@ def update_system_settings():
         resource_type='settings',
         metadata={'settings_updated': list(data.keys())}
     )
+    emit_dashboard_refresh(
+        'settings_updated',
+        resource_type='settings',
+        payload={'settings_updated': list(data.keys())}
+    )
     
     return jsonify({
         'message': 'System settings updated successfully',
@@ -106,6 +112,12 @@ def update_user_role(user_id):
         resource_type='user',
         resource_id=user.id,
         metadata={'old_role': old_role, 'new_role': user.role}
+    )
+    emit_dashboard_refresh(
+        'user_role_changed',
+        resource_type='user',
+        resource_id=user.id,
+        payload={'old_role': old_role, 'new_role': user.role}
     )
     
     return jsonify({

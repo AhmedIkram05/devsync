@@ -284,3 +284,27 @@ class NotificationService:
             exclude_user_ids=excluded_project_user_ids,
             task_id=task_id
         )
+
+    @staticmethod
+    def task_overdue_notification(task_id, task_name, project_id, recipient_user_id, due_date=None):
+        """Send a one-time overdue task notification to a specific user."""
+        if recipient_user_id in (None, ''):
+            return None
+
+        existing = Notification.query.filter_by(
+            user_id=recipient_user_id,
+            task_id=task_id,
+            notification_type='task_overdue',
+        ).first()
+        if existing:
+            return existing
+
+        due_label = due_date.strftime('%b %d, %Y') if hasattr(due_date, 'strftime') else 'past due'
+        return NotificationService.send_to_user(
+            user_id=recipient_user_id,
+            notification_type='task_overdue',
+            title='Task is overdue',
+            message=f'Task "{task_name}" was due on {due_label}.',
+            reference_id=task_id,
+            task_id=task_id,
+        )

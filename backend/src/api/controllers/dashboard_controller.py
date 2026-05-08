@@ -3,6 +3,8 @@ from flask import jsonify
 from flask_jwt_extended import get_jwt_identity, get_jwt
 from ...db.models import db, User, Task, Project, TaskGitHubLink, GitHubRepository  # Changed to relative import
 from ...auth.rbac import Role  # Changed to relative import
+from ...services import settings_service
+from ...services.task_rules import count_overdue_tasks, get_project_scope_ids
 from datetime import datetime, timedelta
 import traceback
 import logging
@@ -345,6 +347,8 @@ def get_admin_dashboard():
         
         # Log the request details for debugging
         logger.info(f"Getting admin dashboard for user ID: {user_id}")
+
+        settings_service.cleanup_completed_projects()
         
         # Get basic user info
         user = User.query.get(user_id)
@@ -358,6 +362,8 @@ def get_admin_dashboard():
         except Exception as e:
             logger.error(f"Error querying tasks for admin dashboard (fallback to empty): {str(e)}")
             all_tasks = []
+
+        admin_project_ids = get_project_scope_ids(user_id, user_role)
         
         # Get user counts by role
         try:
@@ -379,7 +385,8 @@ def get_admin_dashboard():
             'todo': len([t for t in all_tasks if t.status == 'todo']),
             'in_progress': len([t for t in all_tasks if t.status == 'in_progress']),
             'review': len([t for t in all_tasks if t.status == 'review']),
-            'done': len([t for t in all_tasks if _is_completed_task(t)])
+            'done': len([t for t in all_tasks if _is_completed_task(t)]),
+            'overdue': count_overdue_tasks(all_tasks, project_ids=admin_project_ids),
         }
         
         # Format response data

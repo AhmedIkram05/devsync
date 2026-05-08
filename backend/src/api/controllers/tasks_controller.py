@@ -1,13 +1,16 @@
 # Task controller - business logic
 
 import logging
+from datetime import datetime
 from flask import request, jsonify
 from flask_jwt_extended import get_jwt_identity, get_jwt
 from ...db.models import db, Task, User  # Changed to relative import
 from ...auth.rbac import Role  # Changed to relative import
 from ..validators.task_validator import validate_task_data  # Changed to relative import
-from ...services import audit_service
+from ...services import audit_service, settings_service
 from ...services.notification_service import NotificationService
+from ...services.task_rules import get_project_scope_ids, is_task_overdue
+from src.socketio_server import emit_dashboard_refresh
 from unittest.mock import Mock
 
 logger = logging.getLogger(__name__)
@@ -104,6 +107,25 @@ def get_all_tasks():
     
     # Convert tasks to JSON response
     tasks_data = [_serialize_task(task) for task in tasks]
+
+    if settings_service.get_bool_setting('notify_on_overdue_tasks', True):
+        scoped_project_ids = get_project_scope_ids(user_id, user_role)
+        for task in tasks:
+            overdue_scope = {'project_ids': scoped_project_ids} if user_role in TASK_MANAGER_ROLES else {'assigned_to': user_id}
+            if not is_task_overdue(task, **overdue_scope):
+                continue
+
+            assigned_to = _task_value(task, 'assigned_to')
+            if assigned_to is None and user_role not in TASK_MANAGER_ROLES:
+                continue
+
+            NotificationService.task_overdue_notification(
+                task_id=_task_value(task, 'id'),
+                task_name=_task_value(task, 'title'),
+                project_id=_task_value(task, 'project_id'),
+                recipient_user_id=assigned_to or user_id,
+                due_date=None,
+            )
     
     return jsonify({'tasks': tasks_data})
 
@@ -192,6 +214,20 @@ def create_new_task():
     db.session.add(new_task)
     db.session.commit()
 
+    audit_service.record(
+        action='task_created',
+        resource_type='task',
+        resource_id=new_task.id,
+        metadata={'project_id': new_task.project_id, 'assigned_to': new_task.assigned_to}
+    )
+
+    emit_dashboard_refresh(
+        'task_created',
+        resource_type='task',
+        resource_id=new_task.id,
+        payload={'project_id': new_task.project_id, 'assigned_to': new_task.assigned_to}
+    )
+
     _run_notification(
         NotificationService.task_created_notification,
         new_task.id,
@@ -249,6 +285,20 @@ def update_task_by_id(task_id):
     
     db.session.commit()
 
+    audit_service.record(
+        action='task_updated',
+        resource_type='task',
+        resource_id=task.id,
+        metadata={'project_id': task.project_id, 'assigned_to': task.assigned_to}
+    )
+
+    emit_dashboard_refresh(
+        'task_updated',
+        resource_type='task',
+        resource_id=task.id,
+        payload={'project_id': task.project_id, 'assigned_to': task.assigned_to}
+    )
+
     _run_notification(
         NotificationService.task_updated_notification,
         task.id,
@@ -284,11 +334,19 @@ def delete_task_by_id(task_id):
     
     db.session.delete(task)
     db.session.commit()
-    
+
     audit_service.record(
         action='task_deleted',
         resource_type='task',
-        resource_id=task_id
+        resource_id=task_id,
+        metadata={'project_id': task.project_id, 'assigned_to': task.assigned_to}
+    )
+
+    emit_dashboard_refresh(
+        'task_deleted',
+        resource_type='task',
+        resource_id=task_id,
+        payload={'project_id': task.project_id, 'assigned_to': task.assigned_to}
     )
     
     return jsonify({'message': 'Task deleted successfully'})

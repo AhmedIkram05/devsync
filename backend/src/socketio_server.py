@@ -1,4 +1,5 @@
 import functools
+import logging
 from flask import request
 from flask_socketio import SocketIO, emit, join_room, leave_room, disconnect
 from flask_jwt_extended import decode_token
@@ -6,11 +7,25 @@ from jwt.exceptions import InvalidTokenError
 
 # Initialize SocketIO
 socketio = SocketIO(cors_allowed_origins="*")
+logger = logging.getLogger(__name__)
 
 # Store for connected users and project rooms
 connected_users = {}  # user_id -> session_id
 project_rooms = {}    # project_id -> [user_ids]
 sid_users = {}        # session_id -> user_id
+
+
+def emit_dashboard_refresh(event_type, *, resource_type=None, resource_id=None, payload=None):
+    """Broadcast a dashboard refresh event to all connected clients."""
+    try:
+        socketio.emit('dashboard_updated', {
+            'event_type': event_type,
+            'resource_type': resource_type,
+            'resource_id': resource_id,
+            'payload': payload or {},
+        })
+    except Exception:
+        logger.exception('Failed to emit dashboard refresh event')
 
 
 def _normalize_user_id(user_id):

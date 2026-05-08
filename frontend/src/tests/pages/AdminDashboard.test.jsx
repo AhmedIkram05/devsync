@@ -93,10 +93,11 @@ describe('AdminDashboard page', () => {
     renderAdminDashboard();
 
     expect(await screen.findByText('Admin Dashboard')).toBeInTheDocument();
-    expect(await screen.findByText('Total Projects')).toBeInTheDocument();
-    expect(screen.getByText('Active Tasks')).toBeInTheDocument();
-    expect(screen.getByText('Completed Tasks')).toBeInTheDocument();
-    expect(screen.getByText('Team Members')).toBeInTheDocument();
+    // New KPI cards: Team Members, Incomplete Projects, Overdue Tasks, Tasks In Review
+    expect(await screen.findByText('Team Members')).toBeInTheDocument();
+    expect(screen.getByText('Incomplete Projects')).toBeInTheDocument();
+    expect(screen.getByText('Overdue Tasks')).toBeInTheDocument();
+    expect(screen.getByText('Tasks In Review')).toBeInTheDocument();
 
     expect(screen.getByText('DevSync Core')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /DevSync Core/i })).toHaveAttribute('href', '/projects/1');
@@ -133,20 +134,14 @@ describe('AdminDashboard page', () => {
     expect(screen.getAllByText('2', { selector: '.text-slate-400' }).length).toBeGreaterThan(0);
   });
 
-  test('refetches dashboard data when time range changes and when refresh is clicked', async () => {
+  test('shows create task action and refreshes when clicked', async () => {
     renderAdminDashboard();
 
     await waitFor(() => {
       expect(dashboardService.getAdminDashboardStats).toHaveBeenCalledWith('week');
     });
 
-    fireEvent.change(screen.getByDisplayValue('Last 7 days'), {
-      target: { value: 'month' },
-    });
-
-    await waitFor(() => {
-      expect(dashboardService.getAdminDashboardStats).toHaveBeenCalledWith('month');
-    });
+    expect(screen.getByRole('link', { name: /create task/i })).toHaveAttribute('href', '/admin/create-task');
 
     const callsBeforeRefresh = dashboardService.getAdminDashboardStats.mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: /refresh/i }));
@@ -171,6 +166,6 @@ describe('AdminDashboard page', () => {
       expect(dashboardService.getAdminDashboardStats).toHaveBeenCalledTimes(2);
     });
 
-    expect(await screen.findByText('Total Projects')).toBeInTheDocument();
+    expect(await screen.findByText('Team Members')).toBeInTheDocument();
   });
 });

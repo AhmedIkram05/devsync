@@ -5,7 +5,8 @@ from flask_jwt_extended import get_jwt_identity, get_jwt
 from ...db.models import db, Project, Task, User  # Changed to relative import
 from ...auth.rbac import Role  # Changed to relative import
 from ..validators.project_validator import validate_project_data  # Changed to relative import
-from ...services import audit_service
+from ...services import audit_service, settings_service
+from ...socketio_server import emit_dashboard_refresh
 import json
 import time
 import uuid
@@ -42,6 +43,8 @@ def get_all_projects():
     user_id = get_jwt_identity()['user_id']
     claims = get_jwt()
     user_role = claims.get('role')
+
+    settings_service.cleanup_completed_projects()
     
     # Apply role-based access control for projects
     if user_role in [Role.ADMIN.value, Role.TEAM_LEAD.value]:
@@ -205,6 +208,12 @@ def create_project():
         resource_type='project',
         resource_id=new_project.id
     )
+    emit_dashboard_refresh(
+        'project_created',
+        resource_type='project',
+        resource_id=new_project.id,
+        payload={'status': new_project.status}
+    )
     # region agent log
     _debug_log(
         'H1-H2',
@@ -260,6 +269,19 @@ def update_project(project_id):
                 project.team_members.append(member)
     
     db.session.commit()
+
+    audit_service.record(
+        action='project_updated',
+        resource_type='project',
+        resource_id=project.id,
+        metadata={'status': project.status, 'team_members': [member.id for member in _relationship_items(project.team_members)]}
+    )
+    emit_dashboard_refresh(
+        'project_updated',
+        resource_type='project',
+        resource_id=project.id,
+        payload={'status': project.status}
+    )
     
     return jsonify({
         'message': 'Project updated successfully',
@@ -279,6 +301,11 @@ def delete_project(project_id):
     
     audit_service.record(
         action='project_deleted',
+        resource_type='project',
+        resource_id=project_id
+    )
+    emit_dashboard_refresh(
+        'project_deleted',
         resource_type='project',
         resource_id=project_id
     )

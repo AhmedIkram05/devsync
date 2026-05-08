@@ -62,6 +62,10 @@ const TaskList = () => {
           task.id === taskId ? { ...task, status: newStatus } : task
         )
       );
+      try {
+        window.dispatchEvent(new CustomEvent('devsync:task-updated', { detail: { id: taskId, status: newStatus } }));
+        window.dispatchEvent(new CustomEvent('devsync:dashboard-updated', { detail: { id: taskId, status: newStatus } }));
+      } catch (e) { /* ignore */ }
     } catch (err) {
       console.error('Failed to update task:', err);
       setError('Failed to update task status.');
