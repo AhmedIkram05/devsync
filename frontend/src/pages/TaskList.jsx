@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { taskService } from '../services/utils/api';
+import { taskService, userService } from '../services/utils/api';
 import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -11,6 +11,7 @@ const TaskList = () => {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState(null);
+  const [userMap, setUserMap] = useState({});
   const [filters, setFilters] = useState({
     status: 'all',
     priority: 'all',
@@ -23,11 +24,26 @@ const TaskList = () => {
   const urlParams = new URLSearchParams(window.location.search);
   const requestedAssignee = urlParams.get('assigned_to') || urlParams.get('assignee');
 
-  // Fetch tasks once; honor deep-link assignee query if provided
+  // Fetch users and tasks once; honor deep-link assignee query if provided
   useEffect(() => {
+    const fetchUsersAndTasks = async () => {
+      try {
+        const usersData = await userService.getAllUsers();
+        const users = Array.isArray(usersData?.users) ? usersData.users : Array.isArray(usersData) ? usersData : [];
+        const userById = {};
+        users.forEach(user => {
+          userById[user.id] = user.name;
+        });
+        setUserMap(userById);
+      } catch (err) {
+        console.error('Failed to fetch users:', err);
+      }
+    };
+
     const initialUrlParams = new URLSearchParams(window.location.search);
     const initialAssignee = initialUrlParams.get('assigned_to') || initialUrlParams.get('assignee');
 
+    fetchUsersAndTasks();
     if (initialAssignee) {
       setFilters((prev) => ({ ...prev, scope: 'my' }));
       fetchTasks({ assigned_to: initialAssignee });
@@ -327,6 +343,9 @@ const TaskList = () => {
                       Priority
                     </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                      Assignee
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                       Progress
                     </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
@@ -367,6 +386,11 @@ const TaskList = () => {
                           <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${priorityInfo.class}`}>
                             {priorityInfo.icon} {priorityInfo.text}
                           </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-slate-300">
+                            {task.assignee?.name || task.assigned_to_name || (task.assigned_to ? userMap[task.assigned_to] || `User #${task.assigned_to}` : '—')}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">

@@ -135,91 +135,94 @@ const AdminDashboard = () => {
         setRecentAuditLogs([]);
       }
 
-      // Fetch projects and tasks for KPI calculations and scoping
-      try {
-        const [allProjects, allTasks, reportsResp] = await Promise.all([
-          projectService.getAllProjects(),
-          taskService.getAllTasks(),
-          reportService.getSavedReports({ per_page: 5 })
-        ]);
+      // For Admins: compute project scoping for additional KPIs
+      if (currentUser?.role === 'admin') {
+        try {
+          const [allProjects, allTasks, reportsResp] = await Promise.all([
+            projectService.getAllProjects(),
+            taskService.getAllTasks(),
+            reportService.getSavedReports({ per_page: 5 })
+          ]);
 
-        const projects = Array.isArray(allProjects) ? allProjects : [];
-        const tasks = Array.isArray(allTasks) ? allTasks : [];
+          const projects = Array.isArray(allProjects) ? allProjects : [];
+          const tasks = Array.isArray(allTasks) ? allTasks : [];
 
-        // Compute admin-scoped projects (projects the admin is assigned to)
-        const adminProjectIds = new Set();
-        projects.forEach((p) => {
-          const members = Array.isArray(p.team_members) ? p.team_members : [];
-          const isAssigned = members.some((m) => {
-            if (m == null) return false;
-            if (typeof m === 'number' || typeof m === 'string') return Number(m) === Number(currentUser?.id);
-            const mid = m.id ?? m.user_id ?? m.userId ?? m.member_id ?? null;
-            if (mid != null) return Number(mid) === Number(currentUser?.id);
-            return false;
-          }) || Number(p?.created_by) === Number(currentUser?.id);
-          if (isAssigned) adminProjectIds.add(Number(p.id));
-        });
+          // Compute admin-scoped projects (projects the admin is assigned to)
+          const adminProjectIds = new Set();
+          projects.forEach((p) => {
+            const members = Array.isArray(p.team_members) ? p.team_members : [];
+            const isAssigned = members.some((m) => {
+              if (m == null) return false;
+              if (typeof m === 'number' || typeof m === 'string') return Number(m) === Number(currentUser?.id);
+              const mid = m.id ?? m.user_id ?? m.userId ?? m.member_id ?? null;
+              if (mid != null) return Number(mid) === Number(currentUser?.id);
+              return false;
+            }) || Number(p?.created_by) === Number(currentUser?.id);
+            if (isAssigned) adminProjectIds.add(Number(p.id));
+          });
 
-        // My projects: projects admin is assigned to
-        const myProjects = projects.filter(p => adminProjectIds.has(Number(p.id)));
+          // My projects: projects admin is assigned to
+          const myProjects = projects.filter(p => adminProjectIds.has(Number(p.id)));
 
-        // KPI: total incomplete projects (all projects with status active or on-hold)
-        const incompleteProjectsCount = projects.filter(p => ['active', 'on-hold', 'on_hold'].includes(String(p.status))).length;
+          // KPI: total incomplete projects (all projects with status active or on-hold)
+          const incompleteProjectsCount = projects.filter(p => ['active', 'on-hold', 'on_hold'].includes(String(p.status))).length;
 
-        // KPI: overdue tasks scoped to admin's projects only
-        const now = new Date();
-        const overdueTasksCount = tasks.filter((t) => {
-          const pid = t.project_id ?? t.projectId ?? (t.project && (t.project.id ?? t.project.project_id)) ?? null;
-          if (pid === null) return false;
-          if (!adminProjectIds.has(Number(pid))) return false;
-          const status = (t.status || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
-          if (['review', 'in_review', 'in-review', 'done', 'completed'].includes(status)) return false;
-          const deadlineVal = t.deadline ?? t.due_date ?? t.dueDate ?? t.due_at ?? t.dueAt ?? t.due ?? null;
-          if (!deadlineVal) return false;
-          try {
-            const d = new Date(deadlineVal);
-            if (Number.isNaN(d.getTime())) {
-              // try parsing as seconds since epoch
-              const maybeNum = Number(deadlineVal);
-              if (!Number.isNaN(maybeNum)) return new Date(maybeNum * (maybeNum > 1e12 ? 1 : 1000)) < now;
+          // KPI: overdue tasks scoped to admin's projects only
+          const now = new Date();
+          const overdueTasksCount = tasks.filter((t) => {
+            const pid = t.project_id ?? t.projectId ?? (t.project && (t.project.id ?? t.project.project_id)) ?? null;
+            if (pid === null) return false;
+            if (!adminProjectIds.has(Number(pid))) return false;
+            const status = (t.status || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+            if (['review', 'in_review', 'in-review', 'done', 'completed'].includes(status)) return false;
+            const deadlineVal = t.deadline ?? t.due_date ?? t.dueDate ?? t.due_at ?? t.dueAt ?? t.due ?? null;
+            if (!deadlineVal) return false;
+            try {
+              const d = new Date(deadlineVal);
+              if (Number.isNaN(d.getTime())) {
+                // try parsing as seconds since epoch
+                const maybeNum = Number(deadlineVal);
+                if (!Number.isNaN(maybeNum)) return new Date(maybeNum * (maybeNum > 1e12 ? 1 : 1000)) < now;
+                return false;
+              }
+              return d < now;
+            } catch (e) {
               return false;
             }
-            return d < now;
-          } catch (e) {
-            return false;
-          }
-        }).length;
+          }).length;
 
-        // KPI: tasks in review scoped to admin's projects
-        const tasksInReviewCount = tasks.filter((t) => {
-          const pid = t.project_id ?? t.projectId ?? (t.project && t.project.id) ?? null;
-          if (pid === null) return false;
-          if (!adminProjectIds.has(Number(pid))) return false;
-          const statusNorm = (t.status || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
-          return ['review', 'in_review', 'inreview', 'in_review'].includes(statusNorm);
-        }).length;
+          // KPI: tasks in review scoped to admin's projects
+          const tasksInReviewCount = tasks.filter((t) => {
+            const pid = t.project_id ?? t.projectId ?? (t.project && t.project.id) ?? null;
+            if (pid === null) return false;
+            if (!adminProjectIds.has(Number(pid))) return false;
+            const statusNorm = (t.status || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+            return ['review', 'in_review', 'inreview', 'in_review'].includes(statusNorm);
+          }).length;
 
-        // My assigned tasks for "My Tasks"
-        const myAssignedTasks = tasks
-          .filter((t) => {
-            let aid = t.assigned_to ?? t.assignedTo ?? t.assignee ?? null;
-            if (aid && typeof aid === 'object') aid = aid.id ?? aid.user_id ?? aid.userId ?? null;
-            return aid !== null && Number(aid) === Number(currentUser?.id);
-          })
-          .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0));
-
-        setDashboardData(prev => ({
-          ...prev,
-          _allProjects: projects,
-          myProjects,
-          _incompleteProjectsCount: incompleteProjectsCount,
+          setDashboardData(prev => ({
+            ...prev,
+            _allProjects: projects,
+            myProjects,
+            _incompleteProjectsCount: incompleteProjectsCount,
             _overdueTasksCount: overdueTasksCount,
             _tasksInReviewCount: tasksInReviewCount || data?.tasks?.review || data?.tasks?.inReview || data?.tasks?.in_review || 0,
-          _myAssignedTasks: myAssignedTasks,
-          recentReports: (reportsResp?.reports) ? reportsResp.reports : (reportsResp?.data ?? [])
-        }));
-      } catch (e) {
-        console.error('Failed to fetch projects/tasks/reports for dashboard:', e);
+            recentReports: (reportsResp?.reports) ? reportsResp.reports : (reportsResp?.data ?? [])
+          }));
+        } catch (e) {
+          console.error('Failed to fetch projects/tasks/reports for admin dashboard:', e);
+        }
+      } else if (currentUser?.role === 'team_lead') {
+        // For Team Leads: fetch reports, but use backend-provided my_assigned_tasks and team_lead_kpis
+        try {
+          const reportsResp = await reportService.getSavedReports({ per_page: 5 });
+          setDashboardData(prev => ({
+            ...prev,
+            recentReports: (reportsResp?.reports) ? reportsResp.reports : (reportsResp?.data ?? [])
+          }));
+        } catch (e) {
+          console.error('Failed to fetch reports for TL dashboard:', e);
+        }
       }
 
       setError(null);
@@ -372,52 +375,103 @@ const AdminDashboard = () => {
 
             {/* Stat Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <StatCard
-                title="Team Members"
-                value={dashboardData?.users?.total ?? teamUsers.length ?? 0}
-                color="primary"
-                icon={
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
-                      d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6
-                         6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
-                }
-              />
+              {currentUser?.role === 'team_lead' ? (
+                <>
+                  <StatCard
+                    title="In Review Tasks"
+                    value={dashboardData?.team_lead_kpis?.in_review_tasks ?? 0}
+                    color="warning"
+                    icon={
+                      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    }
+                  />
 
-              <StatCard
-                title="Incomplete Projects"
-                value={dashboardData?._incompleteProjectsCount ?? (dashboardData?.projects?.total ?? 0)}
-                color="secondary"
-                icon={
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
-                      d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                  </svg>
-                }
-              />
+                  <StatCard
+                    title="Due Soon"
+                    value={dashboardData?.team_lead_kpis?.due_soon_tasks ?? 0}
+                    color="secondary"
+                    icon={
+                      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    }
+                  />
 
-              <StatCard
-                title="Overdue Tasks"
-                value={dashboardData?.tasks?.overdue ?? dashboardData?._overdueTasksCount ?? 0}
-                color="error"
-                icon={
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                }
-              />
+                  <StatCard
+                    title="Overdue & Active"
+                    value={dashboardData?.team_lead_kpis?.overdue_not_complete_tasks ?? 0}
+                    color="error"
+                    icon={
+                      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    }
+                  />
 
-              <StatCard
-                title="Tasks In Review"
-                value={dashboardData?._tasksInReviewCount ?? 0}
-                color="warning"
-                icon={
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                }
-              />
+                  <StatCard
+                    title="Active Projects"
+                    value={dashboardData?.team_lead_kpis?.current_projects ?? 0}
+                    color="success"
+                    icon={
+                      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                          d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                      </svg>
+                    }
+                  />
+                </>
+              ) : (
+                <>
+                  <StatCard
+                    title="Team Members"
+                    value={dashboardData?.users?.total ?? teamUsers.length ?? 0}
+                    color="primary"
+                    icon={
+                      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                          d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6
+                             6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                      </svg>
+                    }
+                  />
+
+                  <StatCard
+                    title="Incomplete Projects"
+                    value={dashboardData?._incompleteProjectsCount ?? (dashboardData?.projects?.total ?? 0)}
+                    color="secondary"
+                    icon={
+                      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                          d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                      </svg>
+                    }
+                  />
+
+                  <StatCard
+                    title="Overdue Tasks"
+                    value={dashboardData?.tasks?.overdue ?? dashboardData?._overdueTasksCount ?? 0}
+                    color="error"
+                    icon={
+                      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    }
+                  />
+
+                  <StatCard
+                    title="Tasks In Review"
+                    value={dashboardData?._tasksInReviewCount ?? 0}
+                    color="warning"
+                    icon={
+                      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    }
+                  />
+                </>
+              )}
             </div>
 
             {/* Main content: left 2/3 = My Projects + My Tasks, right 1/3 = stacked widgets */}
@@ -465,9 +519,13 @@ const AdminDashboard = () => {
                     <Link to="/tasks" className="text-sm text-rose-300 hover:text-rose-200 font-medium">View all tasks</Link>
                   </div>
 
-                  { (dashboardData?._myAssignedTasks && dashboardData._myAssignedTasks.length > 0) ? (
+                  {(() => {
+                    const activeTasks = (dashboardData?.my_assigned_tasks || []).filter(
+                      (t) => !['done', 'completed'].includes((t.status || '').toLowerCase())
+                    );
+                    return activeTasks.length > 0 ? (
                     <ul className={`flex-1 divide-y divide-slate-800 overflow-y-auto min-h-0`}>
-                      {dashboardData._myAssignedTasks.map((task) => (
+                      {activeTasks.map((task) => (
                         <li key={task.id} className="px-5 py-4 hover:bg-slate-800/60 transition-colors">
                           <Link to={`/tasks/${task.id}`} className="block">
                             <div className="flex items-start justify-between gap-4">
@@ -497,15 +555,16 @@ const AdminDashboard = () => {
                         </li>
                       ))}
                     </ul>
-                  ) : (
+                    ) : (
                     <div className="p-6 text-center text-slate-400">
                       <svg className="mx-auto h-12 w-12 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                       </svg>
                       <h3 className="mt-2 text-sm font-medium text-slate-200">No tasks found</h3>
-                      <p className="mt-1 text-sm text-slate-400">You don't have any tasks assigned yet.</p>
+                      <p className="mt-1 text-sm text-slate-400">You don't have any active tasks assigned yet.</p>
                     </div>
-                  )}
+                    );
+                  })()}
                 </div>
               </div>
 

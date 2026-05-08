@@ -5,7 +5,7 @@ from ...db.models import db, User, Task, Project, TaskGitHubLink, GitHubReposito
 from ...auth.rbac import Role  # Changed to relative import
 from ...services import settings_service
 from ...services.task_rules import count_overdue_tasks, get_project_scope_ids
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import traceback
 import logging
 
@@ -389,14 +389,127 @@ def get_admin_dashboard():
             'overdue': count_overdue_tasks(all_tasks, project_ids=admin_project_ids),
         }
         
+        # Get user's assigned tasks for "My Tasks" section
+        user_assigned_tasks = [t for t in all_tasks if getattr(t, 'assigned_to', None) == user_id]
+        user_assigned_tasks_sorted = sorted(
+            user_assigned_tasks,
+            key=lambda t: getattr(t, 'updated_at', None) or getattr(t, 'created_at', None) or datetime.min,
+            reverse=True
+        )
+        
+        # For Team Leads: calculate scoped KPIs for managing projects
+        team_lead_kpis = {}
+        if user_role == Role.TEAM_LEAD.value:
+            # Get all projects
+            try:
+                all_projects = Project.query.all()
+            except Exception as e:
+                logger.error(f"Error fetching projects for TL dashboard: {str(e)}")
+                all_projects = []
+            
+            # Find projects with active or on-hold status that TL is on
+            scoped_projects = []
+            for project in all_projects:
+                project_status = getattr(project, 'status', '').lower().replace('-', '_')
+                if project_status not in ['active', 'on_hold']:
+                    continue
+                
+                # Check if TL is on the project
+                team_members = getattr(project, 'team_members', []) or []
+                if hasattr(team_members, 'all'):
+                    team_members = team_members.all()
+                
+                is_member = any(
+                    (getattr(m, 'id', None) == user_id or
+                     getattr(m, 'user_id', None) == user_id)
+                    for m in team_members if m is not None
+                )
+                is_creator = getattr(project, 'created_by', None) == user_id
+                
+                if is_member or is_creator:
+                    scoped_projects.append(project)
+            
+            # Calculate TL-specific KPIs
+            scoped_project_ids = set(p.id for p in scoped_projects)
+            scoped_tasks = [t for t in all_tasks if getattr(t, 'project_id', None) in scoped_project_ids]
+            
+            # KPI 1: Total in review tasks
+            in_review_count = len([t for t in scoped_tasks if getattr(t, 'status', '').lower() in ['review', 'in_review', 'in-review']])
+            
+            # KPI 2: Total tasks due soon (within 7 days)
+            today = datetime.now().date()
+            week_later = today + timedelta(days=7)
+            due_soon_count = 0
+            for t in scoped_tasks:
+                deadline = getattr(t, 'deadline', None)
+                if deadline is None:
+                    continue
+                if hasattr(deadline, 'date'):
+                    deadline = deadline.date()
+                elif isinstance(deadline, str):
+                    try:
+                        deadline = datetime.fromisoformat(deadline).date()
+                    except (ValueError, TypeError):
+                        continue
+                else:
+                    continue
+                
+                task_status = getattr(t, 'status', '').lower().replace('-', '_')
+                if task_status in ['done', 'completed', 'review', 'in_review']:
+                    continue
+                
+                if today <= deadline <= week_later:
+                    due_soon_count += 1
+            
+            # KPI 3: Total overdue AND NOT (completed OR in-review)
+            overdue_not_complete_count = 0
+            for t in scoped_tasks:
+                deadline = getattr(t, 'deadline', None)
+                if deadline is None:
+                    continue
+                if hasattr(deadline, 'date'):
+                    deadline = deadline.date()
+                elif isinstance(deadline, str):
+                    try:
+                        deadline = datetime.fromisoformat(deadline).date()
+                    except (ValueError, TypeError):
+                        continue
+                else:
+                    continue
+                
+                if deadline >= today:
+                    continue
+                
+                task_status = getattr(t, 'status', '').lower().replace('-', '_')
+                if task_status in ['done', 'completed', 'review', 'in_review']:
+                    continue
+                
+                overdue_not_complete_count += 1
+            
+            # KPI 4: Total current projects (active or on-hold)
+            current_projects_count = len(scoped_projects)
+            
+            team_lead_kpis = {
+                'in_review_tasks': in_review_count,
+                'due_soon_tasks': due_soon_count,
+                'overdue_not_complete_tasks': overdue_not_complete_count,
+                'current_projects': current_projects_count,
+            }
+        
         # Format response data
         dashboard_data = {
             'users': user_counts,
             'tasks': task_stats,
             'projects': {
                 'total': Project.query.count()
-            }
+            },
+            'my_assigned_tasks': [_task_to_dashboard_item(t) for t in user_assigned_tasks_sorted],
         }
+        
+        # Add Team Lead KPIs if applicable
+        if team_lead_kpis:
+            dashboard_data['team_lead_kpis'] = team_lead_kpis
+        
         # Include recent projects (top 3 by updated_at)
         try:
             recent_projects_query = Project.query.order_by(Project.updated_at.desc()).limit(3).all()

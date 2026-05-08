@@ -275,6 +275,10 @@ def update_task_by_id(task_id):
         task.progress = data['progress']
     if 'priority' in data:
         task.priority = data['priority']
+    if 'deadline' in data:
+        task.deadline = data['deadline']
+    if 'project_id' in data:
+        task.project_id = _coerce_int(data['project_id'])
     
     if 'assigned_to' in data:
         # Only TL or Admins can change the assignee
@@ -316,7 +320,11 @@ def update_task_by_id(task_id):
             'title': _task_value(task, 'title'),
             'status': _task_value(task, 'status'),
             'priority': _task_value(task, 'priority', 'medium'),
-            'progress': _task_value(task, 'progress', 0)
+            'progress': _task_value(task, 'progress', 0),
+            'project_id': _task_value(task, 'project_id'),
+            'deadline': _task_datetime(task, 'deadline'),
+            'assigned_to': _task_value(task, 'assigned_to'),
+            'description': _task_value(task, 'description')
         }
     })
 

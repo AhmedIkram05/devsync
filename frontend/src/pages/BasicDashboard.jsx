@@ -96,8 +96,9 @@ const BasicDashboard = () => {
   };
 
   // Use full tasks list if provided by API, otherwise fall back to recentTasks
-  // Limit to last 10 most recent tasks, sorted by most recent first
+  // Filter out completed tasks, limit to last 10 most recent tasks, sorted by most recent first
   const orderedTasksToShow = ((dashboardData?.tasks && dashboardData.tasks.length) ? dashboardData.tasks : (dashboardData?.recentTasks || []))
+    .filter((task) => !['done', 'completed'].includes((task.status || '').toLowerCase()))
     .sort((a, b) => {
       const dateA = new Date(a.updated_at || a.created_at || 0).getTime();
       const dateB = new Date(b.updated_at || b.created_at || 0).getTime();
