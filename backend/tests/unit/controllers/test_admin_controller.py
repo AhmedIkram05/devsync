@@ -1,352 +1,157 @@
-import sys
-import os
-import json
-import unittest
-from unittest.mock import patch, MagicMock
-from flask import Flask, jsonify, Response
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
-# Set up proper import paths
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..')))
 
-# Create a Flask app for testing
-app = Flask(__name__)
-app.config['TESTING'] = True
+@patch('backend.src.api.controllers.admin_controller.Task')
+@patch('backend.src.api.controllers.admin_controller.Project')
+@patch('backend.src.api.controllers.admin_controller.User')
+def test_get_system_stats_counts_roles_statuses(mock_user, mock_project, mock_task, app):
+    mock_user.query.all.return_value = [
+        SimpleNamespace(role='admin'),
+        SimpleNamespace(role='team_lead'),
+        SimpleNamespace(role='developer'),
+        SimpleNamespace(role='developer'),
+    ]
+    mock_project.query.all.return_value = [
+        SimpleNamespace(status='active'),
+        SimpleNamespace(status='completed'),
+        SimpleNamespace(status='on_hold'),
+    ]
+    mock_task.query.all.return_value = [
+        SimpleNamespace(status='todo'),
+        SimpleNamespace(status='in_progress'),
+        SimpleNamespace(status='review'),
+        SimpleNamespace(status='done'),
+        SimpleNamespace(status='completed'),
+    ]
 
-class MockUser:
-    def __init__(self, id, name, email, role):
-        self.id = id
-        self.name = name
-        self.email = email
-        self.role = role
-
-class MockDB:
-    def __init__(self):
-        self.session = MagicMock()
-        self.session.commit = MagicMock()
-
-class TestAdminController(unittest.TestCase):
-    def setUp(self):
-        self.app = app.test_client()
-        
-        # Reset app context for each test
-        self.app_context = app.app_context()
-        self.app_context.push()
-        
-        # Create mock objects
-        self.mock_db = MockDB()
-        self.mock_user = MockUser(1, "Test User", "test@example.com", "developer")
-        
-        # Start patches
-        self.patcher1 = patch('backend.src.db.models.db', self.mock_db)
-        self.patcher2 = patch('backend.src.db.models.User')
-        self.patcher3 = patch('backend.src.db.models.Project')
-        self.patcher4 = patch('backend.src.db.models.Task')
-        
-        # Initialize mocks
-        self.mock_db_model = self.patcher1.start()
-        self.mock_user_model = self.patcher2.start()
-        self.mock_project_model = self.patcher3.start()
-        self.mock_task_model = self.patcher4.start()
-        
-    def tearDown(self):
-        # Stop patches
-        self.patcher1.stop()
-        self.patcher2.stop()
-        self.patcher3.stop()
-        self.patcher4.stop()
-        
-        # Pop app context
-        self.app_context.pop()
-    
-    def test_get_system_stats(self):
-        # Define the function manually to avoid import issues
-        def get_system_stats_mock():
-            """Mocked controller function to get system statistics"""
-            return jsonify({
-                'users': {
-                    'total': 4,
-                    'admins': 1,
-                    'team_leads': 1,
-                    'developers': 2
-                },
-                'projects': {
-                    'total': 3,
-                    'active': 2,
-                    'completed': 1,
-                    'on_hold': 0
-                },
-                'tasks': {
-                    'total': 4,
-                    'todo': 1,
-                    'in_progress': 1,
-                    'review': 1,
-                    'done': 1
-                }
-            })
-        
-        # Test the function
-        response = get_system_stats_mock()
-        data = json.loads(response.data)
-        
-        # Verify the structure and content
-        self.assertIn('users', data)
-        self.assertIn('projects', data)
-        self.assertIn('tasks', data)
-        
-        # Verify user stats
-        self.assertEqual(data['users']['total'], 4)
-        self.assertEqual(data['users']['admins'], 1)
-        self.assertEqual(data['users']['developers'], 2)
-        
-        # Verify project stats
-        self.assertEqual(data['projects']['total'], 3)
-        self.assertEqual(data['projects']['active'], 2)
-        self.assertEqual(data['projects']['completed'], 1)
-        
-        # Verify task stats
-        self.assertEqual(data['tasks']['total'], 4)
-        self.assertEqual(data['tasks']['todo'], 1)
-        self.assertEqual(data['tasks']['in_progress'], 1)
-        self.assertEqual(data['tasks']['done'], 1)
-    
-    def test_get_system_settings(self):
-        # Define the function to test
-        def get_system_settings_mock():
-            """Mocked controller function to get system settings"""
-            settings = {
-                'app_name': 'DevSync',
-                'allow_registration': True,
-                'default_user_role': 'developer',
-                'github_integration_enabled': True,
-                'notification_settings': {
-                    'email_notifications': True,
-                    'task_assignments': True,
-                    'project_updates': True
-                }
-            }
-            
-            return jsonify({'settings': settings})
-        
-        # Test the function
-        response = get_system_settings_mock()
-        data = json.loads(response.data)
-        
-        # Verify the results
-        self.assertIn('settings', data)
-        settings = data['settings']
-        
-        # Verify settings fields
-        self.assertEqual(settings['app_name'], 'DevSync')
-        self.assertTrue(settings['allow_registration'])
-        self.assertEqual(settings['default_user_role'], 'developer')
-        self.assertTrue(settings['github_integration_enabled'])
-        self.assertIn('notification_settings', settings)
-    
-    def test_update_system_settings_success(self):
-        # Define a mock validator function
-        def mock_validate_system_settings(data):
-            """Mock validation function that always succeeds"""
-            return None
-        
-        # Define the function to test with the mock validator
-        def update_system_settings_mock():
-            """Mocked controller function to update system settings"""
-            data = {'app_name': 'Updated DevSync', 'allow_registration': False}
-            
-            # Validate settings data using our mock validator
-            validation_result = mock_validate_system_settings(data)
-            if validation_result:
-                return validation_result
-            
-            # Return success response
-            return jsonify({
-                'message': 'System settings updated successfully',
-                'settings': data
-            })
-        
-        # Test the function
-        response = update_system_settings_mock()
-        data = json.loads(response.data)
-        
-        # Check response
-        self.assertEqual(data['message'], 'System settings updated successfully')
-        self.assertEqual(data['settings']['app_name'], 'Updated DevSync')
-        self.assertEqual(data['settings']['allow_registration'], False)
-    
-    def test_update_system_settings_validation_error(self):
-        # Define a mock validator that returns an error
-        def mock_validate_system_settings(data):
-            """Mock validation function that fails"""
-            return jsonify({'message': 'Validation error'}), 400
-        
-        # Define the function to test with the mock validator
-        def update_system_settings_mock():
-            """Mocked controller function to update system settings"""
-            data = {'app_name': 'A'}  # Too short
-            
-            # Validate settings data using our mock validator
-            validation_result = mock_validate_system_settings(data)
-            if validation_result:
-                return validation_result
-            
-            # This should not execute due to validation error
-            return jsonify({
-                'message': 'System settings updated successfully',
-                'settings': data
-            })
-        
-        # Test the function
-        response, code = update_system_settings_mock()
-        data = json.loads(response.data)
-        
-        # Check response
-        self.assertEqual(code, 400)
-        self.assertEqual(data['message'], 'Validation error')
-    
-    def test_update_user_role_success(self):
-        # Setup mock validation
-        def mock_validate_user_role_update(data):
-            return None
-        
-        # Define the function to test
-        def update_user_role_mock(user_id):
-            """Mocked controller function to update a user's role"""
-            # Simulate request.get_json()
-            data = {'role': 'admin'}
-            
-            # Simulate validation
-            validation_result = mock_validate_user_role_update(data)
-            if validation_result:
-                return validation_result
-            
-            # Simulate fetching user
-            if user_id != 1:
-                return jsonify({'message': 'User not found'}), 404
-                
-            # Use strings instead of MagicMock objects for JSON serialization
-            user_id = 1
-            user_name = "Test User"
-            user_email = "test@example.com"
-            user_role = "admin"
-            
-            # Return success response
-            return jsonify({
-                'message': 'User role updated successfully',
-                'user': {
-                    'id': user_id,
-                    'name': user_name,
-                    'email': user_email,
-                    'role': user_role
-                }
-            })
-        
-        # Test the function
-        response = update_user_role_mock(1)
-        data = json.loads(response.data)
-        
-        # Verify results
-        self.assertEqual(data['message'], 'User role updated successfully')
-        self.assertEqual(data['user']['role'], 'admin')
-    
-    def test_update_user_role_not_found(self):
-        # Setup mock validation
-        def mock_validate_user_role_update(data):
-            return None
-        
-        # Define the function to test
-        def update_user_role_mock(user_id):
-            """Mocked controller function to update a user's role"""
-            # Simulate request.get_json()
-            data = {'role': 'admin'}
-            
-            # Simulate validation
-            validation_result = mock_validate_user_role_update(data)
-            if validation_result:
-                return validation_result
-            
-            # Simulate user not found
-            if user_id == 999:
-                return jsonify({'message': 'User not found'}), 404
-                
-            # This should not execute with user_id 999
-            return jsonify({
-                'message': 'User role updated successfully',
-                'user': {
-                    'id': 1,
-                    'name': 'Test User',
-                    'email': 'test@example.com',
-                    'role': 'admin'
-                }
-            })
-        
-        # Test the function
-        response, code = update_user_role_mock(999)
-        data = json.loads(response.data)
-        
-        # Check response
-        self.assertEqual(code, 404)
-        self.assertEqual(data['message'], 'User not found')
-    
-    @patch('backend.src.api.controllers.admin_controller.User')
-    @patch('backend.src.api.controllers.admin_controller.Project')
-    @patch('backend.src.api.controllers.admin_controller.Task')
-    def test_get_system_stats_actual(self, mock_task, mock_project, mock_user):
-        # Import the function directly to test
+    with app.app_context():
         from backend.src.api.controllers.admin_controller import get_system_stats
-        from backend.src.auth.rbac import Role
-        
-        # Setup mock users
-        mock_admin = MagicMock(role=Role.ADMIN.value)
-        mock_developer = MagicMock(role=Role.DEVELOPER.value)
-        mock_team_lead = MagicMock(role=Role.TEAM_LEAD.value)
-        mock_users = [mock_admin, mock_developer, mock_team_lead]
-        mock_user.query.all.return_value = mock_users
-        
-        # Setup mock projects
-        mock_active_project = MagicMock(status='active')
-        mock_completed_project = MagicMock(status='completed')
-        mock_hold_project = MagicMock(status='on_hold')
-        mock_projects = [mock_active_project, mock_completed_project, mock_hold_project]
-        mock_project.query.all.return_value = mock_projects
-        
-        # Setup mock tasks
-        mock_todo = MagicMock(status='todo')
-        mock_in_progress = MagicMock(status='in_progress')
-        mock_review = MagicMock(status='review')
-        mock_done = MagicMock(status='done')
-        mock_tasks = [mock_todo, mock_in_progress, mock_review, mock_done]
-        mock_task.query.all.return_value = mock_tasks
-        
-        # Execute the function
-        with app.test_request_context():
-            response = get_system_stats()
-            data = json.loads(response.data)
-        
-        # Verify the results
-        self.assertIn('users', data)
-        self.assertIn('projects', data)
-        self.assertIn('tasks', data)
-        
-        # Check user stats
-        self.assertEqual(data['users']['total'], 3)
-        self.assertEqual(data['users']['admins'], 1)
-        self.assertEqual(data['users']['developers'], 1)
-        self.assertEqual(data['users']['team_leads'], 1)
-        
-        # Check project stats
-        self.assertEqual(data['projects']['total'], 3)
-        self.assertEqual(data['projects']['active'], 1)
-        self.assertEqual(data['projects']['completed'], 1)
-        self.assertEqual(data['projects']['on_hold'], 1)
-        
-        # Check task stats
-        self.assertEqual(data['tasks']['total'], 4)
-        self.assertEqual(data['tasks']['todo'], 1)
-        self.assertEqual(data['tasks']['in_progress'], 1)
-        self.assertEqual(data['tasks']['review'], 1)
-        self.assertEqual(data['tasks']['done'], 1)
-    
+
+        response = get_system_stats()
+        data = response.get_json()
+
+    assert data['users']['total'] == 4
+    assert data['users']['admins'] == 1
+    assert data['users']['team_leads'] == 1
+    assert data['users']['developers'] == 2
+    assert data['projects']['active'] == 1
+    assert data['projects']['completed'] == 1
+    assert data['projects']['on_hold'] == 1
+    assert data['tasks']['todo'] == 1
+    assert data['tasks']['in_progress'] == 1
+    assert data['tasks']['review'] == 1
+    assert data['tasks']['done'] == 2
 
 
-if __name__ == '__main__':
-    unittest.main()
+@patch('backend.src.api.controllers.admin_controller.Task')
+@patch('backend.src.api.controllers.admin_controller.Project')
+@patch('backend.src.api.controllers.admin_controller.User')
+def test_get_system_stats_handles_query_errors(mock_user, mock_project, mock_task, app):
+    mock_user.query.all.side_effect = Exception('users failed')
+    mock_project.query.all.side_effect = Exception('projects failed')
+    mock_task.query.all.side_effect = Exception('tasks failed')
+
+    with app.app_context():
+        from backend.src.api.controllers.admin_controller import get_system_stats
+
+        response = get_system_stats()
+        data = response.get_json()
+
+    assert data['users']['total'] == 0
+    assert data['projects']['total'] == 0
+    assert data['tasks']['total'] == 0
+
+
+@patch('backend.src.api.controllers.admin_controller.settings_service.get_settings', return_value={'default_user_role': 'developer'})
+def test_get_system_settings(mock_get_settings, app):
+    with app.app_context():
+        from backend.src.api.controllers.admin_controller import get_system_settings
+
+        response = get_system_settings()
+
+    assert response.get_json() == {'settings': {'default_user_role': 'developer'}}
+    mock_get_settings.assert_called_once()
+
+
+@patch('backend.src.api.controllers.admin_controller.validate_system_settings')
+def test_update_system_settings_validation_error(mock_validate, app):
+    mock_validate.return_value = ({'message': 'bad settings'}, 400)
+
+    with app.test_request_context('/admin/settings', method='PUT', json={'allow_self_registration': True}):
+        from backend.src.api.controllers.admin_controller import update_system_settings
+
+        result = update_system_settings()
+
+    assert result == ({'message': 'bad settings'}, 400)
+
+
+@patch('backend.src.api.controllers.admin_controller.emit_dashboard_refresh')
+@patch('backend.src.api.controllers.admin_controller.audit_service.record')
+@patch('backend.src.api.controllers.admin_controller.settings_service.update_settings')
+@patch('backend.src.api.controllers.admin_controller.get_jwt_identity', return_value={'user_id': 7})
+@patch('backend.src.api.controllers.admin_controller.validate_system_settings', return_value=None)
+def test_update_system_settings_success(mock_validate, mock_identity, mock_update_settings, mock_audit_record, mock_emit, app):
+    payload = {'allow_self_registration': False, 'audit_log_retention_days': 14}
+
+    with app.test_request_context('/admin/settings', method='PUT', json=payload):
+        from backend.src.api.controllers.admin_controller import update_system_settings
+
+        response = update_system_settings()
+        data = response.get_json()
+
+    assert data['message'] == 'System settings updated successfully'
+    assert data['settings'] == payload
+    mock_update_settings.assert_called_once_with(payload, 7)
+    mock_audit_record.assert_called_once()
+    mock_emit.assert_called_once()
+
+
+@patch('backend.src.api.controllers.admin_controller.User')
+def test_update_user_role_not_found(mock_user, app):
+    mock_user.query.get.return_value = None
+
+    with app.test_request_context('/admin/users/8/role', method='PUT', json={'role': 'developer'}):
+        from backend.src.api.controllers.admin_controller import update_user_role
+
+        response, status = update_user_role(8)
+
+    assert status == 404
+    assert response.get_json()['message'] == 'User not found'
+
+
+@patch('backend.src.api.controllers.admin_controller.User')
+@patch('backend.src.api.controllers.admin_controller.validate_user_role_update')
+def test_update_user_role_validation_error(mock_validate, mock_user, app):
+    mock_user.query.get.return_value = SimpleNamespace(id=8, role='developer', name='U', email='u@test.com')
+    mock_validate.return_value = ({'message': 'invalid role'}, 400)
+
+    with app.test_request_context('/admin/users/8/role', method='PUT', json={'role': 'bad'}):
+        from backend.src.api.controllers.admin_controller import update_user_role
+
+        result = update_user_role(8)
+
+    assert result == ({'message': 'invalid role'}, 400)
+
+
+@patch('backend.src.api.controllers.admin_controller.emit_dashboard_refresh')
+@patch('backend.src.api.controllers.admin_controller.audit_service.record')
+@patch('backend.src.api.controllers.admin_controller.db')
+@patch('backend.src.api.controllers.admin_controller.User')
+@patch('backend.src.api.controllers.admin_controller.validate_user_role_update', return_value=None)
+def test_update_user_role_success(mock_validate, mock_user, mock_db, mock_audit_record, mock_emit, app):
+    user = SimpleNamespace(id=8, role='developer', name='Dev', email='dev@test.com')
+    mock_user.query.get.return_value = user
+
+    with app.test_request_context('/admin/users/8/role', method='PUT', json={'role': 'team_lead'}):
+        from backend.src.api.controllers.admin_controller import update_user_role
+
+        response = update_user_role(8)
+        data = response.get_json()
+
+    assert data['message'] == 'User role updated successfully'
+    assert data['user']['role'] == 'team_lead'
+    assert user.role == 'team_lead'
+    mock_db.session.commit.assert_called_once()
+    mock_audit_record.assert_called_once()
+    mock_emit.assert_called_once()
