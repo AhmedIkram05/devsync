@@ -5,7 +5,6 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import { useAuth } from '../context/AuthContext';
 
 const panelClass = "bg-slate-900/70 border border-slate-800/70 rounded-2xl overflow-hidden shadow-md backdrop-blur-sm";
-const panelHeaderClass = "px-6 py-5 border-b border-slate-800/70 flex justify-between items-center";
 const sectionTitleClass = "text-lg font-semibold text-slate-100";
 
 const getCount = (counts, keys, fallback = 0) => {
@@ -95,16 +94,14 @@ const BasicDashboard = () => {
     fetchDashboardData();
   };
 
-  // Use full tasks list if provided by API, otherwise fall back to recentTasks
-  // Filter out completed tasks, limit to last 10 most recent tasks, sorted by most recent first
-  const orderedTasksToShow = ((dashboardData?.tasks && dashboardData.tasks.length) ? dashboardData.tasks : (dashboardData?.recentTasks || []))
+  // Get all tasks, filter out completed, sorted by most recent
+  const tasksToShow = ((dashboardData?.tasks && dashboardData.tasks.length) ? dashboardData.tasks : (dashboardData?.recentTasks || []))
     .filter((task) => !['done', 'completed'].includes((task.status || '').toLowerCase()))
     .sort((a, b) => {
       const dateA = new Date(a.updated_at || a.created_at || 0).getTime();
       const dateB = new Date(b.updated_at || b.created_at || 0).getTime();
       return dateB - dateA;
     });
-  const tasksToShow = isTeamLead ? orderedTasksToShow : orderedTasksToShow.slice(0, 10);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
@@ -233,14 +230,16 @@ const BasicDashboard = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch min-h-[720px]">
               <div className="lg:col-span-2 flex flex-col gap-6 h-full">
                 <div className={`${panelClass} flex-1 min-h-[520px] max-h-[85vh]`}>
-                  <div className={panelHeaderClass}>
-                    <div>
-                      <h3 className={sectionTitleClass}>My Tasks</h3>
-                      <p className="mt-1 text-xs text-slate-500">Your latest assigned work, with the same fields you see on the tasks page.</p>
+                  <div className="px-6 py-5 border-b border-slate-800/70">
+                    <div className="flex justify-between items-start gap-4">
+                      <div>
+                        <h3 className={sectionTitleClass}>My Tasks</h3>
+                        <p className="mt-1 text-xs text-slate-500">Your latest assigned work, with the same fields you see on the tasks page.</p>
+                      </div>
+                      <Link to="/tasks" className="text-sm text-rose-300 hover:text-rose-200 font-medium whitespace-nowrap">
+                        View all tasks
+                      </Link>
                     </div>
-                    <Link to="/tasks" className="text-sm text-rose-300 hover:text-rose-200 font-medium">
-                      View all tasks
-                    </Link>
                   </div>
 
                   {tasksToShow.length > 0 ? (

@@ -278,8 +278,6 @@ def get_client_dashboard():
             key=lambda task: getattr(task, 'updated_at', None) or getattr(task, 'created_at', None) or datetime.min,
             reverse=True,
         )
-        if not is_team_lead:
-            recent_tasks = recent_tasks[:10]
 
         task_stats = {
             'total': len(scoped_tasks),

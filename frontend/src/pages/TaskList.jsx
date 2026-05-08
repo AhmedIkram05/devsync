@@ -17,7 +17,10 @@ const TaskList = () => {
     status: 'all',
     priority: 'all',
     search: '',
-    scope: 'all'
+    scope: 'all',
+    project: 'all',
+    sortBy: 'recent',
+    assignee: 'all'
   });
   
   const canCreateTasks = Boolean(currentUser);
@@ -161,6 +164,11 @@ const TaskList = () => {
       return false;
     }
     
+    // Filter by project
+    if (filters.project !== 'all' && Number(task.project_id) !== Number(filters.project)) {
+      return false;
+    }
+    
     // Filter by search text
     if (filters.search && !task.title.toLowerCase().includes(filters.search.toLowerCase())) {
       return false;
@@ -177,8 +185,30 @@ const TaskList = () => {
         return false;
       }
     }
+
+    // Filter by assignee
+    if (filters.assignee !== 'all' && Number(task.assigned_to) !== Number(filters.assignee)) {
+      return false;
+    }
     
     return true;
+  }).sort((a, b) => {
+    switch (filters.sortBy) {
+      case 'deadline':
+        const deadlineA = a.deadline ? new Date(a.deadline).getTime() : Infinity;
+        const deadlineB = b.deadline ? new Date(b.deadline).getTime() : Infinity;
+        return deadlineA - deadlineB;
+      case 'priority':
+        const priorityOrder = { high: 1, medium: 2, low: 3 };
+        const priorityA = priorityOrder[(a.priority || 'medium').toLowerCase()] || 2;
+        const priorityB = priorityOrder[(b.priority || 'medium').toLowerCase()] || 2;
+        return priorityA - priorityB;
+      case 'progress':
+        return (b.progress || 0) - (a.progress || 0);
+      case 'recent':
+      default:
+        return (new Date(b.updated_at || b.created_at || 0).getTime()) - (new Date(a.updated_at || a.created_at || 0).getTime());
+    }
   });
 
   if (loading) {
@@ -238,7 +268,7 @@ const TaskList = () => {
           )}
           
           {/* Filters */}
-          <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="mb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
             <div>
               <label htmlFor="statusFilter" className="block text-sm font-medium text-slate-300 mb-1">
                 Status
@@ -274,6 +304,57 @@ const TaskList = () => {
                 <option value="low">Low</option>
               </select>
             </div>
+
+            <div>
+              <label htmlFor="projectFilter" className="block text-sm font-medium text-slate-300 mb-1">
+                Project
+              </label>
+              <select
+                id="projectFilter"
+                value={filters.project}
+                onChange={(e) => setFilters({...filters, project: e.target.value})}
+                className="w-full p-2 border border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60"
+              >
+                <option value="all">All Projects</option>
+                {Object.entries(projectMap).map(([id, name]) => (
+                  <option key={id} value={id}>{name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="assigneeFilter" className="block text-sm font-medium text-slate-300 mb-1">
+                Assignee
+              </label>
+              <select
+                id="assigneeFilter"
+                value={filters.assignee}
+                onChange={(e) => setFilters({...filters, assignee: e.target.value})}
+                className="w-full p-2 border border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60"
+              >
+                <option value="all">All Assignees</option>
+                {Object.entries(userMap).map(([id, name]) => (
+                  <option key={id} value={id}>{name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="sortFilter" className="block text-sm font-medium text-slate-300 mb-1">
+                Sort By
+              </label>
+              <select
+                id="sortFilter"
+                value={filters.sortBy}
+                onChange={(e) => setFilters({...filters, sortBy: e.target.value})}
+                className="w-full p-2 border border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60"
+              >
+                <option value="recent">Most Recent</option>
+                <option value="deadline">Deadline (Soon)</option>
+                <option value="priority">Priority (High First)</option>
+                <option value="progress">Progress (High First)</option>
+              </select>
+            </div>
             
             <div>
               <label htmlFor="searchFilter" className="block text-sm font-medium text-slate-300 mb-1">
@@ -287,6 +368,18 @@ const TaskList = () => {
                 onChange={(e) => setFilters({...filters, search: e.target.value})}
                 className="w-full p-2 border border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1">&nbsp;</label>
+              {(filters.status !== 'all' || filters.priority !== 'all' || filters.project !== 'all' || filters.search || filters.assignee !== 'all') && (
+                <button
+                  onClick={() => setFilters({ status: 'all', priority: 'all', search: '', scope: requestedAssignee ? 'my' : 'all', project: 'all', sortBy: 'recent', assignee: 'all' })}
+                  className="w-full p-2 bg-slate-700/50 hover:bg-slate-700 border border-slate-600 rounded-md text-slate-300 text-sm font-medium transition"
+                >
+                  Clear Filters
+                </button>
+              )}
             </div>
           </div>
 
@@ -323,9 +416,9 @@ const TaskList = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
               </svg>
               <p className="mt-2 text-lg">No tasks found matching your filters</p>
-              {filters.status !== 'all' || filters.priority !== 'all' || filters.search ? (
+              {filters.status !== 'all' || filters.priority !== 'all' || filters.search || filters.project !== 'all' || filters.assignee !== 'all' ? (
                 <button
-                  onClick={() => setFilters({ status: 'all', priority: 'all', search: '', scope: requestedAssignee ? 'my' : 'all' })}
+                  onClick={() => setFilters({ status: 'all', priority: 'all', search: '', scope: requestedAssignee ? 'my' : 'all', project: 'all', sortBy: 'recent', assignee: 'all' })}
                   className="mt-3 text-rose-300 hover:text-rose-200"
                 >
                   Clear filters

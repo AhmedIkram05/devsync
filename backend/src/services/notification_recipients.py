@@ -4,6 +4,7 @@ Determines who should receive notifications based on user roles, project scope, 
 """
 
 from ..db.models import Task, Project, User
+from ..db.db_connection import db
 from .task_rules import get_project_scope_ids
 
 
@@ -22,7 +23,7 @@ def get_tls_for_project(project_id):
         return []
     
     try:
-        project = Project.query.get(project_id)
+        project = db.session.get(Project, project_id)
         if not project:
             return []
         
@@ -50,7 +51,7 @@ def get_admins_for_project(project_id):
         return []
     
     try:
-        project = Project.query.get(project_id)
+        project = db.session.get(Project, project_id)
         if not project:
             return []
         

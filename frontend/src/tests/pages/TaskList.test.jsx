@@ -230,10 +230,11 @@ describe('TaskList page', () => {
     // Apply a filter that hides all tasks
     fireEvent.change(screen.getByLabelText(/status/i), { target: { value: 'completed' } });
     expect(await screen.findByText(/No tasks found/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /clear filters/i })).toBeInTheDocument();
+    const clearButtons = screen.getAllByRole('button', { name: /clear filters/i });
+    expect(clearButtons.length).toBeGreaterThan(0);
 
     // Clear filters — button should show "Create a new task" fallback instead
-    fireEvent.click(screen.getByRole('button', { name: /clear filters/i }));
+    fireEvent.click(clearButtons[clearButtons.length - 1]); // Click the last one (in empty state)
     await screen.findByText('Alpha');
   });
 

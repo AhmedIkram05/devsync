@@ -83,7 +83,7 @@ def test_get_user_by_id(app, mock_db, mock_user):
             assert data['user']['name'] == "Test User"
             assert data['user']['email'] == "test@example.com"
 
-def test_update_user_success(app, mock_db, mock_user):
+def test_update_user_success(app, mock_db, mock_user, mock_jwt_identity):
     with app.test_request_context(json={'name': 'Updated Name', 'email': 'new@example.com'}):
         with patch('backend.src.api.controllers.users_controller.User.query') as mock_query:
             # Configure the mock query
@@ -104,7 +104,7 @@ def test_update_user_success(app, mock_db, mock_user):
             assert mock_user.email == 'new@example.com'
             assert mock_db.session.commit.called
 
-def test_update_user_email_exists(app, mock_db, mock_user):
+def test_update_user_email_exists(app, mock_db, mock_user, mock_jwt_identity):
     with app.test_request_context(json={'email': 'existing@example.com'}):
         with patch('backend.src.api.controllers.users_controller.User.query') as mock_query:
             # Configure the mock query - email already taken
@@ -125,7 +125,7 @@ def test_update_user_email_exists(app, mock_db, mock_user):
             assert 'Email already in use' in data['message']
             assert status == 409
 
-def test_delete_user(app, mock_db, mock_user):
+def test_delete_user(app, mock_db, mock_user, mock_jwt_identity):
     with app.test_request_context():
         with patch('backend.src.api.controllers.users_controller.User.query') as mock_query:
             # Configure the mock query

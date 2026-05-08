@@ -219,10 +219,10 @@ def create_new_task():
     assignee_name = None
     try:
         if new_task.project_id:
-            project = Project.query.get(new_task.project_id)
+            project = db.session.get(Project, new_task.project_id)
             project_name = project.name if project else None
         if new_task.assigned_to:
-            assignee = User.query.get(new_task.assigned_to)
+            assignee = db.session.get(User, new_task.assigned_to)
             assignee_name = assignee.name if assignee else None
     except Exception:
         pass

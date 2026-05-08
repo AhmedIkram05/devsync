@@ -359,8 +359,7 @@ class NotificationService:
         # Fetch project name if not provided
         if project_name is None and project_id:
             try:
-                from ..db.models import Project
-                project = Project.query.get(project_id)
+                project = db.session.get(Project, project_id)
                 project_name = project.name if project else None
             except Exception:
                 project_name = None
@@ -369,7 +368,7 @@ class NotificationService:
         if assignee_name is None and assignee_id:
             try:
                 from ..db.models import User
-                assignee = User.query.get(assignee_id)
+                assignee = db.session.get(User, assignee_id)
                 assignee_name = assignee.name if assignee else None
             except Exception:
                 assignee_name = None
@@ -417,8 +416,7 @@ class NotificationService:
         # Fetch project name if not provided
         if project_name is None and project_id:
             try:
-                from ..db.models import Project
-                project = Project.query.get(project_id)
+                project = db.session.get(Project, project_id)
                 project_name = project.name if project else None
             except Exception:
                 project_name = None
@@ -449,7 +447,7 @@ class NotificationService:
                         # Try to get assignee name
                         try:
                             from ..db.models import User
-                            assignee = User.query.get(new_val) if new_val else None
+                            assignee = db.session.get(User, new_val) if new_val else None
                             assignee_name = assignee.name if assignee else "someone"
                         except Exception:
                             assignee_name = "someone"
