@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from flask import request, jsonify
 from flask_jwt_extended import get_jwt_identity, get_jwt
-from ...db.models import db, Task, User  # Changed to relative import
+from ...db.models import db, Task, User, Project  # Changed to relative import
 from ...auth.rbac import Role  # Changed to relative import
 from ..validators.task_validator import validate_task_data  # Changed to relative import
 from ...services import audit_service, settings_service
@@ -214,6 +214,19 @@ def create_new_task():
     db.session.add(new_task)
     db.session.commit()
 
+    # Fetch project and assignee names for notification context
+    project_name = None
+    assignee_name = None
+    try:
+        if new_task.project_id:
+            project = Project.query.get(new_task.project_id)
+            project_name = project.name if project else None
+        if new_task.assigned_to:
+            assignee = User.query.get(new_task.assigned_to)
+            assignee_name = assignee.name if assignee else None
+    except Exception:
+        pass
+
     audit_service.record(
         action='task_created',
         resource_type='task',
@@ -229,12 +242,14 @@ def create_new_task():
     )
 
     _run_notification(
-        NotificationService.task_created_notification,
+        NotificationService.task_created_notification_v2,
         new_task.id,
         new_task.title,
         new_task.project_id,
         user_id,
-        new_task.assigned_to
+        assignee_id=new_task.assigned_to,
+        project_name=project_name,
+        assignee_name=assignee_name
     )
     
     return jsonify({
@@ -264,26 +279,47 @@ def update_task_by_id(task_id):
     if not can_update_task:
         return jsonify({'message': 'You can only update tasks assigned to you'}), 403
     
+    # Track which fields changed for notification
+    changed_fields = {}
+    
     # Update allowed fields
     if 'title' in data:
+        if task.title != data['title']:
+            changed_fields['title'] = (task.title, data['title'])
         task.title = data['title']
     if 'description' in data:
+        if task.description != data['description']:
+            changed_fields['description'] = (task.description, data['description'])
         task.description = data['description']
     if 'status' in data:
+        if task.status != data['status']:
+            changed_fields['status'] = (task.status, data['status'])
         task.status = data['status']
     if 'progress' in data:
+        if task.progress != data['progress']:
+            changed_fields['progress'] = (task.progress, data['progress'])
         task.progress = data['progress']
     if 'priority' in data:
+        if task.priority != data['priority']:
+            changed_fields['priority'] = (task.priority, data['priority'])
         task.priority = data['priority']
     if 'deadline' in data:
+        if task.deadline != data['deadline']:
+            changed_fields['deadline'] = (task.deadline, data['deadline'])
         task.deadline = data['deadline']
     if 'project_id' in data:
-        task.project_id = _coerce_int(data['project_id'])
+        new_project_id = _coerce_int(data['project_id'])
+        if task.project_id != new_project_id:
+            changed_fields['project_id'] = (task.project_id, new_project_id)
+        task.project_id = new_project_id
     
     if 'assigned_to' in data:
         # Only TL or Admins can change the assignee
         if can_assign_task:
-            task.assigned_to = _coerce_int(data['assigned_to'])
+            new_assignee = _coerce_int(data['assigned_to'])
+            if task.assigned_to != new_assignee:
+                changed_fields['assigned_to'] = (task.assigned_to, new_assignee)
+            task.assigned_to = new_assignee
         elif _coerce_int(data['assigned_to']) != task.assigned_to:
             return jsonify({'message': 'You do not have permission to reassign tasks'}), 403
     
@@ -304,13 +340,13 @@ def update_task_by_id(task_id):
     )
 
     _run_notification(
-        NotificationService.task_updated_notification,
+        NotificationService.task_updated_notification_v2,
         task.id,
         task.title,
         task.project_id,
         user_id,
-        old_assignee_id,
-        task.assigned_to
+        assignee_id=task.assigned_to,
+        changed_fields=changed_fields if changed_fields else None
     )
     
     return jsonify({

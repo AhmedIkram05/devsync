@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { taskService, userService } from '../services/utils/api';
+import { taskService, userService, projectService } from '../services/utils/api';
 import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -12,6 +12,7 @@ const TaskList = () => {
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState(null);
   const [userMap, setUserMap] = useState({});
+  const [projectMap, setProjectMap] = useState({});
   const [filters, setFilters] = useState({
     status: 'all',
     priority: 'all',
@@ -26,7 +27,7 @@ const TaskList = () => {
 
   // Fetch users and tasks once; honor deep-link assignee query if provided
   useEffect(() => {
-    const fetchUsersAndTasks = async () => {
+    const fetchUsersAndProjects = async () => {
       try {
         const usersData = await userService.getAllUsers();
         const users = Array.isArray(usersData?.users) ? usersData.users : Array.isArray(usersData) ? usersData : [];
@@ -35,15 +36,23 @@ const TaskList = () => {
           userById[user.id] = user.name;
         });
         setUserMap(userById);
+
+        const projectsData = await projectService.getAllProjects();
+        const projects = Array.isArray(projectsData?.projects) ? projectsData.projects : Array.isArray(projectsData) ? projectsData : [];
+        const projectById = {};
+        projects.forEach((project) => {
+          projectById[project.id] = project.name;
+        });
+        setProjectMap(projectById);
       } catch (err) {
-        console.error('Failed to fetch users:', err);
+        console.error('Failed to fetch users or projects:', err);
       }
     };
 
     const initialUrlParams = new URLSearchParams(window.location.search);
     const initialAssignee = initialUrlParams.get('assigned_to') || initialUrlParams.get('assignee');
 
-    fetchUsersAndTasks();
+    fetchUsersAndProjects();
     if (initialAssignee) {
       setFilters((prev) => ({ ...prev, scope: 'my' }));
       fetchTasks({ assigned_to: initialAssignee });
@@ -346,6 +355,9 @@ const TaskList = () => {
                       Assignee
                     </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                      Project
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                       Progress
                     </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
@@ -390,6 +402,11 @@ const TaskList = () => {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-slate-300">
                             {task.assignee?.name || task.assigned_to_name || (task.assigned_to ? userMap[task.assigned_to] || `User #${task.assigned_to}` : '—')}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-slate-300">
+                            {task.project_name || task.project?.name || (task.project_id ? projectMap[task.project_id] || `Project #${task.project_id}` : '—')}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">

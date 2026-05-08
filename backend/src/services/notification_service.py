@@ -308,3 +308,282 @@ class NotificationService:
             reference_id=task_id,
             task_id=task_id,
         )
+
+    @staticmethod
+    def send_to_recipients(recipient_user_ids, notification_type, title, message, reference_id=None, task_id=None):
+        """
+        Send notification to a specific list of recipients.
+        
+        Args:
+            recipient_user_ids: List of user IDs to send notification to
+            notification_type: Type of notification
+            title: Notification title
+            message: Notification content
+            reference_id: ID of the related object
+            task_id: Optional task ID related to the notification
+        """
+        if not recipient_user_ids:
+            return []
+        
+        notifications = []
+        for user_id in recipient_user_ids:
+            notification = NotificationService.send_to_user(
+                user_id=user_id,
+                notification_type=notification_type,
+                title=title,
+                message=message,
+                reference_id=reference_id,
+                task_id=task_id
+            )
+            if notification:
+                notifications.append(notification)
+        
+        return notifications
+
+    @staticmethod
+    def task_created_notification_v2(task_id, task_name, project_id, created_by_user_id, assignee_id=None, 
+                                      project_name=None, assignee_name=None, recipient_user_ids=None):
+        """
+        Send notification for task creation using role-based recipients with detailed context.
+        
+        Args:
+            task_id: Task ID
+            task_name: Task name
+            project_id: Project ID
+            created_by_user_id: User who created the task
+            assignee_id: User assigned to the task (if any)
+            project_name: Name of the project (fetched if None)
+            assignee_name: Name of the assignee (fetched if None)
+            recipient_user_ids: Explicit list of user IDs to notify (if None, calculates from recipients module)
+        """
+        # Fetch project name if not provided
+        if project_name is None and project_id:
+            try:
+                from ..db.models import Project
+                project = Project.query.get(project_id)
+                project_name = project.name if project else None
+            except Exception:
+                project_name = None
+        
+        # Fetch assignee name if not provided
+        if assignee_name is None and assignee_id:
+            try:
+                from ..db.models import User
+                assignee = User.query.get(assignee_id)
+                assignee_name = assignee.name if assignee else None
+            except Exception:
+                assignee_name = None
+        
+        if recipient_user_ids is None:
+            from .notification_recipients import get_recipients_for_task_create
+            recipient_user_ids = get_recipients_for_task_create(
+                task_id=task_id,
+                project_id=project_id,
+                creator_id=created_by_user_id,
+                assignee_id=assignee_id
+            )
+        
+        # Build context-rich message
+        project_context = f" in {project_name}" if project_name else ""
+        assignee_context = f" assigned to {assignee_name}" if assignee_name else ""
+        message = f'New task "{task_name}"{project_context}{assignee_context}'
+        
+        return NotificationService.send_to_recipients(
+            recipient_user_ids=recipient_user_ids,
+            notification_type='task_created',
+            title='New Task Created',
+            message=message,
+            reference_id=task_id,
+            task_id=task_id
+        )
+
+    @staticmethod
+    def task_updated_notification_v2(task_id, task_name, project_id, updated_by_user_id, assignee_id=None,
+                                      changed_fields=None, project_name=None, recipient_user_ids=None):
+        """
+        Send notification for task updates using role-based recipients with specific change details.
+        
+        Args:
+            task_id: Task ID
+            task_name: Task name
+            project_id: Project ID
+            updated_by_user_id: User who updated the task
+            assignee_id: Current assignee of the task (if any)
+            changed_fields: Dict with field names as keys and (old_value, new_value) tuples as values
+                           e.g. {'status': ('todo', 'in_progress'), 'priority': ('low', 'high')}
+            project_name: Name of the project (fetched if None)
+            recipient_user_ids: Explicit list of user IDs to notify (if None, calculates from recipients module)
+        """
+        # Fetch project name if not provided
+        if project_name is None and project_id:
+            try:
+                from ..db.models import Project
+                project = Project.query.get(project_id)
+                project_name = project.name if project else None
+            except Exception:
+                project_name = None
+        
+        if recipient_user_ids is None:
+            from .notification_recipients import get_recipients_for_task_update
+            recipient_user_ids = get_recipients_for_task_update(
+                task_id=task_id,
+                project_id=project_id,
+                updater_id=updated_by_user_id,
+                assignee_id=assignee_id
+            )
+        
+        # Build specific message about what changed
+        project_context = f" in {project_name}" if project_name else ""
+        
+        if changed_fields:
+            # Get the most important change to highlight
+            important_fields = ['status', 'assigned_to', 'deadline', 'priority']
+            main_change = None
+            
+            for field in important_fields:
+                if field in changed_fields:
+                    old_val, new_val = changed_fields[field]
+                    if field == 'status':
+                        main_change = f"status changed to {new_val}"
+                    elif field == 'assigned_to':
+                        # Try to get assignee name
+                        try:
+                            from ..db.models import User
+                            assignee = User.query.get(new_val) if new_val else None
+                            assignee_name = assignee.name if assignee else "someone"
+                        except Exception:
+                            assignee_name = "someone"
+                        main_change = f"assigned to {assignee_name}"
+                    elif field == 'deadline':
+                        main_change = f"deadline updated to {new_val}"
+                    elif field == 'priority':
+                        main_change = f"priority set to {new_val}"
+                    break
+            
+            if main_change:
+                message = f'Task "{task_name}"{project_context} - {main_change}'
+            else:
+                # If no important field changed, list what did
+                changed_list = ', '.join(changed_fields.keys())
+                message = f'Task "{task_name}"{project_context} updated ({changed_list})'
+        else:
+            message = f'Task "{task_name}"{project_context} was updated'
+        
+        return NotificationService.send_to_recipients(
+            recipient_user_ids=recipient_user_ids,
+            notification_type='task_updated',
+            title='Task Updated',
+            message=message,
+            reference_id=task_id,
+            task_id=task_id
+        )
+
+    @staticmethod
+    def user_crud_notification(action_type, affected_user_name, affected_user_role=None, 
+                               changed_fields=None, admin_user_id=None, recipient_user_ids=None):
+        """
+        Send notification for user CRUD operations with specific details.
+        
+        Args:
+            action_type: 'user_created', 'user_updated', 'user_deleted', 'user_role_changed'
+            affected_user_name: Name of the user being affected
+            affected_user_role: Role of the user (for create/role_change)
+            changed_fields: Dict with what was changed (for updates)
+            admin_user_id: User ID performing the action (excluded from recipients)
+            recipient_user_ids: Explicit list of user IDs to notify (if None, gets all admins)
+        """
+        if recipient_user_ids is None:
+            from .notification_recipients import get_recipients_for_user_crud
+            recipient_user_ids = get_recipients_for_user_crud(action_type, None)
+        
+        # Exclude the admin who performed the action
+        if admin_user_id:
+            recipient_user_ids = [uid for uid in recipient_user_ids if uid != admin_user_id]
+        
+        action_titles = {
+            'user_created': 'New User Created',
+            'user_updated': 'User Updated',
+            'user_deleted': 'User Deleted',
+            'user_role_changed': 'User Role Changed'
+        }
+        
+        # Build specific messages
+        if action_type == 'user_created':
+            role_info = f" as {affected_user_role}" if affected_user_role else ""
+            action_messages = f'New user "{affected_user_name}"{role_info} created'
+        elif action_type == 'user_role_changed':
+            role_info = f" to {affected_user_role}" if affected_user_role else ""
+            action_messages = f'User "{affected_user_name}" role changed{role_info}'
+        elif action_type == 'user_updated':
+            if changed_fields:
+                changed_list = ', '.join(changed_fields.keys())
+                action_messages = f'User "{affected_user_name}" updated ({changed_list})'
+            else:
+                action_messages = f'User "{affected_user_name}" was updated'
+        elif action_type == 'user_deleted':
+            action_messages = f'User "{affected_user_name}" was deleted'
+        else:
+            action_messages = f'User operation on "{affected_user_name}"'
+        
+        return NotificationService.send_to_recipients(
+            recipient_user_ids=recipient_user_ids,
+            notification_type=action_type,
+            title=action_titles.get(action_type, 'User Operation'),
+            message=action_messages,
+            reference_id=None
+        )
+
+    @staticmethod
+    def report_available_notification(report_id, report_type, project_id, creator_id, recipient_user_ids=None):
+        """
+        Send notification for report availability.
+        
+        Args:
+            report_id: Report ID
+            report_type: Type of report ('tasks', 'developers', 'github', etc.)
+            project_id: Project ID the report is for
+            creator_id: User who created the report
+            recipient_user_ids: Explicit list of user IDs to notify (if None, calculates from recipients module)
+        """
+        if recipient_user_ids is None:
+            from .notification_recipients import get_recipients_for_report_available
+            recipient_user_ids = get_recipients_for_report_available(
+                project_id=project_id,
+                creator_id=creator_id
+            )
+        
+        return NotificationService.send_to_recipients(
+            recipient_user_ids=recipient_user_ids,
+            notification_type='report_available',
+            title='Report Available for Download',
+            message=f'Your {report_type} report is ready to download',
+            reference_id=report_id
+        )
+
+    @staticmethod
+    def project_member_added_notification(project_id, new_member_name, new_member_id, adder_id, recipient_user_ids=None):
+        """
+        Send notification when a new member is added to a project.
+        
+        Args:
+            project_id: Project ID
+            new_member_name: Name of the new member
+            new_member_id: User ID of the new member
+            adder_id: User ID of the person adding the member
+            recipient_user_ids: Explicit list of user IDs to notify
+        """
+        if recipient_user_ids is None:
+            from .notification_recipients import get_recipients_for_project_member_add
+            recipient_user_ids = get_recipients_for_project_member_add(
+                project_id=project_id,
+                new_member_id=new_member_id,
+                adder_id=adder_id
+            )
+        
+        return NotificationService.send_to_recipients(
+            recipient_user_ids=recipient_user_ids,
+            notification_type='project_member_added',
+            title='New Member Added to Project',
+            message=f'{new_member_name} was added to your project',
+            reference_id=project_id
+        )
