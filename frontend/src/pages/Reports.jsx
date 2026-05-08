@@ -377,11 +377,41 @@ const Reports = () => {
       };
     }
 
+    // Prefer server-provided summary, but fall back to counting from details
+    const tasks = Array.isArray(details) ? details : [];
+    const statusCounts = { backlog: 0, todo: 0, in_progress: 0, review: 0, done: 0 };
+    let overdueCount = 0;
+    const normalize = (s) => (s === 'completed' ? 'done' : (s || '').toString());
+    const now = new Date();
+
+    tasks.forEach((task) => {
+      const s = normalize(task?.status);
+      if (statusCounts[s] !== undefined) {
+        statusCounts[s] += 1;
+      } else {
+        // Unknown statuses are counted into backlog by default to avoid dropping data
+        statusCounts.backlog += 1;
+      }
+
+      const deadlineVal = task?.deadline || task?.due_date || task?.dueAt || task?.due_at || null;
+      if (deadlineVal) {
+        const d = new Date(deadlineVal);
+        if (!Number.isNaN(d.getTime()) && d < now && normalize(task?.status) !== 'done') {
+          overdueCount += 1;
+        }
+      }
+    });
+
+    const totalFromDetails = tasks.length;
     return {
-      total: summary?.total ?? 0,
-      completed: summary?.completed ?? 0,
-      in_progress: summary?.in_progress ?? 0,
-      overdue: summary?.overdue ?? 0
+      total: summary?.total ?? totalFromDetails,
+      backlog: summary?.backlog ?? statusCounts.backlog,
+      todo: summary?.todo ?? statusCounts.todo,
+      in_progress: summary?.in_progress ?? statusCounts.in_progress,
+      review: summary?.review ?? statusCounts.review,
+      done: summary?.done ?? statusCounts.done,
+      completed: summary?.completed ?? (summary?.done ?? statusCounts.done),
+      overdue: summary?.overdue ?? overdueCount
     };
   };
 
@@ -581,24 +611,27 @@ const Reports = () => {
         {/* Charts */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {reportType === 'tasks' && (() => {
-            const otherCount = Math.max(
-              (summarySnapshot.total || 0)
-                - (summarySnapshot.completed || 0)
-                - (summarySnapshot.in_progress || 0)
-                - (summarySnapshot.overdue || 0),
-              0
-            );
+            // Include all known task statuses in the breakdown so nothing is grouped as "Other"
             const taskStatusValues = [
-              summarySnapshot.completed || 0,
+              summarySnapshot.backlog || 0,
+              summarySnapshot.todo || 0,
               summarySnapshot.in_progress || 0,
-              summarySnapshot.overdue || 0,
-              otherCount
+              summarySnapshot.review || 0,
+              summarySnapshot.done || summarySnapshot.completed || 0,
+              summarySnapshot.overdue || 0
             ];
             const taskStatusData = {
-              labels: ['Completed', 'In Progress', 'Overdue', 'Other'],
+              labels: ['Backlog', 'To Do', 'In Progress', 'In Review', 'Completed', 'Overdue'],
               datasets: [{
                 data: taskStatusValues,
-                backgroundColor: [chartPalette.green, chartPalette.yellow, chartPalette.red, chartPalette.gray],
+                backgroundColor: [
+                  chartPalette.gray,
+                  chartPalette.blue,
+                  chartPalette.yellow,
+                  chartPalette.purple,
+                  chartPalette.green,
+                  chartPalette.red
+                ],
                 borderColor: doughnutBorder,
                 borderWidth: 2
               }]

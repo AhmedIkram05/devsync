@@ -157,8 +157,8 @@ const BasicDashboard = () => {
                     <h2 className="mt-1 text-lg font-semibold text-slate-100">Keep the team moving without leaving this dashboard</h2>
                     <p className="mt-1 text-sm text-slate-400">
                       {isAdmin
-                        ? 'Admin users can manage users, reports, and progress from the admin console.'
-                        : 'Team Leads can review progress, spot blockers, and create tasks from the same workspace.'}
+                        ? 'Admin users can manage users, system settings and audit logs.'
+                        : 'Team Leads can review team progress, assign tasks, and create team reports.'}
                     </p>
                   </div>
 
@@ -182,7 +182,7 @@ const BasicDashboard = () => {
             {/* Stats Summary */}
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
               <StatCard
-                title="Assigned Tasks"
+                title="Assigned To Me"
                 value={getCount(dashboardData?.taskCounts || dashboardData?.tasks, ['assigned', 'assigned_count', 'total'])}
                 icon={
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -202,7 +202,6 @@ const BasicDashboard = () => {
                 }
                 color="warning"
               />
-
               <StatCard
                 title="Completed"
                 value={getCount(dashboardData?.taskCounts || dashboardData?.tasks, ['completed', 'done'])}
@@ -215,7 +214,7 @@ const BasicDashboard = () => {
               />
 
               <StatCard
-                title="Tasks Due Soon"
+                title="Due Soon"
                 value={getCount(dashboardData?.taskCounts || dashboardData?.tasks, ['dueSoon', 'due_soon'])}
                 icon={
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

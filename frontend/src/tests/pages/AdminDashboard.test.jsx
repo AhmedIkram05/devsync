@@ -95,7 +95,7 @@ describe('AdminDashboard page', () => {
     expect(await screen.findByText('Admin Dashboard')).toBeInTheDocument();
     // New KPI cards: Team Members, Incomplete Projects, Overdue Tasks, Tasks In Review
     expect(await screen.findByText('Team Members')).toBeInTheDocument();
-    expect(screen.getByText('Incomplete Projects')).toBeInTheDocument();
+    expect(screen.getByText('Active Projects')).toBeInTheDocument();
     expect(screen.getByText('Overdue Tasks')).toBeInTheDocument();
     expect(screen.getByText('Tasks In Review')).toBeInTheDocument();
 

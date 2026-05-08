@@ -22,7 +22,7 @@ describe('GitHubConnectPrompt component', () => {
     render(<GitHubConnectPrompt />);
 
     expect(screen.getByText('Connect GitHub Account')).toBeInTheDocument();
-    expect(screen.getByText(/Link tasks directly to GitHub issues/i)).toBeInTheDocument();
+    expect(screen.getByText(/Link DevSync tasks to GitHub issues/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Connect Now/i }));
     fireEvent.click(screen.getByRole('button', { name: /Skip For Now/i }));

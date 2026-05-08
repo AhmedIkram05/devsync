@@ -164,8 +164,8 @@ const AdminDashboard = () => {
           // My projects: projects admin is assigned to
           const myProjects = projects.filter(p => adminProjectIds.has(Number(p.id)));
 
-          // KPI: total incomplete projects (all projects with status active or on-hold)
-          const incompleteProjectsCount = projects.filter(p => ['active', 'on-hold', 'on_hold'].includes(String(p.status))).length;
+          // KPI: total active projects (all projects with status active)
+          const activeProjectsCount = projects.filter(p => ['active'].includes(String(p.status))).length;
 
           // KPI: overdue tasks scoped to admin's projects only
           const now = new Date();
@@ -204,7 +204,7 @@ const AdminDashboard = () => {
             ...prev,
             _allProjects: projects,
             myProjects,
-            _incompleteProjectsCount: incompleteProjectsCount,
+            _activeProjectsCount: activeProjectsCount,
             _overdueTasksCount: overdueTasksCount,
             _tasksInReviewCount: tasksInReviewCount || data?.tasks?.review || data?.tasks?.inReview || data?.tasks?.in_review || 0,
             recentReports: (reportsResp?.reports) ? reportsResp.reports : (reportsResp?.data ?? [])
@@ -438,8 +438,8 @@ const AdminDashboard = () => {
                   />
 
                   <StatCard
-                    title="Incomplete Projects"
-                    value={dashboardData?._incompleteProjectsCount ?? (dashboardData?.projects?.total ?? 0)}
+                    title="Active Projects"
+                    value={dashboardData?._activeProjectsCount ?? (dashboardData?.projects?.total ?? 0)}
                     color="secondary"
                     icon={
                       <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

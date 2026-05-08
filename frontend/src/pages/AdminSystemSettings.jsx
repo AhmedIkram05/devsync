@@ -165,19 +165,7 @@ const AdminSystemSettings = () => {
             </button>
           </section>
 
-          <section className="border-t border-slate-800 pt-5 space-y-4">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-300">Task Alerts</h3>
-              <p className="mt-1 text-xs text-slate-500">Sends one overdue reminder per task when users load tasks and dashboards.</p>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-sm text-slate-100">Notify on overdue tasks</span>
-                <p className="text-xs text-slate-500">Only sends once per task.</p>
-              </div>
-              <Toggle active={isEnabled('notify_on_overdue_tasks', true)} onToggle={() => handleChange('notify_on_overdue_tasks', !isEnabled('notify_on_overdue_tasks', true))} />
-            </div>
-          </section>
+          {/* Task Alerts removed — notifications are not toggleable */}
 
           <div className="pt-4">
             <button onClick={handleSave} disabled={saving}
