@@ -87,8 +87,8 @@ GitHub Actions authenticates to AWS via OpenID Connect rather than long-lived ac
 **Frontend deployment blocked on backend health checks**
 The CD pipeline explicitly waits for ECS health checks to pass before deploying the frontend. This prevents an API/UI version mismatch reaching production - a common failure mode where the new frontend ships before the new backend is stable, causing breaking API calls for users during the rollout window.
 
-**1,185 tests as a hard deployment gate**
-The 1,185-test suite (517 Pytest backend, 663 Jest frontend, 5 Cypress E2E) is not advisory - any single failure aborts deployment entirely. Coverage thresholds (80% backend, 90% frontend) are enforced as hard pipeline failure conditions, not warnings. This treats test coverage as a non-negotiable system property rather than a metric to report.
+**1,427 tests as a hard deployment gate**
+The 1,427-test suite (517 Pytest backend, 924 Jest frontend, 5 Cypress E2E) is not advisory - any single failure aborts deployment entirely. Coverage thresholds (80% backend, 90% frontend) are enforced as hard pipeline failure conditions, not warnings. This treats test coverage as a non-negotiable system property rather than a metric to report.
 
 **Rolling ECS updates with SHA + latest dual tagging**
 Every Docker image is tagged with both the Git commit SHA and `latest`. Rolling updates replace tasks incrementally, keeping the service live during deployment. The SHA tag provides a pinned, immutable reference for rollback - `docker pull devsync-backend:latest` always gets the most recent, but the exact deployed version is always recoverable by SHA.
@@ -153,8 +153,8 @@ Security group rules enforce a strict ingress hierarchy: only the ALB can reach 
 | Layer | Framework | Count | Coverage |
 | --- | --- | --- | --- |
 | Backend unit + integration | Pytest | 517 | 85% line coverage (hard gate) |
-| Frontend unit + component | Jest + React Testing Library | 668 | 85% line coverage (hard gate) |
-| **Total** | | **1,185** | |
+| Frontend unit + component | Jest + React Testing Library | 929 | 85% line coverage (hard gate) |
+| **Total** | | **1,441** | |
 
 Tests run on every PR. Any failure - including a coverage threshold drop - aborts the CD pipeline before any deployment step runs.
 
