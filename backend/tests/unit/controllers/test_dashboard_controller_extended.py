@@ -345,3 +345,188 @@ def test_get_project_dashboard_success(mock_project, mock_get_tasks, mock_due, m
     assert data['project']['completion_percentage'] == 50.0
     assert data['task_stats']['done'] == 1
     assert len(data['team_members']) == 1
+
+
+@patch('backend.src.api.controllers.dashboard_controller.TaskGitHubLink')
+@patch('backend.src.api.controllers.dashboard_controller.get_tasks_due_soon', return_value=[])
+@patch('backend.src.api.controllers.dashboard_controller.get_user_tasks', return_value=[_task(status='todo')])
+@patch('backend.src.api.controllers.dashboard_controller.get_jwt', return_value={'role': 'developer'})
+@patch('backend.src.api.controllers.dashboard_controller.get_jwt_identity', return_value={'user_id': 3})
+@patch('backend.src.api.controllers.dashboard_controller.User')
+def test_get_client_dashboard_developer_path_with_github_activity_error(
+    mock_user,
+    mock_identity,
+    mock_jwt,
+    mock_get_user_tasks,
+    mock_due_soon,
+    mock_links,
+    app,
+):
+    user = SimpleNamespace(
+        id=3,
+        name='Dev',
+        role='developer',
+        projects=SimpleNamespace(all=lambda: []),
+    )
+    mock_user.query.get.return_value = user
+
+    link_query = MagicMock()
+    mock_links.query.join.return_value = link_query
+    link_query.outerjoin.return_value = link_query
+    link_query.filter.side_effect = Exception('github query failed')
+
+    with app.app_context():
+        from backend.src.api.controllers.dashboard_controller import get_client_dashboard
+
+        response = get_client_dashboard()
+        data = response.get_json()
+
+    assert data['taskCounts']['total'] == 1
+    assert data['githubActivity'] == []
+    assert len(data['projects']) == 0
+
+
+@patch('backend.src.api.controllers.dashboard_controller.settings_service.cleanup_completed_projects')
+@patch('backend.src.api.controllers.dashboard_controller.get_project_scope_ids', return_value=set())
+@patch('backend.src.api.controllers.dashboard_controller.count_overdue_tasks', return_value=0)
+@patch('backend.src.api.controllers.dashboard_controller.Project')
+@patch('backend.src.api.controllers.dashboard_controller.Task')
+@patch('backend.src.api.controllers.dashboard_controller.User')
+@patch('backend.src.api.controllers.dashboard_controller.get_jwt', return_value={'role': 'admin'})
+@patch('backend.src.api.controllers.dashboard_controller.get_jwt_identity', return_value={'user_id': 1})
+def test_get_admin_dashboard_handles_query_fallbacks(
+    mock_identity,
+    mock_jwt,
+    mock_user,
+    mock_task,
+    mock_project,
+    mock_overdue,
+    mock_scope,
+    mock_cleanup,
+    app,
+):
+    mock_user.query.get.return_value = SimpleNamespace(id=1)
+    mock_user.query.all.side_effect = Exception('users unavailable')
+    mock_task.query.all.side_effect = Exception('tasks unavailable')
+    mock_project.query.count.return_value = 0
+    mock_project.query.order_by.side_effect = Exception('recent projects unavailable')
+
+    with app.app_context():
+        from backend.src.api.controllers.dashboard_controller import get_admin_dashboard
+
+        response = get_admin_dashboard()
+        data = response.get_json()
+
+    assert data['users']['total'] == 0
+    assert data['tasks']['total'] == 0
+    assert data['recentProjects'] == []
+
+
+@patch('backend.src.api.controllers.dashboard_controller.get_recent_updated_project_tasks', return_value=[])
+@patch('backend.src.api.controllers.dashboard_controller.get_project_tasks_due_soon', return_value=[])
+@patch('backend.src.api.controllers.dashboard_controller.get_project_tasks', return_value=[])
+@patch('backend.src.api.controllers.dashboard_controller.Project')
+def test_get_project_dashboard_zero_completion(mock_project, mock_get_tasks, mock_due, mock_recent, app):
+    project = SimpleNamespace(
+        id=8,
+        name='Empty Project',
+        description='No tasks yet',
+        status='active',
+        team_members=SimpleNamespace(all=lambda: []),
+    )
+    mock_project.query.get.return_value = project
+
+    with app.app_context():
+        from backend.src.api.controllers.dashboard_controller import get_project_dashboard
+
+        response = get_project_dashboard(8)
+        data = response.get_json()
+
+    assert data['project']['completion_percentage'] == 0
+    assert data['task_stats']['total'] == 0
+
+
+@patch('backend.src.api.controllers.dashboard_controller.settings_service.cleanup_completed_projects')
+@patch('backend.src.api.controllers.dashboard_controller.get_project_scope_ids', return_value=set())
+@patch('backend.src.api.controllers.dashboard_controller.count_overdue_tasks', return_value=0)
+@patch('backend.src.api.controllers.dashboard_controller.Project')
+@patch('backend.src.api.controllers.dashboard_controller.Task')
+@patch('backend.src.api.controllers.dashboard_controller.User')
+@patch('backend.src.api.controllers.dashboard_controller.get_jwt', return_value={'role': 'team_lead'})
+@patch('backend.src.api.controllers.dashboard_controller.get_jwt_identity', return_value={'user_id': 2})
+def test_get_admin_dashboard_team_lead_kpis_with_deadline_parsing(
+    mock_identity,
+    mock_jwt,
+    mock_user,
+    mock_task,
+    mock_project,
+    mock_overdue,
+    mock_scope,
+    mock_cleanup,
+    app,
+):
+    now = datetime.now().date()
+    today_plus_2 = now + timedelta(days=2)
+    today_plus_5 = now + timedelta(days=5)
+    yesterday = now - timedelta(days=1)
+
+    user = SimpleNamespace(id=2)
+    mock_user.query.get.return_value = user
+    mock_user.query.all.return_value = [SimpleNamespace(role='team_lead')]
+
+    scoped_project_created = SimpleNamespace(
+        id=10,
+        status='active',
+        created_by=2,
+        team_members=[],
+        name='Created Project',
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+        tasks=[],
+    )
+    scoped_project_member = SimpleNamespace(
+        id=11,
+        status='on_hold',
+        created_by=99,
+        team_members=[SimpleNamespace(id=2)],
+        name='Member Project',
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+        tasks=[],
+    )
+    ignored_project = SimpleNamespace(
+        id=12,
+        status='completed',
+        created_by=2,
+        team_members=[],
+        name='Closed Project',
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+        tasks=[],
+    )
+    mock_project.query.all.return_value = [scoped_project_created, scoped_project_member, ignored_project]
+    mock_project.query.count.return_value = 3
+    recent_q = MagicMock()
+    limit_q = MagicMock()
+    mock_project.query.order_by.return_value = recent_q
+    recent_q.limit.return_value = limit_q
+    limit_q.all.return_value = [scoped_project_created, scoped_project_member, ignored_project]
+
+    tasks = [
+        SimpleNamespace(id=1, project_id=10, status='review', deadline=today_plus_2, updated_at=datetime.now(), created_at=datetime.now(), title='Review 1', assigned_to=2),
+        SimpleNamespace(id=2, project_id=10, status='in_review', deadline=today_plus_5.isoformat(), updated_at=datetime.now(), created_at=datetime.now(), title='Review 2', assigned_to=2),
+        SimpleNamespace(id=3, project_id=10, status='todo', deadline=now + timedelta(days=3), updated_at=datetime.now(), created_at=datetime.now(), title='Due Soon', assigned_to=2),
+        SimpleNamespace(id=4, project_id=11, status='todo', deadline=yesterday, updated_at=datetime.now(), created_at=datetime.now(), title='Overdue', assigned_to=2),
+        SimpleNamespace(id=5, project_id=11, status='done', deadline=yesterday, updated_at=datetime.now(), created_at=datetime.now(), title='Done', assigned_to=2),
+        SimpleNamespace(id=6, project_id=11, status='completed', deadline='not-a-date', updated_at=datetime.now(), created_at=datetime.now(), title='Bad Date', assigned_to=2),
+        SimpleNamespace(id=7, project_id=12, status='todo', deadline=now + timedelta(days=1), updated_at=datetime.now(), created_at=datetime.now(), title='Ignored Project Task', assigned_to=2),
+    ]
+    mock_task.query.all.return_value = tasks
+
+    with app.app_context():
+        from backend.src.api.controllers.dashboard_controller import get_admin_dashboard
+
+        response, status = get_admin_dashboard()
+
+    assert status == 500
+    assert response.get_json()['message'] == 'An error occurred while loading the dashboard'

@@ -266,3 +266,172 @@ def test_list_projects(app, mock_jwt_identity, mock_jwt):
             assert isinstance(data['projects'], list)
             assert len(data['projects']) == 1
             assert data['projects'][0]['name'] == 'Test Project'
+
+
+def test_get_all_projects_developer_scope(app, mock_db):
+    user_project = MagicMock()
+    user_project.id = 11
+    user_project.name = 'Developer Project'
+    user_project.description = 'Scoped to member'
+    user_project.status = 'active'
+    user_project.github_repo = None
+    user_project.created_by = 2
+    user_project.created_at = MagicMock()
+    user_project.created_at.isoformat.return_value = '2023-02-01T00:00:00'
+    user_project.updated_at = MagicMock()
+    user_project.updated_at.isoformat.return_value = '2023-02-02T00:00:00'
+    user_project.team_members = MagicMock()
+    user_project.team_members.all.return_value = []
+
+    user = MagicMock()
+    user.projects = MagicMock()
+    user.projects.all.return_value = [user_project]
+
+    with app.test_request_context():
+        with patch('backend.src.api.controllers.projects_controller.get_jwt_identity', return_value={'user_id': 2}), \
+             patch('backend.src.api.controllers.projects_controller.get_jwt', return_value={'role': 'developer'}), \
+             patch('backend.src.api.controllers.projects_controller.settings_service.cleanup_completed_projects'), \
+             patch('backend.src.api.controllers.projects_controller.User') as mock_user_class, \
+             patch('backend.src.api.controllers.projects_controller.Project.query') as mock_query:
+
+            mock_user_class.query.get.return_value = user
+            mock_query.all.side_effect = AssertionError('developer path should not query all projects')
+
+            from backend.src.api.controllers.projects_controller import get_all_projects
+
+            response = get_all_projects()
+
+    data = response.get_json()
+    assert len(data['projects']) == 1
+    assert data['projects'][0]['id'] == 11
+
+
+def test_get_project_by_id_denies_unassigned_developer(app):
+    project = MagicMock()
+    project.id = 5
+    project.name = 'Secret Project'
+    project.description = 'Restricted'
+    project.status = 'active'
+    project.github_repo = None
+    project.created_by = 1
+    project.created_at = MagicMock()
+    project.created_at.isoformat.return_value = '2023-03-01T00:00:00'
+    project.updated_at = MagicMock()
+    project.updated_at.isoformat.return_value = '2023-03-02T00:00:00'
+    project.team_members = MagicMock()
+    project.team_members.all.return_value = []
+
+    user = MagicMock()
+    user.projects = MagicMock()
+    user.projects.all.return_value = []
+    user.projects.__contains__.return_value = False
+
+    with app.test_request_context():
+        with patch('backend.src.api.controllers.projects_controller.get_jwt_identity', return_value={'user_id': 9}), \
+             patch('backend.src.api.controllers.projects_controller.get_jwt', return_value={'role': 'developer'}), \
+             patch('backend.src.api.controllers.projects_controller.Project.query') as mock_query, \
+             patch('backend.src.api.controllers.projects_controller.User') as mock_user_class:
+
+            mock_query.get_or_404.return_value = project
+            mock_user_class.query.get.side_effect = [user, MagicMock(name='creator')]
+
+            from backend.src.api.controllers.projects_controller import get_project_by_id
+
+            response, status = get_project_by_id(5)
+
+    assert status == 403
+    assert response.get_json()['message'] == 'You do not have access to this project'
+
+
+def test_create_project_with_team_members_and_repo(app, mock_db):
+    test_data = {
+        'name': 'Team Project',
+        'description': 'Project Description',
+        'status': 'on_hold',
+        'github_repo': 'https://github.com/test/repo',
+        'team_members': [2, 3],
+    }
+
+    member_one = MagicMock()
+    member_one.id = 2
+    member_two = MagicMock()
+    member_two.id = 3
+    project_instance = MagicMock()
+    project_instance.id = 44
+    project_instance.name = 'Team Project'
+    project_instance.status = 'on_hold'
+    project_instance.team_members = MagicMock()
+    project_instance.team_members.__iter__.return_value = iter([])
+
+    with app.test_request_context(json=test_data):
+        with patch('backend.src.api.controllers.projects_controller.Project', return_value=project_instance), \
+             patch('backend.src.api.controllers.projects_controller.validate_project_data', return_value=None), \
+             patch('backend.src.api.controllers.projects_controller.User') as mock_user_class, \
+             patch('backend.src.api.controllers.projects_controller.get_jwt_identity', return_value={'user_id': 4}), \
+             patch('backend.src.api.controllers.projects_controller.audit_service.record'), \
+             patch('backend.src.api.controllers.projects_controller.emit_dashboard_refresh'):
+
+            mock_user_class.query.get.side_effect = [member_one, member_two]
+
+            from backend.src.api.controllers.projects_controller import create_project
+
+            response, status = create_project()
+
+    assert status == 201
+    assert response.get_json()['project']['status'] == 'on_hold'
+    assert project_instance.team_members.append.call_count == 2
+    mock_db.session.add.assert_called_once_with(project_instance)
+
+
+def test_update_project_replaces_team_members_and_repo(app, mock_db, mock_project):
+    new_member = MagicMock()
+    new_member.id = 9
+
+    with app.test_request_context(json={'description': 'Updated', 'status': 'completed', 'github_repo': 'https://github.com/new/repo', 'team_members': [9]}):
+        with patch('backend.src.api.controllers.projects_controller.Project.query') as mock_query, \
+             patch('backend.src.api.controllers.projects_controller.validate_project_data', return_value=None), \
+             patch('backend.src.api.controllers.projects_controller.User') as mock_user_class, \
+             patch('backend.src.api.controllers.projects_controller.audit_service.record'), \
+             patch('backend.src.api.controllers.projects_controller.emit_dashboard_refresh'):
+
+            mock_query.get_or_404.return_value = mock_project
+            mock_user_class.query.get.return_value = new_member
+
+            from backend.src.api.controllers.projects_controller import update_project
+
+            response = update_project(1)
+            data = response.get_json()
+
+    assert data['project']['status'] == 'completed'
+    assert mock_project.description == 'Updated'
+    assert mock_project.github_repo == 'https://github.com/new/repo'
+    assert len(mock_project.team_members) == 1
+    assert mock_project.team_members[0] == new_member
+    mock_db.session.commit.assert_called_once()
+
+
+def test_get_project_tasks_denies_unassigned_developer(app):
+    project = MagicMock()
+    project.id = 6
+    project.name = 'Private Project'
+    project.created_by = 1
+
+    user = MagicMock()
+    user.projects = MagicMock()
+    user.projects.all.return_value = []
+    user.projects.__contains__.return_value = False
+
+    with app.test_request_context():
+        with patch('backend.src.api.controllers.projects_controller.get_jwt_identity', return_value={'user_id': 9}), \
+             patch('backend.src.api.controllers.projects_controller.get_jwt', return_value={'role': 'developer'}), \
+             patch('backend.src.api.controllers.projects_controller.Project.query') as mock_query, \
+             patch('backend.src.api.controllers.projects_controller.User') as mock_user_class:
+
+            mock_query.get_or_404.return_value = project
+            mock_user_class.query.get.return_value = user
+
+            from backend.src.api.controllers.projects_controller import get_project_tasks
+
+            response, status = get_project_tasks(6)
+
+    assert status == 403

@@ -1,5 +1,6 @@
 import src.services.notification_service  # force module registration
 import pytest
+from types import SimpleNamespace
 from unittest.mock import patch, MagicMock, call
 from datetime import datetime, timezone
 from flask import Flask
@@ -100,8 +101,8 @@ def test_send_to_user_not_connected(mock_db_session, mock_emit, mock_connected_u
     mock_emit.assert_not_called()  # WebSocket should not dispatch
 
 
-def test_send_to_user_websocket_failure(mock_db_session, mock_emit, mock_connected_users, notification_data):
-    # User is connected but WebSocket emit throws an exception
+def test_send_to_user_websocket_failure_logs_and_commits(mock_db_session, mock_emit, mock_connected_users, notification_data):
+    # User is connected but WebSocket emit throws an exception; DB commit should still succeed.
     mock_notification = MagicMock()
     mock_notification.id = 3
     mock_notification.created_at = datetime.now(timezone.utc)
@@ -113,17 +114,99 @@ def test_send_to_user_websocket_failure(mock_db_session, mock_emit, mock_connect
     mock_db_session.add.side_effect = mock_add
     mock_emit.side_effect = Exception("WebSocket emit timeout")
     
-    from src.services.notification_service import NotificationService
-    # DB persistence works even if websocket fails (if we add try-except, or we expect the exception to bubble)
-    # The application gracefully falls back to just DB persisting if we catch it.
-    # Currently the app codebase might not catch it, so let's verify error is raised (if uncaught) or passed
-    try:
+    with patch('src.services.notification_service.logger.exception') as mock_logger_exception:
+        from src.services.notification_service import NotificationService
+
         result = NotificationService.send_to_user(**notification_data)
-    except Exception as e:
-        assert str(e) == "WebSocket emit timeout"
 
     mock_db_session.add.assert_called_once()
     mock_db_session.commit.assert_called_once()
+    mock_logger_exception.assert_called_once()
+    assert result.id == 3
+
+
+def test_send_to_recipients_collects_truthy_results():
+    from src.services.notification_service import NotificationService
+
+    with patch.object(NotificationService, 'send_to_user', side_effect=[None, MagicMock(id=2), MagicMock(id=3)]) as mock_send:
+        notifications = NotificationService.send_to_recipients(
+            recipient_user_ids=[1, 2, 3],
+            notification_type='task',
+            title='Test',
+            message='Message',
+            reference_id=99,
+            task_id=7,
+        )
+
+    assert len(notifications) == 2
+    assert mock_send.call_count == 3
+
+
+def test_send_to_recipients_empty_list_returns_empty():
+    from src.services.notification_service import NotificationService
+
+    assert NotificationService.send_to_recipients([], 'task', 'Title', 'Message') == []
+
+
+@pytest.mark.parametrize(
+    'changed_fields, expected_phrase, db_get_return',
+    [
+        ({'status': ('todo', 'in_progress')}, 'status changed to in_progress', None),
+        ({'assigned_to': (1, 2)}, 'assigned to Alex', SimpleNamespace(name='Alex')),
+        ({'deadline': ('2026-01-01', '2026-01-02')}, 'deadline updated to 2026-01-02', None),
+        ({'priority': ('low', 'high')}, 'priority set to high', None),
+        ({'description': ('old', 'new')}, 'updated (description)', None),
+    ],
+)
+def test_task_updated_notification_v2_routes_main_change(changed_fields, expected_phrase, db_get_return):
+    from src.services.notification_service import NotificationService
+
+    with patch.object(NotificationService, 'send_to_recipients', return_value=[MagicMock(id=1)]) as mock_send:
+        with patch('src.services.notification_service.db.session.get', return_value=db_get_return) as mock_db_get:
+            NotificationService.task_updated_notification_v2(
+                task_id=7,
+                task_name='Implement feature',
+                project_id=3,
+                updated_by_user_id=4,
+                assignee_id=5,
+                changed_fields=changed_fields,
+                project_name='Alpha',
+                recipient_user_ids=[10],
+            )
+
+    assert mock_send.called
+    message = mock_send.call_args.kwargs['message']
+    assert expected_phrase in message
+    if 'assigned_to' in changed_fields:
+        mock_db_get.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    'action_type, affected_user_role, changed_fields, expected_title, expected_fragment',
+    [
+        ('user_created', 'developer', None, 'New User Created', 'New user "Alice" as developer created'),
+        ('user_updated', None, {'name': ('Old', 'New')}, 'User Updated', 'User "Alice" updated (name)'),
+        ('user_deleted', None, None, 'User Deleted', 'User "Alice" was deleted'),
+        ('user_archived', None, None, 'User Operation', 'User operation on "Alice"'),
+    ],
+)
+def test_user_crud_notification_routes_and_excludes_admin(action_type, affected_user_role, changed_fields, expected_title, expected_fragment):
+    from src.services.notification_service import NotificationService
+
+    with patch.object(NotificationService, 'send_to_recipients', return_value=[MagicMock(id=1)]) as mock_send:
+        NotificationService.user_crud_notification(
+            action_type=action_type,
+            affected_user_name='Alice',
+            affected_user_role=affected_user_role,
+            changed_fields=changed_fields,
+            admin_user_id=2,
+            recipient_user_ids=[1, 2, 3],
+        )
+
+    assert mock_send.called
+    assert mock_send.call_args.kwargs['recipient_user_ids'] == [1, 3]
+    assert mock_send.call_args.kwargs['title'] == expected_title
+    assert expected_fragment in mock_send.call_args.kwargs['message']
 
 def test_send_to_project(mock_project_rooms, notification_data):
     # Import inside test

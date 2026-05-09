@@ -107,6 +107,26 @@ def test_update_system_settings_success(mock_validate, mock_identity, mock_updat
     mock_emit.assert_called_once()
 
 
+@patch('backend.src.api.controllers.admin_controller.emit_dashboard_refresh')
+@patch('backend.src.api.controllers.admin_controller.audit_service.record')
+@patch('backend.src.api.controllers.admin_controller.settings_service.update_settings')
+@patch('backend.src.api.controllers.admin_controller.get_jwt_identity', return_value=7)
+@patch('backend.src.api.controllers.admin_controller.validate_system_settings', return_value=None)
+def test_update_system_settings_success_with_scalar_identity(mock_validate, mock_identity, mock_update_settings, mock_audit_record, mock_emit, app):
+    payload = {'allow_self_registration': True}
+
+    with app.test_request_context('/admin/settings', method='PUT', json=payload):
+        from backend.src.api.controllers.admin_controller import update_system_settings
+
+        response = update_system_settings()
+        data = response.get_json()
+
+    assert data['message'] == 'System settings updated successfully'
+    mock_update_settings.assert_called_once_with(payload, 7)
+    mock_audit_record.assert_called_once()
+    mock_emit.assert_called_once()
+
+
 @patch('backend.src.api.controllers.admin_controller.User')
 def test_update_user_role_not_found(mock_user, app):
     mock_user.query.get.return_value = None
