@@ -1,12 +1,56 @@
 # User controller - business logic
 
-from flask import request, jsonify
+from flask import jsonify, request
 from flask_jwt_extended import get_jwt_identity
-from ...db.models import db, User  # Changed to relative import
-from ...auth.helpers import hash_password, verify_password  # Changed to relative import
-from ..validators.user_validator import validate_user_data, validate_profile_update  # Changed to relative import
+
+from ...auth.helpers import hash_password, verify_password
+from ...db.models import (
+    AuditLog,
+    Comment,
+    GitHubToken,
+    Notification,
+    Project,
+    Report,
+    SystemSetting,
+    Task,
+    User,
+    db,
+)
+from ...db.models.models import project_members
 from ...services import audit_service
+from ..validators.user_validator import validate_profile_update, validate_user_data
 from src.socketio_server import emit_dashboard_refresh
+
+
+def _cleanup_user_dependencies(user_id, replacement_user_id):
+    """Remove or reassign rows that block hard-deleting a user."""
+    db.session.execute(
+        project_members.delete().where(project_members.c.user_id == user_id)
+    )
+    Task.query.filter(Task.assigned_to == user_id).update(
+        {'assigned_to': None},
+        synchronize_session=False,
+    )
+    Task.query.filter(Task.created_by == user_id).update(
+        {'created_by': replacement_user_id},
+        synchronize_session=False,
+    )
+    Project.query.filter(Project.created_by == user_id).update(
+        {'created_by': replacement_user_id},
+        synchronize_session=False,
+    )
+    Comment.query.filter(Comment.user_id == user_id).delete(synchronize_session=False)
+    Notification.query.filter(Notification.user_id == user_id).delete(synchronize_session=False)
+    GitHubToken.query.filter(GitHubToken.user_id == user_id).delete(synchronize_session=False)
+    Report.query.filter(Report.user_id == user_id).delete(synchronize_session=False)
+    AuditLog.query.filter(AuditLog.actor_user_id == user_id).update(
+        {'actor_user_id': None},
+        synchronize_session=False,
+    )
+    SystemSetting.query.filter(SystemSetting.updated_by == user_id).update(
+        {'updated_by': None},
+        synchronize_session=False,
+    )
 
 def get_all_users():
     """Controller function to get all users"""
@@ -182,12 +226,23 @@ def update_user(user_id):
 
 def delete_user(user_id):
     """Controller function to delete a user (admin only)"""
-    user = User.query.get_or_404(user_id)
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
     admin_user_id = get_jwt_identity()['user_id']
+
+    if user.id == admin_user_id:
+        return jsonify({'message': 'You cannot delete your own account'}), 400
+
     user_name = user.name
-    
-    db.session.delete(user)
-    db.session.commit()
+
+    try:
+        _cleanup_user_dependencies(user.id, admin_user_id)
+        db.session.delete(user)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({'message': 'Failed to delete user'}), 500
     
     audit_service.record(
         action='user_deleted',
