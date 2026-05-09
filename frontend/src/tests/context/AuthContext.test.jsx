@@ -491,6 +491,15 @@ describe('AuthContext', () => {
     await waitFor(() => {
       expect(dashboardService.prefetchReportData).toHaveBeenCalledWith('github', 'week');
     });
+    await waitFor(() => {
+      expect(dashboardService.prefetchReportData).toHaveBeenCalledWith('github', 'month');
+    });
+    await waitFor(() => {
+      expect(dashboardService.prefetchReportData).toHaveBeenCalledWith('github', 'quarter');
+    });
+    await waitFor(() => {
+      expect(dashboardService.prefetchReportData).toHaveBeenCalledWith('github', 'year');
+    });
 
     const stored = JSON.parse(localStorage.getItem('user'));
     expect(stored.permissions).toEqual(['can_view_all_users']);
