@@ -1,6 +1,6 @@
 # DevSync - Project Tracker with GitHub Integration
 
-> Production-grade full-stack project management platform with real-time WebSocket collaboration, GitHub OAuth 2.0, and bidirectional Issue/PR linking. ECS Fargate in a custom VPC, RDS in a private subnet, CloudFront frontend - 541 automated tests gate every PR via GitHub Actions with OIDC federation. Deployment aborts on any failure.
+> Production-grade full-stack project management platform with real-time Socket.IO collaboration, GitHub OAuth 2.0, task/project/comment management, reports, audit logs, and bidirectional Issue/PR linking. ECS Fargate in a custom VPC, RDS in a private subnet, CloudFront frontend, and 541 automated tests gate every PR via GitHub Actions with OIDC federation. Deployment aborts on any failure.
 
 <p align="center">
   <img src="https://img.shields.io/badge/React-61DAFB?style=for-the-badge&labelColor=000000&logo=react">
@@ -17,29 +17,31 @@
   </a>
 </p>
 
+[→ Design Proposal](https://github.com/AhmedIkram05/DevSync/blob/6ea5839058e95aa539d89a766f3f05bbaad55ae1/docs/Design.pdf)
+
 ---
 
-## Screenshots
+## Demo
 
 ### Project dashboard - real-time task state, GitHub Issue links, and live collaborator presence
 
-![Dashboard](docs/screenshots/dashboard.png)
+![Dashboard](docs/demo/dashboard.gif)
 
 ### GitHub integration - bidirectional task ↔ Issue/PR linking with live status sync
 
-![GitHub Integration](docs/screenshots/github.png)
+![GitHub Integration](docs/demo/github.gif)
 
-### WebSocket collaboration - task updates broadcast instantly to all project members
+### WebSocket collaboration - task, project, and dashboard updates broadcast to scoped rooms
 
-![Real-time Collaboration](docs/screenshots/realtime.png)
+![Real-time Collaboration](docs/demo/realtime.gif)
 
-### GitHub Actions pipeline - 541 tests across Pytest, Jest, and Cypress gating every PR
+### GitHub Actions pipeline - 1,185 tests across Pytest, React Testing Library, Jest, and Cypress gating every PR
 
-![CI/CD Pipeline](docs/screenshots/cicd.png)
+![CI/CD Pipeline](docs/demo/cicd.gif)
 
 ### AWS architecture - ECS Fargate in custom VPC, RDS in private subnet, CloudFront frontend
 
-![AWS Architecture](docs/screenshots/aws.png)
+![AWS Architecture](docs/demo/aws.gif)
 
 ---
 
@@ -51,7 +53,7 @@ flowchart TD
  
     subgraph CI["GitHub Actions CI/CD"]
         direction TB
-        tests["271 Pytest · 270 Jest · 5 Cypress E2E\nAny failure aborts deployment"]
+        tests["517 Pytest · 663 Jest · 5 Cypress E2E\nAny failure aborts deployment"]
         tests --> be_deploy["Backend: Docker build → ECR push SHA+latest\n→ ECS rolling update → health check gate"]
         tests --> fe_deploy["Frontend: inject secrets → S3 sync\n→ CloudFront invalidation\nBlocked until backend health checks pass"]
     end
@@ -62,7 +64,7 @@ flowchart TD
  
     CF["CloudFront + S3\nReact SPA\nHTTPS via ACM"]
     ALB["Application Load Balancer\npublic — port 443"]
-    GH["GitHub API\nOAuth 2.0"]
+    GH["GitHub API\nOAuth 2.0 + issue/PR sync"]
  
     ALB --> ECS
     GH --> ECS
@@ -85,17 +87,17 @@ GitHub Actions authenticates to AWS via OpenID Connect rather than long-lived ac
 **Frontend deployment blocked on backend health checks**
 The CD pipeline explicitly waits for ECS health checks to pass before deploying the frontend. This prevents an API/UI version mismatch reaching production - a common failure mode where the new frontend ships before the new backend is stable, causing breaking API calls for users during the rollout window.
 
-**541 tests as a hard deployment gate**
-The 541-test suite (271 Pytest backend, 270 Jest frontend, 5 Cypress E2E) is not advisory - any single failure aborts deployment entirely. Coverage thresholds (80% backend, 90% frontend) are enforced as hard pipeline failure conditions, not warnings. This treats test coverage as a non-negotiable system property rather than a metric to report.
+**1,185 tests as a hard deployment gate**
+The 1,185-test suite (517 Pytest backend, 663 Jest frontend, 5 Cypress E2E) is not advisory - any single failure aborts deployment entirely. Coverage thresholds (80% backend, 90% frontend) are enforced as hard pipeline failure conditions, not warnings. This treats test coverage as a non-negotiable system property rather than a metric to report.
 
 **Rolling ECS updates with SHA + latest dual tagging**
 Every Docker image is tagged with both the Git commit SHA and `latest`. Rolling updates replace tasks incrementally, keeping the service live during deployment. The SHA tag provides a pinned, immutable reference for rollback - `docker pull devsync-backend:latest` always gets the most recent, but the exact deployed version is always recoverable by SHA.
 
 **WebSocket rooms scoped to projects**
-Socket.IO connections are authenticated with JWT on handshake — unauthenticated connections are rejected before joining any room. Clients join project-specific rooms so broadcasts are scoped: a task update in Project A is never sent to a client viewing Project B. This avoids broadcasting all events to all connected clients, which would not scale.
+Socket.IO connections are authenticated with JWT on handshake — unauthenticated connections are rejected before joining any room. Clients join project-specific rooms so broadcasts are scoped: a task update in Project A is never sent to a client viewing Project B. Dashboard refresh events are emitted after task, project, report, user, and settings mutations so the UI stays current without polling.
 
 **Highly indexed PostgreSQL schema**
-The schema is designed for the query patterns Power BI and the API actually execute - indexes on foreign keys, frequently filtered columns, and join columns. `ON CONFLICT DO NOTHING` is used throughout auto-migration scripts making them idempotent — safe to run on every deployment boot without manual intervention.
+The schema is designed for the query patterns the API actually executes - indexes on foreign keys, frequently filtered columns, and join columns. Reports, audit logs, system settings, GitHub repositories, and task links all map to dedicated tables so the data model matches the current backend surface.
 
 **GitHub OAuth 2.0 — no token storage in frontend**
 The OAuth flow completes server-side. The GitHub access token is stored in the backend database, not in browser localStorage or a cookie visible to client-side JavaScript. The frontend receives only a platform JWT - the GitHub token is never exposed to the browser.
@@ -107,32 +109,41 @@ Security group rules enforce a strict ingress hierarchy: only the ALB can reach 
 
 ## Features
 
-**Project & Task Management**
+### Project & Task Management
 
-- Create and manage projects with team members
-- Full task lifecycle — create, assign, update status, comment, close
-- Real-time task state broadcast to all project members via WebSockets
-- Notification system for task assignments and updates
+- Create and manage projects with team members and project-level task scopes
+- Full task lifecycle — create, assign, update status, comment, and delete
+- Real-time task, project, user, and report refresh events via Socket.IO
+- Notification system for task assignments, comments, mentions, and admin actions
+- Dashboard endpoints for user, client, admin, and project-specific views
 
-**GitHub Integration**
+### GitHub Integration
 
-- GitHub OAuth 2.0 — connect your GitHub account securely
-- Link repository to a project
-- Bidirectional task ↔ GitHub Issue linking — create Issues from tasks, or link existing Issues
+- GitHub OAuth 2.0 — connect your GitHub account securely and disconnect it later
+- Track GitHub repositories in the platform database
+- Bidirectional task ↔ GitHub Issue linking — create Issues from tasks or link existing Issues
 - Pull Request linking — associate tasks with open PRs
-- Live status sync — Issue/PR state reflected in platform tasks
+- Repository issue/PR browser with filters for state, page, and per-page
+- Live status sync — Issue/PR state reflected in platform tasks and dashboards
 
-**Real-time Collaboration**
+### Administration & Reporting
+
+- Admin user creation, editing, deletion, and role updates
+- System stats, system settings, and retention cleanup controls
+- Audit log browsing, detail lookup, and cleanup
+- Saved reports for tasks, developers, and GitHub activity with pagination
+
+### Real-time Collaboration
 
 - WebSocket layer (Socket.io) with JWT-authenticated connections
 - Project-scoped rooms - updates only broadcast to relevant project members
-- Live presence indicators
+- Live dashboard refresh events after mutations
 
-**Security**
+### Platform Security
 
 - JWT authentication on all API routes and WebSocket connections
 - GitHub tokens stored server-side only - never exposed to the browser
-- RBAC for project-level access control
+- RBAC for user, project, admin, report, and notification access control
 - HTTPS enforced end-to-end via ACM
 
 ---
@@ -140,11 +151,10 @@ Security group rules enforce a strict ingress hierarchy: only the ALB can reach 
 ## Testing
 
 | Layer | Framework | Count | Coverage |
-|---|---|---|---|
-| Backend unit + integration | Pytest | 271 | 80% line coverage (hard gate) |
-| Frontend unit + component | Jest | 270 | 90% line coverage (hard gate) |
-| End-to-end | Cypress | 5 suites | Critical user journeys |
-| **Total** | | **541** | |
+| --- | --- | --- | --- |
+| Backend unit + integration | Pytest | 517 | 85% line coverage (hard gate) |
+| Frontend unit + component | Jest + React Testing Library | 668 | 85% line coverage (hard gate) |
+| **Total** | | **1,185** | |
 
 Tests run on every PR. Any failure - including a coverage threshold drop - aborts the CD pipeline before any deployment step runs.
 
@@ -204,8 +214,60 @@ cd backend/src && python app.py
 
 # Frontend (separate terminal)
 cd frontend && npm start
-# App runs at http://localhost:5173
+# App runs at http://localhost:3000
 ```
+
+### Docker & Makefile (recommended for local, production-like runs)
+
+There is a Makefile that wraps two Docker Compose files for a production-like local environment:
+
+- `docker-compose.local-postgres.yml` — local Postgres instance used for development and testing
+- `docker-compose.backend-local.yml` — backend service definition that uses the backend Dockerfile
+
+Common Makefile targets:
+
+- `make db-up` — start the local Postgres service in detached mode and wait for it to be healthy
+- `make db-down` — stop the local Postgres service
+- `make db-reset` — remove volumes and recreate the DB (useful when schema changes)
+
+- `make backend-build` — build the backend service image (uses the Dockerfile in `backend/`)
+- `make backend-up` — start the backend container (and the DB) in detached mode
+- `make backend-logs` — stream backend logs
+- `make backend-down` — stop the backend container
+- `make backend-rebuild` — full backend rebuild (down, build, up)
+
+- `make up` — start both DB and backend together (`db + backend`) in detached mode
+- `make down` — stop all Compose services
+- `make reset` — full reset (down, remove DB volumes, up)
+
+Examples:
+
+Start a production-like backend and DB locally (recommended):
+
+```bash
+# from the repo root
+make backend-build
+make backend-up
+
+# view logs
+make backend-logs
+
+# stop
+make backend-down
+```
+
+If you only need a local Postgres for running tests or the backend in dev mode:
+
+```bash
+make db-up
+# run your backend locally (venv) or via docker
+```
+
+Notes:
+
+- The `backend-up` target composes both the DB and backend using the two Compose files declared in the Makefile. This mirrors a minimal production topology: private DB + backend service.
+- Use `make db-reset` cautiously — it removes volumes and will delete local data.
+- The Docker-based flow is useful for reviewer demos or reproducing production-like behaviour without installing system-level dependencies.
 
 ### Dockerised backend (production-like)
 
@@ -223,14 +285,14 @@ make backend-down
 The full deployment is automated via GitHub Actions. Manual setup is required once per environment:
 
 | Component | Service | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Backend container registry | ECR | Private repo: `devsync-backend` |
 | Backend runtime | ECS Fargate | Behind ALB, port 8000, custom VPC |
 | Database | RDS PostgreSQL | Private subnet, only ECS can connect |
 | Frontend hosting | S3 + CloudFront | OAC, HTTPS via ACM |
 | CI/CD auth | IAM OIDC | No static credentials — role assumed per run |
 
-See the [AWS Deployment section](#aws-deployment) in the original docs for full IAM policy and security group configuration.
+The canonical OpenAPI document lives in `docs/backend/swagger.yaml`.
 
 ---
 
@@ -243,12 +305,16 @@ erDiagram
     USERS ||--o{ COMMENTS : "writes"
     USERS ||--o{ NOTIFICATIONS : "receives"
     USERS ||--o{ GITHUB_TOKENS : "has"
+    USERS ||--o{ REPORTS : "creates"
+    USERS ||--o{ AUDIT_LOGS : "acts in"
+    USERS ||--o{ SYSTEM_SETTINGS : "updates"
     TASKS ||--o{ COMMENTS : "includes"
     TASKS ||--o{ NOTIFICATIONS : "triggers"
     TASKS ||--o{ TASK_GITHUB_LINKS : "links"
     PROJECTS ||--o{ PROJECT_TASKS : "contains"
     TASKS ||--o{ PROJECT_TASKS : "referenced by"
     TASK_GITHUB_LINKS }o--|| GITHUB_REPOSITORIES : "references"
+    TASKS ||--o{ REPORTS : "summarized in"
 
     USERS {
         int id PK
@@ -312,6 +378,31 @@ erDiagram
         string repoUrl
         int githubId
     }
+    REPORTS {
+        int id PK
+        int userId FK
+        string reportType
+        string dateRange
+        json summary
+        json details
+        timestamp generatedAt
+    }
+    AUDIT_LOGS {
+        int id PK
+        int actorUserId FK
+        string actorRole
+        string action
+        string resourceType
+        string resourceId
+        json metadata
+        timestamp createdAt
+    }
+    SYSTEM_SETTINGS {
+        string key PK
+        json value
+        int updatedBy FK
+        timestamp updatedAt
+    }
     TASK_GITHUB_LINKS {
         int id PK
         int taskId FK
@@ -329,25 +420,47 @@ erDiagram
 Three roles with increasing permission levels - enforced via JWT role claims and custom permission decorators on every protected route.
 
 | Role | Description |
-|---|---|
-| **Developer** | View and update assigned tasks, add comments, link GitHub account |
-| **Team Lead** | All Developer permissions + create tasks, assign to team members, view team stats |
-| **Admin** | All Team Lead permissions + delete tasks, manage users, system settings, audit logs |
+| --- | --- |
+| **Developer** | View and update assigned tasks, add comments, manage personal notifications, connect GitHub |
+| **Team Lead** | All Developer permissions + create tasks, manage projects, view client/admin dashboards, generate and view reports |
+| **Admin** | All Team Lead permissions + manage users, system settings, audit logs, retention cleanup, and repository tracking |
 
 ### Endpoint permission mapping
 
 | Endpoint | Method | Minimum Role |
-|---|---|---|
+| --- | --- | --- |
 | `/api/auth/register` | POST | Public |
 | `/api/auth/login` | POST | Public |
+| `/api/auth/refresh` | POST | Authenticated |
+| `/api/auth/logout` | POST | Authenticated |
 | `/api/auth/me` | GET | Any |
+| `/api/auth/permissions` | GET | Authenticated |
 | `/api/tasks` | GET | Developer |
 | `/api/tasks` | POST | Team Lead |
 | `/api/tasks/:id` | PUT | Developer (own tasks) |
 | `/api/tasks/:id` | DELETE | Admin |
 | `/api/tasks/:id/comments` | GET / POST | Developer |
-| `/api/admin/users` | GET / PUT / DELETE | Admin |
-| `/api/admin/system/settings` | GET / PUT | Admin |
+| `/api/users` | GET | Developer |
+| `/api/users/:id` | GET | Self or Team Lead+ |
+| `/api/projects` | GET | Developer |
+| `/api/projects` | POST / PUT / DELETE | Team Lead |
+| `/api/admin/users` | GET / PUT / DELETE | Team Lead for list, Admin for mutations |
+| `/api/admin/users/:id/role` | PUT | Admin |
+| `/api/admin/stats` | GET | Team Lead |
+| `/api/admin/settings` | GET / PUT | Admin |
+| `/api/admin/audit-logs` | GET | Admin |
+| `/api/admin/audit-logs/:id` | GET | Admin |
+| `/api/admin/audit-logs/cleanup` | POST | Admin |
+| `/api/admin/settings/retention/run` | POST | Admin |
+| `/api/reports` | GET / POST | Team Lead |
+| `/api/reports/:id` | GET / DELETE | Team Lead |
+| `/api/notifications/:id` | DELETE | Personal notification permission |
+| `/api/dashboard/client` | GET | Developer / Team Lead |
+| `/api/dashboard/admin` | GET | Admin / Team Lead |
+| `/api/github/repositories` | GET | Authenticated |
+| `/api/github/repositories` | POST | Admin |
+| `/api/tasks/:id/github` | GET / POST | Authenticated |
+| `/api/tasks/:id/github/:link_id` | DELETE | Authenticated |
 
 ---
 
@@ -356,33 +469,110 @@ Three roles with increasing permission levels - enforced via JWT role claims and
 ### Authentication — `/api/auth`
 
 | Method | Endpoint | Description |
-|---|---|---|
+| --- | --- | --- |
 | POST | `/register` | Create new user account |
 | POST | `/login` | Authenticate and issue JWT |
 | POST | `/refresh` | Refresh access token using refresh token |
 | POST | `/logout` | Invalidate tokens |
 | GET | `/me` | Get current user profile |
+| POST | `/token` | Issue token directly from login credentials |
+| GET | `/permissions` | Return role and permission list |
 
-**JWT implementation:** HTTP-only cookies with CSRF protection. Access token expires after **24 hours**, refresh token after **30 days**.
+**JWT implementation:** HTTP-only cookies with JWT bearer support for API clients. Access and refresh token handling is server-side; the GitHub OAuth token is stored in the backend database and never exposed to the browser.
+
+### Users & Profile — `/api/users`, `/api/profile`
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| GET | `/api/users` | List users visible to the caller |
+| GET | `/api/users/:id` | View a user profile with self/elevated access checks |
+| PUT | `/api/users/:id` | Admin update for a user |
+| DELETE | `/api/users/:id` | Admin delete for a user |
+| GET | `/api/profile` | Get current profile |
+| PUT | `/api/profile` | Update current profile |
+
+### Projects — `/api/projects`
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| GET | `/api/projects` | Fetch visible projects |
+| POST | `/api/projects` | Create project with optional team members |
+| GET | `/api/projects/:id` | Fetch a single project and its team members |
+| PUT | `/api/projects/:id` | Update project, including status and team membership |
+| DELETE | `/api/projects/:id` | Delete a project |
+| GET | `/api/projects/:id/tasks` | Fetch tasks for a project |
 
 ### Tasks — `/api/tasks`
 
 | Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/tasks` | Fetch all tasks |
-| POST | `/api/tasks` | Create task (Team Lead+) |
+| --- | --- | --- |
+| GET | `/api/tasks` | Fetch tasks with role-aware filters |
+| POST | `/api/tasks` | Create task |
+| GET | `/api/tasks/:id` | Fetch a single task |
 | PUT | `/api/tasks/:id` | Update task |
-| DELETE | `/api/tasks/:id` | Delete task (Admin only) |
-| PATCH | `/api/tasks/:id/progress` | Update progress percentage |
+| DELETE | `/api/tasks/:id` | Delete task |
 | GET/POST | `/api/tasks/:id/comments` | View or add comments |
+| GET/POST | `/api/tasks/:id/github` | View or create GitHub links for a task |
+| DELETE | `/api/tasks/:id/github/:link_id` | Remove a GitHub link |
+
+### Notifications — `/api/notifications`
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| GET | `/api/notifications` | List current user notifications |
+| POST | `/api/notifications` | Create a notification |
+| PUT | `/api/notifications/:id/read` | Mark a notification as read |
+| PUT | `/api/notifications/read-all` | Mark all notifications as read |
+| DELETE | `/api/notifications/:id` | Delete a personal notification |
+
+### Dashboards — `/api/dashboard`
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| GET | `/api/dashboard` | Current user dashboard |
+| GET | `/api/dashboard/client` | Developer/team lead dashboard |
+| GET | `/api/dashboard/admin` | Admin dashboard |
+| GET | `/api/dashboard/projects/:id` | Project-specific dashboard |
+
+### Admin — `/api/admin`
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| GET | `/api/admin/users` | List users for admins/team leads |
+| POST | `/api/admin/users` | Create a user as admin |
+| PUT | `/api/admin/users/:id` | Update a user as admin |
+| DELETE | `/api/admin/users/:id` | Delete a user as admin |
+| PUT | `/api/admin/users/:id/role` | Update a user's role |
+| GET | `/api/admin/stats` | Get system statistics |
+| GET/PUT | `/api/admin/settings` | Read or update system settings |
+| GET | `/api/admin/audit-logs` | Paginated audit logs with filters |
+| GET | `/api/admin/audit-logs/:id` | Single audit log details |
+| POST | `/api/admin/audit-logs/cleanup` | Purge expired audit logs |
+| POST | `/api/admin/settings/retention/run` | Run retention cleanup immediately |
+
+### Reports — `/api/reports`
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| GET | `/api/reports` | List saved reports with filters and pagination |
+| POST | `/api/reports` | Save a generated report |
+| GET | `/api/reports/:id` | Fetch one saved report |
+| DELETE | `/api/reports/:id` | Delete a saved report |
 
 ### GitHub Integration — `/api/github`
 
 | Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/github/repos` | Fetch user repositories |
-| GET | `/api/github/issues` | Fetch linked GitHub issues |
-| POST | `/api/github/link-task` | Link task to Issue or PR |
+| --- | --- | --- |
+| GET | `/api/github/config-check` | Verify GitHub OAuth configuration |
+| GET | `/api/github/auth` | Start OAuth flow |
+| GET/POST | `/api/github/callback` | Handle OAuth callback |
+| GET | `/api/github/exchange` | Exchange code for token |
+| GET | `/api/github/status` | Check connection status |
+| POST | `/api/github/disconnect` | Disconnect GitHub account |
+| GET | `/api/github/repositories` | Fetch tracked repositories |
+| POST | `/api/github/repositories` | Add a repository to track |
+| GET | `/api/github/repositories/:repo_id/issues` | Fetch repository issues |
+| GET | `/api/github/repositories/:repo_id/pulls` | Fetch repository pull requests |
 
 All GitHub API calls are proxied through the Flask backend - the GitHub OAuth token is never exposed to the frontend.
 
@@ -391,28 +581,27 @@ All GitHub API calls are proxied through the Flask backend - the GitHub OAuth to
 ## Security
 
 | Concern | Implementation |
-|---|---|
-| Authentication | JWT in HTTP-only cookies - not accessible to JavaScript |
-| Token expiry | 24hr access token, 30 day refresh token |
-| OAuth flow | PKCE - prevents authorisation code interception |
-| OAuth token storage | Encrypted server-side - never sent to browser |
-| Rate limiting | 100 requests per 15 minutes per IP |
-| Input validation | Flask-Validator server-side checks, parameterised queries throughout |
-| XSS prevention | CSP headers, HTML sanitisation on all comment content |
+| --- | --- |
+| Authentication | JWT in HTTP-only cookies with bearer support for API clients |
+| Token storage | GitHub access tokens stay in the backend database |
+| OAuth flow | Server-side OAuth callback with state validation |
+| Input validation | Route validators and controller-level checks throughout |
+| Mutation safety | DB transactions with rollback on controller failure |
 | Network isolation | Security groups enforce strict ingress: only ALB → ECS → RDS |
 | CI/CD credentials | OIDC federation - no static AWS credentials stored anywhere |
+| Route protection | Role and permission decorators for users, projects, tasks, admin, reports, and notifications |
 
 ---
 
 ## Technology Choices
 
 | Component | Chosen | Alternative | Rationale |
-|---|---|---|---|
-| Backend | Flask | Django | Lightweight, fewer constraints, faster API development without monolithic overhead |
-| Frontend | React | Angular | Smaller bundle, component-based architecture, larger ecosystem - Angular's complexity suits enterprise apps, not a focused SPA |
-| Database | PostgreSQL | Firebase | Relational integrity required for task/user/project relationships - Firebase's NoSQL model would lose referential constraints |
-| Real-time | Socket.IO | AJAX Polling | WebSockets maintain persistent connections with minimal latency - polling multiplies server load with no benefit |
-| Auth | GitHub OAuth | Custom email/password | Removes password storage entirely, simplifies onboarding for developers, PKCE eliminates token interception risk |
+| --- | --- | --- | --- |
+| Backend | Flask | Django | Lightweight, fewer constraints, fast API development with clear route-level control |
+| Frontend | React | Angular | Component-based SPA with current test tooling and Socket.IO client support |
+| Database | PostgreSQL | Firebase | Relational integrity fits users, projects, tasks, reports, audit logs, and GitHub links |
+| Real-time | Socket.IO | AJAX Polling | Event-driven updates keep dashboards and rooms in sync without polling |
+| Auth | GitHub OAuth + JWT cookies | Custom email/password | Server-side OAuth keeps GitHub tokens off the frontend and avoids password storage |
 | CI/CD | GitHub Actions + OIDC | Static IAM keys | No credentials stored - role assumed per run, scoped to this repository only |
 
 ---
@@ -420,15 +609,15 @@ All GitHub API calls are proxied through the Flask backend - the GitHub OAuth to
 ## Tech Stack
 
 | Layer | Technology |
-|---|---|
-| Frontend | React, Vite, Tailwind CSS, Socket.io client |
+| --- | --- |
+| Frontend | React 18, Vite, Tailwind CSS, Socket.io client, React Testing Library |
 | Backend | Flask, SQLAlchemy, Flask-SocketIO, Gunicorn |
 | Database | PostgreSQL on AWS RDS |
 | Real-time | Socket.IO (WebSockets) |
-| Auth | JWT (HTTP-only cookies), GitHub OAuth 2.0 with PKCE |
+| Auth | JWT (HTTP-only cookies), GitHub OAuth 2.0 |
 | Cloud | AWS ECS Fargate, ECR, RDS, S3, CloudFront, ACM |
 | CI/CD | GitHub Actions, OIDC federation, Docker |
-| Testing | Pytest, Jest, Cypress |
+| Testing | Pytest, Jest, React Testing Library, Cypress |
 | Local dev | Docker Compose, Make |
 
 ---

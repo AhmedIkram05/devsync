@@ -15,7 +15,7 @@ DevSync has three primary roles with increasing levels of permission:
 Roles are ranked numerically so higher roles inherit all lower privileges:
 
 | Role | Level |
-| ------ | ------- |
+ | ------ | ------- |
 | Developer | 0 |
 | Team Lead | 1 |
 | Admin | 2 |

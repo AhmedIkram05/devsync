@@ -219,7 +219,7 @@ const Landing = () => {
               <div className="absolute inset-0 rounded-[36px] border border-slate-800/70 bg-slate-900/40 shadow-[0_20px_60px_rgba(15,23,42,0.45)] backdrop-blur"></div>
               <div className="absolute inset-4 overflow-hidden rounded-[28px] border border-slate-800/70 bg-slate-950/80">
                 <img
-                  src="/landing/devsync-hero-demo.gif"
+                  src="/frontend/landing/devsync-hero-demo.gif"
                   alt="Animated preview of the DevSync dashboard"
                   width="1400"
                   height="1040"

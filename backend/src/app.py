@@ -47,10 +47,9 @@ def create_app(config_class=None):
     # Register blueprint at URL
     app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
     
-    # Make sure the directory exists for the swagger file
-    swagger_dir = os.path.join(os.path.dirname(__file__), 'api')
-    os.makedirs(swagger_dir, exist_ok=True)
-    swagger_path = os.path.join(swagger_dir, 'swagger.yaml')
+    # Serve the canonical Swagger file from the docs tree.
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+    swagger_path = os.path.join(project_root, 'docs', 'backend', 'swagger.yaml')
     
     @app.route('/api/swagger.yaml')
     def serve_swagger_spec():
