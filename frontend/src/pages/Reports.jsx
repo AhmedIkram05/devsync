@@ -28,6 +28,137 @@ ChartJS.register(
   Filler
 );
 
+// Module-level helpers (exported for tests)
+const getReportLabel = (type) => {
+  switch (type) {
+    case 'tasks': return 'Task Report';
+    case 'github': return 'GitHub Activity';
+    case 'developers': return 'Developer Performance';
+    default: return 'Report';
+  }
+};
+
+const getDateRangeLabel = (range) => {
+  switch (range) {
+    case 'week': return 'Last Week';
+    case 'month': return 'Last Month';
+    case 'quarter': return 'Last Quarter';
+    case 'year': return 'Last Year';
+    default: return 'Custom Range';
+  }
+};
+
+const formatGeneratedAt = (value) => {
+  if (!value) return 'Unknown date';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown date';
+  return date.toLocaleString('en-US');
+};
+
+const sanitizePdfText = (value) =>
+  String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)')
+    .replace(/[^\x20-\x7E]/g, '?');
+
+const buildPdfLines = (report) => {
+  const summary = report.summary || {};
+  const details = Array.isArray(report.details) ? report.details : [];
+  const lines = [
+    'DevSync Report',
+    `Type: ${getReportLabel(report.type)}`,
+    `Date Range: ${getDateRangeLabel(report.dateRange)}`,
+    `Generated: ${formatGeneratedAt(report.generatedAt)}`,
+    '',
+    'Summary:'
+  ];
+
+  const summaryEntries = Object.entries(summary);
+  if (summaryEntries.length === 0) {
+    lines.push('No summary data.');
+  } else {
+    summaryEntries.forEach(([key, value]) => {
+      lines.push(`- ${key.replace(/_/g, ' ')}: ${value}`);
+    });
+  }
+
+  lines.push('', 'Details (top items):');
+
+  if (details.length === 0) {
+    lines.push('No detail data.');
+  } else if (report.type === 'tasks') {
+    details.slice(0, 8).forEach((task) => {
+      lines.push(`- ${task.title || 'Untitled'} [${task.status || 'unknown'}]`);
+    });
+  } else if (report.type === 'developers') {
+    details.slice(0, 8).forEach((developer) => {
+      lines.push(`- ${developer.name || 'Unknown'} (${developer.email || 'n/a'}) tasks: ${developer.total_tasks || 0}`);
+    });
+  } else if (report.type === 'github') {
+    details.slice(0, 8).forEach((repo) => {
+      lines.push(`- ${repo.name || 'Repo'} (${repo.owner || 'owner'}) issues: ${repo.open_issues || 0} prs: ${repo.total_prs || 0}`);
+    });
+  } else {
+    details.slice(0, 8).forEach((item) => {
+      lines.push(`- ${item.name || item.title || 'Item'}`);
+    });
+  }
+
+  return lines.map(sanitizePdfText);
+};
+
+const buildTimeBuckets = (range) => {
+  const now = new Date();
+  const buckets = [];
+
+  if (range === 'week') {
+    const start = new Date(now);
+    start.setDate(now.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 7; i++) {
+      const bucketStart = new Date(start);
+      bucketStart.setDate(start.getDate() + i);
+      const bucketEnd = new Date(bucketStart);
+      bucketEnd.setDate(bucketStart.getDate() + 1);
+      buckets.push({
+        label: bucketStart.toLocaleDateString('en-US', { weekday: 'short' }),
+        start: bucketStart,
+        end: bucketEnd
+      });
+    }
+    return buckets;
+  }
+
+  if (range === 'month') {
+    const start = new Date(now);
+    start.setDate(now.getDate() - 27);
+    start.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 4; i++) {
+      const bucketStart = new Date(start);
+      bucketStart.setDate(start.getDate() + i * 7);
+      const bucketEnd = new Date(bucketStart);
+      bucketEnd.setDate(bucketStart.getDate() + 7);
+      buckets.push({ label: `Week ${i + 1}`, start: bucketStart, end: bucketEnd });
+    }
+    return buckets;
+  }
+
+  const monthsToShow = range === 'quarter' ? 3 : 12;
+  for (let i = 0; i < monthsToShow; i++) {
+    const monthOffset = monthsToShow - 1 - i;
+    const bucketStart = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
+    const bucketEnd = new Date(now.getFullYear(), now.getMonth() - monthOffset + 1, 1);
+    buckets.push({
+      label: bucketStart.toLocaleDateString('en-US', { month: 'short' }),
+      start: bucketStart,
+      end: bucketEnd
+    });
+  }
+
+  return buckets;
+};
+
 const Reports = () => {
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -39,84 +170,6 @@ const Reports = () => {
   const reportCacheRef = useRef({});
   const latestRequestRef = useRef(0);
 
-  const getReportLabel = (type) => {
-    switch (type) {
-      case 'tasks': return 'Task Report';
-      case 'github': return 'GitHub Activity';
-      case 'developers': return 'Developer Performance';
-      default: return 'Report';
-    }
-  };
-
-  const getDateRangeLabel = (range) => {
-    switch (range) {
-      case 'week': return 'Last Week';
-      case 'month': return 'Last Month';
-      case 'quarter': return 'Last Quarter';
-      case 'year': return 'Last Year';
-      default: return 'Custom Range';
-    }
-  };
-
-  const formatGeneratedAt = (value) => {
-    if (!value) return 'Unknown date';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return 'Unknown date';
-    return date.toLocaleString('en-US');
-  };
-
-  const sanitizePdfText = (value) =>
-    String(value || '')
-      .replace(/\\/g, '\\\\')
-      .replace(/\(/g, '\\(')
-      .replace(/\)/g, '\\)')
-      .replace(/[^\x20-\x7E]/g, '?');
-
-  const buildPdfLines = (report) => {
-    const summary = report.summary || {};
-    const details = Array.isArray(report.details) ? report.details : [];
-    const lines = [
-      'DevSync Report',
-      `Type: ${getReportLabel(report.type)}`,
-      `Date Range: ${getDateRangeLabel(report.dateRange)}`,
-      `Generated: ${formatGeneratedAt(report.generatedAt)}`,
-      '',
-      'Summary:'
-    ];
-
-    const summaryEntries = Object.entries(summary);
-    if (summaryEntries.length === 0) {
-      lines.push('No summary data.');
-    } else {
-      summaryEntries.forEach(([key, value]) => {
-        lines.push(`- ${key.replace(/_/g, ' ')}: ${value}`);
-      });
-    }
-
-    lines.push('', 'Details (top items):');
-
-    if (details.length === 0) {
-      lines.push('No detail data.');
-    } else if (report.type === 'tasks') {
-      details.slice(0, 8).forEach((task) => {
-        lines.push(`- ${task.title || 'Untitled'} [${task.status || 'unknown'}]`);
-      });
-    } else if (report.type === 'developers') {
-      details.slice(0, 8).forEach((developer) => {
-        lines.push(`- ${developer.name || 'Unknown'} (${developer.email || 'n/a'}) tasks: ${developer.total_tasks || 0}`);
-      });
-    } else if (report.type === 'github') {
-      details.slice(0, 8).forEach((repo) => {
-        lines.push(`- ${repo.name || 'Repo'} (${repo.owner || 'owner'}) issues: ${repo.open_issues || 0} prs: ${repo.total_prs || 0}`);
-      });
-    } else {
-      details.slice(0, 8).forEach((item) => {
-        lines.push(`- ${item.name || item.title || 'Item'}`);
-      });
-    }
-
-    return lines.map(sanitizePdfText);
-  };
 
   const createPdfBlob = (lines) => {
     const textStream = [
@@ -908,3 +961,13 @@ const Reports = () => {
 };
 
 export default Reports;
+
+// Export helpers for testing
+export {
+  getReportLabel,
+  getDateRangeLabel,
+  formatGeneratedAt,
+  sanitizePdfText,
+  buildPdfLines,
+  buildTimeBuckets,
+};

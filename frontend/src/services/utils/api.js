@@ -1315,5 +1315,10 @@ export {
   adminUserService,
   settingsService,
   auditLogService,
-  normalizeTaskReportDetails
+  normalizeTaskReportDetails,
+  getDateRangeStart,
+  getActivityWindowDays,
+  isWithinDateRange
 };
+
+export default fetchWithAuth;

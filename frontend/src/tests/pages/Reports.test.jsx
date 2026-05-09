@@ -8,6 +8,11 @@ jest.mock('../../services/utils/api', () => ({
   dashboardService: {
     getReportData: jest.fn(),
   },
+  reportService: {
+    getSavedReports: jest.fn(),
+    saveReport: jest.fn(),
+    deleteReport: jest.fn(),
+  },
 }));
 
 jest.mock('react-chartjs-2', () => ({
@@ -66,6 +71,7 @@ describe('Reports page', () => {
 
   beforeEach(() => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
 
     dashboardService.getReportData.mockReset();
     dashboardService.getReportData.mockImplementation((reportType, dateRange) => {
@@ -91,6 +97,11 @@ describe('Reports page', () => {
 
       return Promise.resolve(tasksReport);
     });
+
+    require('../../services/utils/api').reportService.getSavedReports.mockReset();
+    require('../../services/utils/api').reportService.getSavedReports.mockResolvedValue({ reports: [] });
+    require('../../services/utils/api').reportService.saveReport.mockReset();
+    require('../../services/utils/api').reportService.deleteReport.mockReset();
   });
 
   afterEach(() => {
@@ -126,6 +137,7 @@ describe('Reports page', () => {
     });
 
     expect(await screen.findByText('Connected Repos')).toBeInTheDocument();
+
     expect(screen.queryByText('No chart data for this range.')).not.toBeInTheDocument();
     expect(screen.getByText(/Report table: github \(1\)/i)).toBeInTheDocument();
 
@@ -136,6 +148,8 @@ describe('Reports page', () => {
     await waitFor(() => {
       expect(dashboardService.getReportData).toHaveBeenCalledWith('github', 'month', { forceRefresh: false });
     });
+
+    expect(await screen.findByText('Connected Repos')).toBeInTheDocument();
 
     fireEvent.change(await screen.findByDisplayValue('GitHub Activity'), {
       target: { value: 'developers' },
@@ -218,5 +232,297 @@ describe('Reports page', () => {
     expect(screen.getByText('Connected Repos')).toBeInTheDocument();
     expect(screen.getByText('Open Issues')).toBeInTheDocument();
     expect(screen.getByText('Recent Commits')).toBeInTheDocument();
+  });
+
+  test('loads saved reports, saves generated reports, and deletes them', async () => {
+    const api = require('../../services/utils/api');
+    api.reportService.getSavedReports.mockResolvedValueOnce({
+      reports: [
+        { id: 'saved-1', type: 'tasks', dateRange: 'week', generatedAt: '2099-01-01T00:00:00.000Z', summary: { total: 1 }, details: [] },
+      ],
+    });
+    api.reportService.saveReport.mockResolvedValueOnce({
+      report: { id: 'saved-2', type: 'github', dateRange: 'week', generatedAt: '2099-01-02T00:00:00.000Z', summary: { repos: 1 }, details: [] },
+    });
+    api.reportService.deleteReport.mockResolvedValueOnce({ success: true });
+
+    render(<Reports />);
+
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+    expect(await screen.findByText('Task Report')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
+
+    await waitFor(() => {
+      expect(api.reportService.saveReport).toHaveBeenCalledWith('tasks', 'week', expect.any(Object), expect.any(Array));
+    });
+
+    expect(await screen.findByText('GitHub Activity')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle('Delete Report'));
+
+    await waitFor(() => {
+      expect(api.reportService.deleteReport).toHaveBeenCalledWith('saved-1');
+    });
+
+    expect(screen.getAllByText('Task Report').length).toBe(1);
+  });
+
+  test('generates report with different date ranges', async () => {
+    const api = require('../../services/utils/api');
+    api.dashboardService.getReportData.mockResolvedValue(tasksReport);
+    api.reportService.getSavedReports.mockResolvedValue({ reports: [] });
+    api.reportService.saveReport.mockResolvedValue({
+      report: { id: 'saved-3', type: 'tasks', dateRange: 'month', generatedAt: '2099-01-01T00:00:00.000Z', summary: tasksReport.summary, details: tasksReport.details },
+    });
+
+    render(<Reports />);
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+
+    // Select different date range
+    const dateRangeSelect = screen.getAllByRole('combobox')[1];
+    fireEvent.change(dateRangeSelect, { target: { value: 'month' } });
+
+    await waitFor(() => {
+      expect(dashboardService.getReportData).toHaveBeenCalledWith('tasks', 'month', { forceRefresh: false });
+    });
+
+    expect(await screen.findByText('Total Tasks')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
+
+    await waitFor(() => {
+      expect(api.reportService.saveReport).toHaveBeenCalledWith('tasks', 'month', expect.any(Object), expect.any(Array));
+    });
+  });
+
+  test('generates github report', async () => {
+    const api = require('../../services/utils/api');
+    api.dashboardService.getReportData.mockResolvedValue(githubReport);
+    api.reportService.getSavedReports.mockResolvedValue({ reports: [] });
+    api.reportService.saveReport.mockResolvedValue({
+      report: { id: 'saved-gh', type: 'github', dateRange: 'week', generatedAt: '2099-01-01T00:00:00.000Z', summary: githubReport.summary, details: githubReport.details },
+    });
+
+    render(<Reports />);
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+
+    // Select github report type
+    const reportTypeSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.change(reportTypeSelect, { target: { value: 'github' } });
+
+    await waitFor(() => {
+      expect(dashboardService.getReportData).toHaveBeenCalledWith('github', 'week', { forceRefresh: false });
+    });
+
+    expect(await screen.findByText('Connected Repos')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
+
+    await waitFor(() => {
+      expect(api.reportService.saveReport).toHaveBeenCalledWith('github', 'week', expect.any(Object), expect.any(Array));
+    });
+  });
+
+  test('refreshes github stats and shows the refresh state', async () => {
+    const api = require('../../services/utils/api');
+    api.dashboardService.getReportData.mockResolvedValue(githubReport);
+    api.reportService.getSavedReports.mockResolvedValue({ reports: [] });
+
+    render(<Reports />);
+
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'github' } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Refresh GitHub Stats/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Refresh GitHub Stats/i }));
+
+    await waitFor(() => {
+      expect(dashboardService.getReportData).toHaveBeenCalledWith('github', 'week', { forceRefresh: true });
+    });
+  });
+
+  test('renders developer report summary and charts', async () => {
+    const api = require('../../services/utils/api');
+    api.dashboardService.getReportData.mockResolvedValue(developersReport);
+    api.reportService.getSavedReports.mockResolvedValue({ reports: [] });
+
+    render(<Reports />);
+
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'developers' } });
+
+    await waitFor(() => {
+      expect(dashboardService.getReportData).toHaveBeenCalledWith('developers', 'week', { forceRefresh: false });
+    });
+
+    expect(await screen.findByText('Team Members')).toBeInTheDocument();
+    expect(screen.getByText('Avg. Tasks Per Dev')).toBeInTheDocument();
+    expect(screen.getByText('Avg. Completion Rate')).toBeInTheDocument();
+    expect(screen.getByText('Active Developers')).toBeInTheDocument();
+    expect(screen.getByText(/Report table: developers \(1\)/i)).toBeInTheDocument();
+  });
+
+  test('falls back when saved reports response contains an error', async () => {
+    const api = require('../../services/utils/api');
+    api.reportService.getSavedReports.mockResolvedValue({ error: 'cache unavailable' });
+    api.reportService.saveReport.mockResolvedValue({
+      error: 'persist failed',
+    });
+
+    render(<Reports />);
+
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
+
+    await waitFor(() => {
+      expect(console.warn).toHaveBeenCalledWith('Failed to load saved reports:', 'cache unavailable');
+    });
+
+    await waitFor(() => {
+      expect(console.warn).toHaveBeenCalledWith('Failed to save report to backend:', 'persist failed');
+    });
+
+    expect(screen.getByText('Task Report')).toBeInTheDocument();
+  });
+
+  test('falls back when saved reports request throws', async () => {
+    const api = require('../../services/utils/api');
+    api.reportService.getSavedReports.mockRejectedValue(new Error('saved reports unavailable'));
+
+    render(<Reports />);
+
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(console.error).toHaveBeenCalledWith('Error loading saved reports:', expect.any(Error));
+    });
+  });
+
+  test('handles report generation failure', async () => {
+    const api = require('../../services/utils/api');
+    api.dashboardService.getReportData.mockRejectedValue(new Error('Report generation failed'));
+    api.reportService.getSavedReports.mockResolvedValue({ reports: [] });
+
+    render(<Reports />);
+    expect(await screen.findByText(/Failed to load report data\. Please try again\./i)).toBeInTheDocument();
+
+    expect(screen.getByRole('button', { name: /Try Again/i })).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(console.error).toHaveBeenCalledWith('Failed to fetch report data:', expect.any(Error));
+    });
+  });
+
+  test('handles delete report failure', async () => {
+    const api = require('../../services/utils/api');
+    api.reportService.getSavedReports.mockResolvedValue({
+      reports: [
+        { id: 'saved-1', type: 'tasks', dateRange: 'week', generatedAt: '2099-01-01T00:00:00.000Z', summary: { total: 1 }, details: [] },
+      ],
+    });
+    api.reportService.deleteReport.mockRejectedValue(new Error('Delete failed'));
+
+    render(<Reports />);
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle('Delete Report'));
+
+    await waitFor(() => {
+      expect(console.error).toHaveBeenCalledWith('Error deleting report:', expect.any(Error));
+    });
+  });
+
+  test('displays empty state when no reports exist', async () => {
+    const api = require('../../services/utils/api');
+    api.reportService.getSavedReports.mockResolvedValue({ reports: [] });
+    api.dashboardService.getReportData.mockResolvedValue(tasksReport);
+
+    render(<Reports />);
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+    
+    expect(screen.getByText(/No generated reports yet/i)).toBeInTheDocument();
+  });
+
+  test('renders multiple saved reports', async () => {
+    const api = require('../../services/utils/api');
+    api.reportService.getSavedReports.mockResolvedValue({
+      reports: [
+        { id: 'saved-1', type: 'tasks', dateRange: 'week', generatedAt: '2099-01-01T00:00:00.000Z', summary: { total: 1 }, details: [{ id: 1 }] },
+        { id: 'saved-2', type: 'github', dateRange: 'month', generatedAt: '2099-01-02T00:00:00.000Z', summary: { repos: 2 }, details: [{ id: 2 }] },
+      ],
+    });
+
+    render(<Reports />);
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+    
+    // Both report types should be shown
+    expect(screen.getAllByText('Task Report').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('GitHub Activity').length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('handles getSavedReports with missing reports property', async () => {
+    const api = require('../../services/utils/api');
+    api.reportService.getSavedReports.mockResolvedValue({});
+    api.dashboardService.getReportData.mockResolvedValue(tasksReport);
+
+    render(<Reports />);
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+  });
+
+  test('renders report generation controls', async () => {
+    const api = require('../../services/utils/api');
+    api.reportService.getSavedReports.mockResolvedValue({ reports: [] });
+    api.dashboardService.getReportData.mockResolvedValue(tasksReport);
+
+    render(<Reports />);
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+
+    expect(screen.getAllByRole('combobox')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: /Generate Report/i })).toBeInTheDocument();
+  });
+
+  test('displays task report summary data', async () => {
+    const api = require('../../services/utils/api');
+    api.dashboardService.getReportData.mockResolvedValue(tasksReport);
+    api.reportService.getSavedReports.mockResolvedValue({ reports: [] });
+
+    render(<Reports />);
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+    
+    fireEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Task Report').length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  test('displays github report summary data', async () => {
+    const api = require('../../services/utils/api');
+    api.dashboardService.getReportData.mockResolvedValue(githubReport);
+    api.reportService.getSavedReports.mockResolvedValue({ reports: [] });
+
+    render(<Reports />);
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+
+    const reportTypeSelect = screen.getAllByRole('combobox')[0];
+    fireEvent.change(reportTypeSelect, { target: { value: 'github' } });
+
+    await waitFor(() => {
+      expect(dashboardService.getReportData).toHaveBeenCalledWith('github', 'week', { forceRefresh: false });
+    });
+
+    expect(await screen.findByText('Connected Repos')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText('GitHub Activity').length).toBeGreaterThanOrEqual(1);
+    });
   });
 });
