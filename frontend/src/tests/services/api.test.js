@@ -1,9 +1,12 @@
 import {
+  adminUserService,
   dashboardService,
   fetchWithAuth,
   githubService,
+  auditLogService,
   notificationService,
   projectService,
+  settingsService,
   taskService,
   userService,
 } from '../../services/utils/api';
@@ -292,6 +295,57 @@ describe('api utilities', () => {
     expect(users).toEqual([]);
     expect(notificationsWhenErrored).toEqual([]);
     expect(notificationsNormal).toEqual([{ id: 1 }]);
+  });
+
+  test('admin, settings, and audit services cover their happy paths', async () => {
+    global.fetch
+      .mockResolvedValueOnce(buildResponse({ users: [{ id: 1, name: 'Admin One' }] }))
+      .mockResolvedValueOnce(buildResponse({ success: true }))
+      .mockResolvedValueOnce(buildResponse({ success: true }))
+      .mockResolvedValueOnce(buildResponse({ success: true }))
+      .mockResolvedValueOnce(buildResponse({ success: true }))
+      .mockResolvedValueOnce(buildResponse({ settings: { default_user_role: 'admin' } }))
+      .mockResolvedValueOnce(buildResponse({ success: true }))
+      .mockResolvedValueOnce(buildResponse({ result: { audit_logs_deleted: 4, projects_deleted: 1 } }))
+      .mockResolvedValueOnce(buildResponse({ logs: [{ id: 1, action: 'user_created' }], total: 1, pages: 1, current_page: 1 }))
+      .mockResolvedValueOnce(buildResponse({ log: { id: 2, action: 'user_deleted' } }));
+
+    const users = await adminUserService.getAllUsers();
+    await adminUserService.createUser({ name: 'New User' });
+    await adminUserService.updateUser(3, { name: 'Updated User' });
+    await adminUserService.updateUserRole(4, 'admin');
+    await adminUserService.deleteUser(5);
+
+    const settings = await settingsService.getSettings();
+    await settingsService.updateSettings({ default_user_role: 'admin' });
+    const retention = await settingsService.runRetentionCleanup();
+
+    const logs = await auditLogService.getLogs({ action: 'user_created', page: 1, per_page: 25 });
+    const log = await auditLogService.getLogById(2);
+
+    expect(users).toEqual([{ id: 1, name: 'Admin One' }]);
+    expect(settings).toEqual({ default_user_role: 'admin' });
+    expect(retention).toEqual({ result: { audit_logs_deleted: 4, projects_deleted: 1 } });
+    expect(logs.logs).toHaveLength(1);
+    expect(log).toEqual({ id: 2, action: 'user_deleted' });
+  });
+
+  test('admin, settings, and audit services fall back on failures', async () => {
+    global.fetch
+      .mockRejectedValueOnce(new Error('users unavailable'))
+      .mockRejectedValueOnce(new Error('settings unavailable'))
+      .mockRejectedValueOnce(new Error('logs unavailable'))
+      .mockRejectedValueOnce(new Error('log unavailable'));
+
+    const users = await adminUserService.getAllUsers();
+    const settings = await settingsService.getSettings();
+    const logs = await auditLogService.getLogs();
+    const log = await auditLogService.getLogById(99);
+
+    expect(users).toEqual([]);
+    expect(settings).toEqual({});
+    expect(logs).toEqual({ logs: [], total: 0, pages: 0, current_page: 1 });
+    expect(log).toBeNull();
   });
 
   test('getDateRangeStart covers month, quarter, year, and default week arms', async () => {

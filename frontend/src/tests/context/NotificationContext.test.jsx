@@ -13,6 +13,7 @@ jest.mock('../../services/utils/api', () => ({
     getNotifications: jest.fn(),
     markAsRead: jest.fn(),
     markAllAsRead: jest.fn(),
+    deleteNotification: jest.fn(),
   },
 }));
 
@@ -30,6 +31,7 @@ function NotificationHarness() {
     serverDown,
     error,
     markAsRead,
+    deleteNotification,
     markAllAsRead,
     refreshNotifications,
     checkServerStatus,
@@ -45,6 +47,8 @@ function NotificationHarness() {
       <div data-testid="server-down">{String(serverDown)}</div>
       <div data-testid="error-text">{error || ''}</div>
       <button onClick={() => markAsRead(1)}>Mark One</button>
+      <button onClick={() => deleteNotification(1)}>Delete One</button>
+      <button onClick={() => deleteNotification(2)}>Delete Two</button>
       <button onClick={() => markAllAsRead()}>Mark All</button>
       <button onClick={() => refreshNotifications()}>Refresh</button>
       <button onClick={() => checkServerStatus()}>Check Status</button>
@@ -79,6 +83,7 @@ describe('NotificationContext', () => {
     notificationService.getNotifications.mockReset();
     notificationService.markAsRead.mockReset();
     notificationService.markAllAsRead.mockReset();
+    notificationService.deleteNotification.mockReset();
   });
 
   afterEach(() => {
@@ -398,5 +403,66 @@ describe('NotificationContext', () => {
     await waitFor(() => {
       expect(notificationService.getNotifications).toHaveBeenCalledTimes(3);
     });
+  });
+
+  test('deletes notifications and reverts on delete failure', async () => {
+    notificationService.getNotifications.mockResolvedValue([
+      { id: 1, read: false, message: 'Delete me' },
+      { id: 2, read: false, message: 'Keep me' },
+    ]);
+    notificationService.deleteNotification
+      .mockResolvedValueOnce({ success: true })
+      .mockRejectedValueOnce(new Error('delete failed'));
+
+    render(
+      <NotificationProvider>
+        <NotificationHarness />
+      </NotificationProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('total-count')).toHaveTextContent('2');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete One' }));
+
+    await waitFor(() => {
+      expect(notificationService.deleteNotification).toHaveBeenCalledWith(1);
+    });
+
+    expect(screen.getByTestId('total-count')).toHaveTextContent('1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Two' }));
+
+    await waitFor(() => {
+      expect(notificationService.deleteNotification).toHaveBeenCalledWith(2);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('total-count')).toHaveTextContent('1');
+    });
+  });
+
+  test('relays task and dashboard socket events to window events', async () => {
+    notificationService.getNotifications.mockResolvedValue([]);
+    const dispatchSpy = jest.spyOn(window, 'dispatchEvent');
+
+    render(
+      <NotificationProvider>
+        <NotificationHarness />
+      </NotificationProvider>
+    );
+
+    await waitFor(() => {
+      expect(notificationService.getNotifications).toHaveBeenCalled();
+    });
+
+    act(() => {
+      socketHandlers['task.updated']({ id: 99, status: 'completed' });
+      socketHandlers.dashboard_updated({ id: 99, status: 'completed' });
+    });
+
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
+    dispatchSpy.mockRestore();
   });
 });

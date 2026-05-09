@@ -3,6 +3,7 @@ import logging
 from flask import request
 from flask_jwt_extended import get_jwt_identity, get_jwt
 from ..db.models import db, AuditLog
+from ..socketio_server import emit_dashboard_refresh
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,15 @@ def record(action, *, actor=None, resource_type=None, resource_id=None, metadata
 
         db.session.add(audit_entry)
         db.session.commit()
+        emit_dashboard_refresh(
+            'audit_log_recorded',
+            resource_type=resource_type,
+            resource_id=resource_id,
+            payload={
+                'action': action,
+                'metadata': metadata or {},
+            },
+        )
     except Exception as e:
         logger.error(f"Failed to record audit log '{action}': {str(e)}")
         try:

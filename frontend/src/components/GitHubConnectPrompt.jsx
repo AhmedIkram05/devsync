@@ -22,10 +22,8 @@ function GitHubConnectPrompt() {
         </p>
         
         <ul className="list-disc pl-5 mb-6 text-slate-300">
-          <li className="mb-1">Link tasks directly to GitHub issues</li>
+          <li className="mb-1">Link DevSync tasks to GitHub issues & PRs</li>
           <li className="mb-1">Track progress of repositories and pull requests</li>
-          <li className="mb-1">Sync comments between DevSync and GitHub</li>
-          <li className="mb-1">Get notifications for GitHub activity</li>
         </ul>
         
         <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">

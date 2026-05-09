@@ -2,6 +2,7 @@
 
 from flask import request, jsonify
 from ...db.models import AuditLog, User
+from ...services import settings_service
 
 
 def _build_actor_name_map(logs):
@@ -33,6 +34,8 @@ def _serialize_audit_log(log, actor_name_map=None):
 
 def get_audit_logs():
     """Get paginated and filtered audit logs"""
+    settings_service.cleanup_old_audit_logs()
+
     action = request.args.get('action')
     actor_id = request.args.get('actor')
     from_date = request.args.get('from')
@@ -65,6 +68,15 @@ def get_audit_logs():
         'pages': pagination.pages,
         'current_page': page
     })
+
+
+def cleanup_audit_logs():
+    """Delete expired audit logs using the configured retention window."""
+    deleted_count = settings_service.cleanup_old_audit_logs()
+    return jsonify({
+        'message': 'Audit log cleanup completed',
+        'deleted': deleted_count,
+    }), 200
 
 def get_audit_log_by_id(log_id):
     """Get a specific audit log"""

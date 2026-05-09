@@ -135,4 +135,127 @@ describe('AdminProjectEdit page', () => {
 
     expect(projectService.deleteProject).not.toHaveBeenCalled();
   });
+
+  test('shows error when project is not found or no access', async () => {
+    projectService.getProjectById.mockResolvedValue(null);
+
+    render(<AdminProjectEdit />);
+
+    expect(await screen.findByText(/Project not found or you do not have access/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Back to Projects/i })).toBeInTheDocument();
+  });
+
+  test('navigates back to projects list when back button clicked from not-found state', async () => {
+    projectService.getProjectById.mockResolvedValue(null);
+
+    render(<AdminProjectEdit />);
+
+    expect(await screen.findByText(/Project not found or you do not have access/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Back to Projects/i }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/admin/projects');
+  });
+
+  test('loads users even when project is not found', async () => {
+    projectService.getProjectById.mockResolvedValue(null);
+    taskService.getUsers.mockResolvedValue([
+      { id: 1, name: 'User 1' },
+      { id: 2, name: 'User 2' },
+    ]);
+
+    render(<AdminProjectEdit />);
+
+    await screen.findByText(/Project not found or you do not have access/i);
+
+    // Users are still loaded, but not displayed
+    expect(taskService.getUsers).toHaveBeenCalled();
+  });
+
+  test('shows error when project loading fails', async () => {
+    projectService.getProjectById.mockRejectedValue(new Error('Network error'));
+
+    render(<AdminProjectEdit />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to load project details/i)).toBeInTheDocument();
+    });
+  });
+
+  test('shows error when update fails', async () => {
+    projectService.updateProject.mockRejectedValue(new Error('Update failed'));
+
+    render(<AdminProjectEdit />);
+
+    expect(await screen.findByText(/Project form for: Core Revamp/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /submit mock update/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Update failed/i)).toBeInTheDocument();
+    });
+  });
+
+  test('shows generic error message when update fails without specific message', async () => {
+    projectService.updateProject.mockRejectedValue(new Error());
+
+    render(<AdminProjectEdit />);
+
+    expect(await screen.findByText(/Project form for: Core Revamp/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /submit mock update/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to update project/i)).toBeInTheDocument();
+    });
+  });
+
+  test('shows error when delete fails', async () => {
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
+    projectService.deleteProject.mockRejectedValue(new Error('Delete error'));
+
+    render(<AdminProjectEdit />);
+
+    expect(await screen.findByText(/Delete Project/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /delete project/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Delete error/i)).toBeInTheDocument();
+    });
+  });
+
+  test('shows generic error message when delete fails without specific message', async () => {
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
+    projectService.deleteProject.mockRejectedValue(new Error());
+
+    render(<AdminProjectEdit />);
+
+    expect(await screen.findByText(/Delete Project/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /delete project/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to delete project/i)).toBeInTheDocument();
+    });
+  });
+
+  test('cancel button navigates back to project details', async () => {
+    render(<AdminProjectEdit />);
+
+    expect(await screen.findByText(/Cancel mock form/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /cancel mock form/i }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/projects/42');
+  });
+
+  test('handles empty users list', async () => {
+    taskService.getUsers.mockResolvedValue([]);
+
+    render(<AdminProjectEdit />);
+
+    expect(await screen.findByText(/Project form for: Core Revamp/i)).toBeInTheDocument();
+    expect(screen.getByText('Users loaded: 0')).toBeInTheDocument();
+  });
 });

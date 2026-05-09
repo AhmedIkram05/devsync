@@ -28,6 +28,137 @@ ChartJS.register(
   Filler
 );
 
+// Module-level helpers (exported for tests)
+const getReportLabel = (type) => {
+  switch (type) {
+    case 'tasks': return 'Task Report';
+    case 'github': return 'GitHub Activity';
+    case 'developers': return 'Developer Performance';
+    default: return 'Report';
+  }
+};
+
+const getDateRangeLabel = (range) => {
+  switch (range) {
+    case 'week': return 'Last Week';
+    case 'month': return 'Last Month';
+    case 'quarter': return 'Last Quarter';
+    case 'year': return 'Last Year';
+    default: return 'Custom Range';
+  }
+};
+
+const formatGeneratedAt = (value) => {
+  if (!value) return 'Unknown date';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown date';
+  return date.toLocaleString('en-US');
+};
+
+const sanitizePdfText = (value) =>
+  String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)')
+    .replace(/[^\x20-\x7E]/g, '?');
+
+const buildPdfLines = (report) => {
+  const summary = report.summary || {};
+  const details = Array.isArray(report.details) ? report.details : [];
+  const lines = [
+    'DevSync Report',
+    `Type: ${getReportLabel(report.type)}`,
+    `Date Range: ${getDateRangeLabel(report.dateRange)}`,
+    `Generated: ${formatGeneratedAt(report.generatedAt)}`,
+    '',
+    'Summary:'
+  ];
+
+  const summaryEntries = Object.entries(summary);
+  if (summaryEntries.length === 0) {
+    lines.push('No summary data.');
+  } else {
+    summaryEntries.forEach(([key, value]) => {
+      lines.push(`- ${key.replace(/_/g, ' ')}: ${value}`);
+    });
+  }
+
+  lines.push('', 'Details (top items):');
+
+  if (details.length === 0) {
+    lines.push('No detail data.');
+  } else if (report.type === 'tasks') {
+    details.slice(0, 8).forEach((task) => {
+      lines.push(`- ${task.title || 'Untitled'} [${task.status || 'unknown'}]`);
+    });
+  } else if (report.type === 'developers') {
+    details.slice(0, 8).forEach((developer) => {
+      lines.push(`- ${developer.name || 'Unknown'} (${developer.email || 'n/a'}) tasks: ${developer.total_tasks || 0}`);
+    });
+  } else if (report.type === 'github') {
+    details.slice(0, 8).forEach((repo) => {
+      lines.push(`- ${repo.name || 'Repo'} (${repo.owner || 'owner'}) issues: ${repo.open_issues || 0} prs: ${repo.total_prs || 0}`);
+    });
+  } else {
+    details.slice(0, 8).forEach((item) => {
+      lines.push(`- ${item.name || item.title || 'Item'}`);
+    });
+  }
+
+  return lines.map(sanitizePdfText);
+};
+
+const buildTimeBuckets = (range) => {
+  const now = new Date();
+  const buckets = [];
+
+  if (range === 'week') {
+    const start = new Date(now);
+    start.setDate(now.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 7; i++) {
+      const bucketStart = new Date(start);
+      bucketStart.setDate(start.getDate() + i);
+      const bucketEnd = new Date(bucketStart);
+      bucketEnd.setDate(bucketStart.getDate() + 1);
+      buckets.push({
+        label: bucketStart.toLocaleDateString('en-US', { weekday: 'short' }),
+        start: bucketStart,
+        end: bucketEnd
+      });
+    }
+    return buckets;
+  }
+
+  if (range === 'month') {
+    const start = new Date(now);
+    start.setDate(now.getDate() - 27);
+    start.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 4; i++) {
+      const bucketStart = new Date(start);
+      bucketStart.setDate(start.getDate() + i * 7);
+      const bucketEnd = new Date(bucketStart);
+      bucketEnd.setDate(bucketStart.getDate() + 7);
+      buckets.push({ label: `Week ${i + 1}`, start: bucketStart, end: bucketEnd });
+    }
+    return buckets;
+  }
+
+  const monthsToShow = range === 'quarter' ? 3 : 12;
+  for (let i = 0; i < monthsToShow; i++) {
+    const monthOffset = monthsToShow - 1 - i;
+    const bucketStart = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
+    const bucketEnd = new Date(now.getFullYear(), now.getMonth() - monthOffset + 1, 1);
+    buckets.push({
+      label: bucketStart.toLocaleDateString('en-US', { month: 'short' }),
+      start: bucketStart,
+      end: bucketEnd
+    });
+  }
+
+  return buckets;
+};
+
 const Reports = () => {
   const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -39,84 +170,6 @@ const Reports = () => {
   const reportCacheRef = useRef({});
   const latestRequestRef = useRef(0);
 
-  const getReportLabel = (type) => {
-    switch (type) {
-      case 'tasks': return 'Task Report';
-      case 'github': return 'GitHub Activity';
-      case 'developers': return 'Developer Performance';
-      default: return 'Report';
-    }
-  };
-
-  const getDateRangeLabel = (range) => {
-    switch (range) {
-      case 'week': return 'Last Week';
-      case 'month': return 'Last Month';
-      case 'quarter': return 'Last Quarter';
-      case 'year': return 'Last Year';
-      default: return 'Custom Range';
-    }
-  };
-
-  const formatGeneratedAt = (value) => {
-    if (!value) return 'Unknown date';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return 'Unknown date';
-    return date.toLocaleString('en-US');
-  };
-
-  const sanitizePdfText = (value) =>
-    String(value || '')
-      .replace(/\\/g, '\\\\')
-      .replace(/\(/g, '\\(')
-      .replace(/\)/g, '\\)')
-      .replace(/[^\x20-\x7E]/g, '?');
-
-  const buildPdfLines = (report) => {
-    const summary = report.summary || {};
-    const details = Array.isArray(report.details) ? report.details : [];
-    const lines = [
-      'DevSync Report',
-      `Type: ${getReportLabel(report.type)}`,
-      `Date Range: ${getDateRangeLabel(report.dateRange)}`,
-      `Generated: ${formatGeneratedAt(report.generatedAt)}`,
-      '',
-      'Summary:'
-    ];
-
-    const summaryEntries = Object.entries(summary);
-    if (summaryEntries.length === 0) {
-      lines.push('No summary data.');
-    } else {
-      summaryEntries.forEach(([key, value]) => {
-        lines.push(`- ${key.replace(/_/g, ' ')}: ${value}`);
-      });
-    }
-
-    lines.push('', 'Details (top items):');
-
-    if (details.length === 0) {
-      lines.push('No detail data.');
-    } else if (report.type === 'tasks') {
-      details.slice(0, 8).forEach((task) => {
-        lines.push(`- ${task.title || 'Untitled'} [${task.status || 'unknown'}]`);
-      });
-    } else if (report.type === 'developers') {
-      details.slice(0, 8).forEach((developer) => {
-        lines.push(`- ${developer.name || 'Unknown'} (${developer.email || 'n/a'}) tasks: ${developer.total_tasks || 0}`);
-      });
-    } else if (report.type === 'github') {
-      details.slice(0, 8).forEach((repo) => {
-        lines.push(`- ${repo.name || 'Repo'} (${repo.owner || 'owner'}) issues: ${repo.open_issues || 0} prs: ${repo.total_prs || 0}`);
-      });
-    } else {
-      details.slice(0, 8).forEach((item) => {
-        lines.push(`- ${item.name || item.title || 'Item'}`);
-      });
-    }
-
-    return lines.map(sanitizePdfText);
-  };
 
   const createPdfBlob = (lines) => {
     const textStream = [
@@ -377,11 +430,41 @@ const Reports = () => {
       };
     }
 
+    // Prefer server-provided summary, but fall back to counting from details
+    const tasks = Array.isArray(details) ? details : [];
+    const statusCounts = { backlog: 0, todo: 0, in_progress: 0, review: 0, done: 0 };
+    let overdueCount = 0;
+    const normalize = (s) => (s === 'completed' ? 'done' : (s || '').toString());
+    const now = new Date();
+
+    tasks.forEach((task) => {
+      const s = normalize(task?.status);
+      if (statusCounts[s] !== undefined) {
+        statusCounts[s] += 1;
+      } else {
+        // Unknown statuses are counted into backlog by default to avoid dropping data
+        statusCounts.backlog += 1;
+      }
+
+      const deadlineVal = task?.deadline || task?.due_date || task?.dueAt || task?.due_at || null;
+      if (deadlineVal) {
+        const d = new Date(deadlineVal);
+        if (!Number.isNaN(d.getTime()) && d < now && normalize(task?.status) !== 'done') {
+          overdueCount += 1;
+        }
+      }
+    });
+
+    const totalFromDetails = tasks.length;
     return {
-      total: summary?.total ?? 0,
-      completed: summary?.completed ?? 0,
-      in_progress: summary?.in_progress ?? 0,
-      overdue: summary?.overdue ?? 0
+      total: summary?.total ?? totalFromDetails,
+      backlog: summary?.backlog ?? statusCounts.backlog,
+      todo: summary?.todo ?? statusCounts.todo,
+      in_progress: summary?.in_progress ?? statusCounts.in_progress,
+      review: summary?.review ?? statusCounts.review,
+      done: summary?.done ?? statusCounts.done,
+      completed: summary?.completed ?? (summary?.done ?? statusCounts.done),
+      overdue: summary?.overdue ?? overdueCount
     };
   };
 
@@ -581,24 +664,27 @@ const Reports = () => {
         {/* Charts */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {reportType === 'tasks' && (() => {
-            const otherCount = Math.max(
-              (summarySnapshot.total || 0)
-                - (summarySnapshot.completed || 0)
-                - (summarySnapshot.in_progress || 0)
-                - (summarySnapshot.overdue || 0),
-              0
-            );
+            // Include all known task statuses in the breakdown so nothing is grouped as "Other"
             const taskStatusValues = [
-              summarySnapshot.completed || 0,
+              summarySnapshot.backlog || 0,
+              summarySnapshot.todo || 0,
               summarySnapshot.in_progress || 0,
-              summarySnapshot.overdue || 0,
-              otherCount
+              summarySnapshot.review || 0,
+              summarySnapshot.done || summarySnapshot.completed || 0,
+              summarySnapshot.overdue || 0
             ];
             const taskStatusData = {
-              labels: ['Completed', 'In Progress', 'Overdue', 'Other'],
+              labels: ['Backlog', 'To Do', 'In Progress', 'In Review', 'Completed', 'Overdue'],
               datasets: [{
                 data: taskStatusValues,
-                backgroundColor: [chartPalette.green, chartPalette.yellow, chartPalette.red, chartPalette.gray],
+                backgroundColor: [
+                  chartPalette.gray,
+                  chartPalette.blue,
+                  chartPalette.yellow,
+                  chartPalette.purple,
+                  chartPalette.green,
+                  chartPalette.red
+                ],
                 borderColor: doughnutBorder,
                 borderWidth: 2
               }]
@@ -875,3 +961,13 @@ const Reports = () => {
 };
 
 export default Reports;
+
+// Export helpers for testing
+export {
+  getReportLabel,
+  getDateRangeLabel,
+  formatGeneratedAt,
+  sanitizePdfText,
+  buildPdfLines,
+  buildTimeBuckets,
+};

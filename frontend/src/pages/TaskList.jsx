@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { taskService } from '../services/utils/api';
+import { taskService, userService, projectService } from '../services/utils/api';
 import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -11,11 +11,16 @@ const TaskList = () => {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState(null);
+  const [userMap, setUserMap] = useState({});
+  const [projectMap, setProjectMap] = useState({});
   const [filters, setFilters] = useState({
     status: 'all',
     priority: 'all',
     search: '',
-    scope: 'all'
+    scope: 'all',
+    project: 'all',
+    sortBy: 'recent',
+    assignee: 'all'
   });
   
   const canCreateTasks = Boolean(currentUser);
@@ -23,11 +28,34 @@ const TaskList = () => {
   const urlParams = new URLSearchParams(window.location.search);
   const requestedAssignee = urlParams.get('assigned_to') || urlParams.get('assignee');
 
-  // Fetch tasks once; honor deep-link assignee query if provided
+  // Fetch users and tasks once; honor deep-link assignee query if provided
   useEffect(() => {
+    const fetchUsersAndProjects = async () => {
+      try {
+        const usersData = await userService.getAllUsers();
+        const users = Array.isArray(usersData?.users) ? usersData.users : Array.isArray(usersData) ? usersData : [];
+        const userById = {};
+        users.forEach(user => {
+          userById[user.id] = user.name;
+        });
+        setUserMap(userById);
+
+        const projectsData = await projectService.getAllProjects();
+        const projects = Array.isArray(projectsData?.projects) ? projectsData.projects : Array.isArray(projectsData) ? projectsData : [];
+        const projectById = {};
+        projects.forEach((project) => {
+          projectById[project.id] = project.name;
+        });
+        setProjectMap(projectById);
+      } catch (err) {
+        console.error('Failed to fetch users or projects:', err);
+      }
+    };
+
     const initialUrlParams = new URLSearchParams(window.location.search);
     const initialAssignee = initialUrlParams.get('assigned_to') || initialUrlParams.get('assignee');
 
+    fetchUsersAndProjects();
     if (initialAssignee) {
       setFilters((prev) => ({ ...prev, scope: 'my' }));
       fetchTasks({ assigned_to: initialAssignee });
@@ -62,6 +90,10 @@ const TaskList = () => {
           task.id === taskId ? { ...task, status: newStatus } : task
         )
       );
+      try {
+        window.dispatchEvent(new CustomEvent('devsync:task-updated', { detail: { id: taskId, status: newStatus } }));
+        window.dispatchEvent(new CustomEvent('devsync:dashboard-updated', { detail: { id: taskId, status: newStatus } }));
+      } catch (e) { /* ignore */ }
     } catch (err) {
       console.error('Failed to update task:', err);
       setError('Failed to update task status.');
@@ -132,6 +164,11 @@ const TaskList = () => {
       return false;
     }
     
+    // Filter by project
+    if (filters.project !== 'all' && Number(task.project_id) !== Number(filters.project)) {
+      return false;
+    }
+    
     // Filter by search text
     if (filters.search && !task.title.toLowerCase().includes(filters.search.toLowerCase())) {
       return false;
@@ -148,8 +185,30 @@ const TaskList = () => {
         return false;
       }
     }
+
+    // Filter by assignee
+    if (filters.assignee !== 'all' && Number(task.assigned_to) !== Number(filters.assignee)) {
+      return false;
+    }
     
     return true;
+  }).sort((a, b) => {
+    switch (filters.sortBy) {
+      case 'deadline':
+        const deadlineA = a.deadline ? new Date(a.deadline).getTime() : Infinity;
+        const deadlineB = b.deadline ? new Date(b.deadline).getTime() : Infinity;
+        return deadlineA - deadlineB;
+      case 'priority':
+        const priorityOrder = { high: 1, medium: 2, low: 3 };
+        const priorityA = priorityOrder[(a.priority || 'medium').toLowerCase()] || 2;
+        const priorityB = priorityOrder[(b.priority || 'medium').toLowerCase()] || 2;
+        return priorityA - priorityB;
+      case 'progress':
+        return (b.progress || 0) - (a.progress || 0);
+      case 'recent':
+      default:
+        return (new Date(b.updated_at || b.created_at || 0).getTime()) - (new Date(a.updated_at || a.created_at || 0).getTime());
+    }
   });
 
   if (loading) {
@@ -209,7 +268,7 @@ const TaskList = () => {
           )}
           
           {/* Filters */}
-          <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="mb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
             <div>
               <label htmlFor="statusFilter" className="block text-sm font-medium text-slate-300 mb-1">
                 Status
@@ -245,6 +304,57 @@ const TaskList = () => {
                 <option value="low">Low</option>
               </select>
             </div>
+
+            <div>
+              <label htmlFor="projectFilter" className="block text-sm font-medium text-slate-300 mb-1">
+                Project
+              </label>
+              <select
+                id="projectFilter"
+                value={filters.project}
+                onChange={(e) => setFilters({...filters, project: e.target.value})}
+                className="w-full p-2 border border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60"
+              >
+                <option value="all">All Projects</option>
+                {Object.entries(projectMap).map(([id, name]) => (
+                  <option key={id} value={id}>{name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="assigneeFilter" className="block text-sm font-medium text-slate-300 mb-1">
+                Assignee
+              </label>
+              <select
+                id="assigneeFilter"
+                value={filters.assignee}
+                onChange={(e) => setFilters({...filters, assignee: e.target.value})}
+                className="w-full p-2 border border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60"
+              >
+                <option value="all">All Assignees</option>
+                {Object.entries(userMap).map(([id, name]) => (
+                  <option key={id} value={id}>{name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="sortFilter" className="block text-sm font-medium text-slate-300 mb-1">
+                Sort By
+              </label>
+              <select
+                id="sortFilter"
+                value={filters.sortBy}
+                onChange={(e) => setFilters({...filters, sortBy: e.target.value})}
+                className="w-full p-2 border border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60"
+              >
+                <option value="recent">Most Recent</option>
+                <option value="deadline">Deadline (Soon)</option>
+                <option value="priority">Priority (High First)</option>
+                <option value="progress">Progress (High First)</option>
+              </select>
+            </div>
             
             <div>
               <label htmlFor="searchFilter" className="block text-sm font-medium text-slate-300 mb-1">
@@ -258,6 +368,18 @@ const TaskList = () => {
                 onChange={(e) => setFilters({...filters, search: e.target.value})}
                 className="w-full p-2 border border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1">&nbsp;</label>
+              {(filters.status !== 'all' || filters.priority !== 'all' || filters.project !== 'all' || filters.search || filters.assignee !== 'all') && (
+                <button
+                  onClick={() => setFilters({ status: 'all', priority: 'all', search: '', scope: requestedAssignee ? 'my' : 'all', project: 'all', sortBy: 'recent', assignee: 'all' })}
+                  className="w-full p-2 bg-slate-700/50 hover:bg-slate-700 border border-slate-600 rounded-md text-slate-300 text-sm font-medium transition"
+                >
+                  Clear Filters
+                </button>
+              )}
             </div>
           </div>
 
@@ -294,9 +416,9 @@ const TaskList = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
               </svg>
               <p className="mt-2 text-lg">No tasks found matching your filters</p>
-              {filters.status !== 'all' || filters.priority !== 'all' || filters.search ? (
+              {filters.status !== 'all' || filters.priority !== 'all' || filters.search || filters.project !== 'all' || filters.assignee !== 'all' ? (
                 <button
-                  onClick={() => setFilters({ status: 'all', priority: 'all', search: '', scope: requestedAssignee ? 'my' : 'all' })}
+                  onClick={() => setFilters({ status: 'all', priority: 'all', search: '', scope: requestedAssignee ? 'my' : 'all', project: 'all', sortBy: 'recent', assignee: 'all' })}
                   className="mt-3 text-rose-300 hover:text-rose-200"
                 >
                   Clear filters
@@ -321,6 +443,12 @@ const TaskList = () => {
                     </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                       Priority
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                      Assignee
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                      Project
                     </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
                       Progress
@@ -363,6 +491,16 @@ const TaskList = () => {
                           <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${priorityInfo.class}`}>
                             {priorityInfo.icon} {priorityInfo.text}
                           </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-slate-300">
+                            {task.assignee?.name || task.assigned_to_name || (task.assigned_to ? userMap[task.assigned_to] || `User #${task.assigned_to}` : '—')}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-slate-300">
+                            {task.project_name || task.project?.name || (task.project_id ? projectMap[task.project_id] || `Project #${task.project_id}` : '—')}
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">

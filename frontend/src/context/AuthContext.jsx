@@ -12,6 +12,7 @@ export const useAuth = () => useContext(AuthContext);
 const VALID_ROLES = new Set(["developer", "team_lead", "admin"]);
 const DEFAULT_ROLE = "developer";
 const REPORT_WARMUP_ROLES = new Set(["team_lead", "admin"]);
+const GITHUB_REPORT_DATE_RANGES = ['week', 'month', 'quarter', 'year'];
 
 const hasValidRole = (user) => user?.role && VALID_ROLES.has(user.role);
 
@@ -436,10 +437,11 @@ export const AuthProvider = ({ children }) => {
     const isGithubReady = Boolean(currentUser?.github_connected || githubConnected);
 
     if (!currentUserId || !canAccessReports || !isGithubReady) {
+      reportWarmupKeyRef.current = null;
       return undefined;
     }
 
-    const warmupKey = `${currentUserId}:github:week`;
+    const warmupKey = `${currentUserId}:github:${GITHUB_REPORT_DATE_RANGES.join(',')}`;
     if (reportWarmupKeyRef.current === warmupKey) {
       return undefined;
     }
@@ -451,7 +453,9 @@ export const AuthProvider = ({ children }) => {
       }
 
       reportWarmupKeyRef.current = warmupKey;
-      dashboardService.prefetchReportData('github', 'week').catch((error) => {
+      Promise.allSettled(
+        GITHUB_REPORT_DATE_RANGES.map((range) => dashboardService.prefetchReportData('github', range))
+      ).catch((error) => {
         console.error('Error warming GitHub report data', error);
       });
     };

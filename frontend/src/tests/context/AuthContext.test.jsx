@@ -454,4 +454,57 @@ describe('AuthContext', () => {
       );
     });
   });
+
+  test('fetches permissions for users missing them and warms GitHub reports for connected admins', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      json: jest.fn().mockResolvedValue({ permissions: ['can_view_all_users'] }),
+    });
+
+    authApi.getCurrentUser.mockReturnValue({
+      id: 31,
+      email: 'admin@example.com',
+      token: 'token-31',
+      role: 'admin',
+      github_connected: true,
+    });
+    githubService.checkConnection.mockResolvedValue({ connected: true });
+
+    const originalRequestIdleCallback = window.requestIdleCallback;
+    const originalCancelIdleCallback = window.cancelIdleCallback;
+    window.requestIdleCallback = (callback) => {
+      callback({ didTimeout: false, timeRemaining: () => 50 });
+      return 1;
+    };
+    window.cancelIdleCallback = jest.fn();
+
+    renderWithProvider();
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/auth/permissions'),
+        expect.objectContaining({
+          headers: { Authorization: 'Bearer token-31' },
+        })
+      );
+    });
+
+    await waitFor(() => {
+      expect(dashboardService.prefetchReportData).toHaveBeenCalledWith('github', 'week');
+    });
+    await waitFor(() => {
+      expect(dashboardService.prefetchReportData).toHaveBeenCalledWith('github', 'month');
+    });
+    await waitFor(() => {
+      expect(dashboardService.prefetchReportData).toHaveBeenCalledWith('github', 'quarter');
+    });
+    await waitFor(() => {
+      expect(dashboardService.prefetchReportData).toHaveBeenCalledWith('github', 'year');
+    });
+
+    const stored = JSON.parse(localStorage.getItem('user'));
+    expect(stored.permissions).toEqual(['can_view_all_users']);
+
+    window.requestIdleCallback = originalRequestIdleCallback;
+    window.cancelIdleCallback = originalCancelIdleCallback;
+  });
 });

@@ -5,6 +5,8 @@ from flask_jwt_extended import get_jwt_identity, get_jwt
 from ...db.models import db, Report, User
 from ...auth.rbac import Role
 from ..validators.report_validator import validate_report_data
+from ...services import audit_service
+from src.socketio_server import emit_dashboard_refresh
 
 def save_report():
     """Controller function to save a generated report"""
@@ -28,6 +30,19 @@ def save_report():
         
         db.session.add(report)
         db.session.commit()
+
+        audit_service.record(
+            action='report_created',
+            resource_type='report',
+            resource_id=report.id,
+            metadata={'report_type': report.report_type, 'date_range': report.date_range}
+        )
+        emit_dashboard_refresh(
+            'report_created',
+            resource_type='report',
+            resource_id=report.id,
+            payload={'report_type': report.report_type, 'date_range': report.date_range}
+        )
         
         return jsonify({
             'message': 'Report saved successfully',
@@ -131,6 +146,19 @@ def delete_report(report_id):
         
         db.session.delete(report)
         db.session.commit()
+
+        audit_service.record(
+            action='report_deleted',
+            resource_type='report',
+            resource_id=report_id,
+            metadata={'report_type': report.report_type, 'date_range': report.date_range}
+        )
+        emit_dashboard_refresh(
+            'report_deleted',
+            resource_type='report',
+            resource_id=report_id,
+            payload={'report_type': report.report_type, 'date_range': report.date_range}
+        )
         
         return jsonify({
             'message': 'Report deleted successfully'

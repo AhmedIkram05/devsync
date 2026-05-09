@@ -52,7 +52,7 @@ describe('Notifications component', () => {
     expect(refreshNotifications).toHaveBeenCalledWith(true);
   });
 
-  test('renders loading and error states when no notifications exist', () => {
+  test('renders loading and error states when no notifications exist', async () => {
     useNotifications.mockReturnValue({
       isLoading: true,
       error: null,
@@ -132,5 +132,227 @@ describe('Notifications component', () => {
     await waitFor(() => {
       expect(console.error).toHaveBeenCalledWith('Failed to mark notification as read:', expect.any(Error));
     });
+  });
+
+  test('deletes notification when delete button clicked', async () => {
+    const deleteNotification = jest.fn().mockResolvedValue({ success: true });
+    const onNotificationUpdate = jest.fn();
+
+    useNotifications.mockReturnValue({
+      isLoading: false,
+      error: null,
+      rateLimited: false,
+      refreshNotifications,
+      deleteNotification,
+    });
+
+    render(
+      <Notifications
+        notifications={[
+          {
+            id: 31,
+            content: 'Notification to delete',
+            created_at: '2099-01-01T00:00:00.000Z',
+            read: false,
+          },
+        ]}
+        onNotificationUpdate={onNotificationUpdate}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /delete/i }));
+
+    await waitFor(() => {
+      expect(deleteNotification).toHaveBeenCalledWith(31);
+    });
+
+    await waitFor(() => {
+      expect(onNotificationUpdate).toHaveBeenCalled();
+    });
+  });
+
+  test('handles delete failure gracefully', async () => {
+    const deleteNotification = jest.fn().mockRejectedValue(new Error('delete failed'));
+
+    useNotifications.mockReturnValue({
+      isLoading: false,
+      error: null,
+      rateLimited: false,
+      refreshNotifications,
+      deleteNotification,
+    });
+
+    render(
+      <Notifications
+        notifications={[
+          {
+            id: 41,
+            content: 'Notification to fail delete',
+            created_at: '2099-01-01T00:00:00.000Z',
+            read: false,
+          },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /delete/i }));
+
+    await waitFor(() => {
+      expect(console.error).toHaveBeenCalledWith('Failed to delete notification:', expect.any(Error));
+    });
+  });
+
+  test('uses provided onMarkRead callback if available', async () => {
+    const onMarkRead = jest.fn().mockResolvedValue({ success: true });
+    const onNotificationUpdate = jest.fn();
+
+    render(
+      <Notifications
+        notifications={[
+          {
+            id: 51,
+            content: 'Test notification',
+            created_at: '2099-01-01T00:00:00.000Z',
+            read: false,
+          },
+        ]}
+        onMarkRead={onMarkRead}
+        onNotificationUpdate={onNotificationUpdate}
+      />
+    );
+
+    fireEvent.click(screen.getByText(/Test notification/i));
+
+    await waitFor(() => {
+      expect(onMarkRead).toHaveBeenCalledWith(51);
+    });
+  });
+
+  test('uses provided onDelete callback if available', async () => {
+    const onDelete = jest.fn().mockResolvedValue({ success: true });
+    const onNotificationUpdate = jest.fn();
+
+    render(
+      <Notifications
+        notifications={[
+          {
+            id: 61,
+            content: 'Test delete',
+            created_at: '2099-01-01T00:00:00.000Z',
+            read: false,
+          },
+        ]}
+        onDelete={onDelete}
+        onNotificationUpdate={onNotificationUpdate}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /delete/i }));
+
+    await waitFor(() => {
+      expect(onDelete).toHaveBeenCalledWith(61);
+    });
+  });
+
+  test('renders notification with title', () => {
+    render(
+      <Notifications
+        notifications={[
+          {
+            id: 71,
+            title: 'Task Update',
+            content: 'Your task has been updated',
+            created_at: '2099-01-01T00:00:00.000Z',
+            read: false,
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByText('Task Update')).toBeInTheDocument();
+    expect(screen.getByText('Your task has been updated')).toBeInTheDocument();
+  });
+
+  test('renders read and unread notifications with different styles', () => {
+    render(
+      <Notifications
+        notifications={[
+          {
+            id: 81,
+            content: 'Read notification',
+            created_at: '2099-01-01T00:00:00.000Z',
+            read: true,
+          },
+          {
+            id: 82,
+            content: 'Unread notification',
+            created_at: '2099-01-01T00:00:00.000Z',
+            read: false,
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByText('Read notification')).toBeInTheDocument();
+    expect(screen.getByText('Unread notification')).toBeInTheDocument();
+  });
+
+  test('handles notifications with missing properties', () => {
+    render(
+      <Notifications
+        notifications={[
+          {
+            id: 91,
+            // missing content, title, created_at
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByText('No content')).toBeInTheDocument();
+    expect(screen.getByText('Unknown date')).toBeInTheDocument();
+  });
+
+  test('prevents delete of the same notification twice simultaneously', async () => {
+    const deleteNotification = jest.fn();
+
+    useNotifications.mockReturnValue({
+      isLoading: false,
+      error: null,
+      rateLimited: false,
+      refreshNotifications,
+      deleteNotification,
+    });
+
+    deleteNotification.mockImplementation(() => new Promise(resolve => setTimeout(() => resolve({ success: true }), 100)));
+
+    render(
+      <Notifications
+        notifications={[
+          {
+            id: 101,
+            content: 'Notification',
+            created_at: '2099-01-01T00:00:00.000Z',
+            read: false,
+          },
+        ]}
+      />
+    );
+
+    const deleteBtn = screen.getByRole('button', { name: /delete/i });
+    fireEvent.click(deleteBtn);
+
+    // Button should show 'Deleting...'
+    await waitFor(() => {
+      expect(deleteBtn).toBeDisabled();
+    });
+
+    expect(deleteBtn).toHaveTextContent('Deleting...');
+  });
+
+  test('handles null notifications array', () => {
+    render(<Notifications notifications={null} />);
+
+    expect(screen.getByText(/No new notifications/i)).toBeInTheDocument();
   });
 });

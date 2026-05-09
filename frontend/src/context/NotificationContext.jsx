@@ -301,6 +301,38 @@ export const NotificationProvider = ({ children }) => {
             }
           }
         });
+
+        // Relay task-related socket events into a global browser event so other parts
+        // of the UI (e.g., dashboards) can react without coupling to the socket context.
+        const relayTaskEvent = (taskPayload) => {
+          try {
+            window.dispatchEvent(new CustomEvent('devsync:task-updated', { detail: taskPayload }));
+          } catch (e) {
+            console.warn('Failed to dispatch devsync:task-updated event', e);
+          }
+        };
+
+        const relayDashboardEvent = (payload) => {
+          try {
+            window.dispatchEvent(new CustomEvent('devsync:dashboard-updated', { detail: payload }));
+          } catch (e) {
+            console.warn('Failed to dispatch devsync:dashboard-updated event', e);
+          }
+        };
+
+        // Common task event names the backend may emit; listen to several variants.
+        ['task', 'task.updated', 'task_update', 'task:updated', 'task_updated'].forEach((evtName) => {
+          socketConnection.on(evtName, (payload) => {
+            console.log(`Received socket event ${evtName}`, payload);
+            relayTaskEvent(payload || {});
+            relayDashboardEvent(payload || {});
+          });
+        });
+
+        socketConnection.on('dashboard_updated', (payload) => {
+          console.log('Received socket event dashboard_updated', payload);
+          relayDashboardEvent(payload || {});
+        });
       } catch (error) {
         console.error('Error setting up socket connection:', error);
       }

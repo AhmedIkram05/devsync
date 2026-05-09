@@ -100,10 +100,10 @@ describe('BasicDashboard page', () => {
     expect(screen.getByText('Refine dashboard metrics')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Create Task/i })).toBeInTheDocument();
 
-    expect(screen.getByText('Assigned Tasks')).toBeInTheDocument();
+    expect(screen.getByText('Assigned To Me')).toBeInTheDocument();
     expect(screen.getAllByText('In Progress').length).toBeGreaterThan(0);
     expect(screen.getByText('Completed')).toBeInTheDocument();
-    expect(screen.getByText('Tasks Due Soon')).toBeInTheDocument();
+    expect(screen.getByText('Due Soon')).toBeInTheDocument();
 
     expect(screen.getByText('DevSync Platform')).toBeInTheDocument();
     expect(screen.getByText('Finalize integration report')).toBeInTheDocument();

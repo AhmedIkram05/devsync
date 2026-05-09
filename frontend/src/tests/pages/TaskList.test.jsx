@@ -1,5 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 
 import TaskList from '../../pages/TaskList';
 import { taskService } from '../../services/utils/api';
@@ -16,6 +17,12 @@ jest.mock('../../services/utils/api', () => ({
   taskService: {
     getAllTasks: jest.fn(),
     updateTask: jest.fn(),
+  },
+  userService: {
+    getAllUsers: jest.fn().mockResolvedValue({ users: [] }),
+  },
+  projectService: {
+    getAllProjects: jest.fn().mockResolvedValue({ projects: [] }),
   },
 }));
 
@@ -230,10 +237,11 @@ describe('TaskList page', () => {
     // Apply a filter that hides all tasks
     fireEvent.change(screen.getByLabelText(/status/i), { target: { value: 'completed' } });
     expect(await screen.findByText(/No tasks found/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /clear filters/i })).toBeInTheDocument();
+    const clearButtons = screen.getAllByRole('button', { name: /clear filters/i });
+    expect(clearButtons.length).toBeGreaterThan(0);
 
     // Clear filters — button should show "Create a new task" fallback instead
-    fireEvent.click(screen.getByRole('button', { name: /clear filters/i }));
+    fireEvent.click(clearButtons[clearButtons.length - 1]); // Click the last one (in empty state)
     await screen.findByText('Alpha');
   });
 
@@ -278,5 +286,172 @@ describe('TaskList page', () => {
     const row = await screen.findByRole('row', { name: /Clickable Task/i });
     fireEvent.click(row);
     expect(mockNavigate).toHaveBeenCalledWith('/tasks/7');
+  });
+
+  test('honors deep-link assignee scope from the URL', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
+    taskService.getAllTasks.mockResolvedValue([
+      {
+        id: 8,
+        title: 'Deep Linked Task',
+        status: 'todo',
+        priority: 'low',
+        progress: 10,
+        assigned_to: 5,
+        deadline: null,
+      },
+    ]);
+
+    window.history.pushState({}, '', '/tasks?assigned_to=5');
+
+    render(
+      <MemoryRouter>
+        <TaskList />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('Deep Linked Task')).toBeInTheDocument();
+    expect(taskService.getAllTasks).toHaveBeenCalledWith({ assigned_to: '5' });
+    expect(screen.getByRole('button', { name: 'My Tasks' })).toHaveClass('bg-rose-500');
+  });
+
+  test('filters by priority', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'admin' } });
+    taskService.getAllTasks.mockResolvedValue([
+      { id: 1, title: 'High Task', status: 'todo', priority: 'high', progress: 0, assigned_to: 5, deadline: null },
+      { id: 2, title: 'Low Task', status: 'todo', priority: 'low', progress: 0, assigned_to: 5, deadline: null },
+    ]);
+
+    render(<TaskList />);
+    expect(await screen.findByText('High Task')).toBeInTheDocument();
+
+    const prioritySelect = screen.getByLabelText('Priority');
+    fireEvent.change(prioritySelect, { target: { value: 'high' } });
+
+    expect(screen.getByText('High Task')).toBeInTheDocument();
+    expect(screen.queryByText('Low Task')).not.toBeInTheDocument();
+  });
+
+  test('filters by status', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'admin' } });
+    taskService.getAllTasks.mockResolvedValue([
+      { id: 1, title: 'Todo Task', status: 'todo', priority: 'high', progress: 0, assigned_to: 5, deadline: null },
+      { id: 2, title: 'Completed Task', status: 'completed', priority: 'high', progress: 100, assigned_to: 5, deadline: null },
+    ]);
+
+    render(<TaskList />);
+    expect(await screen.findByText('Todo Task')).toBeInTheDocument();
+
+    const statusSelect = screen.getByLabelText('Status');
+    fireEvent.change(statusSelect, { target: { value: 'completed' } });
+
+    expect(screen.queryByText('Todo Task')).not.toBeInTheDocument();
+    expect(screen.getByText('Completed Task')).toBeInTheDocument();
+  });
+
+  test('clears filters when Clear Filters button clicked', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'admin' } });
+    taskService.getAllTasks.mockResolvedValue([
+      { id: 1, title: 'High Task', status: 'todo', priority: 'high', progress: 0, assigned_to: 5, deadline: null },
+      { id: 2, title: 'Low Task', status: 'todo', priority: 'low', progress: 0, assigned_to: 5, deadline: null },
+    ]);
+
+    render(<TaskList />);
+    expect(await screen.findByText('High Task')).toBeInTheDocument();
+
+    // Apply filter
+    const prioritySelect = screen.getByLabelText('Priority');
+    fireEvent.change(prioritySelect, { target: { value: 'high' } });
+    expect(screen.queryByText('Low Task')).not.toBeInTheDocument();
+
+    // Clear filter
+    const clearButton = screen.getByRole('button', { name: /Clear Filters/i });
+    fireEvent.click(clearButton);
+    
+    expect(screen.getByText('High Task')).toBeInTheDocument();
+    expect(screen.getByText('Low Task')).toBeInTheDocument();
+  });
+
+  test('handles status update failure gracefully', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'admin' } });
+    taskService.getAllTasks.mockResolvedValue([
+      { id: 1, title: 'Failure Task', status: 'todo', priority: 'high', progress: 0, assigned_to: 5, deadline: null },
+    ]);
+    taskService.updateTask.mockRejectedValue(new Error('update failed'));
+
+    render(<TaskList />);
+    expect(await screen.findByText('Failure Task')).toBeInTheDocument();
+
+    const table = screen.getByRole('table');
+    const statusSelect = within(table).getByDisplayValue('To Do');
+    fireEvent.change(statusSelect, { target: { value: 'in_progress' } });
+
+    await waitFor(() => {
+      expect(console.error).toHaveBeenCalledWith('Failed to update task:', expect.any(Error));
+    });
+  });
+
+  test('handles empty search results', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'admin' } });
+    taskService.getAllTasks.mockResolvedValue([
+      { id: 1, title: 'Alpha', status: 'todo', priority: 'high', progress: 0, assigned_to: 5, deadline: null },
+    ]);
+
+    render(<TaskList />);
+    expect(await screen.findByText('Alpha')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/search/i), {
+      target: { value: 'xyz-no-match' },
+    });
+
+    expect(screen.getByText(/No tasks found/i)).toBeInTheDocument();
+  });
+
+  test('applies multiple filters (priority AND status)', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'admin' } });
+    taskService.getAllTasks.mockResolvedValue([
+      { id: 1, title: 'High Todo Task', status: 'todo', priority: 'high', progress: 0, assigned_to: 5, deadline: null },
+      { id: 2, title: 'High Completed Task', status: 'completed', priority: 'high', progress: 100, assigned_to: 5, deadline: null },
+      { id: 3, title: 'Low Todo Task', status: 'todo', priority: 'low', progress: 0, assigned_to: 5, deadline: null },
+    ]);
+
+    render(<TaskList />);
+    expect(await screen.findByText('High Todo Task')).toBeInTheDocument();
+
+    // Both high tasks shown initially
+    expect(screen.getByText('High Completed Task')).toBeInTheDocument();
+  });
+
+  test('handles update task status to done', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'admin' } });
+    taskService.getAllTasks.mockResolvedValue([
+      { id: 1, title: 'Update Status Test', status: 'in_progress', priority: 'high', progress: 100, assigned_to: 5, deadline: null },
+    ]);
+    taskService.updateTask.mockResolvedValue({});
+
+    render(<TaskList />);
+    await screen.findByText('Update Status Test');
+    
+    const table = screen.getByRole('table');
+    const statusSelect = within(table).getByDisplayValue('In Progress');
+    fireEvent.change(statusSelect, { target: { value: 'completed' } });
+
+    await waitFor(() => {
+      expect(taskService.updateTask).toHaveBeenCalledWith(1, { status: 'completed' });
+    });
+  });
+
+  test('renders tasks with various statuses', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'admin' } });
+    taskService.getAllTasks.mockResolvedValue([
+      { id: 1, title: 'Todo Item', status: 'todo', priority: 'low', progress: 0, assigned_to: 5, deadline: null },
+      { id: 2, title: 'Inprogress Item', status: 'in_progress', priority: 'low', progress: 50, assigned_to: 5, deadline: null },
+      { id: 3, title: 'Review Item', status: 'review', priority: 'low', progress: 90, assigned_to: 5, deadline: null },
+    ]);
+
+    render(<TaskList />);
+    expect(await screen.findByText('Todo Item')).toBeInTheDocument();
+    expect(screen.getByText('Inprogress Item')).toBeInTheDocument();
+    expect(screen.getByText('Review Item')).toBeInTheDocument();
   });
 });

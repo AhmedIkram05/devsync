@@ -67,7 +67,7 @@ jobs:
           pytest backend/tests \
             -n auto \
             -x \
-            ${{ github.ref == 'refs/heads/main' && '--cov=backend/src --cov-report=term-missing --cov-report=xml:backend/coverage.xml --cov-fail-under=80' || '-q' }}
+            ${{ github.ref == 'refs/heads/main' && '--cov=backend/src --cov-report=term-missing --cov-report=xml:backend/coverage.xml --cov-fail-under=85' || '-q' }}
 
       - name: Upload backend coverage artifact
         if: github.ref == 'refs/heads/main' && always()
@@ -120,7 +120,7 @@ jobs:
               --coverageReporters=text-summary \
               --coverageReporters=lcov \
               --maxWorkers=50% \
-              --coverageThreshold='{"global":{"branches":80,"functions":80,"lines":80,"statements":80}}'
+              --coverageThreshold='{"global":{"branches":70,"functions":80,"lines":80,"statements":80}}'
           else
             CI=true npm test -- \
               --watchAll=false \

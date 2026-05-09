@@ -91,6 +91,10 @@ function TaskDetailsUser() {
       setUpdateLoading(true);
       await taskService.updateTask(id, { progress: newProgress });
       setTask(prev => ({ ...prev, progress: newProgress }));
+      try {
+        window.dispatchEvent(new CustomEvent('devsync:task-updated', { detail: { id } }));
+        window.dispatchEvent(new CustomEvent('devsync:dashboard-updated', { detail: { id } }));
+      } catch (e) { /* ignore */ }
       
       // If progress is 100%, ask if user wants to mark task as completed
       if (newProgress === 100) {
@@ -98,6 +102,10 @@ function TaskDetailsUser() {
         if (shouldComplete) {
           await taskService.updateTask(id, { status: 'done', completed_date: new Date().toISOString() });
           setTask(prev => ({ ...prev, status: 'done', completed_date: new Date().toISOString() }));
+          try {
+            window.dispatchEvent(new CustomEvent('devsync:task-updated', { detail: { id } }));
+            window.dispatchEvent(new CustomEvent('devsync:dashboard-updated', { detail: { id } }));
+          } catch (e) { /* ignore */ }
         }
       }
     } catch (err) {
@@ -201,6 +209,10 @@ function TaskDetailsUser() {
 
       setTask(refreshedTask || { ...task, ...payload });
       setIsEditingTask(false);
+      try {
+        window.dispatchEvent(new CustomEvent('devsync:task-updated', { detail: { id } }));
+        window.dispatchEvent(new CustomEvent('devsync:dashboard-updated', { detail: { id } }));
+      } catch (e) { /* ignore */ }
     } catch (err) {
       console.error('Failed to update task details:', err);
       setEditError('Failed to update task. Please try again.');

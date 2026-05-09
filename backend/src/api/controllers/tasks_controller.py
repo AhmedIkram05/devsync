@@ -1,13 +1,16 @@
 # Task controller - business logic
 
 import logging
+from datetime import datetime
 from flask import request, jsonify
 from flask_jwt_extended import get_jwt_identity, get_jwt
-from ...db.models import db, Task, User  # Changed to relative import
+from ...db.models import db, Task, User, Project  # Changed to relative import
 from ...auth.rbac import Role  # Changed to relative import
 from ..validators.task_validator import validate_task_data  # Changed to relative import
-from ...services import audit_service
+from ...services import audit_service, settings_service
 from ...services.notification_service import NotificationService
+from ...services.task_rules import get_project_scope_ids, is_task_overdue
+from src.socketio_server import emit_dashboard_refresh
 from unittest.mock import Mock
 
 logger = logging.getLogger(__name__)
@@ -104,6 +107,25 @@ def get_all_tasks():
     
     # Convert tasks to JSON response
     tasks_data = [_serialize_task(task) for task in tasks]
+
+    if settings_service.get_bool_setting('notify_on_overdue_tasks', True):
+        scoped_project_ids = get_project_scope_ids(user_id, user_role)
+        for task in tasks:
+            overdue_scope = {'project_ids': scoped_project_ids} if user_role in TASK_MANAGER_ROLES else {'assigned_to': user_id}
+            if not is_task_overdue(task, **overdue_scope):
+                continue
+
+            assigned_to = _task_value(task, 'assigned_to')
+            if assigned_to is None and user_role not in TASK_MANAGER_ROLES:
+                continue
+
+            NotificationService.task_overdue_notification(
+                task_id=_task_value(task, 'id'),
+                task_name=_task_value(task, 'title'),
+                project_id=_task_value(task, 'project_id'),
+                recipient_user_id=assigned_to or user_id,
+                due_date=None,
+            )
     
     return jsonify({'tasks': tasks_data})
 
@@ -192,13 +214,42 @@ def create_new_task():
     db.session.add(new_task)
     db.session.commit()
 
+    # Fetch project and assignee names for notification context
+    project_name = None
+    assignee_name = None
+    try:
+        if new_task.project_id:
+            project = db.session.get(Project, new_task.project_id)
+            project_name = project.name if project else None
+        if new_task.assigned_to:
+            assignee = db.session.get(User, new_task.assigned_to)
+            assignee_name = assignee.name if assignee else None
+    except Exception:
+        pass
+
+    audit_service.record(
+        action='task_created',
+        resource_type='task',
+        resource_id=new_task.id,
+        metadata={'project_id': new_task.project_id, 'assigned_to': new_task.assigned_to}
+    )
+
+    emit_dashboard_refresh(
+        'task_created',
+        resource_type='task',
+        resource_id=new_task.id,
+        payload={'project_id': new_task.project_id, 'assigned_to': new_task.assigned_to}
+    )
+
     _run_notification(
-        NotificationService.task_created_notification,
+        NotificationService.task_created_notification_v2,
         new_task.id,
         new_task.title,
         new_task.project_id,
         user_id,
-        new_task.assigned_to
+        assignee_id=new_task.assigned_to,
+        project_name=project_name,
+        assignee_name=assignee_name
     )
     
     return jsonify({
@@ -228,35 +279,74 @@ def update_task_by_id(task_id):
     if not can_update_task:
         return jsonify({'message': 'You can only update tasks assigned to you'}), 403
     
+    # Track which fields changed for notification
+    changed_fields = {}
+    
     # Update allowed fields
     if 'title' in data:
+        if task.title != data['title']:
+            changed_fields['title'] = (task.title, data['title'])
         task.title = data['title']
     if 'description' in data:
+        if task.description != data['description']:
+            changed_fields['description'] = (task.description, data['description'])
         task.description = data['description']
     if 'status' in data:
+        if task.status != data['status']:
+            changed_fields['status'] = (task.status, data['status'])
         task.status = data['status']
     if 'progress' in data:
+        if task.progress != data['progress']:
+            changed_fields['progress'] = (task.progress, data['progress'])
         task.progress = data['progress']
     if 'priority' in data:
+        if task.priority != data['priority']:
+            changed_fields['priority'] = (task.priority, data['priority'])
         task.priority = data['priority']
+    if 'deadline' in data:
+        if task.deadline != data['deadline']:
+            changed_fields['deadline'] = (task.deadline, data['deadline'])
+        task.deadline = data['deadline']
+    if 'project_id' in data:
+        new_project_id = _coerce_int(data['project_id'])
+        if task.project_id != new_project_id:
+            changed_fields['project_id'] = (task.project_id, new_project_id)
+        task.project_id = new_project_id
     
     if 'assigned_to' in data:
         # Only TL or Admins can change the assignee
         if can_assign_task:
-            task.assigned_to = _coerce_int(data['assigned_to'])
+            new_assignee = _coerce_int(data['assigned_to'])
+            if task.assigned_to != new_assignee:
+                changed_fields['assigned_to'] = (task.assigned_to, new_assignee)
+            task.assigned_to = new_assignee
         elif _coerce_int(data['assigned_to']) != task.assigned_to:
             return jsonify({'message': 'You do not have permission to reassign tasks'}), 403
     
     db.session.commit()
 
+    audit_service.record(
+        action='task_updated',
+        resource_type='task',
+        resource_id=task.id,
+        metadata={'project_id': task.project_id, 'assigned_to': task.assigned_to}
+    )
+
+    emit_dashboard_refresh(
+        'task_updated',
+        resource_type='task',
+        resource_id=task.id,
+        payload={'project_id': task.project_id, 'assigned_to': task.assigned_to}
+    )
+
     _run_notification(
-        NotificationService.task_updated_notification,
+        NotificationService.task_updated_notification_v2,
         task.id,
         task.title,
         task.project_id,
         user_id,
-        old_assignee_id,
-        task.assigned_to
+        assignee_id=task.assigned_to,
+        changed_fields=changed_fields if changed_fields else None
     )
     
     return jsonify({
@@ -266,7 +356,11 @@ def update_task_by_id(task_id):
             'title': _task_value(task, 'title'),
             'status': _task_value(task, 'status'),
             'priority': _task_value(task, 'priority', 'medium'),
-            'progress': _task_value(task, 'progress', 0)
+            'progress': _task_value(task, 'progress', 0),
+            'project_id': _task_value(task, 'project_id'),
+            'deadline': _task_datetime(task, 'deadline'),
+            'assigned_to': _task_value(task, 'assigned_to'),
+            'description': _task_value(task, 'description')
         }
     })
 
@@ -284,11 +378,19 @@ def delete_task_by_id(task_id):
     
     db.session.delete(task)
     db.session.commit()
-    
+
     audit_service.record(
         action='task_deleted',
         resource_type='task',
-        resource_id=task_id
+        resource_id=task_id,
+        metadata={'project_id': task.project_id, 'assigned_to': task.assigned_to}
+    )
+
+    emit_dashboard_refresh(
+        'task_deleted',
+        resource_type='task',
+        resource_id=task_id,
+        payload={'project_id': task.project_id, 'assigned_to': task.assigned_to}
     )
     
     return jsonify({'message': 'Task deleted successfully'})
