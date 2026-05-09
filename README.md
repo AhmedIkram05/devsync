@@ -22,24 +22,29 @@
 ## Screenshots
 
 ### Project dashboard - real-time task state, GitHub Issue links, and live collaborator presence
+
 ![Dashboard](docs/screenshots/dashboard.png)
 
 ### GitHub integration - bidirectional task ↔ Issue/PR linking with live status sync
+
 ![GitHub Integration](docs/screenshots/github.png)
 
 ### WebSocket collaboration - task updates broadcast instantly to all project members
+
 ![Real-time Collaboration](docs/screenshots/realtime.png)
 
 ### GitHub Actions pipeline - 541 tests across Pytest, Jest, and Cypress gating every PR
+
 ![CI/CD Pipeline](docs/screenshots/cicd.png)
 
 ### AWS architecture - ECS Fargate in custom VPC, RDS in private subnet, CloudFront frontend
+
 ![AWS Architecture](docs/screenshots/aws.png)
 
 ---
 
 ## Architecture
- 
+
 ```mermaid
 flowchart TD
     PR[Pull Request opened] --> CI
@@ -67,9 +72,9 @@ flowchart TD
     ECS --> RDS["RDS PostgreSQL\nPrivate subnet\nOnly ECS can connect"]
 
 ```
- 
+
 > **Network isolation:** Security groups enforce strict ingress — only the ALB can reach ECS, only ECS can reach RDS. Zero public database exposure. HTTPS everywhere via ACM.
- 
+
 ---
 
 ## Design Decisions
@@ -103,12 +108,14 @@ Security group rules enforce a strict ingress hierarchy: only the ALB can reach 
 ## Features
 
 **Project & Task Management**
+
 - Create and manage projects with team members
 - Full task lifecycle — create, assign, update status, comment, close
 - Real-time task state broadcast to all project members via WebSockets
 - Notification system for task assignments and updates
 
 **GitHub Integration**
+
 - GitHub OAuth 2.0 — connect your GitHub account securely
 - Link repository to a project
 - Bidirectional task ↔ GitHub Issue linking — create Issues from tasks, or link existing Issues
@@ -116,11 +123,13 @@ Security group rules enforce a strict ingress hierarchy: only the ALB can reach 
 - Live status sync — Issue/PR state reflected in platform tasks
 
 **Real-time Collaboration**
+
 - WebSocket layer (Socket.io) with JWT-authenticated connections
 - Project-scoped rooms - updates only broadcast to relevant project members
 - Live presence indicators
 
 **Security**
+
 - JWT authentication on all API routes and WebSocket connections
 - GitHub tokens stored server-side only - never exposed to the browser
 - RBAC for project-level access control
@@ -220,21 +229,6 @@ The full deployment is automated via GitHub Actions. Manual setup is required on
 | Database | RDS PostgreSQL | Private subnet, only ECS can connect |
 | Frontend hosting | S3 + CloudFront | OAC, HTTPS via ACM |
 | CI/CD auth | IAM OIDC | No static credentials — role assumed per run |
-
-### Required GitHub Secrets
-
-```
-IAM_ROLE_ARN
-AWS_REGION
-ECR_REPOSITORY          # devsync-backend
-ECS_CLUSTER
-ECS_SERVICE
-ECS_TASK_DEFINITION_ARN
-ECS_CONTAINER_NAME
-S3_BUCKET_NAME          # devsync-frontend-prod
-CLOUDFRONT_DIST_ID
-PRODUCTION_API_URL
-```
 
 See the [AWS Deployment section](#aws-deployment) in the original docs for full IAM policy and security group configuration.
 

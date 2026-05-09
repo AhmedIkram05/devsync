@@ -15,7 +15,7 @@ DevSync has three primary roles with increasing levels of permission:
 Roles are ranked numerically so higher roles inherit all lower privileges:
 
 | Role | Level |
-|------|-------|
+| ------ | ------- |
 | Developer | 0 |
 | Team Lead | 1 |
 | Admin | 2 |
@@ -54,7 +54,7 @@ All Team Lead permissions, plus:
 ## API Endpoint Permission Mapping
 
 | Endpoint | Method | Permission / Guard | Minimum Role |
-|----------|--------|--------------------|--------------|
+ | ---------- | -------- | -------------------- | -------------- |
 | `/api/v1/auth/register` | POST | (public) | N/A |
 | `/api/v1/auth/login` | POST | (public) | N/A |
 | `/api/v1/auth/refresh` | POST | (authenticated) | Any |
