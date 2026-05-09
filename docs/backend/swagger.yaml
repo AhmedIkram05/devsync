@@ -1,0 +1,2143 @@
+openapi: 3.0.0
+info:
+  title: DevSync API
+  version: 1.1.0
+  description: API documentation for DevSync, updated to match the current backend routes and payloads.
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development server
+  - url: https://devsync.com/api/v1
+    description: Production server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token_cookie
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        error:
+          type: string
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+        pages:
+          type: integer
+
+    AuthUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+
+    AuthTokens:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+
+    RegisterResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        user_id:
+          type: integer
+
+    LoginResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        user:
+          $ref: '#/components/schemas/AuthUser'
+
+    PermissionsResponse:
+      type: object
+      properties:
+        role:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [developer, team_lead, admin]
+        github_username:
+          type: string
+        avatar:
+          type: string
+        github_connected:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    UserListResponse:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+
+    UserResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+
+    ProjectMember:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        role:
+          type: string
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [active, completed, on_hold, cancelled]
+        github_repo:
+          type: string
+        created_by:
+          type: integer
+        creator_name:
+          type: string
+        team_members:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectMember'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ProjectListResponse:
+      type: object
+      properties:
+        projects:
+          type: array
+          items:
+            $ref: '#/components/schemas/Project'
+
+    ProjectResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        project:
+          $ref: '#/components/schemas/Project'
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [backlog, todo, in_progress, review, done]
+        priority:
+          type: string
+          enum: [low, medium, high, urgent]
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        assigned_to:
+          type: integer
+        created_by:
+          type: integer
+        deadline:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        project_id:
+          type: integer
+
+    TaskListResponse:
+      type: object
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+
+    TaskResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        task:
+          $ref: '#/components/schemas/Task'
+
+    Comment:
+      type: object
+      properties:
+        id:
+          type: integer
+        content:
+          type: string
+        task_id:
+          type: integer
+        user_id:
+          type: integer
+        user_name:
+          type: string
+        author_name:
+          type: string
+        user_avatar:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CommentListResponse:
+      type: object
+      properties:
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Comment'
+
+    CommentResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        comment:
+          $ref: '#/components/schemas/Comment'
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        notification_type:
+          type: string
+        type:
+          type: string
+        title:
+          type: string
+        message:
+          type: string
+        content:
+          type: string
+        reference_id:
+          type: string
+        task_id:
+          type: integer
+        is_read:
+          type: boolean
+        read:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        timestamp:
+          type: string
+          format: date-time
+        read_at:
+          type: string
+          format: date-time
+
+    NotificationListResponse:
+      type: object
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        unread_count:
+          type: integer
+
+    Report:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        type:
+          type: string
+          enum: [tasks, developers, github]
+        dateRange:
+          type: string
+          enum: [week, month, quarter, year]
+        summary:
+          type: object
+          additionalProperties: true
+        details:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        generatedAt:
+          type: string
+          format: date-time
+
+    PaginationReportResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        reports:
+          type: array
+          items:
+            $ref: '#/components/schemas/Report'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    ReportResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        report:
+          $ref: '#/components/schemas/Report'
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        actor_user_id:
+          type: integer
+        actor_name:
+          type: string
+        actor_role:
+          type: string
+        action:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        ip:
+          type: string
+        user_agent:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    AuditLogListResponse:
+      type: object
+      properties:
+        logs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+        total:
+          type: integer
+        pages:
+          type: integer
+        current_page:
+          type: integer
+
+    AuditLogResponse:
+      type: object
+      properties:
+        log:
+          $ref: '#/components/schemas/AuditLog'
+
+    SystemSettings:
+      type: object
+      properties:
+        default_user_role:
+          type: string
+        allow_self_registration:
+          type: boolean
+        audit_log_retention_days:
+          type: integer
+        auto_archive_completed_projects:
+          type: boolean
+        project_retention_days:
+          type: integer
+        notify_on_overdue_tasks:
+          type: boolean
+        app_name:
+          type: string
+        allow_registration:
+          type: boolean
+        github_integration_enabled:
+          type: boolean
+        notification_settings:
+          type: object
+          additionalProperties:
+            type: boolean
+
+    SystemSettingsResponse:
+      type: object
+      properties:
+        settings:
+          $ref: '#/components/schemas/SystemSettings'
+
+    SystemStatsResponse:
+      type: object
+      properties:
+        users:
+          type: object
+          properties:
+            total:
+              type: integer
+            admins:
+              type: integer
+            team_leads:
+              type: integer
+            developers:
+              type: integer
+        projects:
+          type: object
+          properties:
+            total:
+              type: integer
+            active:
+              type: integer
+            completed:
+              type: integer
+            on_hold:
+              type: integer
+        tasks:
+          type: object
+          properties:
+            total:
+              type: integer
+            backlog:
+              type: integer
+            todo:
+              type: integer
+            in_progress:
+              type: integer
+            review:
+              type: integer
+            done:
+              type: integer
+
+    RetentionCleanupResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        result:
+          type: object
+          additionalProperties: true
+        error:
+          type: string
+
+    GitHubConfigCheckResponse:
+      type: object
+      properties:
+        config_status:
+          type: object
+          properties:
+            client_id_set:
+              type: boolean
+            client_secret_set:
+              type: boolean
+            redirect_uri_set:
+              type: boolean
+        client_id:
+          type: string
+        redirect_uri:
+          type: string
+        frontend_url:
+          type: string
+
+    GitHubOAuthResponse:
+      type: object
+      properties:
+        authorization_url:
+          type: string
+        state:
+          type: string
+
+    GitHubStatusResponse:
+      type: object
+      properties:
+        connected:
+          type: boolean
+        username:
+          type: string
+
+    GitHubRepository:
+      type: object
+      properties:
+        id:
+          type: integer
+        github_id:
+          type: integer
+        name:
+          type: string
+        full_name:
+          type: string
+        owner:
+          type: string
+        html_url:
+          type: string
+        description:
+          type: string
+        private:
+          type: boolean
+        fork:
+          type: boolean
+        created_at:
+          type: string
+        updated_at:
+          type: string
+        pushed_at:
+          type: string
+        language:
+          type: string
+        default_branch:
+          type: string
+        open_issues_count:
+          type: integer
+        open_issues:
+          type: integer
+        total_prs:
+          type: integer
+        recent_commits:
+          type: integer
+        last_updated:
+          type: string
+        stargazers_count:
+          type: integer
+        forks_count:
+          type: integer
+
+    GitHubRepositoryResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        repository:
+          type: object
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            url:
+              type: string
+
+    GitHubRepositoryListResponse:
+      type: object
+      properties:
+        repositories:
+          type: array
+          items:
+            $ref: '#/components/schemas/GitHubRepository'
+
+    GitHubIssue:
+      type: object
+      properties:
+        id:
+          type: integer
+        number:
+          type: integer
+        title:
+          type: string
+        state:
+          type: string
+        created_at:
+          type: string
+        updated_at:
+          type: string
+        html_url:
+          type: string
+        body:
+          type: string
+        user:
+          type: object
+          properties:
+            login:
+              type: string
+            avatar_url:
+              type: string
+        labels:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              color:
+                type: string
+
+    GitHubPullRequest:
+      type: object
+      properties:
+        id:
+          type: integer
+        number:
+          type: integer
+        title:
+          type: string
+        state:
+          type: string
+        created_at:
+          type: string
+        updated_at:
+          type: string
+        html_url:
+          type: string
+        body:
+          type: string
+        user:
+          type: object
+          properties:
+            login:
+              type: string
+            avatar_url:
+              type: string
+        labels:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              color:
+                type: string
+        merged:
+          type: boolean
+        mergeable:
+          type: boolean
+        draft:
+          type: boolean
+
+    GitHubLink:
+      type: object
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        repo_id:
+          type: integer
+        repo_name:
+          type: string
+        repo_url:
+          type: string
+        issue_number:
+          type: integer
+        pull_request_number:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    GitHubLinkResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        link:
+          $ref: '#/components/schemas/GitHubLink'
+
+    GitHubLinkListResponse:
+      type: object
+      properties:
+        links:
+          type: array
+          items:
+            $ref: '#/components/schemas/GitHubLink'
+
+    GitHubCallbackResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        github_username:
+          type: string
+
+    DashboardResponse:
+      type: object
+      additionalProperties: true
+
+security:
+  - BearerAuth: []
+  - CookieAuth: []
+
+paths:
+  /auth/register:
+    post:
+      summary: Register a new user
+      tags: [Authentication]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                password:
+                  type: string
+                role:
+                  type: string
+                  enum: [developer, team_lead, admin]
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+
+  /auth/login:
+    post:
+      summary: Authenticate a user and return JWT tokens
+      tags: [Authentication]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+
+  /auth/refresh:
+    post:
+      summary: Refresh the access token using a refresh token
+      tags: [Authentication]
+      responses:
+        '200':
+          description: New access token generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+
+  /auth/logout:
+    post:
+      summary: Log out the current user
+      tags: [Authentication]
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /auth/me:
+    get:
+      summary: Get the current user profile
+      tags: [Authentication]
+      responses:
+        '200':
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+  /auth/token:
+    post:
+      summary: Get an access token directly
+      tags: [Authentication]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Token generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+
+  /auth/permissions:
+    get:
+      summary: Get permissions for the current role
+      tags: [Authentication]
+      responses:
+        '200':
+          description: Permission list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionsResponse'
+
+  /users:
+    get:
+      summary: List all users visible to the caller
+      tags: [Users]
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+
+  /users/{user_id}:
+    parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get a specific user
+      tags: [Users]
+      responses:
+        '200':
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+    put:
+      summary: Update a user as an admin
+      tags: [Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                role:
+                  type: string
+                  enum: [developer, team_lead, admin]
+                password:
+                  type: string
+                github_username:
+                  type: string
+                avatar:
+                  type: string
+      responses:
+        '200':
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+    delete:
+      summary: Delete a user as an admin
+      tags: [Users]
+      responses:
+        '200':
+          description: User deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /profile:
+    get:
+      summary: Get the current user's profile
+      tags: [Users]
+      responses:
+        '200':
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+    put:
+      summary: Update the current user's profile
+      tags: [Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                github_username:
+                  type: string
+                avatar:
+                  type: string
+                current_password:
+                  type: string
+                new_password:
+                  type: string
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+  /projects:
+    get:
+      summary: Get all projects visible to the caller
+      tags: [Projects]
+      responses:
+        '200':
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectListResponse'
+    post:
+      summary: Create a new project
+      tags: [Projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, description]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                status:
+                  type: string
+                  enum: [active, completed, on_hold, cancelled]
+                github_repo:
+                  type: string
+                team_members:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '201':
+          description: Project created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+
+  /projects/{project_id}:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get a project by ID
+      tags: [Projects]
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project:
+                    $ref: '#/components/schemas/Project'
+    put:
+      summary: Update a project
+      tags: [Projects]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                status:
+                  type: string
+                  enum: [active, completed, on_hold, cancelled]
+                github_repo:
+                  type: string
+                team_members:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '200':
+          description: Project updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+    delete:
+      summary: Delete a project
+      tags: [Projects]
+      responses:
+        '204':
+          description: Project deleted successfully
+
+  /projects/{project_id}/tasks:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get all tasks for a project
+      tags: [Projects, Tasks]
+      responses:
+        '200':
+          description: Task list for the project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskListResponse'
+
+  /tasks:
+    get:
+      summary: Fetch tasks filtered by role and query parameters
+      tags: [Tasks]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: assigned_to
+          in: query
+          schema:
+            type: integer
+        - name: project_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskListResponse'
+    post:
+      summary: Create a new task
+      tags: [Tasks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, description, status]
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                status:
+                  type: string
+                  enum: [backlog, todo, in_progress, review, done]
+                priority:
+                  type: string
+                  enum: [low, medium, high, urgent]
+                progress:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                assigned_to:
+                  type: integer
+                deadline:
+                  type: string
+                  format: date-time
+                project_id:
+                  type: integer
+      responses:
+        '201':
+          description: Task created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+
+  /tasks/{task_id}:
+    parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get a task by ID
+      tags: [Tasks]
+      responses:
+        '200':
+          description: Task details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task:
+                    $ref: '#/components/schemas/Task'
+    put:
+      summary: Update a task
+      tags: [Tasks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                status:
+                  type: string
+                  enum: [backlog, todo, in_progress, review, done]
+                priority:
+                  type: string
+                  enum: [low, medium, high, urgent]
+                progress:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                assigned_to:
+                  type: integer
+                deadline:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Task updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+    delete:
+      summary: Delete a task
+      tags: [Tasks]
+      responses:
+        '204':
+          description: Task deleted successfully
+
+  /tasks/{task_id}/comments:
+    parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Fetch comments for a task
+      tags: [Comments]
+      responses:
+        '200':
+          description: List of comments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentListResponse'
+    post:
+      summary: Add a comment to a task
+      tags: [Comments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                mentioned_user_ids:
+                  type: array
+                  items:
+                    type: integer
+                mentioned_users:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '201':
+          description: Comment added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentResponse'
+
+  /comments/{comment_id}:
+    parameters:
+      - name: comment_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    put:
+      summary: Update a comment
+      tags: [Comments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+      responses:
+        '200':
+          description: Comment updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  comment:
+                    $ref: '#/components/schemas/Comment'
+    delete:
+      summary: Delete a comment
+      tags: [Comments]
+      responses:
+        '200':
+          description: Comment deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /notifications:
+    get:
+      summary: Get the current user's notifications
+      tags: [Notifications]
+      parameters:
+        - name: is_read
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Notification list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationListResponse'
+    post:
+      summary: Create a notification
+      tags: [Notifications]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id:
+                  type: integer
+                content:
+                  type: string
+                message:
+                  type: string
+                title:
+                  type: string
+                notification_type:
+                  type: string
+                type:
+                  type: string
+                reference_id:
+                  type: string
+                task_id:
+                  type: integer
+                is_read:
+                  type: boolean
+      responses:
+        '201':
+          description: Notification created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  notification:
+                    $ref: '#/components/schemas/Notification'
+
+  /notifications/{notification_id}/read:
+    parameters:
+      - name: notification_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    put:
+      summary: Mark a notification as read
+      tags: [Notifications]
+      responses:
+        '200':
+          description: Notification marked as read
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /notifications/read-all:
+    put:
+      summary: Mark all notifications as read
+      tags: [Notifications]
+      responses:
+        '200':
+          description: All notifications marked as read
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /notifications/{notification_id}:
+    parameters:
+      - name: notification_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    delete:
+      summary: Delete a notification
+      tags: [Notifications]
+      responses:
+        '200':
+          description: Notification deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /dashboard:
+    get:
+      summary: Get the current user's dashboard data
+      tags: [Dashboard]
+      responses:
+        '200':
+          description: Dashboard payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+
+  /dashboard/client:
+    get:
+      summary: Get client dashboard data for developers and team leads
+      tags: [Dashboard]
+      responses:
+        '200':
+          description: Client dashboard payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+
+  /dashboard/admin:
+    get:
+      summary: Get admin dashboard data
+      tags: [Dashboard]
+      responses:
+        '200':
+          description: Admin dashboard payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+
+  /dashboard/projects/{project_id}:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get dashboard data for a specific project
+      tags: [Dashboard]
+      responses:
+        '200':
+          description: Project dashboard payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+
+  /admin/users:
+    get:
+      summary: List all users for admins and team leads
+      tags: [Admin]
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+    post:
+      summary: Create a user as an admin
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                password:
+                  type: string
+                role:
+                  type: string
+                  enum: [developer, team_lead, admin]
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+  /admin/users/{user_id}:
+    parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    put:
+      summary: Update a user as an admin
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                role:
+                  type: string
+                  enum: [developer, team_lead, admin]
+                password:
+                  type: string
+                github_username:
+                  type: string
+                avatar:
+                  type: string
+      responses:
+        '200':
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+    delete:
+      summary: Delete a user as an admin
+      tags: [Admin]
+      responses:
+        '200':
+          description: User deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /admin/users/{user_id}/role:
+    parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    put:
+      summary: Update a user's role
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+                  enum: [developer, team_lead, admin]
+      responses:
+        '200':
+          description: User role updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+  /admin/stats:
+    get:
+      summary: Get system statistics
+      tags: [Admin]
+      responses:
+        '200':
+          description: System statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatsResponse'
+
+  /admin/settings:
+    get:
+      summary: Get system settings
+      tags: [Admin]
+      responses:
+        '200':
+          description: System settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemSettingsResponse'
+    put:
+      summary: Update system settings
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemSettings'
+      responses:
+        '200':
+          description: System settings updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  settings:
+                    $ref: '#/components/schemas/SystemSettings'
+
+  /admin/audit-logs:
+    get:
+      summary: Get audit logs
+      tags: [Admin, Audit]
+      parameters:
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: actor
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Audit log list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogListResponse'
+
+  /admin/audit-logs/{log_id}:
+    parameters:
+      - name: log_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get a single audit log entry
+      tags: [Admin, Audit]
+      responses:
+        '200':
+          description: Audit log details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogResponse'
+
+  /admin/audit-logs/cleanup:
+    post:
+      summary: Purge expired audit logs
+      tags: [Admin, Audit]
+      responses:
+        '200':
+          description: Audit log cleanup result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  deleted:
+                    type: integer
+
+  /admin/settings/retention/run:
+    post:
+      summary: Run retention cleanup immediately
+      tags: [Admin]
+      responses:
+        '200':
+          description: Retention cleanup result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetentionCleanupResponse'
+
+  /reports:
+    post:
+      summary: Save a generated report
+      tags: [Reports]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [report_type, date_range, summary, details]
+              properties:
+                report_type:
+                  type: string
+                  enum: [tasks, developers, github]
+                date_range:
+                  type: string
+                  enum: [week, month, quarter, year]
+                summary:
+                  type: object
+                  additionalProperties: true
+                details:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: true
+      responses:
+        '201':
+          description: Report saved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportResponse'
+    get:
+      summary: Get saved reports
+      tags: [Reports]
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [tasks, developers, github]
+        - name: dateRange
+          in: query
+          schema:
+            type: string
+            enum: [week, month, quarter, year]
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated report list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginationReportResponse'
+
+  /reports/{report_id}:
+    parameters:
+      - name: report_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get a report by ID
+      tags: [Reports]
+      responses:
+        '200':
+          description: Report details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportResponse'
+    delete:
+      summary: Delete a report
+      tags: [Reports]
+      responses:
+        '200':
+          description: Report deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /github/config-check:
+    get:
+      summary: Check GitHub OAuth configuration
+      tags: [GitHub Integration]
+      security: []
+      responses:
+        '200':
+          description: GitHub configuration status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitHubConfigCheckResponse'
+
+  /github/auth:
+    get:
+      summary: Start the GitHub OAuth flow
+      tags: [GitHub Integration]
+      responses:
+        '200':
+          description: GitHub OAuth authorization URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitHubOAuthResponse'
+
+  /github/callback:
+    get:
+      summary: Handle GitHub OAuth callback
+      tags: [GitHub Integration]
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: GitHub account connected successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitHubCallbackResponse'
+        '302':
+          description: Redirect to the frontend after successful connection
+    post:
+      summary: Handle GitHub OAuth callback using a JSON payload
+      tags: [GitHub Integration]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, state]
+              properties:
+                code:
+                  type: string
+                state:
+                  type: string
+      responses:
+        '200':
+          description: GitHub account connected successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitHubCallbackResponse'
+
+  /github/exchange:
+    get:
+      summary: Exchange a GitHub OAuth code for a token
+      tags: [GitHub Integration]
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: GitHub account connected successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitHubCallbackResponse'
+
+  /github/status:
+    get:
+      summary: Get the current user's GitHub connection status
+      tags: [GitHub Integration]
+      responses:
+        '200':
+          description: GitHub connection status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitHubStatusResponse'
+
+  /github/disconnect:
+    post:
+      summary: Disconnect the current user's GitHub account
+      tags: [GitHub Integration]
+      responses:
+        '200':
+          description: GitHub account disconnected successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /github/repositories:
+    get:
+      summary: Fetch GitHub repositories for the current user
+      tags: [GitHub Integration]
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+        - name: all_pages
+          in: query
+          schema:
+            type: boolean
+        - name: activity_window_days
+          in: query
+          schema:
+            type: integer
+        - name: include_activity
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Repository list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitHubRepositoryListResponse'
+    post:
+      summary: Add a GitHub repository to track
+      tags: [GitHub Integration]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [repository_name, repository_url]
+              properties:
+                repository_name:
+                  type: string
+                repository_url:
+                  type: string
+                webhook_secret:
+                  type: string
+      responses:
+        '201':
+          description: Repository added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitHubRepositoryResponse'
+
+  /github/repositories/{repo_id}/issues:
+    parameters:
+      - name: repo_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get issues for a tracked repository
+      tags: [GitHub Integration]
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Issue list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issues:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GitHubIssue'
+
+  /github/repositories/{repo_id}/pulls:
+    parameters:
+      - name: repo_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get pull requests for a tracked repository
+      tags: [GitHub Integration]
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Pull request list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pull_requests:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GitHubPullRequest'
+
+  /tasks/{task_id}/github:
+    parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      summary: Link a task with a GitHub issue or pull request
+      tags: [GitHub Integration]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [repo_id]
+              properties:
+                repo_id:
+                  type: integer
+                issue_number:
+                  type: integer
+                pull_request_number:
+                  type: integer
+      responses:
+        '200':
+          description: GitHub link created or updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitHubLinkResponse'
+    get:
+      summary: Get GitHub links for a task
+      tags: [GitHub Integration]
+      responses:
+        '200':
+          description: Task GitHub links
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitHubLinkListResponse'
+
+  /tasks/{task_id}/github/{link_id}:
+    parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: link_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    delete:
+      summary: Remove a GitHub link from a task
+      tags: [GitHub Integration]
+      responses:
+        '200':
+          description: GitHub link removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
