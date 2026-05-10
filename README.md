@@ -27,25 +27,17 @@
 
 ![AWS Architecture](docs/demo/aws.gif)
 
-### Developer Account - view and update assigned tasks, collaborate via comments, connect GitHub account
+### Developer Dashboard - view and update assigned tasks, collaborate via comments, connect GitHub account
 
-![Dashboard](docs/demo/dev.gif)
+![Developer](docs/demo/dev.gif)
 
-### Team Leader Account - Assign projects, tasks and manage team members
+### Team Leader Dashboard - Assign projects, tasks and manage team members
 
-![Dashboard](docs/demo/tl.gif)
+![Team Leader](docs/demo/tl.gif)
 
-### Admin Account - Manage system settings, view audit logs, and generate reports
+### Admin Dashboard - Manage system settings, view audit logs, and generate reports
 
-![Dashboard](docs/demo/admin.gif)
-
-### GitHub integrations - Bidirectional DevSync task ↔ GitHub Issue & PR linking with live status sync
-
-![GitHub Integration](docs/demo/github.gif)
-
-### Notifications - Receive updates only on items relevant to you
-
-![Developer Notifications](docs/demo/developer_notifications.gif)
+![Admin](docs/demo/admin.gif)
 
 ---
 
