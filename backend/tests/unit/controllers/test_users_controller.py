@@ -126,6 +126,7 @@ def test_update_user_email_exists(app, mock_db, mock_user, mock_jwt_identity):
             assert status == 409
 
 def test_delete_user(app, mock_db, mock_user, mock_jwt_identity):
+    mock_jwt_identity.return_value = {'user_id': 99}
     with app.test_request_context():
         with patch('backend.src.api.controllers.users_controller.User.query') as mock_query:
             # Configure the mock query
@@ -134,13 +135,15 @@ def test_delete_user(app, mock_db, mock_user, mock_jwt_identity):
             # Import the function locally to use patched modules
             from backend.src.api.controllers.users_controller import delete_user
             
-            # Call the function
-            response = delete_user(1)
+            with patch('backend.src.api.controllers.users_controller._cleanup_user_dependencies') as mock_cleanup:
+                # Call the function
+                response = delete_user(1)
             
             # Assert the results
             data = response.get_json()
             assert 'message' in data
             assert 'User deleted successfully' in data['message']
+            assert mock_cleanup.called
             assert mock_db.session.delete.called
             assert mock_db.session.commit.called
 
