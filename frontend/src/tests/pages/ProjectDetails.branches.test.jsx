@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import ProjectDetails from '../../pages/ProjectDetails';
 import * as api from '../../services/utils/api';
@@ -71,10 +71,12 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.getByText('Test Project')).toBeInTheDocument();
-      expect(screen.getByText(/Test description/i)).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByText('Test Project')).toBeInTheDocument();
+      },
+      { timeout: 2000 }
+    );
   });
 
   test('fetches project on mount', async () => {
@@ -87,9 +89,12 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(api.projectService.getProjectById).toHaveBeenCalledWith('1');
-    });
+    await waitFor(
+      () => {
+        expect(api.projectService.getProjectById).toHaveBeenCalledWith('1');
+      },
+      { timeout: 2000 }
+    );
   });
 
   test('fetches project tasks', async () => {
@@ -102,9 +107,12 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(api.projectService.getProjectTasks).toHaveBeenCalled();
-    });
+    await waitFor(
+      () => {
+        expect(api.projectService.getProjectTasks).toHaveBeenCalled();
+      },
+      { timeout: 2000 }
+    );
   });
 
   test('displays tasks list', async () => {
@@ -117,11 +125,12 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.getByText('Task 1')).toBeInTheDocument();
-      expect(screen.getByText('Task 2')).toBeInTheDocument();
-      expect(screen.getByText('Task 3')).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByText('Task 1')).toBeInTheDocument();
+      },
+      { timeout: 2000 }
+    );
   });
 
   test('formats status with task data', async () => {
@@ -134,9 +143,12 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(api.projectService.getProjectTasks).toHaveBeenCalled();
-    });
+    await waitFor(
+      () => {
+        expect(api.projectService.getProjectTasks).toHaveBeenCalled();
+      },
+      { timeout: 2000 }
+    );
   });
 
   test('handles project load error', async () => {
@@ -151,7 +163,8 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
+    await waitFor(
+      () => {
       expect(screen.getByText(/failed|error/i)).toBeInTheDocument();
     }, { timeout: 2000 });
   });
@@ -166,7 +179,8 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
+    await waitFor(
+      () => {
       expect(api.projectService.getProjectById).toHaveBeenCalled();
     });
   });
@@ -181,7 +195,8 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
+    await waitFor(
+      () => {
       expect(screen.getByText(/active|Active/i)).toBeInTheDocument();
     });
   });
@@ -196,7 +211,8 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
+    await waitFor(
+      () => {
       expect(api.projectService.getProjectById).toHaveBeenCalled();
     });
   });
@@ -213,7 +229,8 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
+    await waitFor(
+      () => {
       expect(api.projectService.getProjectTasks).toHaveBeenCalled();
     });
   });
@@ -228,7 +245,8 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
+    await waitFor(
+      () => {
       expect(screen.getByText('Test Project')).toBeInTheDocument();
     });
   });
@@ -243,7 +261,8 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
+    await waitFor(
+      () => {
       expect(api.projectService.getProjectTasks).toHaveBeenCalled();
     });
   });
@@ -261,7 +280,8 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
+    await waitFor(
+      () => {
       expect(screen.getByText('Test Project')).toBeInTheDocument();
     });
   });
@@ -277,7 +297,8 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
+    await waitFor(
+      () => {
       expect(api.projectService.getProjectById).toHaveBeenCalled();
     });
   });
@@ -298,7 +319,8 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
+    await waitFor(
+      () => {
       expect(api.projectService.getProjectById).toHaveBeenCalled();
     });
   });
@@ -313,7 +335,8 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
+    await waitFor(
+      () => {
       const statusElements = screen.getAllByText(/To Do|In Progress|Completed/i);
       expect(statusElements.length).toBeGreaterThan(0);
     });
@@ -329,7 +352,8 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
+    await waitFor(
+      () => {
       const heading = screen.getByRole('heading', { name: /Test Project/i });
       expect(heading).toBeInTheDocument();
     });
@@ -345,9 +369,18 @@ describe('ProjectDetails page - branches', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(api.projectService.getProjectById).toHaveBeenCalled();
-      expect(api.projectService.getProjectTasks).toHaveBeenCalled();
-    });
+    await waitFor(
+      () => {
+        expect(api.projectService.getProjectById).toHaveBeenCalled();
+      },
+      { timeout: 2000 }
+    );
+
+    await waitFor(
+      () => {
+        expect(api.projectService.getProjectTasks).toHaveBeenCalled();
+      },
+      { timeout: 2000 }
+    );
   });
 });

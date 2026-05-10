@@ -48,6 +48,11 @@ const shouldIgnoreTestWarning = (args) => {
 		return true;
 	}
 
+	// Suppress act() warnings for ProjectDetails - component updates are expected when testing async data fetching
+	if (messages.includes('An update to ProjectDetails inside a test was not wrapped in act')) {
+		return true;
+	}
+
 	return false;
 };
 

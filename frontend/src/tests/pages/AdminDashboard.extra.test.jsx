@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 jest.mock('../../context/AuthContext', () => ({
@@ -48,11 +48,13 @@ describe('AdminDashboard extra tests', () => {
   });
 
   test('renders admin dashboard heading', async () => {
-    render(
-      <MemoryRouter initialEntries={['/admin/dashboard']}>
-        <AdminDashboard />
-      </MemoryRouter>
-    );
+    await act(async () => {
+      render(
+        <MemoryRouter initialEntries={['/admin/dashboard']}>
+          <AdminDashboard />
+        </MemoryRouter>
+      );
+    });
 
     await waitFor(() => {
       expect(screen.getByText(/Admin Dashboard/i)).toBeInTheDocument();
@@ -60,11 +62,13 @@ describe('AdminDashboard extra tests', () => {
   });
 
   test('shows dashboard content after loading', async () => {
-    render(
-      <MemoryRouter initialEntries={['/admin/dashboard']}>
-        <AdminDashboard />
-      </MemoryRouter>
-    );
+    await act(async () => {
+      render(
+        <MemoryRouter initialEntries={['/admin/dashboard']}>
+          <AdminDashboard />
+        </MemoryRouter>
+      );
+    });
 
     await waitFor(() => {
       expect(screen.getByText(/Admin Dashboard/i)).toBeInTheDocument();
@@ -74,11 +78,13 @@ describe('AdminDashboard extra tests', () => {
   });
 
   test('renders create task button', async () => {
-    render(
-      <MemoryRouter initialEntries={['/admin/dashboard']}>
-        <AdminDashboard />
-      </MemoryRouter>
-    );
+    await act(async () => {
+      render(
+        <MemoryRouter initialEntries={['/admin/dashboard']}>
+          <AdminDashboard />
+        </MemoryRouter>
+      );
+    });
 
     await waitFor(() => {
       expect(screen.getByRole('link', { name: /Create Task/i })).toBeInTheDocument();
