@@ -54,7 +54,7 @@ All Team Lead permissions, plus:
 ## API Endpoint Permission Mapping
 
 | Endpoint | Method | Permission / Guard | Minimum Role |
-|----------|--------|--------------------|--------------|
+ | ---------- | -------- | -------------------- | -------------- |
 | `/api/v1/auth/register` | POST | (public) | N/A |
 | `/api/v1/auth/login` | POST | (public) | N/A |
 | `/api/v1/auth/refresh` | POST | (authenticated) | Any |

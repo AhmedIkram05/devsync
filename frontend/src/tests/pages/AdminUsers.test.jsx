@@ -140,7 +140,10 @@ describe('AdminUsers', () => {
       expect(screen.queryByText('Confirm Delete')).not.toBeInTheDocument();
     });
 
-    expect(within(table).queryByText('Team Lead One')).not.toBeInTheDocument();
+    await waitFor(() => {
+      const table = screen.getByRole('table');
+      expect(within(table).queryByText('Team Lead One')).not.toBeInTheDocument();
+    });
   });
 
   test('shows an error when loading users fails', async () => {
