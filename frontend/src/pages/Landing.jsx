@@ -10,6 +10,10 @@ import {
   MessageSquare,
 } from "lucide-react";
 
+import devGif from "./demo/dev.gif";
+import tlGif from "./demo/tl.gif";
+import tasksDemoGif from "./demo/tasks-demo.gif";
+
 const featureCards = [
   {
     icon: ClipboardList,
@@ -49,6 +53,14 @@ const metricTiles = [
   { value: "JWT", label: "Secure auth on every route" },
   { value: "0", label: "GitHub tokens in the browser" },
 ];
+
+const previewShellClass =
+  "relative aspect-[1148/720] w-full lg:w-[780px] mx-auto rounded-[36px] border border-slate-800/70 bg-slate-900/40 backdrop-blur";
+
+const previewFrameClass =
+  "absolute inset-0 overflow-hidden rounded-[28px] border border-slate-800/70 bg-slate-950/80";
+
+const previewImageClass = "h-full w-full scale-[1.18] object-contain object-center";
 
 const Landing = () => {
   const scrollContainerRef = useRef(null);
@@ -168,7 +180,7 @@ const Landing = () => {
           data-section
           className="relative flex min-h-screen snap-start items-center px-6 pt-28 md:px-10"
         >
-          <div className="mx-auto grid w-full max-w-6xl items-center gap-10 lg:grid-cols-2">
+          <div className="mx-auto grid w-full max-w-6xl items-center gap-10 lg:grid-cols-[1.1fr_1.3fr]">
             <div className="space-y-6 font-['Space_Grotesk']">
               <p className="font-['Orbitron'] text-xs uppercase tracking-[0.4em] text-slate-400">
                 Built for GitHub-native teams
@@ -215,16 +227,15 @@ const Landing = () => {
               </div>
             </div>
 
-            <div className="relative h-[420px] w-full md:h-[520px]">
-              <div className="absolute inset-0 rounded-[36px] border border-slate-800/70 bg-slate-900/40 shadow-[0_20px_60px_rgba(15,23,42,0.45)] backdrop-blur"></div>
-              <div className="absolute inset-4 overflow-hidden rounded-[28px] border border-slate-800/70 bg-slate-950/80">
+            <div className={previewShellClass}>
+              <div className={previewFrameClass}>
                 <img
-                  src="/frontend/landing/devsync-hero-demo.gif"
+                  src={devGif}
                   alt="Animated preview of the DevSync dashboard"
                   width="1400"
                   height="1040"
                   loading="eager"
-                  className="h-full w-full object-cover object-top"
+                  className={previewImageClass}
                 />
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/50 via-transparent to-transparent"></div>
               </div>
@@ -343,16 +354,15 @@ const Landing = () => {
               </a>
             </div>
 
-            <div className="relative h-[420px] w-full md:h-[520px]">
-              <div className="absolute inset-0 rounded-[36px] border border-slate-800/70 bg-slate-900/40 shadow-[0_20px_60px_rgba(15,23,42,0.45)] backdrop-blur"></div>
-              <div className="absolute inset-4 overflow-hidden rounded-[28px] border border-slate-800/70 bg-slate-950/80">
+            <div className={previewShellClass}>
+              <div className={previewFrameClass}>
                 <img
-                  src="/landing/devsync-github-demo.gif"
+                  src={tlGif}
                   alt="DevSync GitHub integration - bidirectional Issue and PR linking"
                   width="1400"
                   height="1040"
                   loading="lazy"
-                  className="h-full w-full object-cover object-top"
+                  className={previewImageClass}
                 />
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/50 via-transparent to-transparent"></div>
               </div>
@@ -366,7 +376,7 @@ const Landing = () => {
           data-section
           className="relative min-h-screen snap-start px-6 pt-28 md:px-10"
         >
-          <div className="mx-auto grid w-full max-w-6xl gap-10 lg:grid-cols-[1.05fr_1.35fr]">
+          <div className="mx-auto grid w-full max-w-6xl gap-10 lg:grid-cols-[1.1fr_1.3fr]">
             <div className="space-y-6 font-['Space_Grotesk']">
               <p className="font-['Orbitron'] text-xs uppercase tracking-[0.4em] text-slate-400">
                 Live preview
@@ -403,16 +413,15 @@ const Landing = () => {
               </a>
             </div>
 
-            <div className="relative h-[420px] w-full md:h-[520px]">
-              <div className="absolute inset-0 rounded-[36px] border border-slate-800/70 bg-slate-900/40 shadow-[0_20px_60px_rgba(15,23,42,0.45)] backdrop-blur"></div>
-              <div className="absolute inset-4 overflow-hidden rounded-[28px] border border-slate-800/70 bg-slate-950/80">
+            <div className={previewShellClass}>
+              <div className={previewFrameClass}>
                 <img
-                  src="/landing/devsync-workspace-demo.gif"
+                  src={tasksDemoGif}
                   alt="Animated DevSync workspace walkthrough"
                   width="1600"
                   height="1000"
                   loading="lazy"
-                  className="h-full w-full object-cover object-top"
+                  className={previewImageClass}
                 />
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/55 via-transparent to-transparent"></div>
               </div>
