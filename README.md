@@ -25,6 +25,8 @@
 
 ### AWS architecture - ECS Fargate in custom VPC, RDS in private subnet, CloudFront frontend
 
+> Infrastructure proof - the video below shows the AWS Console confirming the ECS Fargate cluster, VPC security group rules, RDS private subnet configuration, CloudFront distribution, and a passing GitHub Actions pipeline run with OIDC federation. The app is no longer live due to AWS costs but was fully deployed at one point in time.
+
 ![AWS Architecture](docs/demo/aws.gif)
 
 ### Developer Dashboard - view and update assigned tasks, collaborate via comments, connect GitHub account
