@@ -4,12 +4,12 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: devsync-backend
-    restart: unless-stopped
+    restart: on-failure
     depends_on:
       devsync-postgres:
         condition: service_healthy
     environment:
-      - FLASK_APP=src/app.py
+      - FLASK_APP=src.app:create_app
       - FLASK_ENV=development
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - DATABASE_URL=postgresql://devsync:${POSTGRES_PASSWORD}@devsync-postgres:5432/devsync?sslmode=disable
@@ -17,9 +17,31 @@ services:
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}
       - GITHUB_REDIRECT_URI=${GITHUB_REDIRECT_URI}
-      - FRONTEND_URL=${FRONTEND_URL}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     ports:
       - "8000:8000"
+    networks:
+      - devsync-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: devsync-frontend
+    restart: on-failure
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      - API_UPSTREAM=http://backend:8000
+    ports:
+      - "${DEVSYNC_FRONTEND_PORT:-3000}:80"
     networks:
       - devsync-network
 
