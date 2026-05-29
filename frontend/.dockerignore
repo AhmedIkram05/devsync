@@ -1,0 +1,38 @@
+# Dependencies (installed via npm ci in Docker)
+node_modules/
+
+# Build output (created in Docker)
+build/
+
+# Version control
+.git
+.gitignore
+
+# Local environment
+.env
+.env.local
+.env.development
+.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+cypress/videos/
+cypress/screenshots/
+cypress/downloads/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Misc
+.dockerignore
