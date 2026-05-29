@@ -1,56 +1,44 @@
 COMPOSE_DB := docker-compose.local-postgres.yml
-COMPOSE_BACKEND := docker-compose.backend-local.yml
+COMPOSE_ALL := docker-compose.local.yml
 
 DC_DB := docker compose -f $(COMPOSE_DB)
-DC_ALL := docker compose -f $(COMPOSE_DB) -f $(COMPOSE_BACKEND)
+DC_ALL := docker compose -f $(COMPOSE_DB) -f $(COMPOSE_ALL)
 
-.PHONY: db-up db-down db-inspect db-logs db-reset
-.PHONY: backend-build backend-up backend-down backend-logs backend-rebuild
-.PHONY: up down reset
+.PHONY: help up down logs backend-rebuild frontend-rebuild backend-shell db-up db-down db-shell db-reset
 
-# Database
-db-up:
+help: ## Show this help message
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-25s\033[0m %s\n", $$1, $$2}'
+
+up: ## Build & start all services (DB + backend + frontend)
+	$(DC_ALL) up -d --wait
+
+down: ## Stop all services and remove containers
+	$(DC_ALL) down
+
+logs: ## Tail logs. Filter: make logs SVC=backend
+	$(DC_ALL) logs -f $(SVC)
+
+backend-rebuild: ## Rebuild backend image & restart (DB stays running)
+	$(DC_ALL) build backend
+	$(DC_ALL) up -d --wait backend
+
+frontend-rebuild: ## Rebuild frontend image & restart (backend + DB stay running)
+	$(DC_ALL) build frontend
+	$(DC_ALL) up -d --wait frontend
+
+backend-shell: ## Open a bash shell in the backend container
+	$(DC_ALL) exec backend bash
+
+db-up: ## Start PostgreSQL only (for host-based dev)
 	$(DC_DB) up -d --wait
 
-db-down:
+db-down: ## Stop PostgreSQL only
 	$(DC_DB) down
 
-db-inspect:
-	$(DC_DB) ps
+db-shell: ## Open a psql shell in the database
+	$(DC_DB) exec devsync-postgres psql -U devsync -d devsync
 
-db-logs:
-	$(DC_DB) logs -f
-
-db-reset:
+db-reset: ## Destroy PostgreSQL data volume & restart
 	$(DC_DB) down -v
 	$(DC_DB) up -d --wait
-
-# Backend
-backend-build:
-	$(DC_ALL) build backend
-
-backend-up:
-	$(DC_ALL) up -d backend
-
-backend-down:
-	$(DC_ALL) stop backend
-
-backend-logs:
-	$(DC_ALL) logs -f backend
-
-backend-rebuild:
-	$(DC_ALL) down
-	$(DC_ALL) build backend
-	$(DC_ALL) up -d --wait
-
-# Combined
-up:
-	$(DC_ALL) up -d --wait
-
-down:
-	$(DC_ALL) down
-
-reset:
-	$(DC_ALL) down
-	$(DC_DB) down -v
-	$(DC_ALL) up -d --wait
