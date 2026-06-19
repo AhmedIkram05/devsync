@@ -96,16 +96,17 @@ describe('Client Task Flows', () => {
     cy.contains('h1', 'Learn Cypress').should('be.visible');
     
     // Update progress slider to 30%
-    // React 18 batches setValue state updates — need wait(0) between input and mouseup so
-    // the state update from handleChange is committed before handleMouseUp reads it
-    cy.get('input[type="range"]').trigger('mousedown').invoke('val', 30).trigger('input');
-    cy.wait(0);
+    // React 18 batches setState — use separate command chains so React renders between events
+    cy.get('input[type="range"]').trigger('mousedown');
+    cy.get('input[type="range"]').invoke('val', 30).trigger('input');
+    cy.wait(100);
     cy.get('input[type="range"]').trigger('mouseup');
     cy.wait('@updateTask').its('request.body').should('deep.include', { progress: 30 });
     
     // Update progress slider to 80%
-    cy.get('input[type="range"]').trigger('mousedown').invoke('val', 80).trigger('input');
-    cy.wait(0);
+    cy.get('input[type="range"]').trigger('mousedown');
+    cy.get('input[type="range"]').invoke('val', 80).trigger('input');
+    cy.wait(100);
     cy.get('input[type="range"]').trigger('mouseup');
     cy.wait('@updateTask').its('request.body').should('deep.include', { progress: 80 });
   });
