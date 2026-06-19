@@ -1,6 +1,7 @@
 """
 Database connection module that provides the SQLAlchemy database instance
 """
+
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import declarative_base  # Updated import path
 

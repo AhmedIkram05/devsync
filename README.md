@@ -1,6 +1,6 @@
 # DevSync
 
-> Production full-stack project management platform with real-time collaboration, GitHub OAuth 2.0 integration, and bidirectional Issue/PR sync. Built with React 18 + Flask + PostgreSQL, deployed on AWS ECS Fargate with OIDC-authenticated CI/CD, containerized via multi-stage Docker builds, and guarded by 1,452 automated tests. Every PR that fails a test or drops coverage below 85% backend / 85% frontend is automatically rejected before it reaches deployment.
+> Production full-stack project management platform with real-time collaboration, GitHub OAuth 2.0 integration, and bidirectional Issue/PR sync. Built with React 18 + Flask + PostgreSQL, deployed on AWS ECS Fargate with OIDC-authenticated CI/CD, containerized via multi-stage Docker builds, and guarded by 1,452 automated tests plus linting (ruff + ESLint), dependency auditing (pip-audit + npm audit), and CodeQL security analysis. Every PR that fails any check or drops coverage below 85% backend / 85% frontend is automatically rejected before it reaches deployment.
 
 <p align="center">
   <img src="https://img.shields.io/badge/React-61DAFB?style=for-the-badge&labelColor=000000&logo=react">
@@ -18,11 +18,18 @@
   <a href="https://github.com/AhmedIkram05/devsync/actions/workflows/ci.yml">
     <img src="https://github.com/AhmedIkram05/devsync/actions/workflows/ci.yml/badge.svg" alt="CI">
   </a>
+  <a href="https://github.com/AhmedIkram05/devsync/actions/workflows/codeql-analysis.yml">
+    <img src="https://github.com/AhmedIkram05/devsync/actions/workflows/codeql-analysis.yml/badge.svg" alt="CodeQL">
+  </a>
+  <a href="https://codecov.io/gh/AhmedIkram05/DevSync">
+    <img src="https://codecov.io/gh/AhmedIkram05/DevSync/branch/main/graph/badge.svg" alt="Codecov">
+  </a>
 </p>
 
 ---
 
-## Table of Contents
+<details>
+<summary><strong>Table of Contents</strong></summary>
 
 - [Architecture Overview](#architecture-overview)
 - [Engineering Highlights](#engineering-highlights)
@@ -43,6 +50,8 @@
 - [Documentation](#documentation)
 - [Related Projects](#related-projects)
 
+</details>
+
 ---
 
 ## Architecture Overview
@@ -51,20 +60,31 @@
 flowchart TD
     PR[Pull Request opened] --> CI
  
-    subgraph CI["GitHub Actions CI/CD"]
+    subgraph CI["GitHub Actions CI (path-aware)"]
         direction TB
-        tests["518 Pytest · 929 Jest · 5 Cypress E2E\n1,452 total - any failure aborts deployment"]
-        tests --> be_deploy["Backend: Docker build → ECR push (SHA+latest)\n→ ECS rolling update → health check gate"]
-        tests --> fe_deploy["Frontend: inject secrets → S3 sync\n→ CloudFront invalidation\nBlocked until backend health checks pass"]
+        changes["Path detection\nbackend/** · frontend/** dotfiles"]
+        lint["Lint: ruff (Python) · ESLint (JS)\nFormat check"]
+        security["Security: pip-audit · npm audit"]
+        unit["Unit tests: 518 Pytest · 929 Jest"]
+        integration["Integration tests\nPostgres 15 service container"]
+        e2e["E2E: 5 Cypress tests\nFull stack: Postgres → backend → serve"]
+        docker["Docker build check\nLayer-cached via GHA cache"]
     end
  
-    CI --> CF
-    CI --> ALB
-    CI --> GH
+    PR --> changes
+    changes --> lint
+    changes --> security
+    changes --> unit
+    changes --> integration
+    changes --> e2e
+    changes --> docker
+    lint & security & unit & integration & e2e & docker --> Gate{"All checks\npassed?"}
+    Gate -->|"Yes"| DeployOK["✅ CI passes"]
+    Gate -->|"No"| DeployFail["❌ PR blocked"]
  
-    CF["CloudFront + S3\nReact SPA\nHTTPS via ACM"]
-    ALB["Application Load Balancer\npublic - port 443 (HTTPS)"]
-    GH["GitHub API\nOAuth 2.0 + webhook sync"]
+    DeployOK -.-> CF["CloudFront + S3\nReact SPA\nHTTPS via ACM"]
+    DeployOK -.-> ALB["Application Load Balancer\npublic - port 443 (HTTPS)"]
+    DeployOK -.-> GH["GitHub API\nOAuth 2.0 + webhook sync"]
  
     ALB --> ECS
     GH --> ECS
@@ -74,7 +94,7 @@ flowchart TD
     ECS --> RDS["RDS PostgreSQL (private subnet)\nNo public endpoint\nOnly ECS on port 5432"]
 ```
 
-**End-to-end flow:** A PR triggers GitHub Actions → 1,452 tests run in parallel across backend (Pytest) and frontend (Jest + Cypress) → on pass, backend Docker image is pushed to ECR and deployed via ECS rolling update → only after backend health checks pass does the frontend deploy to S3/CloudFront → OIDC federation handles AWS auth, no static secrets stored.
+**End-to-end flow:** A PR triggers GitHub Actions → path detection fires only relevant checks → linting (ruff + ESLint) and security auditing (pip-audit + npm audit) run first → backend unit + integration tests (against a real Postgres 15 service container) and frontend Jest tests run in parallel → if frontend/backend changed, Cypress E2E tests spin up the full stack (Postgres → backend server → frontend served locally) → Docker build check validates the image with layer caching. All checks must pass before the pipeline blocks further progress.
 
 ---
 
@@ -84,11 +104,13 @@ flowchart TD
 |---|---|---|
 | **Container strategy** | Multi-stage Docker builds for both frontend and backend | Backend: `python:3.11-slim` with build deps (`gcc`, `libpq-dev`) in build stage only → runtime image is ~330MB (was 600MB). Frontend: `node:20-alpine` builds, `nginx:1.27-alpine` serves - zero runtime toolchain. |
 | **Compose architecture** | Separated infra (Postgres) from app (backend + frontend) via two compose files | Start DB alone for host-based dev (`docker compose -f postgres.yml up`), or full stack with `-f postgres.yml -f app.yml`. Standard Docker composition pattern. |
-| **CI/CD auth** | OIDC federation with AWS - no long-lived credentials | IAM role assumed per-run, scoped to `main` branch only. Zero AWS secrets stored in GitHub. |
+| **CI pipeline** | 7 job types, path-aware execution | Lint (ruff + ESLint), security (pip-audit + npm audit), unit tests, integration tests (real Postgres), E2E (Cypress), Docker build (layer-cached), and weekly CodeQL. Each job runs only when its paths change. |
+| **CI caching** | Docker layer caching + pip/npm dependency caching | Docker builds use `type=gha` cache (GitHub Actions cache layer sharing). Python pip and npm `node_modules` are cached via `actions/setup-python` / `setup-node`. |
 | **Real-time layer** | Socket.IO with gevent workers and JWT-authenticated rooms | Each project is a separate Socket.IO room - broadcasts never leak across projects. Gevent async worker handles concurrent WebSocket connections efficiently. |
 | **Deployment gating** | Backend health check → Frontend deploy | Pipeline explicitly waits for ECS rolling update to pass health checks before deploying to CloudFront. Zero API/UI version mismatch in production. |
 | **Network isolation** | Three-tier security groups | Internet → ALB (443) → ECS (8000) → RDS (5432). No public database, no direct ECS access. |
 | **Frontend proxy** | Nginx with `envsubst` template for runtime API upstream resolution | Same frontend image deploys to any environment - `API_UPSTREAM` is injected at container start. Docker DNS resolver handles service discovery. |
+| **CI/CD auth** | OIDC federation with AWS - no long-lived credentials | IAM role assumed per-run, scoped to `main` branch only. Zero AWS secrets stored in GitHub. |
 
 ---
 
@@ -96,14 +118,17 @@ flowchart TD
 
 | Metric | Value |
 |---|---|
-| Automated tests | **1,452 total** - 518 Pytest + 929 Jest + 5 Cypress |
+| Automated tests | **1,452 total** — 518 Pytest + 929 Jest + 5 Cypress |
+| Code quality gates | ruff linting + ruff format check (Python) · ESLint (JS) |
+| Security gates | pip-audit + npm audit (per-PR) · CodeQL `security-and-quality` (weekly) |
 | Coverage gates | 85% backend line · 85% frontend branches/functions/lines |
 | Docker image size | **~330 MB** (was 600 MB before multi-stage refactor) |
+| Docker caching | GitHub Actions cache layers — multi-minute savings on re-runs |
 | Container startup | Migrations + optional bootstrap + health check under 20s |
 | API response time | Sub‑300ms p99 for authenticated JSON endpoints |
 | Database | 12 tables, FK-indexed, Alembic migrations |
-| Infrastructure cost | **$0** (offline - full AWS deployment validated, now torn down) |
-| CI/CD auth | Zero static secrets - OIDC federation for all AWS access |
+| Infrastructure cost | **$0** (offline — full AWS deployment validated, now torn down) |
+| CI/CD auth | Zero static secrets — OIDC federation for all AWS access |
 | Languages | Python 3.11 · TypeScript/JavaScript (React 18) |
 | Database isolation | RDS in private subnet, only accessible from ECS on port 5432 |
 
@@ -307,35 +332,58 @@ The compose file uses `DEVSYNC_FRONTEND_PORT` (default 3000) for the host-bound 
 
 ### CI/CD Pipeline
 
-The entire deployment is automated via GitHub Actions with zero manual steps after initial environment setup.
+The CI pipeline runs on every PR and push to `main`, with path-aware job execution — only the jobs relevant to the changed files are triggered. The CD pipeline (currently disabled — AWS infrastructure torn down) deploys to ECS and CloudFront when CI passes.
 
 ```mermaid
 flowchart LR
-    PR["Pull Request\nopened / pushed to"] --> TestGate{"Path filter:\nbackend/** or frontend/** changed?"}
+    PR["Pull Request\nopened / pushed to"] --> Changes{"Path filter:\nchanged paths?"}
     
-    TestGate -->|"backend/**"| BE["Backend Tests\npytest · 518 tests\n--cov-fail-under=85"]
-    TestGate -->|"frontend/**"| FE["Frontend Tests\njest · 929 tests\nbranches≥75% · lines≥85%"]
+    Changes -->|"backend/**"| LintBE["Lint: ruff check + format"]
+    Changes -->|"frontend/**"| LintFE["Lint: ESLint"]
+    Changes -->|"any"| Security["Security:\npip-audit / npm audit"]
+
+    LintBE & LintFE & Security --> BackendJobs
     
-    BE --> FailGate{"Any test\nfailure or\ncoverage drop?"}
-    FE --> FailGate
+    subgraph BackendJobs["Backend Jobs"]
+        direction TB
+        BT["Unit: pytest · 518 tests\n--cov-fail-under=85"]
+        IT["Integration: pytest\nPostgres 15 service container"]
+        DockerBuild["Docker build\nlayer-cached (type=gha)"]
+    end
+
+    subgraph FrontendJobs["Frontend Jobs"]
+        FT["Jest · 929 tests\nbranches≥75%\nlines/funcs≥85%"]
+    end
+
+    subgraph E2E["Full-Stack E2E"]
+        Cypress["Cypress · 5 tests\nPostgres → backend → serve"]
+    end
+
+    Changes -->|"backend/** or frontend/**"| BackendJobs
+    Changes -->|"frontend/**"| FrontendJobs
+    Changes -->|"backend/** or frontend/**"| E2E
+
+    BT & IT & DockerBuild & FT & Cypress --> Gate{"All checks\npassed?"}
     
-    FailGate -->|"Yes"| Abort["❌ Pipeline aborted\nNo deployment"]
-    FailGate -->|"No"| OIDC["Authenticate to AWS\nvia OIDC federation\n(no static secrets)"]
-    
-    OIDC --> DockerBuild["Build backend Docker image\nDockerfile multi-stage\nTag: SHA + latest"]
-    DockerBuild --> ECR["Push to ECR\nprivate repository"]
-    ECR --> ECS["ECS rolling update\nincremental task replacement"]
-    ECS --> HealthGate{"Backend health\nchecks passing?\n(port 8000 /)"}
-    
-    HealthGate -->|"No"| Rollback["⚠️ ECS rolls back\nFrontend NOT deployed"]
-    HealthGate -->|"Yes"| FEBuild["Build frontend\nnpm ci → npm run build"]
-    FEBuild --> S3["Sync to S3 bucket"]
-    S3 --> CF["CloudFront invalidation\n-- Deployment complete --"]
+    Gate -->|"Yes"| Pipeline["✅ Pipeline passes"]
+    Gate -->|"No"| Abort["❌ PR blocked\nFailure reported"]
 ```
 
-**Why this ordering:** If the backend deployment fails (bad migration, startup crash), the frontend never deploys - users never see a broken UI hitting a dead API. The health check gate between ECS update and frontend deploy is the critical safety net. ECS handles rollback automatically if the new task definition fails health checks.
+**Pipeline ordering (parallel where possible):**
 
-**OIDC auth flow:** The GitHub Actions workflow uses `aws-actions/configure-aws-credentials` with `role-to-assume` pointed at an IAM role whose trust policy allows `repo:AhmedIkram05/DevSync:ref:refs/heads/main`. No AWS access key ID or secret access key ever touches GitHub Secrets. The role grants permission to push to ECR, update ECS, sync S3, and invalidate CloudFront - least-privilege scoped.
+| Phase | Jobs | Trigger |
+|---|---|---|
+| Fast checks | Lint (ruff + ESLint) · Security (pip-audit + npm audit) | Backend / frontend / any |
+| Test suites | Pytest unit + integration (Postgres service) · Jest · Cypress E2E | Changed paths |
+| Build check | Docker layer-cached build | Backend changes |
+| Weekly security | CodeQL analysis (Python + JavaScript) | Scheduled + push to main |
+
+**Key design choices:**
+
+- **Integration tests against a real Postgres** — the `backend-tests` job spins up a Postgres 15 service container so integration tests exercise genuine SQL semantics, not SQLite-in-memory approximations.
+- **E2E tests run in CI now** — Cypress executes against the full stack: Postgres service → Flask backend (started as a background process) → frontend production build (served via `npx serve`). Screenshots and backend logs are captured on failure.
+- **Docker layer caching** — The `backend-image-build` job uses `docker/build-push-action` with `type=gha` cache, sharing layers across runs. A rebuild with only application code changes resolves in seconds instead of minutes.
+- **Path-aware execution** — Backend tests skip when only frontend files change, and vice versa. Lint and security run for their respective ecosystems. The `changes` job drives all gating.
 
 ---
 
@@ -378,12 +426,14 @@ erDiagram
 
 ### Testing Strategy
 
-| Layer | Framework | Count | Coverage Gate |
+| Layer | Framework | Count | Coverage / Quality Gate |
 |---|---|---|---|
-| Backend unit + integration | Pytest (pytest-cov, pytest-xdist) | 518 | 85% line coverage |
+| Backend unit + integration | Pytest (pytest-cov, pytest-xdist) | 518 | 85% line coverage (main) · Real Postgres 15 in CI |
 | Frontend unit + component | Jest + React Testing Library | 929 | Branches ≥75%, Functions ≥85%, Lines ≥85% |
-| End-to-end | Cypress | 5 | - |
-| **Total** | | **1,452** | Both must pass |
+| End-to-end | Cypress | 5 | Runs in CI against full-stack stack |
+| **Total tests** | | **1,452** | All must pass |
+| Lint | ruff (Python) + ESLint (JS) | — | Zero warnings |
+| Security | pip-audit + npm audit + CodeQL | — | Zero high/critical vulns |
 
 Every PR is validated end-to-end - tests run in parallel, and any failure or coverage regression aborts the pipeline before deployment.
 
@@ -401,14 +451,18 @@ Every PR is validated end-to-end - tests run in parallel, and any failure or cov
 
 **Test architecture:**
 
-- **Backend (Pytest):** Tests are split into `unit/` and `integration/` directories under `backend/tests/`. Unit tests mock external dependencies (database, GitHub API, OAuth providers). Integration tests use SQLite `:memory:` - no external PostgreSQL required. The root `conftest.py` provides session-scoped fixtures for the Flask app, test client, and auth tokens. Parallel execution via pytest-xdist (`-n auto`). Coverage enforced at 85% (`--cov-fail-under=85`).
+- **Backend (Pytest):** Tests are split into `unit/` and `integration/` directories under `backend/tests/`. Unit tests mock external dependencies (database, GitHub API, OAuth providers). Integration tests run against a **real Postgres 15 service container** in CI — genuine SQL semantics, not in-memory approximations. The root `conftest.py` provides session-scoped fixtures for the Flask app, test client, and auth tokens. Parallel execution via pytest-xdist (`-n auto`). Coverage enforced at 85% (`--cov-fail-under=85`).
 
   ```bash
-  # Run all backend tests (no external DB needed)
-  pytest backend/tests -q --no-header
+  # Run unit tests only (no Postgres needed)
+  pytest backend/tests/unit -q --no-header
 
-  # Or with coverage
+  # Run all backend tests with coverage
   pytest backend/tests -n auto --cov=backend/src --cov-fail-under=85
+
+  # Run integration tests against Postgres
+  DATABASE_URL=postgresql://user:pass@localhost:5432/testdb \
+  pytest backend/tests/integration -n auto -x -q
   ```
 
 - **Frontend (Jest + React Testing Library):** 71 test suites covering pages, components, context, services, and utilities. No snapshot tests - assertions target behavior (element existence, click handlers, accessibility roles, state transitions) not markup. Mock Service Worker (MSW) intercepts API calls for realistic response simulation. Coverage thresholds: branches ≥75%, functions ≥85%, lines ≥85%, statements ≥85%.
@@ -418,9 +472,9 @@ Every PR is validated end-to-end - tests run in parallel, and any failure or cov
   cd frontend && CI=true npm test -- --watchAll=false --reporters=default
   ```
 
-- **E2E (Cypress):** Covers critical user journeys - login, project creation, task assignment, and GitHub link flow. Runs against the full Docker stack. Not executed in CI (maintained for local pre-deployment validation).
+- **E2E (Cypress):** Covers critical user journeys — login, project creation, task assignment, and GitHub link flow. Runs in CI against the full stack: Postgres 15 service container → Flask backend (background process) → production frontend build (served via `npx serve`). On failure, Cypress screenshots and backend logs are uploaded as artifacts for debugging.
 
-**Gate behavior:** CI uses path-aware filtering - backend tests run only when `backend/**` changes, frontend tests only when `frontend/**` changes. Any test failure (including coverage drop below threshold) aborts the pipeline before any deployment step. The pipeline reports which layer failed with the relevant output. On the `main` branch, coverage reporting is enabled with XML artifact upload.
+**Gate behavior:** CI uses path-aware filtering via `dorny/paths-filter` — backend jobs run only when `backend/**` changes, frontend jobs only when `frontend/**` changes, and E2E tests trigger when either or both change. Every job (lint, security, unit, integration, E2E, Docker build) must pass for the pipeline to succeed. Coverage thresholds are enforced on `main` (85% backend line, 75% frontend branches, 85% frontend lines/functions). Any failure — test, lint warning, vulnerability, coverage drop — blocks the pipeline with the relevant output reported. Coverage XML artifacts are uploaded on `main` for tracking.
 
 ---
 
@@ -559,8 +613,16 @@ DevSync/
 │   ├── Dockerfile              # Multi-stage: node:20-alpine build → nginx:1.27-alpine
 │   ├── nginx.conf.template     # SPA fallback, API proxy, envsubst for API_UPSTREAM
 │   └── src/                    # React SPA (18, CRA, Tailwind, Socket.IO client)
+├── .github/
+│   ├── dependabot.yml               # Weekly dep updates for pip, npm, GH Actions
+│   ├── workflows/
+│   │   ├── ci.yml                    # 7 job types: lint, security, unit, integration, E2E, Docker, coverage
+│   │   ├── cd.yml                    # AWS ECS + S3/CloudFront deploy (infra offline)
+│   │   └── codeql-analysis.yml       # Weekly + per-PR CodeQL security analysis
+│   └── instructions/                 # Copilot coding guidelines
+├── pyproject.toml                    # Ruff lint config + pytest settings
 ├── docker-compose.local.yml          # Backend + frontend services
-├── docker-compose.local-postgres.yml  # PostgreSQL 16 (standalone, composable)
+├── docker-compose.local-postgres.yml # PostgreSQL 16 (standalone, composable)
 ├── Makefile                          # up/down/logs/rebuild/shell
 ├── .env.example                      # All required env vars documented
 ├── docs/

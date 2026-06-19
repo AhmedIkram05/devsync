@@ -1,11 +1,11 @@
 # Required packages for the backend
 
 # Database dependencies
-python-dotenv==1.0.0
+python-dotenv==1.2.2
 psycopg2-binary>=2.9.9
 
 # Web framework
-fastapi==0.104.1
+fastapi==0.137.2
 uvicorn==0.24.0
 Flask==2.3.3
 flask-socketio==5.3.1
@@ -15,22 +15,22 @@ Flask-Migrate==4.0.5
 flask-cors==5.0.1
 
 # Authentication
-python-jose==3.3.0
+python-jose[cryptography]==3.4.0
 passlib==1.7.4
 bcrypt==4.1.2
-python-multipart==0.0.6
+python-multipart==0.0.31
 Flask-JWT-Extended==4.5.3
 
 # GitHub API integration
 PyGithub==2.1.1
 
 # Additional utilities
-requests==2.31.0
+requests==2.33.0
 
 # Testing dependencies
 pytest>=8.4.0
 pytest-cov>=7.0.0
-marshmallow==3.15.0
+marshmallow==3.26.2
 
 # Swagger UI
 flask-swagger-ui==4.11.1
@@ -40,7 +40,7 @@ celery==5.3.6
 redis==5.0.1
 
 # Production deployment
-gunicorn==21.2.0
+gunicorn==22.0.0
 gevent==23.9.1
 gevent-websocket==0.10.1
 supervisor==4.2.5

@@ -107,27 +107,34 @@ class Config:
     # Frontend URL (used for redirects and config checks)
     FRONTEND_URL = os.getenv("FRONTEND_URL", "")
 
+
 class DevelopmentConfig(Config):
     """Development configuration"""
+
     DEBUG = True
+
 
 class ProductionConfig(Config):
     """Production configuration"""
+
     DEBUG = False
+
 
 class TestingConfig(Config):
     """Testing configuration"""
+
     TESTING = True
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     JWT_COOKIE_SECURE = False
+
 
 def get_config():
     """Returns the appropriate configuration class based on the environment"""
-    env = os.environ.get('FLASK_ENV', 'development').lower()
-    
-    if env == 'production':
+    env = os.environ.get("FLASK_ENV", "development").lower()
+
+    if env == "production":
         return ProductionConfig
-    elif env == 'testing':
+    elif env == "testing":
         return TestingConfig
     else:
         return DevelopmentConfig

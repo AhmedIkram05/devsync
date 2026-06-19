@@ -8,7 +8,7 @@ import pytest
 from flask_jwt_extended import create_access_token, create_refresh_token
 
 # Add backend directory to import src.* modules
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 import src.api.controllers.dashboard_controller as dashboard_controller
 import src.auth.auth as auth_module
@@ -19,15 +19,17 @@ from src.app import create_app
 
 @pytest.fixture
 def app_and_socket(monkeypatch):
-    monkeypatch.setenv('FLASK_ENV', 'testing')
+    monkeypatch.setenv("FLASK_ENV", "testing")
 
-    app, socketio = create_app({
-        'TESTING': True,
-        'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
-        'JWT_SECRET_KEY': 'test-secret-key-for-integration-suite-32',
-        'JWT_COOKIE_SECURE': False,
-        'JWT_COOKIE_SAMESITE': 'Lax',
-    })
+    app, socketio = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+            "JWT_SECRET_KEY": "test-secret-key-for-integration-suite-32",
+            "JWT_COOKIE_SECURE": False,
+            "JWT_COOKIE_SAMESITE": "Lax",
+        }
+    )
 
     return app, socketio
 
@@ -43,22 +45,22 @@ def client(app):
     return app.test_client()
 
 
-def auth_headers(app, role='developer', user_id=1):
+def auth_headers(app, role="developer", user_id=1):
     with app.app_context():
         token = create_access_token(
-            identity={'user_id': user_id},
-            additional_claims={'role': role},
+            identity={"user_id": user_id},
+            additional_claims={"role": role},
         )
-    return {'Authorization': f'Bearer {token}'}
+    return {"Authorization": f"Bearer {token}"}
 
 
-def refresh_headers(app, role='developer', user_id=1):
+def refresh_headers(app, role="developer", user_id=1):
     with app.app_context():
         token = create_refresh_token(
-            identity={'user_id': user_id},
-            additional_claims={'role': role},
+            identity={"user_id": user_id},
+            additional_claims={"role": role},
         )
-    return {'Authorization': f'Bearer {token}'}
+    return {"Authorization": f"Bearer {token}"}
 
 
 def test_auth_register_success_contract(client, monkeypatch):
@@ -76,37 +78,39 @@ def test_auth_register_success_contract(client, monkeypatch):
     StubUser.query.count.return_value = 1
 
     session = MagicMock()
-    hash_password = MagicMock(return_value='hashed-password')
-    generate_tokens = MagicMock(return_value={
-        'access_token': 'access-token',
-        'refresh_token': 'refresh-token',
-    })
+    hash_password = MagicMock(return_value="hashed-password")
+    generate_tokens = MagicMock(
+        return_value={
+            "access_token": "access-token",
+            "refresh_token": "refresh-token",
+        }
+    )
 
-    monkeypatch.setattr(auth_module, 'User', StubUser)
-    monkeypatch.setattr(auth_module.settings_service, 'get_default_role', MagicMock(return_value='developer'))
-    monkeypatch.setattr(auth_module.audit_service, 'record', MagicMock())
-    monkeypatch.setattr(auth_module, 'hash_password', hash_password)
-    monkeypatch.setattr(auth_module, 'generate_tokens', generate_tokens)
-    monkeypatch.setattr(auth_module.db, 'session', session, raising=False)
+    monkeypatch.setattr(auth_module, "User", StubUser)
+    monkeypatch.setattr(auth_module.settings_service, "get_default_role", MagicMock(return_value="developer"))
+    monkeypatch.setattr(auth_module.audit_service, "record", MagicMock())
+    monkeypatch.setattr(auth_module, "hash_password", hash_password)
+    monkeypatch.setattr(auth_module, "generate_tokens", generate_tokens)
+    monkeypatch.setattr(auth_module.db, "session", session, raising=False)
 
     response = client.post(
-        '/api/v1/auth/register',
+        "/api/v1/auth/register",
         json={
-            'name': 'Integration User',
-            'email': 'integration@example.com',
-            'password': 'password123',
-            'role': 'developer',
+            "name": "Integration User",
+            "email": "integration@example.com",
+            "password": "password123",
+            "role": "developer",
         },
     )
 
     assert response.status_code == 201
     payload = response.get_json()
-    assert payload['message'] == 'User registered successfully'
-    assert payload['user']['id'] == 101
-    assert payload['user']['email'] == 'integration@example.com'
+    assert payload["message"] == "User registered successfully"
+    assert payload["user"]["id"] == 101
+    assert payload["user"]["email"] == "integration@example.com"
 
-    hash_password.assert_called_once_with('password123')
-    generate_tokens.assert_called_once_with(101, {'role': 'developer'})
+    hash_password.assert_called_once_with("password123")
+    generate_tokens.assert_called_once_with(101, {"role": "developer"})
     session.add.assert_called_once()
     session.commit.assert_called_once_with()
 
@@ -114,11 +118,11 @@ def test_auth_register_success_contract(client, monkeypatch):
 def test_auth_login_success_returns_token_and_github_flags(client, monkeypatch):
     user = SimpleNamespace(
         id=7,
-        name='Login User',
-        email='login@example.com',
-        password='stored-hash',
-        role='developer',
-        github_username='octocat',
+        name="Login User",
+        email="login@example.com",
+        password="stored-hash",
+        role="developer",
+        github_username="octocat",
     )
 
     class StubUser:
@@ -131,30 +135,32 @@ def test_auth_login_success_returns_token_and_github_flags(client, monkeypatch):
     StubGitHubToken.query.filter_by.return_value.first.return_value = None
 
     verify_password = MagicMock(return_value=True)
-    generate_tokens = MagicMock(return_value={
-        'access_token': 'login-access-token',
-        'refresh_token': 'login-refresh-token',
-    })
+    generate_tokens = MagicMock(
+        return_value={
+            "access_token": "login-access-token",
+            "refresh_token": "login-refresh-token",
+        }
+    )
 
-    monkeypatch.setattr(auth_module, 'User', StubUser)
-    monkeypatch.setattr(auth_module, 'verify_password', verify_password)
-    monkeypatch.setattr(auth_module, 'generate_tokens', generate_tokens)
-    monkeypatch.setattr(models_module, 'GitHubToken', StubGitHubToken)
+    monkeypatch.setattr(auth_module, "User", StubUser)
+    monkeypatch.setattr(auth_module, "verify_password", verify_password)
+    monkeypatch.setattr(auth_module, "generate_tokens", generate_tokens)
+    monkeypatch.setattr(models_module, "GitHubToken", StubGitHubToken)
 
     response = client.post(
-        '/api/v1/auth/login',
-        json={'email': 'login@example.com', 'password': 'password123'},
+        "/api/v1/auth/login",
+        json={"email": "login@example.com", "password": "password123"},
     )
 
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload['message'] == 'Login successful'
-    assert payload['user']['id'] == 7
-    assert payload['user']['token'] == 'login-access-token'
-    assert payload['user']['github_connected'] is False
+    assert payload["message"] == "Login successful"
+    assert payload["user"]["id"] == 7
+    assert payload["user"]["token"] == "login-access-token"
+    assert payload["user"]["github_connected"] is False
 
-    verify_password.assert_called_once_with('password123', 'stored-hash')
-    generate_tokens.assert_called_once_with(7, {'role': 'developer'})
+    verify_password.assert_called_once_with("password123", "stored-hash")
+    generate_tokens.assert_called_once_with(7, {"role": "developer"})
 
 
 def test_auth_token_route_rejects_unknown_user(client, monkeypatch):
@@ -162,25 +168,25 @@ def test_auth_token_route_rejects_unknown_user(client, monkeypatch):
         query = MagicMock()
 
     StubUser.query.filter_by.return_value.first.return_value = None
-    monkeypatch.setattr(auth_module, 'User', StubUser)
+    monkeypatch.setattr(auth_module, "User", StubUser)
 
     response = client.post(
-        '/api/v1/auth/token',
-        json={'email': 'missing@example.com', 'password': 'password123'},
+        "/api/v1/auth/token",
+        json={"email": "missing@example.com", "password": "password123"},
     )
 
     assert response.status_code == 401
-    assert response.get_json()['message'] == 'Invalid email or password'
+    assert response.get_json()["message"] == "Invalid email or password"
 
 
 def test_auth_refresh_and_logout_routes_with_jwt(client, app):
-    refresh_response = client.post('/api/v1/auth/refresh', headers=refresh_headers(app, user_id=42))
+    refresh_response = client.post("/api/v1/auth/refresh", headers=refresh_headers(app, user_id=42))
     assert refresh_response.status_code == 200
-    assert 'token' in refresh_response.get_json()
+    assert "token" in refresh_response.get_json()
 
-    logout_response = client.post('/api/v1/auth/logout', headers=auth_headers(app, user_id=42))
+    logout_response = client.post("/api/v1/auth/logout", headers=auth_headers(app, user_id=42))
     assert logout_response.status_code == 200
-    assert logout_response.get_json()['message'] == 'Logout successful'
+    assert logout_response.get_json()["message"] == "Logout successful"
 
 
 def test_socket_room_flow_and_broadcast_events(app_and_socket, app):
@@ -195,46 +201,46 @@ def test_socket_room_flow_and_broadcast_events(app_and_socket, app):
     assert client_one.is_connected()
     assert client_two.is_connected()
 
-    register_one = client_one.emit('register', {}, callback=True)
-    register_two = client_two.emit('register', {}, callback=True)
-    assert register_one['status'] == 'success'
-    assert register_two['status'] == 'success'
+    register_one = client_one.emit("register", {}, callback=True)
+    register_two = client_two.emit("register", {}, callback=True)
+    assert register_one["status"] == "success"
+    assert register_two["status"] == "success"
 
-    join_one = client_one.emit('join_project', {'project_id': 88}, callback=True)
-    join_two = client_two.emit('join_project', {'project_id': 88}, callback=True)
-    assert join_one['status'] == 'success'
-    assert join_two['status'] == 'success'
+    join_one = client_one.emit("join_project", {"project_id": 88}, callback=True)
+    join_two = client_two.emit("join_project", {"project_id": 88}, callback=True)
+    assert join_one["status"] == "success"
+    assert join_two["status"] == "success"
     assert set(socket_module.project_rooms[88]) == {1, 2}
 
     task_update_ack = client_one.emit(
-        'task_update',
-        {'project_id': 88, 'task_id': 9, 'update_type': 'completed', 'timestamp': '2026-04-20T10:00:00Z'},
+        "task_update",
+        {"project_id": 88, "task_id": 9, "update_type": "completed", "timestamp": "2026-04-20T10:00:00Z"},
         callback=True,
     )
-    assert task_update_ack['status'] == 'success'
+    assert task_update_ack["status"] == "success"
 
     comment_ack = client_one.emit(
-        'comment_added',
+        "comment_added",
         {
-            'project_id': 88,
-            'task_id': 9,
-            'comment_id': 33,
-            'mentioned_users': [2],
-            'timestamp': '2026-04-20T10:01:00Z',
+            "project_id": 88,
+            "task_id": 9,
+            "comment_id": 33,
+            "mentioned_users": [2],
+            "timestamp": "2026-04-20T10:01:00Z",
         },
         callback=True,
     )
-    assert comment_ack['status'] == 'success'
+    assert comment_ack["status"] == "success"
 
     project_update_ack = client_one.emit(
-        'project_updated',
-        {'project_id': 88, 'update_type': 'member_added', 'timestamp': '2026-04-20T10:02:00Z'},
+        "project_updated",
+        {"project_id": 88, "update_type": "member_added", "timestamp": "2026-04-20T10:02:00Z"},
         callback=True,
     )
-    assert project_update_ack['status'] == 'success'
+    assert project_update_ack["status"] == "success"
 
-    leave_two = client_two.emit('leave_project', {'project_id': 88}, callback=True)
-    assert leave_two['status'] == 'success'
+    leave_two = client_two.emit("leave_project", {"project_id": 88}, callback=True)
+    assert leave_two["status"] == "success"
     assert 2 not in socket_module.project_rooms[88]
 
     client_one.disconnect()
@@ -253,19 +259,19 @@ def test_socket_handlers_validate_required_payload_fields(app_and_socket, app):
     ws_client = socketio.test_client(app, headers=auth_headers(app, user_id=3))
     assert ws_client.is_connected()
 
-    ws_client.emit('register', {}, callback=True)
+    ws_client.emit("register", {}, callback=True)
 
-    join_error = ws_client.emit('join_project', {}, callback=True)
-    assert join_error['status'] == 'error'
-    assert join_error['message'] == 'Project ID required'
+    join_error = ws_client.emit("join_project", {}, callback=True)
+    assert join_error["status"] == "error"
+    assert join_error["message"] == "Project ID required"
 
-    comment_error = ws_client.emit('comment_added', {'project_id': 1, 'task_id': 1}, callback=True)
-    assert comment_error['status'] == 'error'
-    assert comment_error['message'] == 'Missing required data'
+    comment_error = ws_client.emit("comment_added", {"project_id": 1, "task_id": 1}, callback=True)
+    assert comment_error["status"] == "error"
+    assert comment_error["message"] == "Missing required data"
 
-    project_error = ws_client.emit('project_updated', {}, callback=True)
-    assert project_error['status'] == 'error'
-    assert project_error['message'] == 'Project ID required'
+    project_error = ws_client.emit("project_updated", {}, callback=True)
+    assert project_error["status"] == "error"
+    assert project_error["message"] == "Project ID required"
 
     ws_client.disconnect()
 
@@ -273,23 +279,23 @@ def test_socket_handlers_validate_required_payload_fields(app_and_socket, app):
 def test_dashboard_client_route_returns_computed_task_stats(client, app, monkeypatch):
     user = SimpleNamespace(
         id=21,
-        name='Client User',
-        role='developer',
-        projects=SimpleNamespace(all=lambda: [SimpleNamespace(id=5, name='Project A', status='active')]),
+        name="Client User",
+        role="developer",
+        projects=SimpleNamespace(all=lambda: [SimpleNamespace(id=5, name="Project A", status="active")]),
     )
 
     due_task = SimpleNamespace(
         id=9,
-        title='Due Task',
+        title="Due Task",
         deadline=datetime(2099, 1, 1),
-        status='in_progress',
+        status="in_progress",
         project_id=5,
     )
 
     assigned_tasks = [
-        SimpleNamespace(status='todo'),
-        SimpleNamespace(status='done'),
-        SimpleNamespace(status='completed'),
+        SimpleNamespace(status="todo"),
+        SimpleNamespace(status="done"),
+        SimpleNamespace(status="completed"),
     ]
 
     class StubUser:
@@ -297,38 +303,72 @@ def test_dashboard_client_route_returns_computed_task_stats(client, app, monkeyp
 
     StubUser.query.get.return_value = user
 
-    monkeypatch.setattr(dashboard_controller, 'User', StubUser)
-    monkeypatch.setattr(dashboard_controller, 'get_user_tasks', MagicMock(return_value=assigned_tasks))
-    monkeypatch.setattr(dashboard_controller, 'get_tasks_due_soon', MagicMock(return_value=[due_task]))
+    monkeypatch.setattr(dashboard_controller, "User", StubUser)
+    monkeypatch.setattr(dashboard_controller, "get_user_tasks", MagicMock(return_value=assigned_tasks))
+    monkeypatch.setattr(dashboard_controller, "get_tasks_due_soon", MagicMock(return_value=[due_task]))
 
-    response = client.get('/api/v1/dashboard/client', headers=auth_headers(app, role='developer', user_id=21))
+    response = client.get("/api/v1/dashboard/client", headers=auth_headers(app, role="developer", user_id=21))
 
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload['tasks']['total'] == 3
-    assert payload['tasks']['todo'] == 1
-    assert payload['tasks']['done'] == 2
-    assert payload['tasks_due_soon'][0]['id'] == 9
-    assert payload['projects'][0]['name'] == 'Project A'
+    assert payload["tasks"]["total"] == 3
+    assert payload["tasks"]["todo"] == 1
+    assert payload["tasks"]["done"] == 2
+    assert payload["tasks_due_soon"][0]["id"] == 9
+    assert payload["projects"][0]["name"] == "Project A"
 
 
 def test_dashboard_client_route_scopes_team_leads_to_their_projects(client, app, monkeypatch):
-    shared_project = SimpleNamespace(id=5, name='Shared Project', status='active', created_by=21)
-    created_project = SimpleNamespace(id=8, name='Created Project', status='active', created_by=21)
+    shared_project = SimpleNamespace(id=5, name="Shared Project", status="active", created_by=21)
+    created_project = SimpleNamespace(id=8, name="Created Project", status="active", created_by=21)
     user = SimpleNamespace(
         id=21,
-        name='Team Lead',
-        role='team_lead',
+        name="Team Lead",
+        role="team_lead",
         projects=SimpleNamespace(all=lambda: [shared_project]),
     )
 
     scoped_tasks = [
-        SimpleNamespace(id=1, title='One', status='todo', project_id=5, updated_at=datetime(2099, 1, 3), created_at=datetime(2099, 1, 2), deadline=datetime(2099, 1, 6), assigned_to=None),
-        SimpleNamespace(id=2, title='Two', status='done', project_id=8, updated_at=datetime(2099, 1, 4), created_at=datetime(2099, 1, 1), deadline=datetime(2099, 1, 7), assigned_to=None),
-        SimpleNamespace(id=3, title='Three', status='in_progress', project_id=8, updated_at=datetime(2099, 1, 5), created_at=datetime(2099, 1, 5), deadline=datetime(2099, 1, 8), assigned_to=None),
+        SimpleNamespace(
+            id=1,
+            title="One",
+            status="todo",
+            project_id=5,
+            updated_at=datetime(2099, 1, 3),
+            created_at=datetime(2099, 1, 2),
+            deadline=datetime(2099, 1, 6),
+            assigned_to=None,
+        ),
+        SimpleNamespace(
+            id=2,
+            title="Two",
+            status="done",
+            project_id=8,
+            updated_at=datetime(2099, 1, 4),
+            created_at=datetime(2099, 1, 1),
+            deadline=datetime(2099, 1, 7),
+            assigned_to=None,
+        ),
+        SimpleNamespace(
+            id=3,
+            title="Three",
+            status="in_progress",
+            project_id=8,
+            updated_at=datetime(2099, 1, 5),
+            created_at=datetime(2099, 1, 5),
+            deadline=datetime(2099, 1, 8),
+            assigned_to=None,
+        ),
     ]
-    due_tasks = [SimpleNamespace(id=2, title='Two', deadline=datetime(2099, 1, 7), status='done', project_id=8)]
-    github_link = SimpleNamespace(id=1, task=SimpleNamespace(title='Two'), repository=SimpleNamespace(repo_name='Repo', repo_url='https://github.com/org/repo'), pull_request_number=None, issue_number=7, created_at=datetime(2099, 1, 6))
+    due_tasks = [SimpleNamespace(id=2, title="Two", deadline=datetime(2099, 1, 7), status="done", project_id=8)]
+    github_link = SimpleNamespace(
+        id=1,
+        task=SimpleNamespace(title="Two"),
+        repository=SimpleNamespace(repo_name="Repo", repo_url="https://github.com/org/repo"),
+        pull_request_number=None,
+        issue_number=7,
+        created_at=datetime(2099, 1, 6),
+    )
 
     class StubUser:
         query = MagicMock()
@@ -365,38 +405,38 @@ def test_dashboard_client_route_scopes_team_leads_to_their_projects(client, app,
     link_query.all.return_value = [github_link]
     StubLink.query = link_query
 
-    monkeypatch.setattr(dashboard_controller, 'User', StubUser)
-    monkeypatch.setattr(dashboard_controller, 'Project', StubProject)
-    monkeypatch.setattr(dashboard_controller, 'Task', StubTask)
-    monkeypatch.setattr(dashboard_controller, 'TaskGitHubLink', StubLink)
-    monkeypatch.setattr(dashboard_controller, 'GitHubRepository', StubRepo)
-    monkeypatch.setattr(dashboard_controller, 'get_tasks_due_soon', MagicMock(return_value=due_tasks))
+    monkeypatch.setattr(dashboard_controller, "User", StubUser)
+    monkeypatch.setattr(dashboard_controller, "Project", StubProject)
+    monkeypatch.setattr(dashboard_controller, "Task", StubTask)
+    monkeypatch.setattr(dashboard_controller, "TaskGitHubLink", StubLink)
+    monkeypatch.setattr(dashboard_controller, "GitHubRepository", StubRepo)
+    monkeypatch.setattr(dashboard_controller, "get_tasks_due_soon", MagicMock(return_value=due_tasks))
 
-    response = client.get('/api/v1/dashboard/client', headers=auth_headers(app, role='team_lead', user_id=21))
+    response = client.get("/api/v1/dashboard/client", headers=auth_headers(app, role="team_lead", user_id=21))
 
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload['tasks']['total'] == 3
-    assert payload['tasks']['done'] == 1
-    assert [project['name'] for project in payload['projects']] == ['Shared Project', 'Created Project']
-    assert len(payload['recentTasks']) == 3
-    assert payload['tasks_due_soon'][0]['id'] == 2
+    assert payload["tasks"]["total"] == 3
+    assert payload["tasks"]["done"] == 1
+    assert [project["name"] for project in payload["projects"]] == ["Shared Project", "Created Project"]
+    assert len(payload["recentTasks"]) == 3
+    assert payload["tasks_due_soon"][0]["id"] == 2
 
 
 def test_dashboard_admin_route_returns_user_and_task_totals(client, app, monkeypatch):
-    admin_user = SimpleNamespace(id=1, name='Admin User', role='admin')
+    admin_user = SimpleNamespace(id=1, name="Admin User", role="admin")
     users = [
-        SimpleNamespace(role='admin'),
-        SimpleNamespace(role='developer'),
-        SimpleNamespace(role='team_lead'),
+        SimpleNamespace(role="admin"),
+        SimpleNamespace(role="developer"),
+        SimpleNamespace(role="team_lead"),
     ]
     tasks = [
-        SimpleNamespace(status='backlog'),
-        SimpleNamespace(status='todo'),
-        SimpleNamespace(status='in_progress'),
-        SimpleNamespace(status='review'),
-        SimpleNamespace(status='done'),
-        SimpleNamespace(status='completed'),
+        SimpleNamespace(status="backlog"),
+        SimpleNamespace(status="todo"),
+        SimpleNamespace(status="in_progress"),
+        SimpleNamespace(status="review"),
+        SimpleNamespace(status="done"),
+        SimpleNamespace(status="completed"),
     ]
 
     class StubUser:
@@ -413,36 +453,50 @@ def test_dashboard_admin_route_returns_user_and_task_totals(client, app, monkeyp
     StubTask.query.all.return_value = tasks
     StubProject.query.count.return_value = 4
 
-    monkeypatch.setattr(dashboard_controller, 'User', StubUser)
-    monkeypatch.setattr(dashboard_controller, 'Task', StubTask)
-    monkeypatch.setattr(dashboard_controller, 'Project', StubProject)
+    monkeypatch.setattr(dashboard_controller, "User", StubUser)
+    monkeypatch.setattr(dashboard_controller, "Task", StubTask)
+    monkeypatch.setattr(dashboard_controller, "Project", StubProject)
 
-    response = client.get('/api/v1/dashboard/admin', headers=auth_headers(app, role='admin', user_id=1))
+    response = client.get("/api/v1/dashboard/admin", headers=auth_headers(app, role="admin", user_id=1))
 
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload['users']['total'] == 3
-    assert payload['users']['admin'] == 1
-    assert payload['users']['developer'] == 1
-    assert payload['users']['team_lead'] == 1
-    assert payload['tasks']['total'] == 6
-    assert payload['tasks']['backlog'] == 1
-    assert payload['tasks']['done'] == 2
-    assert payload['projects']['total'] == 4
+    assert payload["users"]["total"] == 3
+    assert payload["users"]["admin"] == 1
+    assert payload["users"]["developer"] == 1
+    assert payload["users"]["team_lead"] == 1
+    assert payload["tasks"]["total"] == 6
+    assert payload["tasks"]["backlog"] == 1
+    assert payload["tasks"]["done"] == 2
+    assert payload["projects"]["total"] == 4
 
 
 def test_dashboard_project_route_returns_project_metrics(client, app, monkeypatch):
     project = SimpleNamespace(
         id=11,
-        name='Project Delta',
-        description='Important project',
-        status='active',
-        team_members=SimpleNamespace(all=lambda: [SimpleNamespace(id=1, name='Developer One', role='developer')]),
+        name="Project Delta",
+        description="Important project",
+        status="active",
+        team_members=SimpleNamespace(all=lambda: [SimpleNamespace(id=1, name="Developer One", role="developer")]),
     )
 
     project_tasks = [
-        SimpleNamespace(id=1, title='Task One', status='done', assigned_to=1, deadline=datetime(2099, 2, 1), updated_at=datetime(2099, 1, 1)),
-        SimpleNamespace(id=2, title='Task Two', status='todo', assigned_to=1, deadline=datetime(2099, 2, 2), updated_at=datetime(2099, 1, 2)),
+        SimpleNamespace(
+            id=1,
+            title="Task One",
+            status="done",
+            assigned_to=1,
+            deadline=datetime(2099, 2, 1),
+            updated_at=datetime(2099, 1, 1),
+        ),
+        SimpleNamespace(
+            id=2,
+            title="Task Two",
+            status="todo",
+            assigned_to=1,
+            deadline=datetime(2099, 2, 2),
+            updated_at=datetime(2099, 1, 2),
+        ),
     ]
 
     class StubProject:
@@ -450,20 +504,22 @@ def test_dashboard_project_route_returns_project_metrics(client, app, monkeypatc
 
     StubProject.query.get.return_value = project
 
-    monkeypatch.setattr(dashboard_controller, 'Project', StubProject)
-    monkeypatch.setattr(dashboard_controller, 'get_project_tasks', MagicMock(return_value=project_tasks))
-    monkeypatch.setattr(dashboard_controller, 'get_project_tasks_due_soon', MagicMock(return_value=project_tasks[:1]))
-    monkeypatch.setattr(dashboard_controller, 'get_recent_updated_project_tasks', MagicMock(return_value=project_tasks[:1]))
+    monkeypatch.setattr(dashboard_controller, "Project", StubProject)
+    monkeypatch.setattr(dashboard_controller, "get_project_tasks", MagicMock(return_value=project_tasks))
+    monkeypatch.setattr(dashboard_controller, "get_project_tasks_due_soon", MagicMock(return_value=project_tasks[:1]))
+    monkeypatch.setattr(
+        dashboard_controller, "get_recent_updated_project_tasks", MagicMock(return_value=project_tasks[:1])
+    )
 
-    response = client.get('/api/v1/dashboard/projects/11', headers=auth_headers(app, role='developer', user_id=1))
+    response = client.get("/api/v1/dashboard/projects/11", headers=auth_headers(app, role="developer", user_id=1))
 
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload['project']['name'] == 'Project Delta'
-    assert payload['task_stats']['total'] == 2
-    assert payload['task_stats']['done'] == 1
-    assert payload['project']['completion_percentage'] == 50.0
-    assert payload['team_members'][0]['name'] == 'Developer One'
+    assert payload["project"]["name"] == "Project Delta"
+    assert payload["task_stats"]["total"] == 2
+    assert payload["task_stats"]["done"] == 1
+    assert payload["project"]["completion_percentage"] == 50.0
+    assert payload["team_members"][0]["name"] == "Developer One"
 
 
 def test_dashboard_project_route_returns_404_for_missing_project(client, app, monkeypatch):
@@ -471,9 +527,9 @@ def test_dashboard_project_route_returns_404_for_missing_project(client, app, mo
         query = MagicMock()
 
     StubProject.query.get.return_value = None
-    monkeypatch.setattr(dashboard_controller, 'Project', StubProject)
+    monkeypatch.setattr(dashboard_controller, "Project", StubProject)
 
-    response = client.get('/api/v1/dashboard/projects/999', headers=auth_headers(app, role='developer', user_id=1))
+    response = client.get("/api/v1/dashboard/projects/999", headers=auth_headers(app, role="developer", user_id=1))
 
     assert response.status_code == 404
-    assert response.get_json()['message'] == 'Project not found'
+    assert response.get_json()["message"] == "Project not found"

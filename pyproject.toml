@@ -1,0 +1,26 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/**" = ["F401", "F811", "E402", "E712", "F841", "N806", "N805", "SIM116", "SIM117"]
+"backend/tests/integration/**" = ["F841", "N806", "SIM117"]
+"backend/tests/unit/**" = ["F841", "N806", "SIM117"]
+"backend/src/api/controllers/__init__.py" = ["F403"]
+"backend/src/api/middlewares/__init__.py" = ["F401"]
+"backend/src/api/routes/__init__.py" = ["E402"]
+"backend/src/api/__init__.py" = ["E402"]
+"backend/src/app.py" = ["E402"]
+"backend/src/wsgi.py" = ["E402"]
+"backend/src/db/scripts/setup_database.py" = ["F403"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+pythonpath = ["backend"]
+testpaths = ["backend/tests"]

@@ -8,7 +8,7 @@ describe('Client Task Flows', () => {
       statusCode: 200,
       body: {
         token: 'fake-token-123',
-        user: { id: 2, name: 'Client User', email: 'client@example.com', role: 'client', github_connected: false }
+        user: { id: 2, name: 'Client User', email: 'client@example.com', role: 'developer', github_connected: false }
       }
     }).as('loginReq');
 
@@ -20,6 +20,18 @@ describe('Client Task Flows', () => {
         { id: 11, title: 'Fix bug', description: 'Squash it', status: 'in_progress', priority: 'medium', progress: 50, deadline: null }
       ]
     }).as('getTasks');
+
+    // Stub notification context fetch (fires after login)
+    cy.intercept('GET', '**/api/v1/notifications', {
+      statusCode: 200,
+      body: []
+    });
+
+    // Stub dashboard client data
+    cy.intercept('GET', '**/api/v1/dashboard/client', {
+      statusCode: 200,
+      body: { tasks: { total: 0 }, repositories: [] }
+    });
 
     // Skip the github connection check
     cy.intercept('GET', '**/api/v1/github/status', {
@@ -35,15 +47,15 @@ describe('Client Task Flows', () => {
     
     // Clear out any modals
     cy.get('body').then(($body) => {
-      if ($body.find('button:contains("Skip for now")').length > 0) {
-        cy.contains('button', 'Skip for now').click();
+      if ($body.find('button:contains("Skip For Now")').length > 0) {
+        cy.contains('button', 'Skip For Now').click();
       }
     });
   });
 
   it('navigates to tasks and filters them by priority', () => {
-    cy.contains('Your Tasks').click();
-    cy.wait('@getTasks');
+    cy.visit('/tasks');
+    cy.wait('@getTasks', { timeout: 10000 });
 
     cy.contains('Learn Cypress').should('be.visible');
     cy.contains('Fix bug').should('be.visible');
@@ -58,7 +70,7 @@ describe('Client Task Flows', () => {
     // Stub task details
     cy.intercept('GET', '**/api/v1/tasks/10', {
       statusCode: 200,
-      body: { id: 10, title: 'Learn Cypress', description: 'Write E2E tests', status: 'todo', priority: 'high', progress: 0, deadline: '2099-01-01T00:00:00Z', comments: [], github_links: [] }
+      body: { id: 10, title: 'Learn Cypress', description: 'Write E2E tests', status: 'todo', priority: 'high', progress: 0, deadline: '2099-01-01T00:00:00Z', assigned_to: 2, comments: [], github_links: [] }
     }).as('getTaskDetail');
 
     cy.intercept('GET', '**/api/v1/tasks/10/comments', {
@@ -81,13 +93,28 @@ describe('Client Task Flows', () => {
     cy.contains('td', 'Learn Cypress').click();
     cy.wait(['@getTaskDetail', '@getComments']);
 
-    cy.contains('h2', 'Learn Cypress').should('be.visible');
-    cy.contains('button', 'Start Progress').click();
+    cy.contains('h1', 'Learn Cypress').should('be.visible');
     
-    cy.wait('@updateTask').its('request.body').should('deep.include', { status: 'in_progress', progress: 10 });
+    // Update progress slider to 30%
+    // Use native value setter (Cypress-recommended for React controlled inputs) +
+    // wait for React to commit state (UI shows "30%") before firing mouseup
+    cy.get('input[type="range"]').trigger('mousedown');
+    cy.get('input[type="range"]').then($el => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call($el[0], 30);
+    }).trigger('input');
+    cy.contains('span.font-bold', '30%').should('be.visible');
+    cy.get('input[type="range"]').trigger('mouseup');
+    cy.wait('@updateTask').its('request.body').should('deep.include', { progress: 30 });
     
-    // Update progress slider
-    cy.get('input[type="range"]').invoke('val', 80).trigger('change');
+    // Update progress slider to 80%
+    cy.get('input[type="range"]').trigger('mousedown');
+    cy.get('input[type="range"]').then($el => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call($el[0], 80);
+    }).trigger('input');
+    cy.contains('span.font-bold', '80%').should('be.visible');
+    cy.get('input[type="range"]').trigger('mouseup');
     cy.wait('@updateTask').its('request.body').should('deep.include', { progress: 80 });
   });
 });

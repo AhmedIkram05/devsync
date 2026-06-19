@@ -83,12 +83,10 @@ describe('fetchWithAuth additional branches', () => {
     };
     global.fetch = jest.fn(() => Promise.resolve(resp));
 
-    await expect(fetchWithAuth('/test')).rejects.toThrow('Authentication failed');
-    try {
-      await fetchWithAuth('/test');
-    } catch (error) {
-      expect(error.isAuthError).toBe(true);
-    }
+    await expect(fetchWithAuth('/test')).rejects.toMatchObject({
+      message: 'Authentication failed. Token may be expired or invalid.',
+      isAuthError: true
+    });
   });
 
   test('401 on non-critical endpoint returns graceful error object', async () => {
@@ -121,13 +119,10 @@ describe('fetchWithAuth additional branches', () => {
       get: () => ''
     });
 
-    try {
-      await fetchWithAuth('/test');
-    } catch (error) {
-      expect(error.isAuthError).toBe(true);
-      // In test env the href setter may not work, just verify the error is thrown
-      expect(error.message).toMatch(/Forbidden/);
-    }
+    await expect(fetchWithAuth('/test')).rejects.toMatchObject({
+      isAuthError: true,
+      message: expect.stringMatching(/Forbidden/)
+    });
   });
 
   test('429 rate limit error includes retryAfter', async () => {
@@ -140,13 +135,11 @@ describe('fetchWithAuth additional branches', () => {
     };
     global.fetch = jest.fn(() => Promise.resolve(resp));
 
-    await expect(fetchWithAuth('/test')).rejects.toThrow('Rate limit exceeded');
-    try {
-      await fetchWithAuth('/test');
-    } catch (error) {
-      expect(error.status).toBe(429);
-      expect(error.retryAfter).toBe(60);
-    }
+    await expect(fetchWithAuth('/test')).rejects.toMatchObject({
+      message: 'Rate limit exceeded. Too many requests.',
+      status: 429,
+      retryAfter: 60
+    });
   });
 
   test('400 on GitHub endpoint parses error and includes data', async () => {
@@ -158,13 +151,11 @@ describe('fetchWithAuth additional branches', () => {
     };
     global.fetch = jest.fn(() => Promise.resolve(resp));
 
-    await expect(fetchWithAuth('github/connect')).rejects.toThrow('Invalid GitHub repository');
-    try {
-      await fetchWithAuth('github/connect');
-    } catch (error) {
-      expect(error.isGitHubError).toBe(true);
-      expect(error.data.message).toBe('Invalid GitHub repository');
-    }
+    await expect(fetchWithAuth('github/connect')).rejects.toMatchObject({
+      message: 'Invalid GitHub repository',
+      isGitHubError: true,
+      data: { message: 'Invalid GitHub repository' }
+    });
   });
 
   test('returns parsed JSON response on success', async () => {

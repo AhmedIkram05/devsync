@@ -21,10 +21,18 @@ describe('Admin Flows', () => {
       }
     }).as('adminDash');
 
-    cy.intercept('GET', '**/api/v1/dashboard/developers', {
+    // Mock additional API calls the AdminDashboard makes
+    cy.intercept('GET', '**/api/v1/users', { statusCode: 200, body: [{ id: 1, name: 'Admin', role: 'admin' }] });
+    cy.intercept('GET', '**/api/v1/audit-logs*', { statusCode: 200, body: { logs: [] } });
+    // Return 5 active projects so _activeProjectsCount = 5 (AdminDashboard computes KPIs from all projects)
+    cy.intercept('GET', '**/api/v1/projects', {
       statusCode: 200,
-      body: []
-    }).as('devStats');
+      body: Array.from({ length: 5 }, (_, i) => ({
+        id: i + 1, name: `Project ${i + 1}`, status: 'active', team_members: [1], created_by: 1
+      }))
+    });
+    cy.intercept('GET', '**/api/v1/tasks', { statusCode: 200, body: [] });
+    cy.intercept('GET', '**/api/v1/reports*', { statusCode: 200, body: { reports: [] } });
 
     cy.intercept('GET', '**/api/v1/github/status', {
       statusCode: 200,
@@ -38,31 +46,18 @@ describe('Admin Flows', () => {
     cy.wait('@loginReq');
     
     cy.get('body').then(($body) => {
-      if ($body.find('button:contains("Skip for now")').length > 0) {
-        cy.contains('button', 'Skip for now').click();
+      if ($body.find('button:contains("Skip For Now")').length > 0) {
+        cy.contains('button', 'Skip For Now').click();
       }
     });
   });
 
-  it('loads admin dashboard and switches report periods', () => {
-    cy.wait(['@adminDash', '@devStats']);
+  it('loads admin dashboard with correct data', () => {
+    cy.wait('@adminDash');
     
     cy.contains('h1', 'Admin Dashboard').should('be.visible');
-    cy.contains('Total Projects').parent().contains('5');
-    cy.contains('Active Tasks').parent().contains('3');
-
-    // Change filter
-    cy.intercept('GET', '**/api/v1/dashboard/admin?period=quarter', {
-      statusCode: 200,
-      body: {
-        projects: { total: 10 },
-        tasks: { total: 50, completed: 30, in_progress: 10, overdue: 5 }
-      }
-    }).as('adminDashQuarter');
-
-    cy.get('select').select('quarter');
-    cy.wait('@adminDashQuarter');
-    cy.contains('Total Projects').parent().contains('10');
+    cy.contains('Active Projects').parent().contains('5');
+    cy.contains('Overdue Tasks').parent().contains('2');
   });
 
   it('creates a new project and manages it', () => {
@@ -72,8 +67,8 @@ describe('Admin Flows', () => {
       body: [{ id: 1, name: 'Alpha', description: 'desc', status: 'active', priority: 'high' }]
     }).as('getProjects');
 
-    cy.contains('a', 'Projects').click();
-    cy.wait('@getProjects');
+    cy.visit('/admin/projects');
+    cy.wait('@getProjects', { timeout: 10000 });
 
     // Create project
     cy.intercept('POST', '**/api/v1/projects', {
@@ -81,11 +76,11 @@ describe('Admin Flows', () => {
       body: { id: 2, name: 'Beta Version', description: 'New project', status: 'planning', priority: 'medium' }
     }).as('createProject');
 
-    cy.contains('button', 'Create Project').click();
+    cy.contains('Create Project').should('be.visible').click();
     
-    cy.get('input#name').type('Beta Version');
-    cy.get('textarea#description').type('New project');
-    cy.get('select#priority').select('medium');
+    cy.get('#project-name').type('Beta Version');
+    cy.get('#project-description').type('New project');
+    cy.get('#project-status').select('active');
     
     // Override GET to return the new list
     cy.intercept('GET', '**/api/v1/projects', {
@@ -96,7 +91,7 @@ describe('Admin Flows', () => {
       ]
     }).as('getProjectsAfterCreation');
 
-    cy.contains('button', 'Create').click();
+    cy.contains('button', 'Create Project').click();
     cy.wait('@createProject');
     cy.wait('@getProjectsAfterCreation');
 

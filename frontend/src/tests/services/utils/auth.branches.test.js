@@ -87,12 +87,12 @@ describe('auth.js utility functions', () => {
         })
       );
 
-      try {
-        await authApi.authApi.login({ email: 'invalid', password: 'pass' });
-      } catch (error) {
-        expect(error.status).toBe(400);
-        expect(error.data.field).toBe('email');
-      }
+      await expect(
+        authApi.authApi.login({ email: 'invalid', password: 'pass' })
+      ).rejects.toMatchObject({
+        status: 400,
+        data: { field: 'email' }
+      });
     });
   });
 
@@ -149,7 +149,7 @@ describe('auth.js utility functions', () => {
         })
       );
 
-      const result = await authApi.authApi.login({ email: 'user@test.com', password: 'pass' });
+      await authApi.authApi.login({ email: 'user@test.com', password: 'pass' });
       const stored = JSON.parse(localStorage.getItem('user'));
       expect(stored.token).toBe('token-abc');
       expect(stored.github_connected).toBe(false);
@@ -165,7 +165,7 @@ describe('auth.js utility functions', () => {
         })
       );
 
-      const result = await authApi.authApi.login({ email: 'user@test.com', password: 'pass' });
+      await authApi.authApi.login({ email: 'user@test.com', password: 'pass' });
       const stored = JSON.parse(localStorage.getItem('user'));
       expect(stored.token).toBe('nested-token');
     });

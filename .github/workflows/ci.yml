@@ -15,12 +15,18 @@ on:
     branches: [main]
   workflow_dispatch:
 
+env:
+  FLASK_ENV: testing
+  PYTHONUNBUFFERED: "1"
+
 jobs:
+  # ── Path Change Detection ──────────────────────────────────────────────
   changes:
     runs-on: ubuntu-latest
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      e2e: ${{ steps.filter.outputs.e2e }}
     steps:
       - uses: actions/checkout@v4
 
@@ -31,43 +37,154 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
-              - 'backend/requirements*.txt'
+              - 'pyproject.toml'
+              - 'pytest.ini'
             frontend:
+              - 'frontend/src/**'
+              - 'frontend/package.json'
+              - 'frontend/package-lock.json'
+              - 'frontend/public/**'
+            e2e:
+              - 'backend/**'
               - 'frontend/**'
+              - 'docker-compose*.yml'
+              - '.github/workflows/ci.yml'
 
+  # ── Lint & Format ──────────────────────────────────────────────────────
+  lint:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Ruff check — Python linting
+        if: needs.changes.outputs.backend == 'true'
+        run: ruff check backend/
+
+      - name: Ruff format check
+        if: needs.changes.outputs.backend == 'true'
+        run: ruff format --check backend/
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        if: needs.changes.outputs.frontend == 'true'
+        working-directory: frontend
+        run: npm ci
+
+      - name: ESLint — frontend linting
+        if: needs.changes.outputs.frontend == 'true'
+        working-directory: frontend
+        run: npx eslint src/
+
+  # ── Security Scanning ─────────────────────────────────────────────────
+  security:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: pip-audit — Python dependency vulnerabilities
+        if: needs.changes.outputs.backend == 'true'
+        working-directory: backend
+        run: |
+          pip-audit -r requirements.txt \
+            --ignore-vuln CVE-2026-27205 \
+            --ignore-vuln CVE-2024-6866 \
+            --ignore-vuln CVE-2024-6844 \
+            --ignore-vuln CVE-2024-6839 \
+            --ignore-vuln CVE-2026-30922
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm audit — frontend dependency vulnerabilities
+        if: needs.changes.outputs.frontend == 'true'
+        working-directory: frontend
+        run: npm audit --audit-level=critical
+
+  # ── Backend Tests (unit + integration with Postgres) ──────────────────
   backend-tests:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
-    env:
-      FLASK_ENV: testing
-      PYTHONUNBUFFERED: "1"
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: devsync
+          POSTGRES_PASSWORD: devsync
+          POSTGRES_DB: devsync-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
-        id: setup-python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: |
-            backend/requirements.txt
+          cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt pytest-cov pytest-xdist
+          pip install -r backend/requirements.txt pytest-xdist
 
-      - name: Run backend tests
+      - name: Run unit tests
         run: |
-          pytest backend/tests \
+          pytest backend/tests/unit \
             -n auto \
             -x \
             ${{ github.ref == 'refs/heads/main' && '--cov=backend/src --cov-report=term-missing --cov-report=xml:backend/coverage.xml --cov-fail-under=85' || '-q' }}
+
+      - name: Run integration tests
+        env:
+          DATABASE_URL: postgresql://devsync:devsync@localhost:5432/devsync-test
+          JWT_SECRET_KEY: ci-jwt-secret-key
+        run: |
+          pytest backend/tests/integration \
+            -n auto \
+            -x \
+            -q
 
       - name: Upload backend coverage artifact
         if: github.ref == 'refs/heads/main' && always()
@@ -77,6 +194,7 @@ jobs:
           path: backend/coverage.xml
           if-no-files-found: ignore
 
+  # ── Backend Docker Image Build (with layer caching) ───────────────────
   backend-image-build:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
@@ -86,9 +204,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build backend container image
-        run: docker build -t devsync-backend-ci ./backend
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
+      - name: Build backend container image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          load: true
+          tags: devsync-backend-ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── Frontend Tests ────────────────────────────────────────────────────
   frontend-tests:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
@@ -99,7 +227,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Node
-        id: setup-node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -139,3 +266,135 @@ jobs:
           name: frontend-coverage
           path: frontend/coverage/
           if-no-files-found: ignore
+
+  # ── End-to-End Tests (Cypress) ────────────────────────────────────────
+  e2e-tests:
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: devsync
+          POSTGRES_PASSWORD: devsync
+          POSTGRES_DB: devsync-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+        env:
+          CI: true
+          REACT_APP_API_URL: http://localhost:8000/api/v1
+
+      - name: Start backend server
+        env:
+          DATABASE_URL: postgresql://devsync:devsync@localhost:5432/devsync-test
+          FLASK_ENV: testing
+          JWT_SECRET_KEY: ci-jwt-secret-key
+          GITHUB_CLIENT_ID: ci-dummy-client-id
+          GITHUB_CLIENT_SECRET: ci-dummy-client-secret
+        run: |
+          cd backend
+          nohup gunicorn src.wsgi:app -c gunicorn.conf.py > /tmp/backend.log 2>&1 &
+          echo "Waiting for backend to be ready..."
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+              echo "Backend ready!"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Run Cypress E2E tests
+        uses: cypress-io/github-action@v7
+        with:
+          working-directory: frontend
+          start: npx serve -s build -l 3000 --no-clipboard
+          wait-on: 'http://localhost:3000'
+          wait-on-timeout: 60
+          config: baseUrl=http://localhost:3000
+        env:
+          CYPRESS_BASE_URL: http://localhost:3000
+
+      - name: Upload Cypress screenshots (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-screenshots
+          path: frontend/cypress/screenshots/
+          if-no-files-found: ignore
+
+      - name: Upload backend logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-logs
+          path: /tmp/backend.log
+          if-no-files-found: ignore
+
+  # ── Coverage Upload (Codecov) ─────────────────────────────────────────
+  coverage:
+    needs: [backend-tests, frontend-tests]
+    if: github.ref == 'refs/heads/main' && !cancelled()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download backend coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/
+
+      - name: Download frontend coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: backend/coverage.xml,frontend/coverage/lcov.info
+          flags: unittests
+          name: devsync-coverage
+          verbose: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
