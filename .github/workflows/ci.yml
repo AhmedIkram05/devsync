@@ -130,7 +130,7 @@ jobs:
       - name: npm audit — frontend dependency vulnerabilities
         if: needs.changes.outputs.frontend == 'true'
         working-directory: frontend
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=critical
 
   # ── Backend Tests (unit + integration with Postgres) ──────────────────
   backend-tests:

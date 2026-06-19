@@ -52,6 +52,9 @@
       "last 1 safari version"
     ]
   },
+  "overrides": {
+    "@tootallnate/once": "2.0.1"
+  },
   "devDependencies": {
     "@cypress/code-coverage": "^3.14.7",
     "@cypress/instrument-cra": "^1.4.0",

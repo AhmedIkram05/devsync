@@ -149,7 +149,7 @@ describe('auth.js utility functions', () => {
         })
       );
 
-      const result = await authApi.authApi.login({ email: 'user@test.com', password: 'pass' });
+      await authApi.authApi.login({ email: 'user@test.com', password: 'pass' });
       const stored = JSON.parse(localStorage.getItem('user'));
       expect(stored.token).toBe('token-abc');
       expect(stored.github_connected).toBe(false);
@@ -165,7 +165,7 @@ describe('auth.js utility functions', () => {
         })
       );
 
-      const result = await authApi.authApi.login({ email: 'user@test.com', password: 'pass' });
+      await authApi.authApi.login({ email: 'user@test.com', password: 'pass' });
       const stored = JSON.parse(localStorage.getItem('user'));
       expect(stored.token).toBe('nested-token');
     });

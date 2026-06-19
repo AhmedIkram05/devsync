@@ -96,12 +96,17 @@ describe('Client Task Flows', () => {
     cy.contains('h1', 'Learn Cypress').should('be.visible');
     
     // Update progress slider to 30%
-    // React 18 fires onChange on native 'input' event, and we need mousedown to set isDragging=true
-    cy.get('input[type="range"]').trigger('mousedown').invoke('val', 30).trigger('input').trigger('mouseup');
+    // React 18 batches setValue state updates — need wait(0) between input and mouseup so
+    // the state update from handleChange is committed before handleMouseUp reads it
+    cy.get('input[type="range"]').trigger('mousedown').invoke('val', 30).trigger('input');
+    cy.wait(0);
+    cy.get('input[type="range"]').trigger('mouseup');
     cy.wait('@updateTask').its('request.body').should('deep.include', { progress: 30 });
     
     // Update progress slider to 80%
-    cy.get('input[type="range"]').trigger('mousedown').invoke('val', 80).trigger('input').trigger('mouseup');
+    cy.get('input[type="range"]').trigger('mousedown').invoke('val', 80).trigger('input');
+    cy.wait(0);
+    cy.get('input[type="range"]').trigger('mouseup');
     cy.wait('@updateTask').its('request.body').should('deep.include', { progress: 80 });
   });
 });
