@@ -7,7 +7,7 @@ describe('GitHub Connect Flows', () => {
       statusCode: 200,
       body: {
         token: 'dev-token',
-        user: { id: 3, name: 'Dev', email: 'dev@example.com', role: 'client', github_connected: false }
+        user: { id: 3, name: 'Dev', email: 'dev@example.com', role: 'developer', github_connected: false }
       }
     }).as('loginReq');
 
@@ -25,9 +25,9 @@ describe('GitHub Connect Flows', () => {
 
   it('triggers GitHub connect prompt and redirect', () => {
     // Dashboard loads, prompt should appear
-    cy.contains('Connect Your GitHub Account').should('be.visible');
+    cy.contains('Connect GitHub Account').should('be.visible');
 
-    cy.intercept('GET', '**/api/v1/github/auth-url?user_id=3', {
+    cy.intercept('POST', '**/api/v1/github/connect', {
       statusCode: 200,
       body: { authorization_url: '/mock-github-oauth' }
     }).as('getAuthUrl');
@@ -37,13 +37,13 @@ describe('GitHub Connect Flows', () => {
       e.preventDefault();
     });
 
-    cy.contains('button', 'Connect GitHub Now').click();
+    cy.contains('button', 'Connect Now').click();
     cy.wait('@getAuthUrl');
   });
 
   it('handles github callback redirect and linking', () => {
     // Setup initial state as if prompt was skipped previously
-    cy.contains('button', 'Skip for now').click();
+    cy.contains('button', 'Skip For Now').click();
     
     // Mock the callback exchange
     cy.intercept('POST', '**/api/v1/github/callback', {
@@ -65,6 +65,6 @@ describe('GitHub Connect Flows', () => {
     cy.wait('@githubCallback');
     // Ensure we redirect to /github integrations view
     cy.url().should('include', '/github');
-    cy.contains('Connect Repository').should('be.visible');
+    cy.contains('GitHub Account Connected').should('be.visible');
   });
 });

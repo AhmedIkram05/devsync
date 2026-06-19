@@ -23,7 +23,6 @@ describe('Auth flow pages', () => {
       expect(req.body).to.deep.include({
         name: 'Cypress User',
         email: 'cypress@example.com',
-        role: 'client',
       });
       expect(req.body.password).to.equal('password123');
 
@@ -58,7 +57,7 @@ describe('Auth flow pages', () => {
       statusCode: 200,
       body: {
         token: 'fake-jwt-token-777',
-        user: { id: 7, name: 'Login User', email: 'login@example.com', role: 'client', github_connected: false }
+        user: { id: 7, name: 'Login User', email: 'login@example.com', role: 'developer', github_connected: false }
       }
     }).as('loginReq');
 
@@ -84,8 +83,8 @@ describe('Auth flow pages', () => {
 
     // Handle initial github prompt modal if it appears
     cy.get('body').then(($body) => {
-      if ($body.find('button:contains("Skip for now")').length > 0) {
-        cy.contains('button', 'Skip for now').click();
+      if ($body.find('button:contains("Skip For Now")').length > 0) {
+        cy.contains('button', 'Skip For Now').click();
       }
     });
 

@@ -8,7 +8,7 @@ describe('Client Task Flows', () => {
       statusCode: 200,
       body: {
         token: 'fake-token-123',
-        user: { id: 2, name: 'Client User', email: 'client@example.com', role: 'client', github_connected: false }
+        user: { id: 2, name: 'Client User', email: 'client@example.com', role: 'developer', github_connected: false }
       }
     }).as('loginReq');
 
@@ -35,14 +35,14 @@ describe('Client Task Flows', () => {
     
     // Clear out any modals
     cy.get('body').then(($body) => {
-      if ($body.find('button:contains("Skip for now")').length > 0) {
-        cy.contains('button', 'Skip for now').click();
+      if ($body.find('button:contains("Skip For Now")').length > 0) {
+        cy.contains('button', 'Skip For Now').click();
       }
     });
   });
 
   it('navigates to tasks and filters them by priority', () => {
-    cy.contains('Your Tasks').click();
+    cy.contains('Tasks').click();
     cy.wait('@getTasks');
 
     cy.contains('Learn Cypress').should('be.visible');

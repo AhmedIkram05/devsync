@@ -7,7 +7,7 @@ describe('Notification Flows', () => {
       statusCode: 200,
       body: {
         token: 'dev-token',
-        user: { id: 3, name: 'Dev', email: 'dev@example.com', role: 'client', github_connected: false }
+        user: { id: 3, name: 'Dev', email: 'dev@example.com', role: 'developer', github_connected: false }
       }
     }).as('loginReq');
 
@@ -27,7 +27,7 @@ describe('Notification Flows', () => {
     cy.get('input[name="password"]').type('devpass');
     cy.contains('button', 'Sign In').click();
     cy.wait('@loginReq');
-    cy.contains('button', 'Skip for now').click();
+    cy.contains('button', 'Skip For Now').click();
   });
 
   it('displays notification count and allows marking as read', () => {

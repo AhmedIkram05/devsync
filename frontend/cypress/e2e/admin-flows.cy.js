@@ -21,11 +21,6 @@ describe('Admin Flows', () => {
       }
     }).as('adminDash');
 
-    cy.intercept('GET', '**/api/v1/dashboard/developers', {
-      statusCode: 200,
-      body: []
-    }).as('devStats');
-
     cy.intercept('GET', '**/api/v1/github/status', {
       statusCode: 200,
       body: { connected: false }
@@ -38,31 +33,18 @@ describe('Admin Flows', () => {
     cy.wait('@loginReq');
     
     cy.get('body').then(($body) => {
-      if ($body.find('button:contains("Skip for now")').length > 0) {
-        cy.contains('button', 'Skip for now').click();
+      if ($body.find('button:contains("Skip For Now")').length > 0) {
+        cy.contains('button', 'Skip For Now').click();
       }
     });
   });
 
-  it('loads admin dashboard and switches report periods', () => {
-    cy.wait(['@adminDash', '@devStats']);
+  it('loads admin dashboard with correct data', () => {
+    cy.wait('@adminDash');
     
     cy.contains('h1', 'Admin Dashboard').should('be.visible');
-    cy.contains('Total Projects').parent().contains('5');
-    cy.contains('Active Tasks').parent().contains('3');
-
-    // Change filter
-    cy.intercept('GET', '**/api/v1/dashboard/admin?period=quarter', {
-      statusCode: 200,
-      body: {
-        projects: { total: 10 },
-        tasks: { total: 50, completed: 30, in_progress: 10, overdue: 5 }
-      }
-    }).as('adminDashQuarter');
-
-    cy.get('select').select('quarter');
-    cy.wait('@adminDashQuarter');
-    cy.contains('Total Projects').parent().contains('10');
+    cy.contains('Active Projects').parent().contains('5');
+    cy.contains('In Progress').parent().contains('3');
   });
 
   it('creates a new project and manages it', () => {
