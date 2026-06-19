@@ -8,7 +8,6 @@ from flask_jwt_extended import create_access_token
 # Add backend directory to import src.* modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from src.app import create_app
 from src.api.routes import (
     admin_routes,
     comments_routes,
@@ -18,6 +17,7 @@ from src.api.routes import (
     tasks_routes,
     users_routes,
 )
+from src.app import create_app
 
 
 @pytest.fixture
@@ -73,7 +73,7 @@ def test_users_route_allows_developers(client, app, monkeypatch):
     team_lead_response = client.get('/api/v1/users', headers=auth_headers(app, 'team_lead'))
     assert team_lead_response.status_code == 200
     assert team_lead_response.get_json() == {'users': []}
-    
+
     # Admin should also be allowed (hierarchy)
     allowed_response = client.get('/api/v1/users', headers=auth_headers(app, 'admin'))
     assert allowed_response.status_code == 200

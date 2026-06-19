@@ -1,10 +1,10 @@
 """Controller for GitHub integration with DevSync."""
 
 import logging
-import uuid
-from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 
 from flask import current_app, jsonify, redirect, request
 from flask_jwt_extended import get_jwt_identity
@@ -32,7 +32,7 @@ def check_github_config():
         'client_secret_set': bool(current_app.config.get('GITHUB_CLIENT_SECRET')),
         'redirect_uri_set': bool(current_app.config.get('GITHUB_REDIRECT_URI')),
     }
-    
+
     return jsonify({
         'config_status': config_status,
         'client_id': current_app.config.get('GITHUB_CLIENT_ID', '')[:4] + '****' if current_app.config.get('GITHUB_CLIENT_ID') else None,
@@ -45,23 +45,23 @@ def initiate_github_auth():
     # Generate a random state parameter to prevent CSRF
     state = str(uuid.uuid4())
     user_id = get_jwt_identity()['user_id']
-    
+
     # Store state with user_id (with 10 minute expiry in a real app)
     oauth_states[state] = {
         'user_id': user_id,
         'created_at': datetime.now()
     }
-    
+
     # Check if GitHub OAuth credentials are configured
     if not current_app.config.get('GITHUB_CLIENT_ID') or not current_app.config.get('GITHUB_CLIENT_SECRET'):
         return jsonify({
             'error': 'GitHub OAuth credentials not configured',
             'message': 'GitHub integration is not available at this time.'
         }), 503
-    
+
     # Get authorization URL
     auth_url = GitHubClient.get_auth_url(state)
-    
+
     return jsonify({
         'authorization_url': auth_url
     })
@@ -71,11 +71,11 @@ def github_callback():
     # Get code and state from query parameters
     code = request.args.get('code')
     state = request.args.get('state')
-    
+
     # Validate the request
     if not code or not state:
         return jsonify({'message': 'Missing code or state parameter'}), 400
-    
+
     try:
         # First try to find the state in our oauth_states dictionary
         if state in oauth_states:
@@ -87,27 +87,27 @@ def github_callback():
             # This might be a URL-safe base64-encoded state from frontend
             import base64
             import json
-            
+
             # Add padding back if needed for base64 decoding
             padding = len(state) % 4
             if padding:
                 state += '=' * (4 - padding)
-                
+
             # Replace URL-safe characters back to standard base64
             state = state.replace('-', '+').replace('_', '/')
-            
+
             # Decode the base64 string
             try:
                 decoded_bytes = base64.b64decode(state)
                 decoded_state = json.loads(decoded_bytes.decode('utf-8'))
-                
+
                 # Extract the user_id from the decoded state
                 user_id = decoded_state.get('userId')
-                
+
                 if not user_id:
                     logger.error("No userId found in decoded state")
                     return jsonify({'error': 'Invalid state parameter format - missing userId'}), 400
-                    
+
                 logger.info(f"Successfully decoded state with userId: {user_id}")
             except Exception as e:
                 logger.error(f"Error decoding state: {str(e)}")
@@ -120,24 +120,24 @@ def github_callback():
         user_id = int(user_id)
     except (TypeError, ValueError):
         return jsonify({'error': 'Invalid state parameter format - userId must be an integer'}), 400
-    
+
     # Exchange code for access token
     token_data = GitHubClient.exchange_code_for_token(code)
-    
+
     if not token_data or 'access_token' not in token_data:
         return jsonify({'message': 'Failed to obtain access token'}), 400
-    
+
     # Create GitHub client with new token
     github_client = GitHubClient(token_data['access_token'])
-    
+
     # Fetch user profile to get GitHub username
     github_profile = github_client.get_user_profile()
     if not github_profile:
         return jsonify({'message': 'Failed to fetch GitHub profile'}), 400
-    
+
     # Check if user already has a GitHub token
     existing_token = GitHubToken.query.filter_by(user_id=user_id).first()
-    
+
     if existing_token:
         # Update existing token
         existing_token.access_token = token_data['access_token']
@@ -152,17 +152,17 @@ def github_callback():
             token_expires_at=token_data.get('token_expires_at')
         )
         db.session.add(github_token)
-    
+
     # Update user's GitHub username if available
     user = User.query.get(user_id)
     if user and github_profile and 'login' in github_profile:
         user.github_username = github_profile['login']
         user.github_connected = True
-        
+
         logger.info(f"Updated user {user_id} with GitHub username: {user.github_username}")
-    
+
     db.session.commit()
-    
+
     # Redirect to frontend with success message
     frontend_url = current_app.config.get('FRONTEND_URL', 'http://localhost:3000')
     redirect_url = f"{frontend_url}/github/connected?success=true&github_username={github_profile.get('login', '')}&user_id={user_id}"
@@ -172,18 +172,18 @@ def github_callback():
 def get_github_repositories():
     """Get repositories for the authenticated user. Lazy-loads activity metrics when requested."""
     start_time = time.time()
-    
+
     user_id = get_jwt_identity()['user_id']
     logger.info(f"[PERF] get_github_repositories START - user_id: {user_id}")
-    
+
     # Check if user has a GitHub token
     token = GitHubToken.query.filter_by(user_id=user_id).first()
     if not token:
         return jsonify({'message': 'GitHub account not connected'}), 401
-    
+
     # Create GitHub client
     github_client = GitHubClient(token.access_token)
-    
+
     # Fetch repositories (with pagination support)
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 30, type=int)
@@ -193,7 +193,7 @@ def get_github_repositories():
     include_activity_arg = request.args.get('include_activity')
     # Default to lightweight repository data unless activity is explicitly requested.
     include_activity = include_activity_arg is not None and include_activity_arg.lower() == 'true'
-    
+
     api_start = time.time()
     if fetch_all_pages:
         repositories = []
@@ -230,11 +230,11 @@ def get_github_repositories():
     should_commit = False
     new_repos = []
     loop_start = time.time()
-    
+
     # Collect repos that need activity fetching
     repos_needing_activity = []
     repo_data_map = {}  # Map to store local_repo and repo data
-    
+
     for repo in repositories:
         local_repo = existing_repos.get(repo['id'])
         if not local_repo:
@@ -255,13 +255,13 @@ def get_github_repositories():
 
         owner = repo['owner']['login']
         repo_name = repo['name']
-        
+
         # Store metadata for later use
         repo_data_map[f"{owner}/{repo_name}"] = {
             'local_repo': local_repo,
             'repo': repo,
         }
-        
+
         # Queue for concurrent fetching if activity is requested
         if include_activity:
             repos_needing_activity.append({
@@ -288,7 +288,7 @@ def get_github_repositories():
                     since_days=repo_info['since_days'],
                 )
                 futures[future] = key
-            
+
             # Collect results as they complete
             for future in as_completed(futures):
                 key = futures[future]
@@ -303,7 +303,7 @@ def get_github_repositories():
                         'total_prs': 0,
                         'recent_commits': 0,
                     }
-        
+
         activity_fetch_time = time.time() - activity_fetch_start
         logger.info(f"[PERF] Concurrent activity fetch took {activity_fetch_time:.2f}s for {len(repos_needing_activity)} repos")
 
@@ -312,10 +312,10 @@ def get_github_repositories():
         owner = repo['owner']['login']
         repo_name = repo['name']
         key = f"{owner}/{repo_name}"
-        
+
         repo_data = repo_data_map.get(key, {})
         local_repo = repo_data.get('local_repo')
-        
+
         if include_activity:
             activity_metrics = activity_results.get(key, {
                 'open_issues': repo.get('open_issues_count', 0),
@@ -329,7 +329,7 @@ def get_github_repositories():
                 'total_prs': 0,
                 'recent_commits': 0,
             }
-        
+
         # Store repo data for later formatting after flush
         formatted_repos.append({
             'local_repo': local_repo,
@@ -347,14 +347,14 @@ def get_github_repositories():
         db.session.flush()
         flush_time = time.time() - flush_start
         logger.info(f"[PERF] Database flush took {flush_time:.2f}s - added {len(new_repos)} new repos")
-    
+
     # Now build the final formatted response with IDs
     formatted_response = []
     for repo_data in formatted_repos:
         local_repo = repo_data['local_repo']
         repo = repo_data['repo']
         activity_metrics = repo_data['activity_metrics']
-        
+
         formatted_response.append({
             'id': local_repo.id,
             'github_id': repo['id'],
@@ -381,10 +381,10 @@ def get_github_repositories():
 
     if should_commit:
         db.session.commit()
-    
+
     total_time = time.time() - start_time
     logger.info(f"[PERF] get_github_repositories COMPLETE - total time: {total_time:.2f}s")
-    
+
     return jsonify({
         'repositories': formatted_response
     })
@@ -393,32 +393,32 @@ def add_github_repository():
     """Add a GitHub repository to track"""
     data = request.get_json()
     user_id = get_jwt_identity()['user_id']
-    
+
     # Validate repository data
     validation_result = validate_github_repo_data(data)
     if validation_result:
         return validation_result
-    
+
     # Check if user has a GitHub token
     token = GitHubToken.query.filter_by(user_id=user_id).first()
     if not token:
         return jsonify({'message': 'GitHub account not connected'}), 401
-    
+
     # Create GitHub client
     github_client = GitHubClient(token.access_token)
-    
+
     # Parse repository name (owner/repo)
     repo_parts = data['repository_name'].split('/')
     if len(repo_parts) != 2:
         return jsonify({'message': 'Invalid repository name format'}), 400
-    
+
     owner, repo_name = repo_parts
-    
+
     # Fetch repository details from GitHub
     repo_data = github_client.get_repository(owner, repo_name)
     if not repo_data:
         return jsonify({'message': 'Repository not found on GitHub'}), 404
-    
+
     # Check if repository is already tracked
     existing_repo = GitHubRepository.query.filter_by(repo_url=data['repository_url']).first()
     if existing_repo:
@@ -430,17 +430,17 @@ def add_github_repository():
                 'url': existing_repo.repo_url
             }
         }), 409
-    
+
     # Create new repository record
     new_repo = GitHubRepository(
         repo_name=data['repository_name'],
         repo_url=data['repository_url'],
         github_id=repo_data['id']
     )
-    
+
     db.session.add(new_repo)
     db.session.commit()
-    
+
     return jsonify({
         'message': 'Repository added successfully',
         'repository': {
@@ -453,30 +453,30 @@ def add_github_repository():
 def get_repository_issues(repo_id):
     """Get issues for a specific repository"""
     user_id = get_jwt_identity()['user_id']
-    
+
     # Check if repo exists
     repo = GitHubRepository.query.get_or_404(repo_id)
-    
+
     # Check if user has a GitHub token
     token = GitHubToken.query.filter_by(user_id=user_id).first()
     if not token:
         return jsonify({'message': 'GitHub account not connected'}), 401
-    
+
     # Create GitHub client
     github_client = GitHubClient(token.access_token)
-    
+
     # Parse repository name to get owner and repo
     repo_parts = repo.repo_name.split('/')
     if len(repo_parts) != 2:
         return jsonify({'message': 'Invalid repository name format'}), 400
-    
+
     owner, repo_name = repo_parts
-    
+
     # Fetch issues with query parameters
     state = request.args.get('state', 'open')
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 30, type=int)
-    
+
     issues = github_client.get_repository_issues(
         owner=owner,
         repo=repo_name,
@@ -484,7 +484,7 @@ def get_repository_issues(repo_id):
         page=page,
         per_page=per_page
     )
-    
+
     # Format issue data
     formatted_issues = []
     for issue in issues:
@@ -503,36 +503,36 @@ def get_repository_issues(repo_id):
             },
             'labels': [{'name': label['name'], 'color': label['color']} for label in issue['labels']]
         })
-    
+
     return jsonify({'issues': formatted_issues})
 
 def get_repository_pulls(repo_id):
     """Get pull requests for a specific repository"""
     user_id = get_jwt_identity()['user_id']
-    
+
     # Check if repo exists
     repo = GitHubRepository.query.get_or_404(repo_id)
-    
+
     # Check if user has a GitHub token
     token = GitHubToken.query.filter_by(user_id=user_id).first()
     if not token:
         return jsonify({'message': 'GitHub account not connected'}), 401
-    
+
     # Create GitHub client
     github_client = GitHubClient(token.access_token)
-    
+
     # Parse repository name to get owner and repo
     repo_parts = repo.repo_name.split('/')
     if len(repo_parts) != 2:
         return jsonify({'message': 'Invalid repository name format'}), 400
-    
+
     owner, repo_name = repo_parts
-    
+
     # Fetch PRs with query parameters
     state = request.args.get('state', 'open')
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 30, type=int)
-    
+
     pulls = github_client.get_repository_pulls(
         owner=owner,
         repo=repo_name,
@@ -540,7 +540,7 @@ def get_repository_pulls(repo_id):
         page=page,
         per_page=per_page
     )
-    
+
     # Format PR data
     formatted_pulls = []
     for pr in pulls:
@@ -562,14 +562,14 @@ def get_repository_pulls(repo_id):
             'mergeable': pr.get('mergeable'),
             'draft': pr.get('draft', False)
         })
-    
+
     return jsonify({'pull_requests': formatted_pulls})
 
 def link_task_with_github(task_id):
     """Link a task with a GitHub issue or PR"""
     data = request.get_json() or {}
     user_id = get_jwt_identity()['user_id']
-    
+
     # Normalize request payload for validator/controller compatibility.
     data['task_id'] = task_id
     for int_field in ('repo_id', 'issue_number', 'pull_request_number'):
@@ -580,19 +580,19 @@ def link_task_with_github(task_id):
     validation_result = validate_task_github_link(data)
     if validation_result:
         return validation_result
-    
+
     # Check if task exists
     task = Task.query.get_or_404(task_id)
-    
+
     # Check if repo exists
     repo = GitHubRepository.query.get_or_404(data['repo_id'])
-    
+
     # Check if link already exists
     existing_link = TaskGitHubLink.query.filter_by(
         task_id=task_id,
         repo_id=data['repo_id']
     ).first()
-    
+
     if existing_link:
         # Update existing link
         if 'issue_number' in data:
@@ -610,30 +610,30 @@ def link_task_with_github(task_id):
         )
         db.session.add(new_link)
         persisted_link = new_link
-    
+
     db.session.commit()
-    
+
     # If we have a GitHub token, add a comment to the issue/PR referencing this task
     token = GitHubToken.query.filter_by(user_id=user_id).first()
     if token and (data.get('issue_number') or data.get('pull_request_number')):
         github_client = GitHubClient(token.access_token)
-        
+
         # Parse repository name
         repo_parts = repo.repo_name.split('/')
         if len(repo_parts) == 2:
             owner, repo_name = repo_parts
-            
+
             # Construct comment with link to DevSync task
             frontend_url = current_app.config.get('FRONTEND_URL', 'http://localhost:3000')
             comment = f"This issue is linked to DevSync task #{task.id}: {task.title}\n\n"
             comment += f"[View in DevSync]({frontend_url}/tasks/{task.id})"
-            
+
             # Add comment to issue or PR
             if data.get('issue_number'):
                 github_client.create_issue_comment(owner, repo_name, data['issue_number'], comment)
             elif data.get('pull_request_number'):
                 github_client.create_issue_comment(owner, repo_name, data['pull_request_number'], comment)
-    
+
     return jsonify({
         'message': 'Task linked with GitHub successfully',
         'link': {
@@ -651,11 +651,11 @@ def link_task_with_github(task_id):
 def get_task_github_links(task_id):
     """Get all GitHub links for a task"""
     # Check if task exists
-    task = Task.query.get_or_404(task_id)
-    
+    Task.query.get_or_404(task_id)
+
     # Get all links for this task
     links = TaskGitHubLink.query.filter_by(task_id=task_id).all()
-    
+
     # Format link data
     formatted_links = []
     for link in links:
@@ -670,25 +670,25 @@ def get_task_github_links(task_id):
             'pull_request_number': link.pull_request_number,
             'created_at': link.created_at.isoformat() if link.created_at else None
         })
-    
+
     return jsonify({'links': formatted_links})
 
 def delete_task_github_link(task_id, link_id):
     """Delete a GitHub link from a task"""
     # Check if task exists
-    task = Task.query.get_or_404(task_id)
-    
+    Task.query.get_or_404(task_id)
+
     # Find the link
     link = TaskGitHubLink.query.get_or_404(link_id)
-    
+
     # Verify link belongs to the task
     if link.task_id != task_id:
         return jsonify({'message': 'Link does not belong to this task'}), 400
-        
+
     # Delete the link
     db.session.delete(link)
     db.session.commit()
-    
+
     return jsonify({'message': 'GitHub link removed from task'})
 
 

@@ -1,8 +1,7 @@
 """System Settings Service"""
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from ..db.models import db, SystemSetting, AuditLog, Project, Task, Comment, Notification, TaskGitHubLink
-
+from ..db.models import AuditLog, Comment, Notification, Project, SystemSetting, Task, TaskGitHubLink, db
 
 DEFAULT_SETTINGS = {
     'default_user_role': 'developer',
@@ -82,7 +81,7 @@ def update_settings(data, actor_id):
                 updated_by=actor_id
             )
             db.session.add(new_setting)
-    
+
     db.session.commit()
 
 def get_default_role():
@@ -105,7 +104,7 @@ def cleanup_old_audit_logs(retention_days=None):
         if days <= 0:
             return 0
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff = datetime.now(UTC) - timedelta(days=days)
         deleted_count = AuditLog.query.filter(AuditLog.created_at < cutoff).delete(synchronize_session=False)
         db.session.commit()
         return deleted_count
@@ -121,7 +120,7 @@ def cleanup_completed_projects(retention_days=None):
         if days <= 0:
             return 0
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff = datetime.now(UTC) - timedelta(days=days)
         completed_projects = Project.query.filter(Project.status == 'completed', Project.updated_at < cutoff).all()
 
         deleted_projects = 0

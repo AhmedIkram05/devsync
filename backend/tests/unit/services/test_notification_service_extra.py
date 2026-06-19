@@ -1,5 +1,4 @@
 import pytest
-
 from src.services.notification_service import NotificationService
 
 

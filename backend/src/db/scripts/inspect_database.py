@@ -1,9 +1,10 @@
 """
 Database inspection script for seeing details about schema, tables, and indices.
 """
+import logging
 import os
 import sys
-import logging
+
 from sqlalchemy import inspect, text
 
 # Add the backend directory to the Python path
@@ -28,7 +29,7 @@ def inspect_database():
         app = Flask(__name__)
         app.config.from_object(get_config())
         db.init_app(app)
-        
+
         with app.app_context():
             inspector = inspect(db.engine)
             dialect = db.engine.dialect.name
@@ -42,7 +43,7 @@ def inspect_database():
                     print(f"  - {table}")
                 print()
 
-                print(f"== Indices by Table ==")
+                print("== Indices by Table ==")
                 for table in sorted(tables):
                     index_names = []
 
@@ -72,7 +73,7 @@ def inspect_database():
                     else:
                         print("    - (no indices found)")
                     print()
-                
+
         return True
     except Exception as e:
         logger.error(f"Error inspecting database: {e}")

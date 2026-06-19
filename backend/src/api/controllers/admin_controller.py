@@ -1,12 +1,14 @@
 # Admin controller - business logic for admin-only operations
 
 from flask import jsonify, request
-from ...db.models import db, User, Project, Task
-from ..validators.admin_validator import validate_system_settings, validate_user_role_update
-from ...auth.rbac import Role
 from flask_jwt_extended import get_jwt_identity
-from ...services import audit_service, settings_service
+
 from src.socketio_server import emit_dashboard_refresh
+
+from ...auth.rbac import Role
+from ...db.models import Project, Task, User, db
+from ...services import audit_service, settings_service
+from ..validators.admin_validator import validate_system_settings, validate_user_role_update
 
 
 def _safe_query_all(model):
@@ -62,17 +64,17 @@ def get_system_settings():
 def update_system_settings():
     """Controller function to update system settings"""
     data = request.get_json()
-    
+
     # Validate settings data
     validation_result = validate_system_settings(data)
     if validation_result:
         return validation_result
-    
+
     current_user = get_jwt_identity()
     user_id = current_user.get('user_id') if isinstance(current_user, dict) else current_user
 
     settings_service.update_settings(data, user_id)
-    
+
     audit_service.record(
         action='settings_updated',
         resource_type='settings',
@@ -83,7 +85,7 @@ def update_system_settings():
         resource_type='settings',
         payload={'settings_updated': list(data.keys())}
     )
-    
+
     return jsonify({
         'message': 'System settings updated successfully',
         'settings': data
@@ -94,19 +96,19 @@ def update_user_role(user_id):
     user = User.query.get(user_id)
     if not user:
         return jsonify({'message': 'User not found'}), 404
-    
+
     data = request.get_json()
-    
+
     # Validate role data
     validation_result = validate_user_role_update(data)
     if validation_result:
         return validation_result
-    
+
     # Update user role
     old_role = user.role
     user.role = data['role']
     db.session.commit()
-    
+
     audit_service.record(
         action='user_role_changed',
         resource_type='user',
@@ -119,7 +121,7 @@ def update_user_role(user_id):
         resource_id=user.id,
         payload={'old_role': old_role, 'new_role': user.role}
     )
-    
+
     return jsonify({
         'message': 'User role updated successfully',
         'user': {

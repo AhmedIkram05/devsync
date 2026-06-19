@@ -1,5 +1,6 @@
-import sys
 import os
+import sys
+
 from flask import Flask, jsonify
 
 # Set up proper import paths
@@ -19,13 +20,13 @@ def test_missing_required_fields():
         response, status = result
         assert status == 400
         assert 'Missing required fields' in response.get_json()['message']
-        
+
         # Missing title
         result = validate_task_data({'description': 'Test desc', 'status': 'todo'})
         response, status = result
         assert status == 400
         assert 'Missing required fields' in response.get_json()['message']
-        
+
         # Missing status
         result = validate_task_data({'title': 'Test Task', 'description': 'Test desc'})
         response, status = result
@@ -41,7 +42,7 @@ def test_invalid_title_length():
         response, status = result
         assert status == 400
         assert 'Title must be between 3 and 100 characters' in response.get_json()['message']
-        
+
         # Title too long
         data = {'title': 'a' * 101, 'description': 'Test Desc', 'status': 'todo'}
         result = validate_task_data(data)
@@ -67,7 +68,7 @@ def test_invalid_progress():
         response, status = result
         assert status == 400
         assert 'Progress must be between 0 and 100' in response.get_json()['message']
-        
+
         # Progress above 100
         data = {'title': 'Valid Title', 'description': 'Test Desc', 'status': 'todo', 'progress': 110}
         result = validate_task_data(data)
@@ -105,7 +106,7 @@ def test_valid_data():
         data = {'title': 'Backlog Task', 'description': 'Queued work item', 'status': 'backlog'}
         result = validate_task_data(data)
         assert result is None
-        
+
         # Complete valid data
         data = {
             'title': 'Valid Title',

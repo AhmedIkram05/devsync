@@ -1,14 +1,16 @@
 import os
 import sys
+from unittest.mock import MagicMock
+
 import pytest
 from flask_jwt_extended import create_access_token
-from unittest.mock import MagicMock
 
 # Add backend directory to import src.* modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from src.app import create_app
 from src.api.routes import report_routes
+from src.app import create_app
+
 
 @pytest.fixture
 def app_and_socket(monkeypatch):
@@ -62,7 +64,7 @@ def test_get_reports_rbac(client, app, auth_headers, monkeypatch):
     # 1. Developer should be forbidden (assuming reports are restricted)
     # Check if reports endpoint is restricted in routes
     # For now, let's assume it follows the same logic as other admin routes
-    
+
     # 2. Team Lead should be allowed
     resp = client.get('/api/v1/reports', headers=auth_headers('team_lead'))
     assert resp.status_code == 200

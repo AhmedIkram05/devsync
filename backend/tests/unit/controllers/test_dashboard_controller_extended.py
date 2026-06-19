@@ -41,7 +41,7 @@ def test_safe_query_all_error_returns_empty(mock_user):
 
 
 def test_task_to_dashboard_item_and_github_activity_item():
-    from backend.src.api.controllers.dashboard_controller import _task_to_dashboard_item, _github_activity_to_item
+    from backend.src.api.controllers.dashboard_controller import _github_activity_to_item, _task_to_dashboard_item
 
     now = datetime.now()
     task = _task(deadline=now, created_at=now, updated_at=now, project=SimpleNamespace(name='Alpha'))
@@ -65,7 +65,7 @@ def test_task_to_dashboard_item_and_github_activity_item():
 
 @patch('backend.src.api.controllers.dashboard_controller.Task')
 def test_get_user_tasks_and_project_tasks_error_paths(mock_task):
-    from backend.src.api.controllers.dashboard_controller import get_user_tasks, get_project_tasks
+    from backend.src.api.controllers.dashboard_controller import get_project_tasks, get_user_tasks
 
     mock_task.query.filter_by.side_effect = Exception('db fail')
     assert get_user_tasks(1) == []

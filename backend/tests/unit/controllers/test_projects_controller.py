@@ -1,7 +1,8 @@
-import sys
 import os
+import sys
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from flask import Flask, jsonify
 
 # Set up proper import paths
@@ -14,7 +15,7 @@ def app():
     app.config['SECRET_KEY'] = 'test-secret-key'
     app.config['JWT_SECRET_KEY'] = 'test-secret-key'
     app.config['JWT_TOKEN_LOCATION'] = ['headers']
-    
+
     yield app
 
 @pytest.fixture
@@ -58,32 +59,32 @@ def mock_project():
 def test_create_project(app, client, mock_jwt_identity, mock_db):
     # Create a test request context with JSON data
     test_data = {
-        'name': 'New Project', 
+        'name': 'New Project',
         'description': 'Project Description'
     }
-    
+
     # Use test_request_context with the JSON data
     with app.test_request_context(json=test_data):
         with patch('backend.src.api.controllers.projects_controller.Project') as mock_project_class, \
              patch('backend.src.api.controllers.projects_controller.validate_project_data') as mock_validate, \
-             patch('backend.src.api.controllers.projects_controller.User') as mock_user_class:
-            
+             patch('backend.src.api.controllers.projects_controller.User'):
+
             # Set up mocks
             mock_validate.return_value = None
-            
+
             new_project = MagicMock()
             new_project.id = 1
             new_project.name = 'New Project'
             new_project.status = 'active'
-            
+
             mock_project_class.return_value = new_project
-            
+
             # Import locally to use patched modules
             from backend.src.api.controllers.projects_controller import create_project
-            
+
             # Call the function
             response, status_code = create_project()
-            
+
             # Assert results
             assert status_code == 201
             assert response.get_json()['project']['name'] == 'New Project'
@@ -94,20 +95,20 @@ def test_get_project(app, mock_jwt_identity, mock_jwt, mock_project):
     with app.test_request_context():
         with patch('backend.src.api.controllers.projects_controller.Project.query') as mock_query, \
              patch('backend.src.api.controllers.projects_controller.User.query') as mock_user_query:
-            
+
             # Set up mocks
             mock_query.get_or_404.return_value = mock_project
-            
+
             user = MagicMock()
             user.name = "Test User"
             mock_user_query.get.return_value = user
-            
+
             # Import locally to use patched modules
             from backend.src.api.controllers.projects_controller import get_project_by_id
-            
+
             # Call the function
             response = get_project_by_id(1)
-            
+
             # Assert results
             data = response.get_json()
             assert 'project' in data
@@ -152,22 +153,22 @@ def test_get_project_supports_list_backref_team_members(app, mock_jwt_identity, 
 def test_update_project(app, mock_jwt_identity, mock_jwt, mock_db, mock_project):
     # Create a test request context with JSON data
     test_data = {'name': 'Updated Project'}
-    
+
     # Use test_request_context with the JSON data
     with app.test_request_context(json=test_data):
         with patch('backend.src.api.controllers.projects_controller.Project.query') as mock_query, \
              patch('backend.src.api.controllers.projects_controller.validate_project_data') as mock_validate:
-            
+
             # Set up mocks
             mock_validate.return_value = None
             mock_query.get_or_404.return_value = mock_project
-            
+
             # Import locally to use patched modules
             from backend.src.api.controllers.projects_controller import update_project
-            
+
             # Call the function
             response = update_project(1)
-            
+
             # Assert results
             data = response.get_json()
             assert data['message'] == 'Project updated successfully'
@@ -202,16 +203,16 @@ def test_update_project_clears_team_members(app, mock_jwt_identity, mock_jwt, mo
 def test_delete_project(app, mock_jwt_identity, mock_jwt, mock_db):
     with app.test_request_context():
         with patch('backend.src.api.controllers.projects_controller.Project.query') as mock_query:
-            
+
             mock_project = MagicMock()
             mock_query.get_or_404.return_value = mock_project
-            
+
             # Import locally to use patched modules
             from backend.src.api.controllers.projects_controller import delete_project
-            
+
             # Call the function
             response = delete_project(1)
-            
+
             # Assert results
             assert response[0] == ''  # Empty response body
             assert response[1] == 204  # Status code
@@ -237,8 +238,8 @@ def test_delete_project_with_tasks(app, mock_jwt_identity, mock_jwt, mock_db):
 def test_list_projects(app, mock_jwt_identity, mock_jwt):
     with app.test_request_context():
         with patch('backend.src.api.controllers.projects_controller.Project.query') as mock_query, \
-             patch('backend.src.api.controllers.projects_controller.User.query') as mock_user_query:
-            
+             patch('backend.src.api.controllers.projects_controller.User.query'):
+
             # Set up mocks
             project = MagicMock()
             project.id = 1
@@ -251,15 +252,15 @@ def test_list_projects(app, mock_jwt_identity, mock_jwt):
             project.created_at.isoformat.return_value = '2023-01-01T00:00:00'
             project.updated_at = MagicMock()
             project.updated_at.isoformat.return_value = '2023-01-02T00:00:00'
-            
+
             mock_query.all.return_value = [project]
-            
+
             # Import locally to use patched modules
             from backend.src.api.controllers.projects_controller import get_all_projects
-            
+
             # Call the function
             response = get_all_projects()
-            
+
             # Assert results
             data = response.get_json()
             assert 'projects' in data

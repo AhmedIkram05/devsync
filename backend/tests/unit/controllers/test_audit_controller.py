@@ -2,7 +2,6 @@
 from types import SimpleNamespace
 
 import pytest
-
 from src.api.controllers import audit_controller
 
 

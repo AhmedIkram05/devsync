@@ -1,16 +1,18 @@
 # Project controller - business logic
 
-from flask import request, jsonify
-from flask_jwt_extended import get_jwt_identity, get_jwt
-from ...db.models import db, Project, Task, User  # Changed to relative import
-from ...auth.rbac import Role  # Changed to relative import
-from ..validators.project_validator import validate_project_data  # Changed to relative import
-from ...services import audit_service, settings_service
-from ...socketio_server import emit_dashboard_refresh
 import json
 import time
-import uuid
 import traceback
+import uuid
+
+from flask import jsonify, request
+from flask_jwt_extended import get_jwt, get_jwt_identity
+
+from ...auth.rbac import Role  # Changed to relative import
+from ...db.models import Project, Task, User, db  # Changed to relative import
+from ...services import audit_service, settings_service
+from ...socketio_server import emit_dashboard_refresh
+from ..validators.project_validator import validate_project_data  # Changed to relative import
 
 
 def _debug_log(hypothesis_id, location, message, data, run_id='initial'):
@@ -45,7 +47,7 @@ def get_all_projects():
     user_role = claims.get('role')
 
     settings_service.cleanup_completed_projects()
-    
+
     # Apply role-based access control for projects
     if user_role in [Role.ADMIN.value, Role.TEAM_LEAD.value]:
         # Admins and team leads can see all projects
@@ -54,7 +56,7 @@ def get_all_projects():
         # Developers can only see projects they're assigned to
         user = User.query.get(user_id)
         projects = user.projects.all()  # Assuming a many-to-many relationship exists
-    
+
     projects_data = [{
         'id': project.id,
         'name': project.name,
@@ -70,7 +72,7 @@ def get_all_projects():
         'created_at': project.created_at.isoformat() if project.created_at else None,
         'updated_at': project.updated_at.isoformat() if project.updated_at else None
     } for project in projects]
-    
+
     return jsonify({'projects': projects_data})
 
 def get_project_by_id(project_id):
@@ -79,7 +81,7 @@ def get_project_by_id(project_id):
         user_id = get_jwt_identity()['user_id']
         claims = get_jwt()
         user_role = claims.get('role')
-        
+
         project = Project.query.get_or_404(project_id)
         # region agent log
         _debug_log(
@@ -94,7 +96,7 @@ def get_project_by_id(project_id):
             }
         )
         # endregion
-        
+
         # Check if user has access to this project
         if user_role == Role.DEVELOPER.value:
             # Check if developer is assigned to this project
@@ -116,18 +118,18 @@ def get_project_by_id(project_id):
             # endregion
             if project not in user.projects:
                 return jsonify({'message': 'You do not have access to this project'}), 403
-        
+
         # Get project creator's name
         creator = User.query.get(project.created_by)
         creator_name = creator.name if creator else "Unknown"
-        
+
         # Get team members for this project
         team_members = [{
             'id': member.id,
             'name': member.name,
             'role': member.role
         } for member in _relationship_items(project.team_members)]
-        
+
         project_data = {
             'id': project.id,
             'name': project.name,
@@ -140,7 +142,7 @@ def get_project_by_id(project_id):
             'created_at': project.created_at.isoformat() if project.created_at else None,
             'updated_at': project.updated_at.isoformat() if project.updated_at else None
         }
-        
+
         return jsonify({'project': project_data})
     except Exception as exc:
         # region agent log
@@ -161,14 +163,14 @@ def get_project_by_id(project_id):
 def create_project():
     """Controller function to create a new project"""
     data = request.get_json()
-    
+
     # Validate project data
     validation_result = validate_project_data(data)
     if validation_result:
         return validation_result
-    
+
     user_id = get_jwt_identity()['user_id']
-    
+
     # region agent log
     _debug_log(
         'H2',
@@ -191,18 +193,18 @@ def create_project():
         github_repo=data.get('github_repo'),
         created_by=user_id
     )
-    
+
     db.session.add(new_project)
-    
+
     # Add team members if provided
     if 'team_members' in data and data['team_members']:
         for member_id in data['team_members']:
             member = User.query.get(member_id)
             if member:
                 new_project.team_members.append(member)
-    
+
     db.session.commit()
-    
+
     audit_service.record(
         action='project_created',
         resource_type='project',
@@ -226,7 +228,7 @@ def create_project():
         }
     )
     # endregion
-    
+
     return jsonify({
         'message': 'Project created successfully',
         'project': {
@@ -239,14 +241,14 @@ def create_project():
 def update_project(project_id):
     """Controller function to update a project"""
     data = request.get_json()
-    
+
     # Validate project data
     validation_result = validate_project_data(data, update=True)
     if validation_result:
         return validation_result
-    
+
     project = Project.query.get_or_404(project_id)
-    
+
     # Update allowed fields
     if 'name' in data:
         project.name = data['name']
@@ -256,18 +258,18 @@ def update_project(project_id):
         project.status = data['status']
     if 'github_repo' in data:
         project.github_repo = data['github_repo']
-    
+
     # Update team members if provided
     if 'team_members' in data:
         # Clear existing team members
         project.team_members = []
-        
+
         # Add new team members
         for member_id in data['team_members']:
             member = User.query.get(member_id)
             if member:
                 project.team_members.append(member)
-    
+
     db.session.commit()
 
     audit_service.record(
@@ -282,7 +284,7 @@ def update_project(project_id):
         resource_id=project.id,
         payload={'status': project.status}
     )
-    
+
     return jsonify({
         'message': 'Project updated successfully',
         'project': {
@@ -295,10 +297,10 @@ def update_project(project_id):
 def delete_project(project_id):
     """Controller function to delete a project"""
     project = Project.query.get_or_404(project_id)
-    
+
     db.session.delete(project)
     db.session.commit()
-    
+
     audit_service.record(
         action='project_deleted',
         resource_type='project',
@@ -309,7 +311,7 @@ def delete_project(project_id):
         resource_type='project',
         resource_id=project_id
     )
-    
+
     # Updated to return 204
     return '', 204
 
@@ -318,19 +320,19 @@ def get_project_tasks(project_id):
     user_id = get_jwt_identity()['user_id']
     claims = get_jwt()
     user_role = claims.get('role')
-    
+
     project = Project.query.get_or_404(project_id)
-    
+
     # Check if user has access to this project
     if user_role == Role.DEVELOPER.value:
         # Check if developer is assigned to this project
         user = User.query.get(user_id)
         if project not in user.projects:
             return jsonify({'message': 'You do not have access to this project'}), 403
-    
+
     # Get tasks for this project
     tasks = Task.query.filter_by(project_id=project_id).all()
-    
+
     tasks_data = [{
         'id': task.id,
         'title': task.title,
@@ -344,5 +346,5 @@ def get_project_tasks(project_id):
         'created_at': task.created_at.isoformat() if task.created_at else None,
         'updated_at': task.updated_at.isoformat() if task.updated_at else None
     } for task in tasks]
-    
+
     return jsonify({'tasks': tasks_data})

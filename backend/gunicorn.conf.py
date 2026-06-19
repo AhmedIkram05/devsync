@@ -1,5 +1,3 @@
-import multiprocessing
-import os
 
 # Gunicorn configuration for Flask-SocketIO with gevent
 bind = "0.0.0.0:8000"

@@ -2,17 +2,17 @@
 
 import os
 import re
-import sys
 from urllib.parse import urlparse
-from dotenv import load_dotenv
 
+from dotenv import load_dotenv
 from flask_swagger_ui import get_swaggerui_blueprint
+
+from src.api import init_app as init_api
+from src.api.middlewares import setup_middlewares
+from src.config.config import get_config
 
 # Import before config-dependent modules to allow env vars to be read.
 from src.db.models import db
-from src.config.config import get_config
-from src.api import init_app as init_api
-from src.api.middlewares import setup_middlewares
 from src.socketio_server import init_socketio
 
 load_dotenv(override=False)
@@ -21,36 +21,38 @@ load_dotenv(override=False)
 backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
 
 from datetime import timedelta
-from flask import Flask, request, jsonify, make_response, send_file, abort
-from flask_migrate import Migrate
-from flask_jwt_extended import JWTManager
+
+from flask import Flask, abort, jsonify, make_response, request, send_file
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager
+from flask_migrate import Migrate
+
 
 def create_app(config_class=None):
     app = Flask(__name__)
     app.config.from_object(config_class or get_config())
     app_env = os.getenv('FLASK_ENV', 'development').lower()
-    
+
     # Set up Swagger UI with the correct file path
-    SWAGGER_URL = '/api/docs'  # URL for exposing Swagger UI
-    API_URL = '/api/swagger.yaml'  # Our API url where the Swagger file is served
-    
+    swagger_url = '/api/docs'  # URL for exposing Swagger UI
+    api_url = '/api/swagger.yaml'  # Our API url where the Swagger file is served
+
     # Create Swagger UI blueprint
     swaggerui_blueprint = get_swaggerui_blueprint(
-        SWAGGER_URL,
-        API_URL,
+        swagger_url,
+        api_url,
         config={
             'app_name': "DevSync API Documentation"
         }
     )
-    
+
     # Register blueprint at URL
-    app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
-    
+    app.register_blueprint(swaggerui_blueprint, url_prefix=swagger_url)
+
     # Serve the canonical Swagger file from the docs tree.
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
     swagger_path = os.path.join(project_root, 'docs', 'backend', 'swagger.yaml')
-    
+
     @app.route('/api/swagger.yaml')
     def serve_swagger_spec():
         """Serve the Swagger YAML file"""
@@ -58,10 +60,10 @@ def create_app(config_class=None):
             return send_file(swagger_path, mimetype='text/yaml')
         except Exception as e:
             return jsonify({"error": f"Could not load Swagger file: {str(e)}"}), 500
-    
+
     # Configure database using the selected config class/environment.
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    
+
     # Configure JWT
     app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'your-super-secret-key-for-development-only')
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")))
@@ -102,14 +104,14 @@ def create_app(config_class=None):
         raise ValueError('JWT_COOKIE_SAMESITE="None" requires JWT_COOKIE_SECURE to be True')
 
     app.config["JWT_COOKIE_CSRF_PROTECT"] = False
-    
+
     # Apply any override configurations
     if config_class:
         app.config.update(config_class)
-    
+
     # Initialize extensions
     db.init_app(app)
-    migrate = Migrate(app, db)
+    Migrate(app, db)
     jwt = JWTManager(app)
 
     explicit_allowed_origins = {
@@ -141,15 +143,15 @@ def create_app(config_class=None):
             origin in explicit_allowed_origins or
             any(re.match(pattern, origin) for pattern in allowed_origin_patterns)
         )
-    
-    CORS(app, 
+
+    CORS(app,
          supports_credentials=True,
          allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
          methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
          origins=list(explicit_allowed_origins) + list(allowed_origin_patterns),
          expose_headers=["Content-Type", "Authorization"],
          max_age=600)
-    
+
     @app.after_request
     def add_cors_headers(response):
         # Only add headers if they don't already exist
@@ -177,7 +179,7 @@ def create_app(config_class=None):
         response = make_response()
         # We don't add CORS headers here, the after_request will handle it
         return response
-    
+
     # JWT error handlers
     @jwt.expired_token_loader
     def expired_token_callback(jwt_header, jwt_payload):
@@ -202,12 +204,12 @@ def create_app(config_class=None):
             'message': 'Authentication token is missing',
             'error': 'authorization_required'
         }, 401
-    
+
     # Modified exempt function to correctly bypass JWT and auth checks for public routes
     @jwt.token_in_blocklist_loader
     def check_if_token_is_revoked(jwt_header, jwt_payload):
         return False
-    
+
     # Define public routes that don't need authentication
     public_routes = [
         '/',
@@ -220,7 +222,7 @@ def create_app(config_class=None):
         '/api/docs',
         '/api/swagger.yaml'
     ]
-    
+
     # Middleware to remove Flask-JWT auth requirements for public routes
     @app.before_request
     def handle_auth_exemptions():
@@ -229,16 +231,16 @@ def create_app(config_class=None):
         # Skip JWT verification for OPTIONS requests and public routes
         if request.method == 'OPTIONS' or any(path.startswith(route) for route in public_routes):
             return None
-    
+
     # Initialize API routes (including auth routes)
     init_api(app)
-    
+
     # Setup middlewares (error handlers, logging, rate limiting)
     setup_middlewares(app)
-    
+
     # Initialize Socket.IO
     socketio = init_socketio(app)
-    
+
     @app.route('/')
     def index():
         return "DevSync API is running"
@@ -246,7 +248,7 @@ def create_app(config_class=None):
     @app.route('/health')
     def health():
         return jsonify({'status': 'ok'}), 200
-    
+
     return app, socketio
 
 if __name__ == '__main__':

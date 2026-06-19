@@ -1,7 +1,9 @@
 # Admin operations validation
 
 from flask import jsonify
+
 from ...auth.rbac import Role
+
 
 def validate_system_settings(data):
     """Validate system settings data"""
@@ -11,9 +13,8 @@ def validate_system_settings(data):
 
     # Backward-compatible legacy settings fields. The new UI no longer uses these,
     # but existing tests and older clients still send them.
-    if 'app_name' in data:
-        if not isinstance(data['app_name'], str) or len(data['app_name']) < 3:
-            return jsonify({'message': 'App name must be between 3 and 100 characters'}), 400
+    if 'app_name' in data and (not isinstance(data['app_name'], str) or len(data['app_name']) < 3):
+        return jsonify({'message': 'App name must be between 3 and 100 characters'}), 400
 
     for bool_field in ['allow_registration', 'github_integration_enabled']:
         if bool_field in data and not isinstance(data[bool_field], bool):
@@ -51,11 +52,11 @@ def validate_user_role_update(data):
     # Check for required fields
     if 'role' not in data:
         return jsonify({'message': 'Role is required'}), 400
-    
+
     # Validate role
     valid_roles = [role.value for role in Role]
     if data['role'] not in valid_roles:
         return jsonify({'message': f'Role must be one of: {", ".join(valid_roles)}'}), 400
-    
+
     # If validation passes, return None
     return None

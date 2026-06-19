@@ -1,8 +1,9 @@
 """Integration tests for admin controller endpoints"""
 
-import pytest
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 class TestAdminControllerIntegration:
@@ -90,11 +91,10 @@ class TestAdminControllerIntegration:
         mock_settings.update_settings.return_value = {'app_name': 'NewName'}
         mock_jsonify.return_value = ({'success': True}, 200)
 
-        with app.test_request_context(json={'app_name': 'NewName'}, method='POST'):
-            with app.app_context():
-                from src.api.controllers.admin_controller import update_system_settings
-                result = update_system_settings()
-                assert result is not None
+        with app.test_request_context(json={'app_name': 'NewName'}, method='POST'), app.app_context():
+            from src.api.controllers.admin_controller import update_system_settings
+            result = update_system_settings()
+            assert result is not None
 
     @patch('src.api.controllers.admin_controller.jsonify')
     @patch('src.api.controllers.admin_controller.User')
@@ -104,11 +104,10 @@ class TestAdminControllerIntegration:
         mock_jwt_id.return_value = 1
         mock_jsonify.return_value = ({'success': True}, 200)
 
-        with app.test_request_context(json={'role': 'team_lead'}, method='PUT'):
-            with app.app_context():
-                from src.api.controllers.admin_controller import update_user_role
-                result = update_user_role(user_id=2)
-                assert result is not None
+        with app.test_request_context(json={'role': 'team_lead'}, method='PUT'), app.app_context():
+            from src.api.controllers.admin_controller import update_user_role
+            result = update_user_role(user_id=2)
+            assert result is not None
 
     @patch('src.api.controllers.admin_controller.jsonify')
     @patch('src.api.controllers.admin_controller.User')
@@ -119,11 +118,10 @@ class TestAdminControllerIntegration:
             mock_jwt_id.return_value = 1
             mock_jsonify.return_value = ({'success': True}, 200)
 
-            with app.test_request_context(json={'role': role}, method='PUT'):
-                with app.app_context():
-                    from src.api.controllers.admin_controller import update_user_role
-                    result = update_user_role(user_id=2)
-                    assert result is not None
+            with app.test_request_context(json={'role': role}, method='PUT'), app.app_context():
+                from src.api.controllers.admin_controller import update_user_role
+                result = update_user_role(user_id=2)
+                assert result is not None
 
     @patch('src.api.controllers.admin_controller.jsonify')
     @patch('src.api.controllers.admin_controller.User')

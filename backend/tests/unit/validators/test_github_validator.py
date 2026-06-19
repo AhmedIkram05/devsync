@@ -1,7 +1,8 @@
-import sys
-import os
-import unittest
 import json
+import os
+import sys
+import unittest
+
 from flask import Flask
 
 # Set up proper import paths
@@ -11,35 +12,36 @@ from backend.src.api.validators.github_validator import (
     validate_github_auth,
     validate_github_repo_data,
     validate_github_webhook_payload,
-    validate_task_github_link
+    validate_task_github_link,
 )
+
 
 class TestGitHubValidator(unittest.TestCase):
     def setUp(self):
         self.app = Flask(__name__)
         self.app_context = self.app.app_context()
         self.app_context.push()
-        
+
     def tearDown(self):
         self.app_context.pop()
-        
+
     def test_validate_github_auth_valid(self):
         data = {'code': 'valid_code'}
         result = validate_github_auth(data)
         self.assertIsNone(result)
-        
+
     def test_validate_github_auth_missing_code(self):
         data = {}
         response, status_code = validate_github_auth(data)
         self.assertEqual(status_code, 400)
         self.assertIn('GitHub authorization code is required', json.loads(response.data)['message'])
-        
+
     def test_validate_github_auth_empty_code(self):
         data = {'code': ''}
         response, status_code = validate_github_auth(data)
         self.assertEqual(status_code, 400)
         self.assertIn('Invalid GitHub authorization code', json.loads(response.data)['message'])
-    
+
     def test_validate_github_repo_data_valid(self):
         data = {
             'repository_name': 'owner/repo',
@@ -47,13 +49,13 @@ class TestGitHubValidator(unittest.TestCase):
         }
         result = validate_github_repo_data(data)
         self.assertIsNone(result)
-        
+
     def test_validate_github_repo_data_missing_fields(self):
         data = {'repository_name': 'owner/repo'}
         response, status_code = validate_github_repo_data(data)
         self.assertEqual(status_code, 400)
         self.assertIn('Missing required GitHub repository fields', json.loads(response.data)['message'])
-    
+
     def test_validate_github_repo_data_invalid_name(self):
         data = {
             'repository_name': 'invalid-repo-name',
@@ -62,7 +64,7 @@ class TestGitHubValidator(unittest.TestCase):
         response, status_code = validate_github_repo_data(data)
         self.assertEqual(status_code, 400)
         self.assertIn('Invalid repository name format', json.loads(response.data)['message'])
-    
+
     def test_validate_github_repo_data_invalid_url(self):
         data = {
             'repository_name': 'owner/repo',
@@ -89,13 +91,13 @@ class TestGitHubValidator(unittest.TestCase):
         }
         result = validate_github_webhook_payload(data)
         self.assertIsNone(result)
-        
+
     def test_validate_github_webhook_payload_missing_fields(self):
         data = {'action': 'opened'}
         response, status_code = validate_github_webhook_payload(data)
         self.assertEqual(status_code, 400)
         self.assertIn('Invalid webhook payload format', json.loads(response.data)['message'])
-        
+
     def test_validate_github_webhook_payload_invalid_repo(self):
         data = {
             'action': 'opened',
@@ -114,13 +116,13 @@ class TestGitHubValidator(unittest.TestCase):
         }
         result = validate_task_github_link(data)
         self.assertIsNone(result)
-        
+
     def test_validate_task_github_link_missing_fields(self):
         data = {'task_id': 1}
         response, status_code = validate_task_github_link(data)
         self.assertEqual(status_code, 400)
         self.assertIn('Missing required fields', json.loads(response.data)['message'])
-        
+
     def test_validate_task_github_link_invalid_task_id(self):
         data = {
             'task_id': 'not-an-integer',

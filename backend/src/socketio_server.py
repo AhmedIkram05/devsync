@@ -1,8 +1,9 @@
 import functools
 import logging
+
 from flask import request
-from flask_socketio import SocketIO, emit, join_room, leave_room, disconnect
 from flask_jwt_extended import decode_token
+from flask_socketio import SocketIO, disconnect, emit, join_room, leave_room
 from jwt.exceptions import InvalidTokenError
 
 # Initialize SocketIO
@@ -117,12 +118,12 @@ def handle_disconnect():
 
     if user_id:
         connected_users.pop(user_id, None)
-        
+
         # Remove user from all project rooms
-        for project_id, members in project_rooms.items():
+        for _project_id, members in project_rooms.items():
             if user_id in members:
                 members.remove(user_id)
-        
+
     print("Client disconnected:", request.sid)
 
 @socketio.on('register')
@@ -142,17 +143,17 @@ def handle_join_project(data, user_id):
     project_id = data.get('project_id')
     if not project_id:
         return {"status": "error", "message": "Project ID required"}
-    
+
     # Add user to project room
     join_room(f"project_{project_id}")
-    
+
     # Track user in project_rooms
     if project_id not in project_rooms:
         project_rooms[project_id] = []
-    
+
     if user_id not in project_rooms[project_id]:
         project_rooms[project_id].append(user_id)
-    
+
     print(f"User {user_id} joined project {project_id}")
     return {"status": "success", "message": "Joined project room"}
 
@@ -163,14 +164,14 @@ def handle_leave_project(data, user_id):
     project_id = data.get('project_id')
     if not project_id:
         return {"status": "error", "message": "Project ID required"}
-    
+
     # Remove user from project room
     leave_room(f"project_{project_id}")
-    
+
     # Update project_rooms tracking
     if project_id in project_rooms and user_id in project_rooms[project_id]:
         project_rooms[project_id].remove(user_id)
-    
+
     print(f"User {user_id} left project {project_id}")
     return {"status": "success", "message": "Left project room"}
 
@@ -182,10 +183,10 @@ def handle_task_update(data, user_id):
     project_id = data.get('project_id')
     task_id = data.get('task_id')
     update_type = data.get('update_type', 'updated')  # created, updated, completed
-    
+
     if not project_id or not task_id:
         return {"status": "error", "message": "Project ID and Task ID required"}
-    
+
     # Broadcast to project room
     emit('task_updated', {
         'task_id': task_id,
@@ -193,7 +194,7 @@ def handle_task_update(data, user_id):
         'updated_by': user_id,
         'timestamp': data.get('timestamp')
     }, to=f"project_{project_id}")
-    
+
     return {"status": "success", "message": f"Task {update_type} notification sent"}
 
 @socketio.on('comment_added')
@@ -204,10 +205,10 @@ def handle_comment_added(data, user_id):
     task_id = data.get('task_id')
     comment_id = data.get('comment_id')
     mentioned_users = data.get('mentioned_users', [])
-    
+
     if not all([project_id, task_id, comment_id]):
         return {"status": "error", "message": "Missing required data"}
-    
+
     # Broadcast to project room
     emit('new_comment', {
         'task_id': task_id,
@@ -215,7 +216,7 @@ def handle_comment_added(data, user_id):
         'author_id': user_id,
         'timestamp': data.get('timestamp')
     }, to=f"project_{project_id}")
-    
+
     # Additionally notify specifically mentioned users
     for mentioned_user in mentioned_users:
         if mentioned_user in connected_users:
@@ -225,7 +226,7 @@ def handle_comment_added(data, user_id):
                 'mentioned_by': user_id,
                 'timestamp': data.get('timestamp')
             }, to=connected_users[mentioned_user])
-    
+
     return {"status": "success", "message": "Comment notification sent"}
 
 @socketio.on('project_updated')
@@ -234,10 +235,10 @@ def handle_project_updated(data, user_id):
     """Notify about project updates"""
     project_id = data.get('project_id')
     update_type = data.get('update_type', 'updated')  # updated, member_added, etc.
-    
+
     if not project_id:
         return {"status": "error", "message": "Project ID required"}
-    
+
     # Broadcast to project room
     emit('project_update', {
         'project_id': project_id,
@@ -246,7 +247,7 @@ def handle_project_updated(data, user_id):
         'data': data.get('data', {}),
         'timestamp': data.get('timestamp')
     }, to=f"project_{project_id}")
-    
+
     return {"status": "success", "message": f"Project {update_type} notification sent"}
 
 def init_socketio(app):

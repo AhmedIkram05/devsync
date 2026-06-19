@@ -96,7 +96,7 @@ class TestReportValidatorIntegration:
     def test_validate_report_data_all_valid_report_types(self, app, client):
         """Test all valid report types pass validation"""
         valid_types = ['task', 'project', 'user', 'system']
-        
+
         with app.app_context():
             for report_type in valid_types:
                 data = {
@@ -112,7 +112,7 @@ class TestReportValidatorIntegration:
     def test_validate_report_data_all_valid_date_ranges(self, app, client):
         """Test all valid date ranges pass validation"""
         valid_ranges = ['day', 'week', 'month', 'quarter', 'year', 'all']
-        
+
         with app.app_context():
             for date_range in valid_ranges:
                 data = {

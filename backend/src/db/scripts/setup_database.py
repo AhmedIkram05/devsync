@@ -1,10 +1,11 @@
 """
 Database setup script with cross-dialect index creation and error handling.
 """
+import logging
 import os
 import sys
-import logging
-from sqlalchemy import text, inspect
+
+from sqlalchemy import inspect, text
 
 # Add the backend directory to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
@@ -28,10 +29,10 @@ def create_index_safely(conn, index_name, table, columns):
     try:
         # Format columns for the SQL statement
         col_str = ", ".join(columns) if isinstance(columns, list) else columns
-        
+
         # First drop the index if it exists
         conn.execute(text(f"DROP INDEX IF EXISTS {index_name};"))
-        
+
         # Create index
         conn.execute(text(f"CREATE INDEX {index_name} ON {table} ({col_str});"))
         logger.info(f"Created index {index_name} on {table}({col_str})")
@@ -47,12 +48,12 @@ def setup_database():
         app = Flask(__name__)
         app.config.from_object(get_config())
         db.init_app(app)
-        
+
         with app.app_context():
             # Check if tables exist and create them if not
             inspector = inspect(db.engine)
             tables = inspector.get_table_names()
-            
+
             if not tables:
                 logger.info("No tables found. Creating tables...")
                 db.create_all()
@@ -62,36 +63,36 @@ def setup_database():
                 tables = inspector.get_table_names()
             else:
                 logger.info(f"Existing tables found: {', '.join(tables)}")
-            
+
             # Initialize read_column to None before the conditional block
             read_column = None
-            
+
             # Create indices manually - drop and recreate all indices
             with db.engine.connect() as conn:
                 # Check Notification table structure
                 if 'notifications' in tables:
                     columns = [col['name'] for col in inspector.get_columns('notifications')]
                     logger.info(f"Notification table columns: {columns}")
-                    
+
                     # Check read vs is_read column
                     read_column = 'is_read' if 'is_read' in columns else ('read' if 'read' in columns else None)
                     if read_column:
                         logger.info(f"Using '{read_column}' column for notification read status")
                     else:
                         logger.warning("Neither 'read' nor 'is_read' column exists in notifications table")
-                
+
                 # Explicitly commit before creating indices
                 conn.commit()
-                
+
                 # Create indices for each table
                 indices_created = 0
-                
+
                 # Users indices
                 if create_index_safely(conn, "idx_users_email", "users", "email"):
                     indices_created += 1
                 if create_index_safely(conn, "idx_users_role", "users", "role"):
                     indices_created += 1
-                
+
                 # Tasks indices
                 task_indices = [
                     ("idx_tasks_assigned_to", "assigned_to"),
@@ -107,7 +108,7 @@ def setup_database():
                 for idx_name, columns in task_indices:
                     if create_index_safely(conn, idx_name, "tasks", columns):
                         indices_created += 1
-                
+
                 # Notifications indices
                 if create_index_safely(conn, "idx_notifications_created_at", "notifications", "created_at"):
                     indices_created += 1
@@ -117,7 +118,7 @@ def setup_database():
                     indices_created += 1
                 if create_index_safely(conn, "idx_notifications_user_id", "notifications", "user_id"):
                     indices_created += 1
-                
+
                 # Comments indices
                 comment_indices = [
                     ("idx_comments_created_at", "created_at"),
@@ -140,7 +141,7 @@ def setup_database():
                             indices_created += 1
                 else:
                     logger.info("Skipping project index creation because 'projects' table does not exist")
-                
+
                 # Other tables indices
                 if create_index_safely(conn, "idx_github_repositories_name", "github_repositories", "repo_name"):
                     indices_created += 1
@@ -150,7 +151,7 @@ def setup_database():
                     indices_created += 1
                 if create_index_safely(conn, "idx_task_github_links_task_id", "task_github_links", "task_id"):
                     indices_created += 1
-                
+
                 # Ensure github_repositories.repo_url stays unique across supported DB engines.
                 try:
                     unique_on_repo_url = False
@@ -178,14 +179,14 @@ def setup_database():
                         logger.info("Unique constraint/index on github_repositories.repo_url already exists")
                 except Exception as e:
                     logger.error(f"Error handling unique constraint: {e}")
-                
+
                 # Commit all changes
                 conn.commit()
                 logger.info(f"Created {indices_created} indices successfully")
-            
+
             logger.info("Database setup completed")
             return True
-            
+
     except Exception as e:
         logger.error(f"Error setting up database: {e}")
         return False
@@ -196,13 +197,13 @@ def verify_database_indices():
         app = Flask(__name__)
         app.config.from_object(get_config())
         db.init_app(app)
-        
+
         with app.app_context():
             # Check which tables exist
             inspector = inspect(db.engine)
             tables = inspector.get_table_names()
             logger.info(f"Found tables: {', '.join(tables)}")
-            
+
             # Use inspector-based checks so verification works for SQLite and PostgreSQL.
             with db.engine.connect() as conn:
                 # Check for tables without indices
@@ -232,7 +233,7 @@ def verify_database_indices():
                         logger.info(f"Indices for {table}: {unique_index_names}")
                     elif table not in ['alembic_version', 'project_members']:
                         logger.warning(f"No indices found for {table}")
-        
+
         return True
     except Exception as e:
         logger.error(f"Error verifying database: {e}")

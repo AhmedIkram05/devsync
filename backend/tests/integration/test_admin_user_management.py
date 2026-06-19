@@ -1,15 +1,16 @@
 import os
 import sys
+from unittest.mock import MagicMock
+
 import pytest
 from flask_jwt_extended import create_access_token
-from unittest.mock import MagicMock
 
 # Add backend directory to import src.* modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from src.app import create_app
-from src.api.routes import admin_routes
 from src.api.controllers import users_controller
+from src.api.routes import admin_routes
+from src.app import create_app
 from src.db.models import (
     AuditLog,
     Comment,
@@ -23,6 +24,7 @@ from src.db.models import (
     db,
 )
 from src.services.notification_service import NotificationService
+
 
 @pytest.fixture
 def app_and_socket(monkeypatch):
@@ -71,7 +73,7 @@ def test_admin_create_user_rbac(client, app, auth_headers, monkeypatch):
     # 1. Developer should be forbidden
     resp = client.post('/api/v1/admin/users', json=user_data, headers=auth_headers('developer'))
     assert resp.status_code == 403
-    
+
     # 2. Team Lead should be forbidden
     resp = client.post('/api/v1/admin/users', json=user_data, headers=auth_headers('team_lead'))
     assert resp.status_code == 403

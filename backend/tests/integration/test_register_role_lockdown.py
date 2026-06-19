@@ -1,9 +1,9 @@
 """Tests for registration role lockdown — backend ignores client-supplied role."""
 import os
 import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
-from unittest.mock import patch, MagicMock
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
@@ -47,7 +47,7 @@ def test_register_ignores_admin_role(client, monkeypatch):
     mock_query.count.return_value = 1
 
     with patch('src.auth.auth.User') as MockUser, \
-         patch('src.auth.auth.db') as MockDB, \
+         patch('src.auth.auth.db'), \
          patch('src.auth.auth.hash_password', return_value='hashed'), \
          patch('src.auth.auth.generate_tokens', return_value={
              'access_token': 'tok',
@@ -89,7 +89,7 @@ def test_register_ignores_team_lead_role(client, monkeypatch):
     mock_query.count.return_value = 1
 
     with patch('src.auth.auth.User') as MockUser, \
-         patch('src.auth.auth.db') as MockDB, \
+         patch('src.auth.auth.db'), \
          patch('src.auth.auth.hash_password', return_value='hashed'), \
          patch('src.auth.auth.generate_tokens', return_value={
              'access_token': 'tok',
@@ -125,7 +125,7 @@ def test_first_user_is_admin(client, monkeypatch):
     mock_query.count.return_value = 0  # <--- This triggers the admin grant
 
     with patch('src.auth.auth.User') as MockUser, \
-         patch('src.auth.auth.db') as MockDB, \
+         patch('src.auth.auth.db'), \
          patch('src.auth.auth.hash_password', return_value='hashed'), \
          patch('src.auth.auth.generate_tokens', return_value={
              'access_token': 'tok',

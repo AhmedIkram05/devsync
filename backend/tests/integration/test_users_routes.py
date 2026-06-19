@@ -1,15 +1,15 @@
 """Tests for GET /users/:id access control — self vs other per role."""
 import os
 import sys
+from unittest.mock import MagicMock
 
 import pytest
-from unittest.mock import MagicMock
 from flask_jwt_extended import create_access_token
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from src.app import create_app
 from src.api.routes import users_routes
+from src.app import create_app
 
 
 @pytest.fixture

@@ -1,19 +1,20 @@
 # Authentication data validation
 
-from flask import jsonify
 import re
-from ...auth.rbac import Role
+
+from flask import jsonify
+
 
 def validate_login_data(data):
     """Validate login credentials"""
     if not all(k in data for k in ['email', 'password']):
         return jsonify({'message': 'Email and password required'}), 400
-    
+
     # Relaxed email pattern to support plus signs, subdomains, etc.
     email_pattern = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
     if not re.match(email_pattern, data['email']):
         return jsonify({'message': 'Invalid email format'}), 400
-    
+
     return None
 
 def validate_registration_data(data):

@@ -1,8 +1,9 @@
 """Middleware to handle errors consistently across the API"""
 
-import traceback
 import logging
-from flask import jsonify, current_app
+import traceback
+
+from flask import current_app, jsonify
 
 # Configure logger
 logger = logging.getLogger('api.errors')
@@ -47,7 +48,7 @@ def handle_generic_error(error):
     """Handler for all other unhandled exceptions"""
     # Log the full traceback for debugging
     logger.error(f"Unhandled exception: {str(error)}\n{traceback.format_exc()}")
-    
+
     # In production, don't expose detailed error information
     if current_app.config.get('DEBUG', False):
         error_details = str(error)
@@ -55,7 +56,7 @@ def handle_generic_error(error):
     else:
         error_details = "An unexpected error occurred"
         traceback_info = None
-    
+
     return jsonify({
         'status': 'error',
         'message': 'Internal server error',
@@ -68,6 +69,6 @@ def register_error_handlers(app):
     app.register_error_handler(APIError, handle_api_error)
     app.register_error_handler(404, handle_404_error)
     app.register_error_handler(Exception, handle_generic_error)
-    
+
     # Register additional error handlers as needed
     # app.register_error_handler(ValidationError, handle_validation_error)

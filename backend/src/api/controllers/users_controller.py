@@ -3,6 +3,8 @@
 from flask import jsonify, request
 from flask_jwt_extended import get_jwt_identity
 
+from src.socketio_server import emit_dashboard_refresh
+
 from ...auth.helpers import hash_password, verify_password
 from ...db.models import (
     AuditLog,
@@ -19,7 +21,6 @@ from ...db.models import (
 from ...db.models.models import project_members
 from ...services import audit_service
 from ..validators.user_validator import validate_profile_update, validate_user_data
-from src.socketio_server import emit_dashboard_refresh
 
 
 def _cleanup_user_dependencies(user_id, replacement_user_id):
@@ -55,7 +56,7 @@ def _cleanup_user_dependencies(user_id, replacement_user_id):
 def get_all_users():
     """Controller function to get all users"""
     users = User.query.all()
-    
+
     users_data = [{
         'id': user.id,
         'name': user.name,
@@ -65,24 +66,24 @@ def get_all_users():
         'avatar': getattr(user, 'avatar', None),
         'created_at': user.created_at.isoformat() if user.created_at else None
     } for user in users]
-    
+
     return jsonify({'users': users_data})
 
 def create_user():
     """Controller function to create a new user (admin only)"""
     data = request.get_json()
-    
+
     # Validate user data
     validation_result = validate_user_data(data)
     if validation_result:
         return validation_result
-        
+
     # Check if email is already taken
     if User.query.filter_by(email=data['email']).first():
         return jsonify({'message': 'Email already in use'}), 409
-    
+
     admin_user_id = get_jwt_identity()['user_id']
-        
+
     # Create new user
     new_user = User(
         name=data['name'],
@@ -90,10 +91,10 @@ def create_user():
         password=hash_password(data.get('password')),
         role=data.get('role', 'developer')
     )
-    
+
     db.session.add(new_user)
     db.session.commit()
-    
+
     audit_service.record(
         action='user_created',
         resource_type='user',
@@ -106,7 +107,7 @@ def create_user():
         resource_id=new_user.id,
         payload={'role': new_user.role}
     )
-    
+
     # Notify admins about new user
     from ...services.notification_service import NotificationService
     NotificationService.user_crud_notification(
@@ -115,7 +116,7 @@ def create_user():
         affected_user_role=new_user.role,
         admin_user_id=admin_user_id
     )
-    
+
     return jsonify({
         'message': 'User created successfully',
         'user': {
@@ -129,7 +130,7 @@ def create_user():
 def get_user_by_id(user_id):
     """Controller function to get a specific user"""
     user = User.query.get_or_404(user_id)
-    
+
     user_data = {
         'id': user.id,
         'name': user.name,
@@ -139,24 +140,24 @@ def get_user_by_id(user_id):
         'avatar': getattr(user, 'avatar', None),
         'created_at': user.created_at.isoformat() if user.created_at else None
     }
-    
+
     return jsonify({'user': user_data})
 
 def update_user(user_id):
     """Controller function to update a user (admin only)"""
     data = request.get_json()
-    
+
     # Validate user data
     validation_result = validate_user_data(data)
     if validation_result:
         return validation_result
-    
+
     user = User.query.get_or_404(user_id)
     admin_user_id = get_jwt_identity()['user_id']
-    
+
     # Track what fields are being changed
     changed_fields = {}
-    
+
     # Update allowed fields and track changes
     if 'name' in data and user.name != data['name']:
         changed_fields['name'] = (user.name, data['name'])
@@ -180,7 +181,7 @@ def update_user(user_id):
     if 'avatar' in data and hasattr(user, 'avatar') and user.avatar != data['avatar']:
         changed_fields['avatar'] = ('...', '...')
         user.avatar = data['avatar']
-    
+
     db.session.commit()
 
     audit_service.record(
@@ -195,7 +196,7 @@ def update_user(user_id):
         resource_id=user.id,
         payload={'role': user.role}
     )
-    
+
     # Notify admins about user update/role change
     from ...services.notification_service import NotificationService
     if 'role' in changed_fields:
@@ -213,7 +214,7 @@ def update_user(user_id):
             changed_fields=changed_fields if changed_fields else None,
             admin_user_id=admin_user_id
         )
-    
+
     return jsonify({
         'message': 'User updated successfully',
         'user': {
@@ -243,7 +244,7 @@ def delete_user(user_id):
     except Exception:
         db.session.rollback()
         return jsonify({'message': 'Failed to delete user'}), 500
-    
+
     audit_service.record(
         action='user_deleted',
         resource_type='user',
@@ -254,7 +255,7 @@ def delete_user(user_id):
         resource_type='user',
         resource_id=user_id
     )
-    
+
     # Notify admins about user deletion
     from ...services.notification_service import NotificationService
     NotificationService.user_crud_notification(
@@ -262,14 +263,14 @@ def delete_user(user_id):
         affected_user_name=user_name,
         admin_user_id=admin_user_id
     )
-    
+
     return jsonify({'message': 'User deleted successfully'})
 
 def get_current_user_profile():
     """Controller function to get the current user's profile"""
     user_id = get_jwt_identity()['user_id']
     user = User.query.get_or_404(user_id)
-    
+
     user_data = {
         'id': user.id,
         'name': user.name,
@@ -279,21 +280,21 @@ def get_current_user_profile():
         'avatar': getattr(user, 'avatar', None),
         'created_at': user.created_at.isoformat() if user.created_at else None
     }
-    
+
     return jsonify({'user': user_data})
 
 def update_current_user_profile():
     """Controller function to update the current user's profile"""
     data = request.get_json()
     user_id = get_jwt_identity()['user_id']
-    
+
     # Validate profile update data
     validation_result = validate_profile_update(data)
     if validation_result:
         return validation_result
-    
+
     user = User.query.get_or_404(user_id)
-    
+
     # Update allowed fields
     if 'name' in data:
         user.name = data['name']
@@ -312,9 +313,9 @@ def update_current_user_profile():
         if not verify_password(data['current_password'], user.password):
             return jsonify({'message': 'Current password is incorrect'}), 400
         user.password = hash_password(data['new_password'])
-    
+
     db.session.commit()
-    
+
     return jsonify({
         'message': 'Profile updated successfully',
         'user': {

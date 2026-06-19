@@ -10,7 +10,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../.
 from backend.src.auth.helpers import generate_tokens, hash_password, verify_password
 from backend.src.auth.rbac import ROLE_PERMISSIONS, Role, require_permission, require_role
 
-
 auth_test_app = Flask(__name__)
 
 
@@ -50,9 +49,8 @@ def test_require_role_allows_matching_string_role():
     def protected_endpoint():
         return jsonify({'ok': True}), 200
 
-    with auth_test_app.app_context():
-        with patch('backend.src.auth.rbac.get_jwt', return_value={'role': 'admin'}):
-            response, status = protected_endpoint()
+    with auth_test_app.app_context(), patch('backend.src.auth.rbac.get_jwt', return_value={'role': 'admin'}):
+        response, status = protected_endpoint()
 
     assert status == 200
     assert response.get_json() == {'ok': True}
@@ -63,9 +61,8 @@ def test_require_role_allows_matching_enum_role():
     def protected_endpoint():
         return jsonify({'ok': True}), 200
 
-    with auth_test_app.app_context():
-        with patch('backend.src.auth.rbac.get_jwt', return_value={'role': 'developer'}):
-            response, status = protected_endpoint()
+    with auth_test_app.app_context(), patch('backend.src.auth.rbac.get_jwt', return_value={'role': 'developer'}):
+        response, status = protected_endpoint()
 
     assert status == 200
     assert response.get_json() == {'ok': True}
@@ -94,9 +91,8 @@ def test_require_permission_allows_permitted_role():
     def protected_endpoint():
         return jsonify({'allowed': True}), 200
 
-    with auth_test_app.app_context():
-        with patch('backend.src.auth.rbac.get_jwt', return_value={'role': 'admin'}):
-            response, status = protected_endpoint()
+    with auth_test_app.app_context(), patch('backend.src.auth.rbac.get_jwt', return_value={'role': 'admin'}):
+        response, status = protected_endpoint()
 
     assert status == 200
     assert response.get_json() == {'allowed': True}
@@ -107,9 +103,8 @@ def test_require_permission_rejects_unpermitted_role():
     def protected_endpoint():
         return jsonify({'allowed': True}), 200
 
-    with auth_test_app.app_context():
-        with patch('backend.src.auth.rbac.get_jwt', return_value={'role': 'developer'}):
-            response, status = protected_endpoint()
+    with auth_test_app.app_context(), patch('backend.src.auth.rbac.get_jwt', return_value={'role': 'developer'}):
+        response, status = protected_endpoint()
 
     assert status == 403
     assert response.get_json() == {'message': 'Insufficient permissions'}

@@ -1,12 +1,13 @@
-import sys
 import os
+import sys
+
 from flask import Flask, jsonify
 
 # Set up proper import paths
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..')))
 
 # Import after path setup
-from backend.src.api.validators.user_validator import validate_user_data, validate_profile_update
+from backend.src.api.validators.user_validator import validate_profile_update, validate_user_data
 
 # Create a Flask app for testing context
 app = Flask(__name__)
@@ -17,7 +18,7 @@ def test_validate_user_data_email():
         # Valid email
         result = validate_user_data({'email': 'test@example.com'})
         assert result is None
-        
+
         # Invalid email
         result = validate_user_data({'email': 'invalid-email'})
         response, status = result
@@ -30,13 +31,13 @@ def test_validate_user_data_name():
         # Valid name
         result = validate_user_data({'name': 'John Doe'})
         assert result is None
-        
+
         # Name too short
         result = validate_user_data({'name': 'J'})
         response, status = result
         assert status == 400
         assert 'Name must be between 2 and 100 characters' in response.get_json()['message']
-        
+
         # Name too long
         result = validate_user_data({'name': 'J' * 101})
         response, status = result
@@ -50,7 +51,7 @@ def test_validate_user_data_role():
         for role in ['developer', 'team_lead', 'admin']:
             result = validate_user_data({'role': role})
             assert result is None
-        
+
         # Invalid role
         result = validate_user_data({'role': 'invalid_role'})
         response, status = result
@@ -63,7 +64,7 @@ def test_validate_user_data_password():
         # Valid password
         result = validate_user_data({'password': 'securepassword'})
         assert result is None
-        
+
         # Password too short
         result = validate_user_data({'password': 'short'})
         response, status = result
@@ -76,7 +77,7 @@ def test_validate_profile_update_email():
         # Valid email
         result = validate_profile_update({'email': 'test@example.com'})
         assert result is None
-        
+
         # Invalid email
         result = validate_profile_update({'email': 'invalid-email'})
         response, status = result
@@ -89,7 +90,7 @@ def test_validate_profile_update_name():
         # Valid name
         result = validate_profile_update({'name': 'John Doe'})
         assert result is None
-        
+
         # Name too short
         result = validate_profile_update({'name': 'J'})
         response, status = result
@@ -105,19 +106,19 @@ def test_validate_profile_update_password():
             'new_password': 'newpassword'
         })
         assert result is None
-        
+
         # Only current password provided
         result = validate_profile_update({'current_password': 'oldpassword'})
         response, status = result
         assert status == 400
         assert 'Both current password and new password are required' in response.get_json()['message']
-        
+
         # Only new password provided
         result = validate_profile_update({'new_password': 'newpassword'})
         response, status = result
         assert status == 400
         assert 'Both current password and new password are required' in response.get_json()['message']
-        
+
         # New password too short
         result = validate_profile_update({
             'current_password': 'oldpassword',

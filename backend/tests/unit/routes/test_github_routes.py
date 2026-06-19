@@ -179,8 +179,9 @@ def test_disconnect_github_route_calls_controller(monkeypatch, client):
 
 
 def test_github_route_missing_or_malformed_token_returns_401():
-    from flask import Flask, Blueprint
+    from flask import Blueprint, Flask
     from flask_jwt_extended import JWTManager, jwt_required
+
     from backend.src.api.routes import github_routes
 
     # Create a fresh app with real JWT configuration

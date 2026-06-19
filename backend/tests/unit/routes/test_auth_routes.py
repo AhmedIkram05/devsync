@@ -133,7 +133,7 @@ def test_admin_required_middleware_blocks_client_role(app, monkeypatch):
     from backend.src.api.middlewares import admin_required
     monkeypatch.setattr('backend.src.api.middlewares.verify_jwt_in_request', lambda: None)
     monkeypatch.setattr('backend.src.api.middlewares.get_jwt', lambda: {'role': 'client'})
-    
+
     @app.route('/api/v1/projects/mutation', methods=['POST'])
     @admin_required()
     def fake_admin_route():
@@ -141,7 +141,7 @@ def test_admin_required_middleware_blocks_client_role(app, monkeypatch):
 
     client = app.test_client()
     response = client.post('/api/v1/projects/mutation')
-    
+
     assert response.status_code == 403
     assert response.get_json()['message'] == 'Admin access required'
 
@@ -150,7 +150,7 @@ def test_admin_required_middleware_allows_admin_role(app, monkeypatch):
     from backend.src.api.middlewares import admin_required
     monkeypatch.setattr('backend.src.api.middlewares.verify_jwt_in_request', lambda: None)
     monkeypatch.setattr('backend.src.api.middlewares.get_jwt', lambda: {'role': 'admin'})
-    
+
     @app.route('/api/v1/projects/admin-only', methods=['POST'])
     @admin_required()
     def fake_admin_route():
@@ -158,6 +158,6 @@ def test_admin_required_middleware_allows_admin_role(app, monkeypatch):
 
     client = app.test_client()
     response = client.post('/api/v1/projects/admin-only')
-    
+
     assert response.status_code == 200
     assert response.get_json()['message'] == 'Success'

@@ -1,7 +1,8 @@
-import sys
 import os
+import sys
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from flask import Flask, jsonify
 
 # Set up proper import paths
@@ -14,7 +15,7 @@ def app():
     app.config['SECRET_KEY'] = 'test-secret-key'
     app.config['JWT_SECRET_KEY'] = 'test-secret-key'
     app.config['JWT_TOKEN_LOCATION'] = ['headers']
-    
+
     yield app
 
 @pytest.fixture
@@ -73,19 +74,19 @@ def test_get_all_tasks_admin(app, mock_jwt_identity, mock_jwt):
             task1.created_at.isoformat.return_value = "2023-01-01T00:00:00"
             task1.updated_at = MagicMock()
             task1.updated_at.isoformat.return_value = "2023-01-02T00:00:00"
-            
+
             # Configure the mock query
             mock_filtered_query = MagicMock()
             mock_query.filter.return_value = mock_filtered_query
             mock_filtered_query.all.return_value = [task1]
             mock_query.all.return_value = [task1]
-            
+
             # Import the function locally to use patched modules
             from backend.src.api.controllers.tasks_controller import get_all_tasks
-            
+
             # Call the function
             response = get_all_tasks()
-            
+
             # Assert the results
             data = response.get_json()
             assert 'tasks' in data
@@ -96,52 +97,51 @@ def test_get_all_tasks_admin(app, mock_jwt_identity, mock_jwt):
 def test_get_all_tasks_developer(app, mock_jwt_identity, mock_jwt):
     # Set developer role
     mock_jwt.return_value = {'role': 'developer'}
-    
-    with app.test_request_context():
-        with patch('backend.src.api.controllers.tasks_controller.Task.query') as mock_query:
-            # Configure filter for developer (assigned_to or created_by)
-            filter_mock = MagicMock()
-            mock_query.filter.return_value = filter_mock
-            filter_mock.all.return_value = []
-            
-            # Import the function locally to use patched modules
-            from backend.src.api.controllers.tasks_controller import get_all_tasks
-            
-            # Call the function
-            response = get_all_tasks()
-            
-            # Assert that all() was called on the query (developers can now see all tasks)
-            mock_query.all.assert_called_once()
-            
-            # Assert the results
-            data = response.get_json()
-            assert 'tasks' in data
-            assert isinstance(data['tasks'], list)
+
+    with app.test_request_context(), patch('backend.src.api.controllers.tasks_controller.Task.query') as mock_query:
+        # Configure filter for developer (assigned_to or created_by)
+        filter_mock = MagicMock()
+        mock_query.filter.return_value = filter_mock
+        filter_mock.all.return_value = []
+
+        # Import the function locally to use patched modules
+        from backend.src.api.controllers.tasks_controller import get_all_tasks
+
+        # Call the function
+        response = get_all_tasks()
+
+        # Assert that all() was called on the query (developers can now see all tasks)
+        mock_query.all.assert_called_once()
+
+        # Assert the results
+        data = response.get_json()
+        assert 'tasks' in data
+        assert isinstance(data['tasks'], list)
 
 def test_get_task_by_id(app, mock_jwt_identity, mock_jwt, mock_task):
     with app.test_request_context():
         with patch('backend.src.api.controllers.tasks_controller.Task.query') as mock_query, \
              patch('backend.src.api.controllers.tasks_controller.User.query') as mock_user_query:
-            
+
             # Set up mocks
             mock_query.get_or_404.return_value = mock_task
-            
+
             # Mock users
             creator = MagicMock()
             creator.name = "Creator User"
-            
+
             assignee = MagicMock()
             assignee.name = "Assignee User"
-            
+
             # Configure user query returns
             mock_user_query.get.side_effect = lambda id: creator if id == 1 else assignee if id == 2 else None
-            
+
             # Import the function locally to use patched modules
             from backend.src.api.controllers.tasks_controller import get_task_by_id
-            
+
             # Call the function
             response = get_task_by_id(1)
-            
+
             # Assert the results
             data = response.get_json()
             assert 'task' in data
@@ -158,28 +158,28 @@ def test_create_new_task(app, client, mock_jwt_identity, mock_jwt, mock_db):
         'progress': 0,
         'assigned_to': 2
     }
-    
+
     # Use test_request_context with the JSON data
     with app.test_request_context(json=test_data):
         with patch('backend.src.api.controllers.tasks_controller.Task') as mock_task_class, \
              patch('backend.src.api.controllers.tasks_controller.validate_task_data') as mock_validate:
-            
+
             # Set up mocks
             mock_validate.return_value = None
-            
+
             new_task = MagicMock()
             new_task.id = 1
             new_task.title = 'New Task'
             new_task.status = 'todo'
-            
+
             mock_task_class.return_value = new_task
-            
+
             # Import the function locally to use patched modules
             from backend.src.api.controllers.tasks_controller import create_new_task
-            
+
             # Call the function
             response, status_code = create_new_task()
-            
+
             # Assert results
             assert status_code == 201
             assert response.get_json()['task']['title'] == 'New Task'
@@ -224,20 +224,20 @@ def test_create_new_task_developer_forces_self_assignment(app, mock_jwt_identity
 def test_update_task_by_id(app, mock_jwt_identity, mock_jwt, mock_db, mock_task):
     # Test data for task update
     test_data = {'title': 'Updated Task', 'progress': 75}
-    
+
     # Use test_request_context with the JSON data
     with app.test_request_context(json=test_data):
         with patch('backend.src.api.controllers.tasks_controller.Task.query') as mock_query:
-            
+
             # Set up mocks
             mock_query.get_or_404.return_value = mock_task
-            
+
             # Import the function locally to use patched modules
             from backend.src.api.controllers.tasks_controller import update_task_by_id
-            
+
             # Call the function
             response = update_task_by_id(1)
-            
+
             # Assert results
             data = response.get_json()
             assert data['message'] == 'Task updated successfully'
@@ -248,26 +248,26 @@ def test_update_task_by_id(app, mock_jwt_identity, mock_jwt, mock_db, mock_task)
 def test_update_task_permission_denied(app, mock_jwt_identity, mock_jwt, mock_task):
     # Set developer role
     mock_jwt.return_value = {'role': 'developer'}
-    
+
     # Change task assigned_to to be different from user_id
     mock_task.assigned_to = 999  # Different from mock_jwt_identity's user_id (1)
-    
+
     # Test data for task update
     test_data = {'title': 'Updated Task'}
-    
+
     # Use test_request_context with the JSON data
     with app.test_request_context(json=test_data):
         with patch('backend.src.api.controllers.tasks_controller.Task.query') as mock_query:
-            
+
             # Set up mocks
             mock_query.get_or_404.return_value = mock_task
-            
+
             # Import the function locally to use patched modules
             from backend.src.api.controllers.tasks_controller import update_task_by_id
-            
+
             # Call the function
             response, status_code = update_task_by_id(1)
-            
+
             # Assert results
             assert status_code == 403
             assert 'You can only update tasks assigned to you' in response.get_json()['message']
@@ -289,21 +289,21 @@ def test_team_lead_can_assign_unassigned_task(app, mock_jwt_identity, mock_jwt, 
             mock_db.session.commit.assert_called_once()
 
 def test_delete_task_by_id(app, mock_jwt_identity, mock_db):
-    
+
     with app.test_request_context():
         with patch('backend.src.api.controllers.tasks_controller.Task.query') as mock_query, \
              patch('backend.src.api.controllers.tasks_controller.get_jwt') as mock_get_jwt:
             mock_get_jwt.return_value = {'role': 'admin'}
-            
+
             mock_task = MagicMock()
             mock_query.get_or_404.return_value = mock_task
-            
+
             # Import the function locally to use patched modules
             from backend.src.api.controllers.tasks_controller import delete_task_by_id
-            
+
             # Call the function
             response = delete_task_by_id(1)
-            
+
             # Assert results
             assert 'Task deleted successfully' in response.get_json()['message']
             mock_db.session.delete.assert_called_once_with(mock_task)
@@ -313,16 +313,15 @@ def test_delete_task_by_id(app, mock_jwt_identity, mock_db):
 def test_delete_task_permission_denied_for_non_owner(app, mock_jwt_identity, mock_db, mock_jwt):
     mock_jwt.return_value = {'role': 'developer'}
 
-    with app.test_request_context():
-        with patch('backend.src.api.controllers.tasks_controller.Task.query') as mock_query:
-            mock_task = MagicMock()
-            mock_task.assigned_to = 999
-            mock_task.created_by = 998
-            mock_query.get_or_404.return_value = mock_task
+    with app.test_request_context(), patch('backend.src.api.controllers.tasks_controller.Task.query') as mock_query:
+        mock_task = MagicMock()
+        mock_task.assigned_to = 999
+        mock_task.created_by = 998
+        mock_query.get_or_404.return_value = mock_task
 
-            from backend.src.api.controllers.tasks_controller import delete_task_by_id
+        from backend.src.api.controllers.tasks_controller import delete_task_by_id
 
-            response, status_code = delete_task_by_id(1)
+        response, status_code = delete_task_by_id(1)
 
-            assert status_code == 403
-            assert 'You can only delete tasks assigned to you' in response.get_json()['message']
+        assert status_code == 403
+        assert 'You can only delete tasks assigned to you' in response.get_json()['message']

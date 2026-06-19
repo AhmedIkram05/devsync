@@ -8,8 +8,8 @@ from flask_jwt_extended import create_access_token
 # Add backend directory to import src.* modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from src.app import create_app
 from src.api.routes import github_routes
+from src.app import create_app
 from src.socketio_server import connected_users, project_rooms
 
 
@@ -53,7 +53,7 @@ def test_create_app_with_malformed_config(monkeypatch):
         'JWT_SECRET_KEY': None, # Malformed
         'JWT_COOKIE_SECURE': 'False', # String instead of bool
     })
-    
+
     assert app is not None
     # the config should either convert it or keep it as is
     assert app.config['TESTING'] is True

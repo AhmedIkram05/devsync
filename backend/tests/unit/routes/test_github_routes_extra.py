@@ -1,5 +1,4 @@
-from flask import Flask, Blueprint
-
+from flask import Blueprint, Flask
 from src.api.routes import github_routes
 
 

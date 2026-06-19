@@ -1,8 +1,9 @@
 import logging
-from datetime import datetime, timezone
-from src.socketio_server import socketio, connected_users, project_rooms
-from src.db.models import Notification, Project
+from datetime import UTC, datetime
+
 from src.db.db_connection import db
+from src.db.models import Notification, Project
+from src.socketio_server import connected_users, project_rooms, socketio
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ class NotificationService:
     def send_to_user(user_id, notification_type, title, message, reference_id=None, task_id=None):
         """
         Send notification to a specific user and save to database
-        
+
         Args:
             user_id: User ID to send notification to
             notification_type: Type of notification (task, comment, etc.)
@@ -39,20 +40,20 @@ class NotificationService:
             reference_id=reference_id,
             task_id=task_id,
             is_read=False,
-            created_at=datetime.now(timezone.utc)
+            created_at=datetime.now(UTC)
         )
-        
+
         # Save to database
         db.session.add(notification)
         db.session.commit()
-        
+
         # Send via Socket.IO if user is connected
         if user_id in connected_users:
             try:
                 socketio.emit('notification', notification.to_dict(), to=connected_users[user_id])
             except Exception:
                 logger.exception("Failed to emit notification %s to user %s", notification.id, user_id)
-        
+
         return notification
 
     @staticmethod
@@ -100,19 +101,19 @@ class NotificationService:
     ):
         """
         Send notification to all members of a project
-        
+
         Args:
             project_id: Project ID to send notification to
             notification_type: Type of notification (task, comment, etc.)
             title: Notification title
-            message: Notification content  
+            message: Notification content
             reference_id: ID of the related object (task_id, project_id, etc.)
             exclude_user_id: Optional user ID to exclude from notification (usually the initiator)
             exclude_user_ids: Optional iterable of additional user IDs to exclude
             task_id: Optional task ID related to the notification
         """
         user_ids = NotificationService._project_member_ids(project_id)
-        
+
         excluded = set(str(uid) for uid in (exclude_user_ids or []) if uid is not None)
         if exclude_user_id is not None:
             excluded.add(str(exclude_user_id))
@@ -125,7 +126,7 @@ class NotificationService:
                 continue
             seen.add(user_key)
             filtered_user_ids.append(user_id)
-        
+
         notifications = []
         for user_id in filtered_user_ids:
             notification = NotificationService.send_to_user(
@@ -138,7 +139,7 @@ class NotificationService:
             )
             if notification:
                 notifications.append(notification)
-        
+
         return notifications
 
     @staticmethod
@@ -147,7 +148,7 @@ class NotificationService:
         notification = Notification.query.filter_by(id=notification_id, user_id=user_id).first()
         if notification:
             notification.is_read = True   # changed from notification.read
-            notification.read_at = datetime.now(timezone.utc)
+            notification.read_at = datetime.now(UTC)
             db.session.commit()
             return True
         return False
@@ -155,7 +156,7 @@ class NotificationService:
     @staticmethod
     def mark_all_as_read(user_id):
         """Mark all user's notifications as read"""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         Notification.query.filter_by(user_id=user_id, is_read=False).update({  # changed filter key
             'is_read': True,  # changed update key
             'read_at': now
@@ -172,10 +173,10 @@ class NotificationService:
     def get_user_notifications(user_id, page=1, per_page=10, unread_only=False):
         """Get paginated notifications for a user"""
         query = Notification.query.filter_by(user_id=user_id)
-        
+
         if unread_only:
             query = query.filter_by(is_read=False)  # use is_read
-            
+
         return query.order_by(Notification.created_at.desc()).paginate(
             page=page, per_page=per_page, error_out=False
         )
@@ -197,7 +198,7 @@ class NotificationService:
                     task_id=task_id
                 )
             excluded_project_user_ids.append(assignee_id)
-        
+
         # Notify project members about the new task
         NotificationService.send_to_project(
             project_id=project_id,
@@ -210,7 +211,7 @@ class NotificationService:
         )
 
     @staticmethod
-    def task_updated_notification(task_id, task_name, project_id, updated_by_user_id, 
+    def task_updated_notification(task_id, task_name, project_id, updated_by_user_id,
                                   old_assignee_id=None, new_assignee_id=None):
         """Send notification for task updates"""
         excluded_project_user_ids = [updated_by_user_id]
@@ -227,7 +228,7 @@ class NotificationService:
                     task_id=task_id
                 )
             excluded_project_user_ids.append(new_assignee_id)
-        
+
         # Notify project members about the task update
         NotificationService.send_to_project(
             project_id=project_id,
@@ -240,7 +241,7 @@ class NotificationService:
         )
 
     @staticmethod
-    def comment_added_notification(task_id, task_name, project_id, comment_id, 
+    def comment_added_notification(task_id, task_name, project_id, comment_id,
                                   commenter_user_id, mentioned_user_ids=None,
                                   recipient_user_ids=None):
         """Send notification for new comments"""
@@ -273,7 +274,7 @@ class NotificationService:
                     task_id=task_id
                 )
                 excluded_project_user_ids.append(user_id)
-        
+
         # Notify project members about the new comment
         NotificationService.send_to_project(
             project_id=project_id,
@@ -313,7 +314,7 @@ class NotificationService:
     def send_to_recipients(recipient_user_ids, notification_type, title, message, reference_id=None, task_id=None):
         """
         Send notification to a specific list of recipients.
-        
+
         Args:
             recipient_user_ids: List of user IDs to send notification to
             notification_type: Type of notification
@@ -324,7 +325,7 @@ class NotificationService:
         """
         if not recipient_user_ids:
             return []
-        
+
         notifications = []
         for user_id in recipient_user_ids:
             notification = NotificationService.send_to_user(
@@ -337,15 +338,15 @@ class NotificationService:
             )
             if notification:
                 notifications.append(notification)
-        
+
         return notifications
 
     @staticmethod
-    def task_created_notification_v2(task_id, task_name, project_id, created_by_user_id, assignee_id=None, 
+    def task_created_notification_v2(task_id, task_name, project_id, created_by_user_id, assignee_id=None,
                                       project_name=None, assignee_name=None, recipient_user_ids=None):
         """
         Send notification for task creation using role-based recipients with detailed context.
-        
+
         Args:
             task_id: Task ID
             task_name: Task name
@@ -363,7 +364,7 @@ class NotificationService:
                 project_name = project.name if project else None
             except Exception:
                 project_name = None
-        
+
         # Fetch assignee name if not provided
         if assignee_name is None and assignee_id:
             try:
@@ -372,7 +373,7 @@ class NotificationService:
                 assignee_name = assignee.name if assignee else None
             except Exception:
                 assignee_name = None
-        
+
         if recipient_user_ids is None:
             from .notification_recipients import get_recipients_for_task_create
             recipient_user_ids = get_recipients_for_task_create(
@@ -381,12 +382,12 @@ class NotificationService:
                 creator_id=created_by_user_id,
                 assignee_id=assignee_id
             )
-        
+
         # Build context-rich message
         project_context = f" in {project_name}" if project_name else ""
         assignee_context = f" assigned to {assignee_name}" if assignee_name else ""
         message = f'New task "{task_name}"{project_context}{assignee_context}'
-        
+
         return NotificationService.send_to_recipients(
             recipient_user_ids=recipient_user_ids,
             notification_type='task_created',
@@ -401,7 +402,7 @@ class NotificationService:
                                       changed_fields=None, project_name=None, recipient_user_ids=None):
         """
         Send notification for task updates using role-based recipients with specific change details.
-        
+
         Args:
             task_id: Task ID
             task_name: Task name
@@ -420,7 +421,7 @@ class NotificationService:
                 project_name = project.name if project else None
             except Exception:
                 project_name = None
-        
+
         if recipient_user_ids is None:
             from .notification_recipients import get_recipients_for_task_update
             recipient_user_ids = get_recipients_for_task_update(
@@ -429,15 +430,15 @@ class NotificationService:
                 updater_id=updated_by_user_id,
                 assignee_id=assignee_id
             )
-        
+
         # Build specific message about what changed
         project_context = f" in {project_name}" if project_name else ""
-        
+
         if changed_fields:
             # Get the most important change to highlight
             important_fields = ['status', 'assigned_to', 'deadline', 'priority']
             main_change = None
-            
+
             for field in important_fields:
                 if field in changed_fields:
                     old_val, new_val = changed_fields[field]
@@ -457,7 +458,7 @@ class NotificationService:
                     elif field == 'priority':
                         main_change = f"priority set to {new_val}"
                     break
-            
+
             if main_change:
                 message = f'Task "{task_name}"{project_context} - {main_change}'
             else:
@@ -466,7 +467,7 @@ class NotificationService:
                 message = f'Task "{task_name}"{project_context} updated ({changed_list})'
         else:
             message = f'Task "{task_name}"{project_context} was updated'
-        
+
         return NotificationService.send_to_recipients(
             recipient_user_ids=recipient_user_ids,
             notification_type='task_updated',
@@ -477,11 +478,11 @@ class NotificationService:
         )
 
     @staticmethod
-    def user_crud_notification(action_type, affected_user_name, affected_user_role=None, 
+    def user_crud_notification(action_type, affected_user_name, affected_user_role=None,
                                changed_fields=None, admin_user_id=None, recipient_user_ids=None):
         """
         Send notification for user CRUD operations with specific details.
-        
+
         Args:
             action_type: 'user_created', 'user_updated', 'user_deleted', 'user_role_changed'
             affected_user_name: Name of the user being affected
@@ -493,18 +494,18 @@ class NotificationService:
         if recipient_user_ids is None:
             from .notification_recipients import get_recipients_for_user_crud
             recipient_user_ids = get_recipients_for_user_crud(action_type, None)
-        
+
         # Exclude the admin who performed the action
         if admin_user_id:
             recipient_user_ids = [uid for uid in recipient_user_ids if uid != admin_user_id]
-        
+
         action_titles = {
             'user_created': 'New User Created',
             'user_updated': 'User Updated',
             'user_deleted': 'User Deleted',
             'user_role_changed': 'User Role Changed'
         }
-        
+
         # Build specific messages
         if action_type == 'user_created':
             role_info = f" as {affected_user_role}" if affected_user_role else ""
@@ -522,7 +523,7 @@ class NotificationService:
             action_messages = f'User "{affected_user_name}" was deleted'
         else:
             action_messages = f'User operation on "{affected_user_name}"'
-        
+
         return NotificationService.send_to_recipients(
             recipient_user_ids=recipient_user_ids,
             notification_type=action_type,
@@ -535,7 +536,7 @@ class NotificationService:
     def report_available_notification(report_id, report_type, project_id, creator_id, recipient_user_ids=None):
         """
         Send notification for report availability.
-        
+
         Args:
             report_id: Report ID
             report_type: Type of report ('tasks', 'developers', 'github', etc.)
@@ -549,7 +550,7 @@ class NotificationService:
                 project_id=project_id,
                 creator_id=creator_id
             )
-        
+
         return NotificationService.send_to_recipients(
             recipient_user_ids=recipient_user_ids,
             notification_type='report_available',
@@ -562,7 +563,7 @@ class NotificationService:
     def project_member_added_notification(project_id, new_member_name, new_member_id, adder_id, recipient_user_ids=None):
         """
         Send notification when a new member is added to a project.
-        
+
         Args:
             project_id: Project ID
             new_member_name: Name of the new member
@@ -577,7 +578,7 @@ class NotificationService:
                 new_member_id=new_member_id,
                 adder_id=adder_id
             )
-        
+
         return NotificationService.send_to_recipients(
             recipient_user_ids=recipient_user_ids,
             notification_type='project_member_added',

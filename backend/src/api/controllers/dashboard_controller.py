@@ -1,13 +1,15 @@
 # Dashboard controller - business logic for user dashboards
+import logging
+import traceback
+from datetime import datetime, timedelta
+
 from flask import jsonify
-from flask_jwt_extended import get_jwt_identity, get_jwt
-from ...db.models import db, User, Task, Project, TaskGitHubLink, GitHubRepository  # Changed to relative import
+from flask_jwt_extended import get_jwt, get_jwt_identity
+
 from ...auth.rbac import Role  # Changed to relative import
+from ...db.models import GitHubRepository, Project, Task, TaskGitHubLink, User  # Changed to relative import
 from ...services import settings_service
 from ...services.task_rules import count_overdue_tasks, get_project_scope_ids
-from datetime import datetime, timedelta, date
-import traceback
-import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -113,7 +115,7 @@ def get_recent_completed_tasks(user_id, timeframe='month'):
             'century': 36500
         }
         days = days_map.get(timeframe, 30)
-        
+
         # Boundary fallback: default to 30 days if the timeframe exceeds 5 years (e.g. century)
         if days > 1825:
             days = 30
@@ -164,28 +166,28 @@ def get_user_dashboard():
         user_id = get_jwt_identity()['user_id']
         claims = get_jwt()
         user_role = claims.get('role')
-        
+
         # Log the request details for debugging
         logger.info(f"Getting dashboard for user ID: {user_id}, role: {user_role}")
-        
+
         # Get basic user info
         user = User.query.get(user_id)
         if not user:
             logger.error(f"User not found: {user_id}")
             return jsonify({'message': 'User not found'}), 404
-        
+
         # Get assigned tasks
         assigned_tasks = get_user_tasks(user_id)
-        
+
         # Get tasks due soon (within 7 days)
         tasks_due_soon = get_tasks_due_soon(user_id)
-        
+
         # Get recently completed tasks (last 30 days)
         completed_tasks = get_recent_completed_tasks(user_id)
-        
+
         # Get projects user is part of
         user_projects = user.projects.all()  # Assuming a many-to-many relationship exists
-        
+
         # Format response data
         dashboard_data = {
             'user': {
@@ -217,20 +219,20 @@ def get_user_dashboard():
                 'status': project.status
             } for project in user_projects]
         }
-        
+
         # Add admin-specific data
         if user_role == Role.ADMIN.value:
             # Get team stats if they're an admin (project manager)
             team_tasks = Task.query.join(Project, Task.project_id == Project.id)\
                 .filter(Project.created_by == user_id).all()
-            
+
             dashboard_data['team'] = {
                 'total_tasks': len(team_tasks),
                 'completed_tasks': len([t for t in team_tasks if _is_completed_task(t)]),
                 'in_progress_tasks': len([t for t in team_tasks if t.status == 'in_progress']),
                 'pending_tasks': len([t for t in team_tasks if t.status == 'todo'])
             }
-        
+
         return jsonify(dashboard_data)
     except Exception as e:
         # Log the error with traceback
@@ -244,10 +246,10 @@ def get_client_dashboard():
         user_id = get_jwt_identity()['user_id']
         claims = get_jwt()
         user_role = claims.get('role')
-        
+
         # Log the request details for debugging
         logger.info(f"Getting member dashboard for user ID: {user_id}, role: {user_role}")
-        
+
         # Get basic user info
         user = User.query.get(user_id)
         if not user:
@@ -302,7 +304,7 @@ def get_client_dashboard():
         except Exception as e:
             logger.error(f"Error fetching GitHub activity for client dashboard: {str(e)}")
             github_activity = []
-        
+
         # Format response data
         dashboard_data = {
             'taskCounts': task_stats,
@@ -323,7 +325,7 @@ def get_client_dashboard():
                 'status': project.status
             } for project in user_projects]
         }
-        
+
         return jsonify(dashboard_data)
     except Exception as e:
         # Log the error with traceback
@@ -337,23 +339,23 @@ def get_admin_dashboard():
         user_id = get_jwt_identity()['user_id']
         claims = get_jwt()
         user_role = claims.get('role')
-        
+
         # Check if user is admin or team lead
         if user_role not in [Role.ADMIN.value, Role.TEAM_LEAD.value]:
             logger.warning(f"Unauthorized user {user_id} with role {user_role} attempted to access admin dashboard")
             return jsonify({'message': 'Unauthorized access'}), 403
-        
+
         # Log the request details for debugging
         logger.info(f"Getting admin dashboard for user ID: {user_id}")
 
         settings_service.cleanup_completed_projects()
-        
+
         # Get basic user info
         user = User.query.get(user_id)
         if not user:
             logger.error(f"User not found: {user_id}")
             return jsonify({'message': 'User not found'}), 404
-        
+
         # Get all tasks (guard against schema mismatches in local DB)
         try:
             all_tasks = Task.query.all()
@@ -362,7 +364,7 @@ def get_admin_dashboard():
             all_tasks = []
 
         admin_project_ids = get_project_scope_ids(user_id, user_role)
-        
+
         # Get user counts by role
         try:
             users = User.query.all()
@@ -375,7 +377,7 @@ def get_admin_dashboard():
             'team_lead': len([u for u in users if u.role == Role.TEAM_LEAD.value]),
             'developer': len([u for u in users if u.role == Role.DEVELOPER.value]),
         }
-        
+
         # Calculate task statistics
         task_stats = {
             'total': len(all_tasks),
@@ -386,7 +388,7 @@ def get_admin_dashboard():
             'done': len([t for t in all_tasks if _is_completed_task(t)]),
             'overdue': count_overdue_tasks(all_tasks, project_ids=admin_project_ids),
         }
-        
+
         # Get user's assigned tasks for "My Tasks" section
         user_assigned_tasks = [t for t in all_tasks if getattr(t, 'assigned_to', None) == user_id]
         user_assigned_tasks_sorted = sorted(
@@ -394,7 +396,7 @@ def get_admin_dashboard():
             key=lambda t: getattr(t, 'updated_at', None) or getattr(t, 'created_at', None) or datetime.min,
             reverse=True
         )
-        
+
         # For Team Leads: calculate scoped KPIs for managing projects
         team_lead_kpis = {}
         if user_role == Role.TEAM_LEAD.value:
@@ -404,36 +406,36 @@ def get_admin_dashboard():
             except Exception as e:
                 logger.error(f"Error fetching projects for TL dashboard: {str(e)}")
                 all_projects = []
-            
+
             # Find projects with active or on-hold status that TL is on
             scoped_projects = []
             for project in all_projects:
                 project_status = getattr(project, 'status', '').lower().replace('-', '_')
                 if project_status not in ['active', 'on_hold']:
                     continue
-                
+
                 # Check if TL is on the project
                 team_members = getattr(project, 'team_members', []) or []
                 if hasattr(team_members, 'all'):
                     team_members = team_members.all()
-                
+
                 is_member = any(
                     (getattr(m, 'id', None) == user_id or
                      getattr(m, 'user_id', None) == user_id)
                     for m in team_members if m is not None
                 )
                 is_creator = getattr(project, 'created_by', None) == user_id
-                
+
                 if is_member or is_creator:
                     scoped_projects.append(project)
-            
+
             # Calculate TL-specific KPIs
             scoped_project_ids = set(p.id for p in scoped_projects)
             scoped_tasks = [t for t in all_tasks if getattr(t, 'project_id', None) in scoped_project_ids]
-            
+
             # KPI 1: Total in review tasks
             in_review_count = len([t for t in scoped_tasks if getattr(t, 'status', '').lower() in ['review', 'in_review', 'in-review']])
-            
+
             # KPI 2: Total tasks due soon (within 7 days)
             today = datetime.now().date()
             week_later = today + timedelta(days=7)
@@ -451,14 +453,14 @@ def get_admin_dashboard():
                         continue
                 else:
                     continue
-                
+
                 task_status = getattr(t, 'status', '').lower().replace('-', '_')
                 if task_status in ['done', 'completed', 'review', 'in_review']:
                     continue
-                
+
                 if today <= deadline <= week_later:
                     due_soon_count += 1
-            
+
             # KPI 3: Total overdue AND NOT (completed OR in-review)
             overdue_not_complete_count = 0
             for t in scoped_tasks:
@@ -474,26 +476,26 @@ def get_admin_dashboard():
                         continue
                 else:
                     continue
-                
+
                 if deadline >= today:
                     continue
-                
+
                 task_status = getattr(t, 'status', '').lower().replace('-', '_')
                 if task_status in ['done', 'completed', 'review', 'in_review']:
                     continue
-                
+
                 overdue_not_complete_count += 1
-            
+
             # KPI 4: Total current projects (active or on-hold)
             current_projects_count = len(scoped_projects)
-            
+
             team_lead_kpis = {
                 'in_review_tasks': in_review_count,
                 'due_soon_tasks': due_soon_count,
                 'overdue_not_complete_tasks': overdue_not_complete_count,
                 'current_projects': current_projects_count,
             }
-        
+
         # Format response data
         dashboard_data = {
             'users': user_counts,
@@ -503,11 +505,11 @@ def get_admin_dashboard():
             },
             'my_assigned_tasks': [_task_to_dashboard_item(t) for t in user_assigned_tasks_sorted],
         }
-        
+
         # Add Team Lead KPIs if applicable
         if team_lead_kpis:
             dashboard_data['team_lead_kpis'] = team_lead_kpis
-        
+
         # Include recent projects (top 3 by updated_at)
         try:
             recent_projects_query = Project.query.order_by(Project.updated_at.desc()).limit(3).all()
@@ -524,7 +526,7 @@ def get_admin_dashboard():
         except Exception as e:
             logger.error(f"Error fetching recent projects for admin dashboard: {str(e)}")
             dashboard_data['recentProjects'] = []
-        
+
         return jsonify(dashboard_data)
     except Exception as e:
         # Log the error with traceback
@@ -539,10 +541,10 @@ def get_project_dashboard(project_id):
         project = Project.query.get(project_id)
         if not project:
             return jsonify({'message': 'Project not found'}), 404
-        
+
         # Get all tasks for this project
         tasks = get_project_tasks(project_id)
-        
+
         # Calculate task statistics
         task_stats = {
             'total': len(tasks),
@@ -551,21 +553,21 @@ def get_project_dashboard(project_id):
             'review': len([t for t in tasks if t.status == 'review']),
             'done': len([t for t in tasks if _is_completed_task(t)])
         }
-        
+
         # Calculate completion percentage
         completion_percentage = 0
         if task_stats['total'] > 0:
             completion_percentage = (task_stats['done'] / task_stats['total']) * 100
-        
+
         # Get tasks due soon (within 7 days)
         tasks_due_soon = get_project_tasks_due_soon(project_id)
-        
+
         # Get recently updated tasks
         recently_updated = get_recent_updated_project_tasks(project_id)
-        
+
         # Get team members
         team_members = project.team_members.all()
-        
+
         dashboard_data = {
             'project': {
                 'id': project.id,
@@ -594,7 +596,7 @@ def get_project_dashboard(project_id):
                 'role': member.role
             } for member in team_members]
         }
-        
+
         return jsonify(dashboard_data)
     except Exception as e:
         # Log the error with traceback

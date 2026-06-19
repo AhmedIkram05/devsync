@@ -1,8 +1,9 @@
 """Integration tests for report controller endpoints"""
 
-import pytest
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 class TestReportControllerIntegration:
@@ -36,11 +37,10 @@ class TestReportControllerIntegration:
         mock_jwt.return_value = {'user_id': 1, 'role': 'admin'}
         mock_jsonify.return_value = ({'error': 'Invalid'}, 400)
 
-        with app.test_request_context(json={'report_type': 'invalid'}, method='POST'):
-            with app.app_context():
-                from src.api.controllers.report_controller import save_report
-                result = save_report()
-                assert result is not None
+        with app.test_request_context(json={'report_type': 'invalid'}, method='POST'), app.app_context():
+            from src.api.controllers.report_controller import save_report
+            result = save_report()
+            assert result is not None
 
     @patch('src.api.controllers.report_controller.jsonify')
     @patch('src.api.controllers.report_controller.Report')
@@ -68,7 +68,7 @@ class TestReportControllerIntegration:
         """Test admin sees all reports"""
         mock_jwt_id.return_value = {'user_id': 1}
         mock_jwt.return_value = {'user_id': 1, 'role': 'admin'}
-        
+
         mock_reports = [
             MagicMock(id=1, report_type='task', user_id=1),
             MagicMock(id=2, report_type='project', user_id=2),
@@ -76,11 +76,10 @@ class TestReportControllerIntegration:
         mock_report.query.all.return_value = mock_reports
         mock_jsonify.return_value = ({'reports': mock_reports}, 200)
 
-        with app.test_request_context('/'):
-            with app.app_context():
-                from src.api.controllers.report_controller import get_reports
-                result = get_reports()
-                assert result is not None
+        with app.test_request_context('/'), app.app_context():
+            from src.api.controllers.report_controller import get_reports
+            result = get_reports()
+            assert result is not None
 
     @patch('src.api.controllers.report_controller.jsonify')
     @patch('src.api.controllers.report_controller.Report')
@@ -90,16 +89,15 @@ class TestReportControllerIntegration:
         """Test developer only sees own reports"""
         mock_jwt_id.return_value = {'user_id': 5}
         mock_jwt.return_value = {'user_id': 5, 'role': 'developer'}
-        
+
         mock_reports = [MagicMock(id=1, report_type='task', user_id=5)]
         mock_report.query.filter_by.return_value.all.return_value = mock_reports
         mock_jsonify.return_value = ({'reports': mock_reports}, 200)
 
-        with app.test_request_context('/'):
-            with app.app_context():
-                from src.api.controllers.report_controller import get_reports
-                result = get_reports()
-                assert result is not None
+        with app.test_request_context('/'), app.app_context():
+            from src.api.controllers.report_controller import get_reports
+            result = get_reports()
+            assert result is not None
 
     @patch('src.api.controllers.report_controller.jsonify')
     @patch('src.api.controllers.report_controller.Report')
@@ -109,16 +107,15 @@ class TestReportControllerIntegration:
         """Test report filtering by type"""
         mock_jwt_id.return_value = {'user_id': 1}
         mock_jwt.return_value = {'user_id': 1, 'role': 'admin'}
-        
+
         mock_reports = [MagicMock(id=1, report_type='task', user_id=1)]
         mock_report.query.filter_by.return_value.all.return_value = mock_reports
         mock_jsonify.return_value = ({'reports': mock_reports}, 200)
 
-        with app.test_request_context('/?type=task'):
-            with app.app_context():
-                from src.api.controllers.report_controller import get_reports
-                result = get_reports()
-                assert result is not None
+        with app.test_request_context('/?type=task'), app.app_context():
+            from src.api.controllers.report_controller import get_reports
+            result = get_reports()
+            assert result is not None
 
     @patch('src.api.controllers.report_controller.jsonify')
     @patch('src.api.controllers.report_controller.Report')
@@ -128,16 +125,15 @@ class TestReportControllerIntegration:
         """Test report pagination"""
         mock_jwt_id.return_value = {'user_id': 1}
         mock_jwt.return_value = {'user_id': 1, 'role': 'admin'}
-        
+
         mock_reports = [MagicMock(id=i, report_type='task', user_id=1) for i in range(10)]
         mock_report.query.all.return_value = mock_reports
         mock_jsonify.return_value = ({'reports': mock_reports}, 200)
 
-        with app.test_request_context('/?page=1&limit=10'):
-            with app.app_context():
-                from src.api.controllers.report_controller import get_reports
-                result = get_reports()
-                assert result is not None
+        with app.test_request_context('/?page=1&limit=10'), app.app_context():
+            from src.api.controllers.report_controller import get_reports
+            result = get_reports()
+            assert result is not None
 
     @patch('src.api.controllers.report_controller.jsonify')
     @patch('src.api.controllers.report_controller.Report')
@@ -150,11 +146,10 @@ class TestReportControllerIntegration:
         mock_report.query.all.side_effect = Exception("DB Error")
         mock_jsonify.return_value = ({'error': 'DB Error'}, 500)
 
-        with app.test_request_context('/'):
-            with app.app_context():
-                from src.api.controllers.report_controller import get_reports
-                result = get_reports()
-                assert result is not None
+        with app.test_request_context('/'), app.app_context():
+            from src.api.controllers.report_controller import get_reports
+            result = get_reports()
+            assert result is not None
 
     @patch('src.api.controllers.report_controller.jsonify')
     @patch('src.api.controllers.report_controller.Report')
@@ -164,7 +159,7 @@ class TestReportControllerIntegration:
         """Test admin can access any report"""
         mock_jwt_id.return_value = {'user_id': 1}
         mock_jwt.return_value = {'user_id': 1, 'role': 'admin'}
-        
+
         mock_report_obj = MagicMock(id=1, report_type='task', user_id=2)
         mock_report.query.get.return_value = mock_report_obj
         mock_jsonify.return_value = ({'report': mock_report_obj}, 200)
@@ -182,7 +177,7 @@ class TestReportControllerIntegration:
         """Test developer can only access own report"""
         mock_jwt_id.return_value = {'user_id': 5}
         mock_jwt.return_value = {'user_id': 5, 'role': 'developer'}
-        
+
         mock_report_obj = MagicMock(id=1, report_type='task', user_id=5)
         mock_report.query.get.return_value = mock_report_obj
         mock_jsonify.return_value = ({'report': mock_report_obj}, 200)
@@ -201,7 +196,7 @@ class TestReportControllerIntegration:
         """Test admin can delete any report"""
         mock_jwt_id.return_value = {'user_id': 1}
         mock_jwt.return_value = {'user_id': 1, 'role': 'admin'}
-        
+
         mock_report_obj = MagicMock(id=1, user_id=2)
         mock_report.query.get.return_value = mock_report_obj
         mock_jsonify.return_value = ({'success': True}, 200)
@@ -220,7 +215,7 @@ class TestReportControllerIntegration:
         """Test developer can delete own report"""
         mock_jwt_id.return_value = {'user_id': 5}
         mock_jwt.return_value = {'user_id': 5, 'role': 'developer'}
-        
+
         mock_report_obj = MagicMock(id=1, user_id=5)
         mock_report.query.get.return_value = mock_report_obj
         mock_jsonify.return_value = ({'success': True}, 200)
@@ -238,7 +233,7 @@ class TestReportControllerIntegration:
         """Test get_report_by_id with nonexistent report"""
         mock_jwt_id.return_value = {'user_id': 1}
         mock_jwt.return_value = {'user_id': 1, 'role': 'admin'}
-        
+
         mock_report.query.get.return_value = None
         mock_jsonify.return_value = ({'error': 'Not found'}, 404)
 

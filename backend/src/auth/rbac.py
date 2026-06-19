@@ -2,8 +2,10 @@
 
 from enum import Enum
 from functools import wraps
-from flask_jwt_extended import get_jwt, get_jwt_identity
+
 from flask import jsonify
+from flask_jwt_extended import get_jwt
+
 
 class Role(Enum):
     """User roles with hierarchical permissions"""
@@ -85,10 +87,10 @@ def require_role(role):
             claims = get_jwt()
             user_role = claims.get('role')
             expected_role = role.value if isinstance(role, Role) else role
-            
+
             if not user_role or user_role != expected_role:
                 return jsonify({'message': 'Insufficient role permissions'}), 403
-            
+
             return fn(*args, **kwargs)
         return wrapper
     return decorator
@@ -101,10 +103,10 @@ def require_permission(permission):
         def wrapper(*args, **kwargs):
             claims = get_jwt()
             user_role = claims.get('role')
-            
+
             if not user_role or permission not in ROLE_PERMISSIONS.get(user_role, []):
                 return jsonify({'message': 'Insufficient permissions'}), 403
-            
+
             return fn(*args, **kwargs)
         return wrapper
     return decorator

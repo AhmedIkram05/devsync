@@ -1,17 +1,19 @@
 # Task controller - business logic
 
 import logging
-from datetime import datetime
-from flask import request, jsonify
-from flask_jwt_extended import get_jwt_identity, get_jwt
-from ...db.models import db, Task, User, Project  # Changed to relative import
+from unittest.mock import Mock
+
+from flask import jsonify, request
+from flask_jwt_extended import get_jwt, get_jwt_identity
+
+from src.socketio_server import emit_dashboard_refresh
+
 from ...auth.rbac import Role  # Changed to relative import
-from ..validators.task_validator import validate_task_data  # Changed to relative import
+from ...db.models import Project, Task, User, db  # Changed to relative import
 from ...services import audit_service, settings_service
 from ...services.notification_service import NotificationService
 from ...services.task_rules import get_project_scope_ids, is_task_overdue
-from src.socketio_server import emit_dashboard_refresh
-from unittest.mock import Mock
+from ..validators.task_validator import validate_task_data  # Changed to relative import
 
 logger = logging.getLogger(__name__)
 
@@ -85,15 +87,15 @@ def get_all_tasks():
     user_id = get_jwt_identity()['user_id']
     claims = get_jwt()
     user_role = claims.get('role')
-    
+
     # Get query parameters for filtering
     status = request.args.get('status')
     assigned_to = request.args.get('assigned_to')
     created_by = request.args.get('created_by')
-    
+
     # Start with base query
     query = Task.query
-    
+
     # Apply filters if provided
     if status:
         query = query.filter(Task.status == status)
@@ -101,10 +103,10 @@ def get_all_tasks():
         query = query.filter(Task.assigned_to == assigned_to)
     if created_by:
         query = query.filter(Task.created_by == created_by)
-    
+
     # Apply role-based filtering - Developers can now see all tasks as well
     tasks = query.all()
-    
+
     # Convert tasks to JSON response
     tasks_data = [_serialize_task(task) for task in tasks]
 
@@ -126,27 +128,27 @@ def get_all_tasks():
                 recipient_user_id=assigned_to or user_id,
                 due_date=None,
             )
-    
+
     return jsonify({'tasks': tasks_data})
 
 def get_task_by_id(task_id):
     """Controller function to get a single task"""
-    user_id = get_jwt_identity()['user_id']
+    get_jwt_identity()['user_id']
     claims = get_jwt()
-    user_role = claims.get('role')
-    
+    claims.get('role')
+
     task = Task.query.get_or_404(task_id)
-    
+
     # Authenticated users can view any task
     # Format task data
     task_data = _serialize_task(task)
-    
+
     # Get user details for assigned_to and created_by
     if task.assigned_to:
         assignee = User.query.get(task.assigned_to)
         if assignee:
             task_data['assignee_name'] = assignee.name
-    
+
     creator = User.query.get(task.created_by)
     if creator:
         task_data['creator_name'] = creator.name
@@ -165,7 +167,7 @@ def get_task_by_id(task_id):
             'created_at': link.created_at.isoformat() if link.created_at else None,
         })
     task_data['github_links'] = github_links
-    
+
     return jsonify({'task': task_data})
 
 def create_new_task():
@@ -198,7 +200,7 @@ def create_new_task():
 
     if user_role == Role.DEVELOPER.value and data.get('assigned_to') not in (None, '', user_id, str(user_id)):
         return jsonify({'message': 'Developers can only create tasks assigned to themselves'}), 403
-    
+
     # Create new task
     new_task = Task()
     new_task.title = data['title']
@@ -210,7 +212,7 @@ def create_new_task():
     new_task.created_by = user_id
     new_task.deadline = data.get('deadline')
     new_task.project_id = project_id
-    
+
     db.session.add(new_task)
     db.session.commit()
 
@@ -251,7 +253,7 @@ def create_new_task():
         project_name=project_name,
         assignee_name=assignee_name
     )
-    
+
     return jsonify({
         'message': 'Task created successfully',
         'task': {
@@ -267,10 +269,9 @@ def update_task_by_id(task_id):
     user_id = get_jwt_identity()['user_id']
     claims = get_jwt()
     user_role = claims.get('role')
-    
+
     task = Task.query.get_or_404(task_id)
-    old_assignee_id = task.assigned_to
-    
+
     # Check if user has permission to update this task
     # Admins and Team Leads can update any task (can_update_any_task)
     can_update_task = user_role in TASK_MANAGER_ROLES or task.assigned_to == user_id
@@ -278,10 +279,10 @@ def update_task_by_id(task_id):
 
     if not can_update_task:
         return jsonify({'message': 'You can only update tasks assigned to you'}), 403
-    
+
     # Track which fields changed for notification
     changed_fields = {}
-    
+
     # Update allowed fields
     if 'title' in data:
         if task.title != data['title']:
@@ -312,7 +313,7 @@ def update_task_by_id(task_id):
         if task.project_id != new_project_id:
             changed_fields['project_id'] = (task.project_id, new_project_id)
         task.project_id = new_project_id
-    
+
     if 'assigned_to' in data:
         # Only TL or Admins can change the assignee
         if can_assign_task:
@@ -322,7 +323,7 @@ def update_task_by_id(task_id):
             task.assigned_to = new_assignee
         elif _coerce_int(data['assigned_to']) != task.assigned_to:
             return jsonify({'message': 'You do not have permission to reassign tasks'}), 403
-    
+
     db.session.commit()
 
     audit_service.record(
@@ -348,7 +349,7 @@ def update_task_by_id(task_id):
         assignee_id=task.assigned_to,
         changed_fields=changed_fields if changed_fields else None
     )
-    
+
     return jsonify({
         'message': 'Task updated successfully',
         'task': {
@@ -375,7 +376,7 @@ def delete_task_by_id(task_id):
     can_delete_task = user_role in TASK_MANAGER_ROLES or task.assigned_to == user_id or task.created_by == user_id
     if not can_delete_task:
         return jsonify({'message': 'You can only delete tasks assigned to you'}), 403
-    
+
     db.session.delete(task)
     db.session.commit()
 
@@ -392,5 +393,5 @@ def delete_task_by_id(task_id):
         resource_id=task_id,
         payload={'project_id': task.project_id, 'assigned_to': task.assigned_to}
     )
-    
+
     return jsonify({'message': 'Task deleted successfully'})

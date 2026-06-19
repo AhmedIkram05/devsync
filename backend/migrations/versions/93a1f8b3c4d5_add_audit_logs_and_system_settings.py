@@ -5,10 +5,10 @@ Revises: e2f4g5h6i7j8
 Create Date: 2026-05-07 00:39:00.000000
 
 """
-from alembic import op
+from datetime import UTC, datetime
+
 import sqlalchemy as sa
-import json
-from datetime import datetime, timezone
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = '93a1f8b3c4d5'
@@ -44,7 +44,7 @@ def upgrade():
         sa.ForeignKeyConstraint(['updated_by'], ['users.id'], ),
         sa.PrimaryKeyConstraint('key')
     )
-    
+
     bind = op.get_bind()
     if bind.dialect.name == 'postgresql':
         op.create_check_constraint(
@@ -52,7 +52,7 @@ def upgrade():
             'users',
             "role IN ('developer', 'team_lead', 'admin')"
         )
-    
+
     # Seed default system settings
     op.bulk_insert(
         system_settings_table,
@@ -60,22 +60,22 @@ def upgrade():
             {
                 'key': 'app_name',
                 'value': 'DevSync',
-                'updated_at': datetime.now(timezone.utc)
+                'updated_at': datetime.now(UTC)
             },
             {
                 'key': 'allow_registration',
                 'value': True,
-                'updated_at': datetime.now(timezone.utc)
+                'updated_at': datetime.now(UTC)
             },
             {
                 'key': 'default_user_role',
                 'value': 'developer',
-                'updated_at': datetime.now(timezone.utc)
+                'updated_at': datetime.now(UTC)
             },
             {
                 'key': 'github_integration_enabled',
                 'value': True,
-                'updated_at': datetime.now(timezone.utc)
+                'updated_at': datetime.now(UTC)
             },
             {
                 'key': 'notification_settings',
@@ -84,7 +84,7 @@ def upgrade():
                     'task_assignments': True,
                     'project_updates': True
                 },
-                'updated_at': datetime.now(timezone.utc)
+                'updated_at': datetime.now(UTC)
             }
         ]
     )
@@ -97,7 +97,7 @@ def downgrade():
         op.drop_constraint('check_valid_role', 'users', type_='check')
 
     op.drop_table('system_settings')
-    
+
     op.drop_index('idx_audit_logs_resource', table_name='audit_logs')
     op.drop_index('idx_audit_logs_action', table_name='audit_logs')
     op.drop_index('idx_audit_logs_actor_time', table_name='audit_logs')

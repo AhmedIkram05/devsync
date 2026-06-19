@@ -1,16 +1,16 @@
 """
 GitHub API client utilities for DevSync with rate limit handling
 """
-import os
-import requests
+import base64
+import json
 import logging
 import time
-import json
-import base64
 import uuid
-from datetime import datetime, timedelta, timezone
-from flask import current_app, g, request, redirect
+from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
+
+import requests
+from flask import current_app
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,11 +22,11 @@ class GitHubRateLimitError(Exception):
 
 class GitHubClient:
     """Client for the GitHub API with rate limit handling"""
-    
+
     BASE_API_URL = "https://api.github.com"
     AUTH_URL = "https://github.com/login/oauth/authorize"
     TOKEN_URL = "https://github.com/login/oauth/access_token"
-    
+
     def __init__(self, access_token=None):
         self.access_token = access_token
         self.remaining_rate_limit = None
@@ -39,7 +39,7 @@ class GitHubClient:
     def clear_shared_cache(cls):
         """Compatibility hook for tests; cache is instance-scoped."""
         return None
-    
+
     @staticmethod
     def create_state_param(user_id):
         """Create a secure state parameter with encoded user ID"""
@@ -48,16 +48,16 @@ class GitHubClient:
             'userId': user_id,
             'nonce': str(uuid.uuid4())
         }
-        
+
         # Convert to JSON and encode as base64
         state_json = json.dumps(state_data)
         state = base64.b64encode(state_json.encode('utf-8')).decode('utf-8')
-        
+
         # Replace characters that might cause issues in URLs
         state = state.replace('+', '-').replace('/', '_').replace('=', '')
-        
+
         return state
-    
+
     @staticmethod
     def parse_state_param(state):
         """Parse a state parameter to extract the user ID"""
@@ -66,20 +66,20 @@ class GitHubClient:
             padding = len(state) % 4
             if padding:
                 state += '=' * (4 - padding)
-            
+
             # Replace URL-safe characters with base64 standard
             state = state.replace('-', '+').replace('_', '/')
-            
+
             # Decode the base64 string
             decoded_bytes = base64.b64decode(state)
             decoded_state = json.loads(decoded_bytes.decode('utf-8'))
-            
+
             # Extract the user ID
             return decoded_state.get('userId')
         except Exception as e:
             logger.error(f"Error parsing state parameter: {str(e)}")
             return None
-    
+
     @staticmethod
     def get_auth_url(state):
         """
@@ -87,12 +87,12 @@ class GitHubClient:
         """
         client_id = current_app.config.get('GITHUB_CLIENT_ID')
         redirect_uri = current_app.config.get('GITHUB_REDIRECT_URI')
-        
+
         logger.info(f"Creating GitHub auth URL with client_id: {client_id}, redirect_uri: {redirect_uri}")
-        
+
         # Include required scopes for your app
         scopes = "repo user"
-        
+
         return (
             f"{GitHubClient.AUTH_URL}?"
             f"client_id={client_id}&"
@@ -100,7 +100,7 @@ class GitHubClient:
             f"state={state}&"
             f"scope={scopes}"
         )
-    
+
     @staticmethod
     def exchange_code_for_token(code):
         """
@@ -109,12 +109,12 @@ class GitHubClient:
         client_id = current_app.config.get('GITHUB_CLIENT_ID')
         client_secret = current_app.config.get('GITHUB_CLIENT_SECRET')
         redirect_uri = current_app.config.get('GITHUB_REDIRECT_URI')
-        
-        logger.info(f"Exchanging code for token with GitHub...")
+
+        logger.info("Exchanging code for token with GitHub...")
         logger.info(f"Using client_id: {client_id}")
         logger.info(f"Using redirect_uri: {redirect_uri}")
         logger.info(f"Code (first 10 chars): {code[:10]}...")
-        
+
         # Create payload for token request
         data = {
             'client_id': client_id,
@@ -122,9 +122,9 @@ class GitHubClient:
             'code': code,
             'redirect_uri': redirect_uri
         }
-        
+
         headers = {'Accept': 'application/json'}
-        
+
         logger.info("Making POST request to GitHub for token exchange...")
         try:
             response = requests.post(
@@ -132,10 +132,10 @@ class GitHubClient:
                 data=data,
                 headers=headers
             )
-            
+
             status_code = response.status_code
             logger.info(f"GitHub token exchange response status: {status_code}")
-            
+
             if status_code == 200:
                 try:
                     response_json = response.json()
@@ -144,7 +144,7 @@ class GitHubClient:
                         if 'error_description' in response_json:
                             logger.error(f"Error description: {response_json['error_description']}")
                         return None
-                    
+
                     logger.info("Successfully obtained access token from GitHub")
                     if 'access_token' in response_json:
                         token_preview = response_json['access_token'][:10] + '...' if response_json['access_token'] else 'None'
@@ -164,76 +164,76 @@ class GitHubClient:
         except Exception as e:
             logger.error(f"Exception during token exchange request: {str(e)}")
             return None
-    
+
     def get_headers(self):
         """Get headers with authorization for API requests"""
         headers = {
             'Accept': 'application/vnd.github.v3+json'
         }
-        
+
         if self.access_token:
             headers['Authorization'] = f'token {self.access_token}'
-            
+
         return headers
-    
+
     def _handle_rate_limit(self, response):
         """Extract and handle rate limit information from response"""
         # Extract rate limit headers
         remaining = response.headers.get('X-RateLimit-Remaining')
         reset = response.headers.get('X-RateLimit-Reset')
-        
+
         if remaining is not None:
             self.remaining_rate_limit = int(remaining)
-            
+
         if reset is not None:
             self.rate_limit_reset = int(reset)
-            
+
         # Check if we're close to hitting the rate limit
         if self.remaining_rate_limit is not None and self.remaining_rate_limit < 10:
             logger.warning(f"GitHub API rate limit running low: {self.remaining_rate_limit} requests remaining")
-            
+
         # Handle rate limit exceeded
         if response.status_code == 403 and 'rate limit exceeded' in response.text.lower():
             if self.rate_limit_reset:
                 now = int(time.time())
                 sleep_time = max(0, self.rate_limit_reset - now)
-                
+
                 if sleep_time > 0 and sleep_time < 300:  # Only sleep for reasonable times (<5 min)
                     logger.warning(f"Rate limit exceeded. Sleeping for {sleep_time} seconds")
                     time.sleep(sleep_time)
                     return True  # Retry
-            
+
             # If we can't sleep (or shouldn't), fail this request gracefully.
             logger.warning("GitHub API rate limit exceeded and retry window is too long; returning fallback response")
             return False
-            
+
         return False
-        
+
     def _make_request(self, method, url, **kwargs):
         """Make a request with rate limit handling and caching"""
         # Generate cache key if caching is enabled
         cache_enabled = kwargs.pop('use_cache', True)
         cache_ttl = kwargs.pop('cache_ttl', 300)  # Default 5 minutes cache
-        
+
         if cache_enabled:
             # Create a cache key based on method, URL and params
             params = kwargs.get('params', {})
             cache_key = f"{method}:{url}:{json.dumps(params, sort_keys=True)}"
-            
+
             # Check if we have a cached response
             if cache_key in self._cache and datetime.now() < self._cache_expiry.get(cache_key, datetime.min):
                 logger.debug(f"Using cached response for {cache_key}")
                 return self._cache[cache_key]
-        
+
         # Make the actual request
         retry = True
         retry_count = 0
         max_retries = 2
-        
+
         while retry and retry_count <= max_retries:
             retry = False
             retry_count += 1
-            
+
             try:
                 method_upper = method.upper()
                 request_kwargs = {
@@ -247,12 +247,12 @@ class GitHubClient:
                     response = requests.post(url, **request_kwargs)
                 else:
                     response = requests.request(method_upper, url, **request_kwargs)
-                
+
                 # Handle rate limits
                 if self._handle_rate_limit(response):
                     retry = True
                     continue
-                
+
                 # For successful responses, cache the result if caching is enabled
                 if cache_enabled and response.status_code == 200:
                     try:
@@ -260,9 +260,9 @@ class GitHubClient:
                         self._cache[cache_key] = result
                         self._cache_expiry[cache_key] = datetime.now() + timedelta(seconds=cache_ttl)
                         return result
-                    except:
+                    except Exception:
                         pass  # If parsing fails, just return the response normally
-                
+
                 # Return appropriate data based on status code
                 if 200 <= response.status_code < 300:
                     if response.status_code == 204:  # No content
@@ -274,7 +274,7 @@ class GitHubClient:
                 else:
                     logger.error(f"GitHub API error: {response.status_code} - {response.text}")
                     return None
-                    
+
             except GitHubRateLimitError as e:
                 logger.error(f"Request error: {str(e)}")
                 return None
@@ -286,17 +286,17 @@ class GitHubClient:
                     time.sleep(1)  # Wait before retrying
                 else:
                     raise
-        
+
         return None  # Fallback return
-    
+
     def get_user_profile(self):
         """Get authenticated user's GitHub profile"""
         return self._make_request('GET', f"{self.BASE_API_URL}/user", use_cache=True, cache_ttl=300)
-    
+
     def get_user_repositories(self, page=1, per_page=30):
         """Get repositories for the authenticated user"""
         return self._make_request(
-            'GET', 
+            'GET',
             f"{self.BASE_API_URL}/user/repos",
             params={
                 'page': page,
@@ -307,7 +307,7 @@ class GitHubClient:
             use_cache=True,
             cache_ttl=300
         ) or []
-    
+
     def get_repository(self, owner, repo):
         """Get a specific repository by owner and name"""
         return self._make_request(
@@ -316,7 +316,7 @@ class GitHubClient:
             use_cache=True,
             cache_ttl=600  # Cache for 10 minutes
         )
-    
+
     def get_repository_issues(self, owner, repo, state='open', page=1, per_page=30):
         """Get issues for a repository"""
         return self._make_request(
@@ -330,7 +330,7 @@ class GitHubClient:
             use_cache=True,
             cache_ttl=300
         ) or []
-    
+
     def get_repository_pulls(self, owner, repo, state='open', page=1, per_page=30):
         """Get pull requests for a repository"""
         return self._make_request(
@@ -341,10 +341,10 @@ class GitHubClient:
                 'page': page,
                 'per_page': per_page
             },
-            use_cache=True, 
+            use_cache=True,
             cache_ttl=300
         ) or []
-    
+
     def create_issue_comment(self, owner, repo, issue_number, body):
         """Add a comment to an issue or pull request"""
         return self._make_request(
@@ -353,7 +353,7 @@ class GitHubClient:
             json={'body': body},
             use_cache=False  # Don't cache POST requests
         )
-    
+
     def _count_paginated_results(self, url, params=None, item_filter=None):
         """Count items across a paginated GitHub collection endpoint."""
         try:
@@ -487,7 +487,7 @@ class GitHubClient:
             params = {'state': 'all'}
 
             window_days = max(int(since_days or 0), 1)
-            since_dt = datetime.now(timezone.utc) - timedelta(days=window_days)
+            since_dt = datetime.now(UTC) - timedelta(days=window_days)
 
             def item_filter(item):
                 created_at = item.get('created_at')
@@ -502,7 +502,7 @@ class GitHubClient:
             return self._count_paginated_results(url, params=params, item_filter=item_filter)
         except Exception:
             return None
-    
+
     def get_recent_commits(self, owner, repo, since_days=7):
         """Get count of commits pushed to a repository within the given window."""
 
@@ -510,7 +510,7 @@ class GitHubClient:
             window_days = max(int(since_days or 0), 1)
             # Use timezone-aware UTC datetimes instead of deprecated utcnow()
             since_date = (
-                (datetime.now(timezone.utc) - timedelta(days=window_days))
+                (datetime.now(UTC) - timedelta(days=window_days))
                 .replace(microsecond=0)
                 .isoformat()
                 .replace('+00:00', 'Z')
