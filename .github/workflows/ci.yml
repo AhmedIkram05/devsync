@@ -342,10 +342,9 @@ jobs:
           done
 
       - name: Run Cypress E2E tests
-        uses: cypress-io/github-action@v6
+        uses: cypress-io/github-action@v7
         with:
           working-directory: frontend
-          build: false
           start: npx serve -s build -l 3000 --no-clipboard
           wait-on: 'http://localhost:3000'
           wait-on-timeout: 60
