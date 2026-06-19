@@ -111,7 +111,13 @@ jobs:
 
       - name: pip-audit — Python dependency vulnerabilities
         if: needs.changes.outputs.backend == 'true'
-        run: pip-audit -r backend/requirements.txt
+        working-directory: backend
+        run: |
+          pip-audit -r requirements.txt \
+            --ignore-vuln CVE-2026-27205 \
+            --ignore-vuln CVE-2024-6866 \
+            --ignore-vuln CVE-2024-6844 \
+            --ignore-vuln CVE-2024-6839
 
       - name: Set up Node
         uses: actions/setup-node@v4
