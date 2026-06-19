@@ -70,7 +70,7 @@ describe('Client Task Flows', () => {
     // Stub task details
     cy.intercept('GET', '**/api/v1/tasks/10', {
       statusCode: 200,
-      body: { id: 10, title: 'Learn Cypress', description: 'Write E2E tests', status: 'todo', priority: 'high', progress: 0, deadline: '2099-01-01T00:00:00Z', comments: [], github_links: [] }
+      body: { id: 10, title: 'Learn Cypress', description: 'Write E2E tests', status: 'todo', priority: 'high', progress: 0, deadline: '2099-01-01T00:00:00Z', assigned_to: 2, comments: [], github_links: [] }
     }).as('getTaskDetail');
 
     cy.intercept('GET', '**/api/v1/tasks/10/comments', {
