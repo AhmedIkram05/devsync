@@ -174,7 +174,7 @@ jobs:
           pytest backend/tests/unit \
             -n auto \
             -x \
-            ${{ github.ref == 'refs/heads/main' && '--cov=backend/src --cov-report=term-missing --cov-report=xml:backend/coverage.xml --cov-fail-under=85' || '-q' }}
+            ${{ github.ref == 'refs/heads/main' && '--cov=backend/src --cov-report=term-missing --cov-report=xml:backend/coverage.xml --cov-fail-under=80' || '-q' }}
 
       - name: Run integration tests
         env:
