@@ -28,10 +28,10 @@ describe('Notification Flows', () => {
     cy.contains('button', 'Sign In').click();
     cy.wait('@loginReq');
     cy.contains('button', 'Skip For Now').click();
+    cy.wait('@getNotifications');
   });
 
   it('displays notification count and allows marking as read', () => {
-    cy.wait('@getNotifications');
 
     // Assert unread count badge in navbar
     cy.get('nav').contains('1').should('be.visible');
@@ -57,7 +57,6 @@ describe('Notification Flows', () => {
   });
 
   it('allows marking all as read', () => {
-    cy.wait('@getNotifications');
 
     cy.get('nav button').find('svg').parent().click();
     

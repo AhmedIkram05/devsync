@@ -87,12 +87,12 @@ describe('auth.js utility functions', () => {
         })
       );
 
-      try {
-        await authApi.authApi.login({ email: 'invalid', password: 'pass' });
-      } catch (error) {
-        expect(error.status).toBe(400);
-        expect(error.data.field).toBe('email');
-      }
+      await expect(
+        authApi.authApi.login({ email: 'invalid', password: 'pass' })
+      ).rejects.toMatchObject({
+        status: 400,
+        data: { field: 'email' }
+      });
     });
   });
 

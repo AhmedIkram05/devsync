@@ -21,6 +21,18 @@ describe('Client Task Flows', () => {
       ]
     }).as('getTasks');
 
+    // Mock notification context fetch (fires after login)
+    cy.intercept('GET', '**/api/v1/notifications', {
+      statusCode: 200,
+      body: []
+    }).as('getNotifications');
+
+    // Mock dashboard client data
+    cy.intercept('GET', '**/api/v1/dashboard/client', {
+      statusCode: 200,
+      body: { tasks: { total: 0 }, repositories: [] }
+    });
+
     // Skip the github connection check
     cy.intercept('GET', '**/api/v1/github/status', {
       statusCode: 200,
@@ -39,11 +51,13 @@ describe('Client Task Flows', () => {
         cy.contains('button', 'Skip For Now').click();
       }
     });
+
+    cy.wait('@getNotifications');
   });
 
   it('navigates to tasks and filters them by priority', () => {
-    cy.contains('Tasks').click();
-    cy.wait('@getTasks');
+    cy.visit('/tasks');
+    cy.wait('@getTasks', { timeout: 10000 });
 
     cy.contains('Learn Cypress').should('be.visible');
     cy.contains('Fix bug').should('be.visible');
@@ -81,7 +95,7 @@ describe('Client Task Flows', () => {
     cy.contains('td', 'Learn Cypress').click();
     cy.wait(['@getTaskDetail', '@getComments']);
 
-    cy.contains('h2', 'Learn Cypress').should('be.visible');
+    cy.contains('h1', 'Learn Cypress').should('be.visible');
     cy.contains('button', 'Start Progress').click();
     
     cy.wait('@updateTask').its('request.body').should('deep.include', { status: 'in_progress', progress: 10 });

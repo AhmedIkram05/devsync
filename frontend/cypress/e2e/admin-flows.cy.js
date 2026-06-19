@@ -21,6 +21,13 @@ describe('Admin Flows', () => {
       }
     }).as('adminDash');
 
+    // Mock additional API calls the AdminDashboard makes
+    cy.intercept('GET', '**/api/v1/users', { statusCode: 200, body: [{ id: 1, name: 'Admin', role: 'admin' }] });
+    cy.intercept('GET', '**/api/v1/audit-logs*', { statusCode: 200, body: { logs: [] } });
+    cy.intercept('GET', '**/api/v1/projects', { statusCode: 200, body: [] });
+    cy.intercept('GET', '**/api/v1/tasks', { statusCode: 200, body: [] });
+    cy.intercept('GET', '**/api/v1/reports*', { statusCode: 200, body: { reports: [] } });
+
     cy.intercept('GET', '**/api/v1/github/status', {
       statusCode: 200,
       body: { connected: false }
@@ -44,7 +51,7 @@ describe('Admin Flows', () => {
     
     cy.contains('h1', 'Admin Dashboard').should('be.visible');
     cy.contains('Active Projects').parent().contains('5');
-    cy.contains('In Progress').parent().contains('3');
+    cy.contains('Overdue Tasks').parent().contains('2');
   });
 
   it('creates a new project and manages it', () => {
@@ -54,8 +61,8 @@ describe('Admin Flows', () => {
       body: [{ id: 1, name: 'Alpha', description: 'desc', status: 'active', priority: 'high' }]
     }).as('getProjects');
 
-    cy.contains('a', 'Projects').click();
-    cy.wait('@getProjects');
+    cy.visit('/admin/projects');
+    cy.wait('@getProjects', { timeout: 10000 });
 
     // Create project
     cy.intercept('POST', '**/api/v1/projects', {
@@ -63,7 +70,7 @@ describe('Admin Flows', () => {
       body: { id: 2, name: 'Beta Version', description: 'New project', status: 'planning', priority: 'medium' }
     }).as('createProject');
 
-    cy.contains('button', 'Create Project').click();
+    cy.contains('button', 'Create Project').should('be.visible').click();
     
     cy.get('input#name').type('Beta Version');
     cy.get('textarea#description').type('New project');

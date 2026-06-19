@@ -73,7 +73,7 @@ describe('Auth flow pages', () => {
 
     // 3. Wait for API and routing
     cy.wait('@loginReq');
-    cy.url().should('include', 'dashboard');
+    cy.url().should('include', 'BasicDashboard');
 
     // 4. Verify LocalStorage Token Persistence
     cy.window().then((win) => {
