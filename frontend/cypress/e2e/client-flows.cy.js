@@ -96,17 +96,24 @@ describe('Client Task Flows', () => {
     cy.contains('h1', 'Learn Cypress').should('be.visible');
     
     // Update progress slider to 30%
-    // React 18 batches setState — use separate command chains so React renders between events
+    // Use native value setter (Cypress-recommended for React controlled inputs) +
+    // wait for React to commit state (UI shows "30%") before firing mouseup
     cy.get('input[type="range"]').trigger('mousedown');
-    cy.get('input[type="range"]').invoke('val', 30).trigger('input');
-    cy.wait(100);
+    cy.get('input[type="range"]').then($el => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call($el[0], 30);
+    }).trigger('input');
+    cy.contains('span.font-bold', '30%').should('be.visible');
     cy.get('input[type="range"]').trigger('mouseup');
     cy.wait('@updateTask').its('request.body').should('deep.include', { progress: 30 });
     
     // Update progress slider to 80%
     cy.get('input[type="range"]').trigger('mousedown');
-    cy.get('input[type="range"]').invoke('val', 80).trigger('input');
-    cy.wait(100);
+    cy.get('input[type="range"]').then($el => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call($el[0], 80);
+    }).trigger('input');
+    cy.contains('span.font-bold', '80%').should('be.visible');
     cy.get('input[type="range"]').trigger('mouseup');
     cy.wait('@updateTask').its('request.body').should('deep.include', { progress: 80 });
   });
