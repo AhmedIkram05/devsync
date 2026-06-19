@@ -31,12 +31,13 @@ describe('Notification Flows', () => {
   });
 
   it('displays notification count and allows marking as read', () => {
+    cy.wait('@getNotifications');
 
-    // Assert unread count badge in navbar
-    cy.get('nav').contains('1').should('be.visible');
+    // Assert unread count badge on notification bell
+    cy.get('[aria-label="Notifications"]').should('contain', '1');
 
     // Click bell icon to open dropdown
-    cy.get('nav button').find('svg').parent().click();
+    cy.get('[aria-label="Notifications"]').click();
 
     cy.contains('You were assigned to Alpha Task').should('be.visible');
     cy.contains('Comment on Beta Task').should('be.visible');
@@ -52,12 +53,13 @@ describe('Notification Flows', () => {
     cy.wait('@markRead');
 
     // Verify unread count goes to 0 (badge disappears)
-    cy.get('nav').contains('1').should('not.exist');
+    cy.get('[aria-label="Notifications"]').contains('1').should('not.exist');
   });
 
   it('allows marking all as read', () => {
+    cy.wait('@getNotifications');
 
-    cy.get('nav button').find('svg').parent().click();
+    cy.get('[aria-label="Notifications"]').click();
     
     // Stub mark all as read
     cy.intercept('PUT', '**/api/v1/notifications/read-all', {

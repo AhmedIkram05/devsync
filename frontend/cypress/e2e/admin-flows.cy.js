@@ -78,9 +78,9 @@ describe('Admin Flows', () => {
 
     cy.contains('Create Project').should('be.visible').click();
     
-    cy.get('input#name').type('Beta Version');
-    cy.get('textarea#description').type('New project');
-    cy.get('select#priority').select('medium');
+    cy.get('#project-name').type('Beta Version');
+    cy.get('#project-description').type('New project');
+    cy.get('#project-status').select('active');
     
     // Override GET to return the new list
     cy.intercept('GET', '**/api/v1/projects', {
@@ -91,7 +91,7 @@ describe('Admin Flows', () => {
       ]
     }).as('getProjectsAfterCreation');
 
-    cy.contains('button', 'Create').click();
+    cy.contains('button', 'Create Project').click();
     cy.wait('@createProject');
     cy.wait('@getProjectsAfterCreation');
 

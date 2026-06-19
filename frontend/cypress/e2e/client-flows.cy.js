@@ -94,12 +94,13 @@ describe('Client Task Flows', () => {
     cy.wait(['@getTaskDetail', '@getComments']);
 
     cy.contains('h1', 'Learn Cypress').should('be.visible');
-    cy.contains('button', 'Start Progress').click();
     
-    cy.wait('@updateTask').its('request.body').should('deep.include', { status: 'in_progress', progress: 10 });
+    // Update progress slider to 30%
+    cy.get('input[type="range"]').invoke('val', 30).trigger('change').trigger('mouseup');
+    cy.wait('@updateTask').its('request.body').should('deep.include', { progress: 30 });
     
-    // Update progress slider
-    cy.get('input[type="range"]').invoke('val', 80).trigger('change');
+    // Update progress slider to 80%
+    cy.get('input[type="range"]').invoke('val', 80).trigger('change').trigger('mouseup');
     cy.wait('@updateTask').its('request.body').should('deep.include', { progress: 80 });
   });
 });
