@@ -320,7 +320,7 @@ jobs:
         run: npm run build
         env:
           CI: true
-          REACT_APP_API_URL: http://localhost:8000
+          REACT_APP_API_URL: http://localhost:8000/api/v1
 
       - name: Start backend server
         env:
