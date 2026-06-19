@@ -21,6 +21,23 @@ ignore = ["E501"]
 [tool.ruff.format]
 quote-style = "double"
 
+[tool.pip-audit]
+# Accepted-risk vulnerabilities — fix not feasible without breaking changes
+ignore-vulns = [
+    "CVE-2026-27205",    # flask 2.3.3 — Flask 3.x drops Python 3.8 support, API changes
+    "CVE-2024-6866",     # flask-cors 5.0.1 — 6.x has breaking config changes
+    "CVE-2024-6844",     # flask-cors 5.0.1 — part of the same 5.x → 6.x jump
+    "CVE-2024-6839",     # flask-cors 5.0.1 — part of the same 5.x → 6.x jump
+    "PYSEC-2025-185",    # python-jose 3.4.0 — no fix version available (lib is unmaintained)
+    "CVE-2024-47874",    # starlette — dep of fastapi 0.x, which pins <1.0
+    "CVE-2025-54121",    # starlette — needs starlette>=0.47.2, fastapi 0.x caps <1.0
+    "CVE-2026-48817",    # starlette — needs starlette>=1.1.0, fastapi 0.x caps <1.0
+    "CVE-2026-48818",    # starlette — needs starlette>=1.1.0, fastapi 0.x caps <1.0
+    "CVE-2026-54282",    # starlette — needs starlette>=1.3.0, fastapi 0.x caps <1.0
+    "CVE-2026-54283",    # starlette — needs starlette>=1.3.1, fastapi 0.x caps <1.0
+    "PYSEC-2026-161",    # starlette — needs starlette>=1.0.1, fastapi 0.x caps <1.0
+]
+
 [tool.pytest.ini_options]
 pythonpath = ["backend"]
 testpaths = ["backend/tests"]

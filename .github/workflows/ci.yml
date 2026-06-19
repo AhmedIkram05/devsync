@@ -111,8 +111,7 @@ jobs:
 
       - name: pip-audit — Python dependency vulnerabilities
         if: needs.changes.outputs.backend == 'true'
-        working-directory: backend
-        run: pip-audit -r requirements.txt
+        run: pip-audit -r backend/requirements.txt
 
       - name: Set up Node
         uses: actions/setup-node@v4
