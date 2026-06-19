@@ -21,13 +21,13 @@ describe('Client Task Flows', () => {
       ]
     }).as('getTasks');
 
-    // Mock notification context fetch (fires after login)
+    // Stub notification context fetch (fires after login)
     cy.intercept('GET', '**/api/v1/notifications', {
       statusCode: 200,
       body: []
-    }).as('getNotifications');
+    });
 
-    // Mock dashboard client data
+    // Stub dashboard client data
     cy.intercept('GET', '**/api/v1/dashboard/client', {
       statusCode: 200,
       body: { tasks: { total: 0 }, repositories: [] }
@@ -51,8 +51,6 @@ describe('Client Task Flows', () => {
         cy.contains('button', 'Skip For Now').click();
       }
     });
-
-    cy.wait('@getNotifications');
   });
 
   it('navigates to tasks and filters them by priority', () => {

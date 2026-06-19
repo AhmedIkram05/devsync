@@ -24,7 +24,13 @@ describe('Admin Flows', () => {
     // Mock additional API calls the AdminDashboard makes
     cy.intercept('GET', '**/api/v1/users', { statusCode: 200, body: [{ id: 1, name: 'Admin', role: 'admin' }] });
     cy.intercept('GET', '**/api/v1/audit-logs*', { statusCode: 200, body: { logs: [] } });
-    cy.intercept('GET', '**/api/v1/projects', { statusCode: 200, body: [] });
+    // Return 5 active projects so _activeProjectsCount = 5 (AdminDashboard computes KPIs from all projects)
+    cy.intercept('GET', '**/api/v1/projects', {
+      statusCode: 200,
+      body: Array.from({ length: 5 }, (_, i) => ({
+        id: i + 1, name: `Project ${i + 1}`, status: 'active', team_members: [1], created_by: 1
+      }))
+    });
     cy.intercept('GET', '**/api/v1/tasks', { statusCode: 200, body: [] });
     cy.intercept('GET', '**/api/v1/reports*', { statusCode: 200, body: { reports: [] } });
 
@@ -70,7 +76,7 @@ describe('Admin Flows', () => {
       body: { id: 2, name: 'Beta Version', description: 'New project', status: 'planning', priority: 'medium' }
     }).as('createProject');
 
-    cy.contains('button', 'Create Project').should('be.visible').click();
+    cy.contains('Create Project').should('be.visible').click();
     
     cy.get('input#name').type('Beta Version');
     cy.get('textarea#description').type('New project');

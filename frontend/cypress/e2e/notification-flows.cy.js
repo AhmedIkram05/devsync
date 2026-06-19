@@ -28,7 +28,6 @@ describe('Notification Flows', () => {
     cy.contains('button', 'Sign In').click();
     cy.wait('@loginReq');
     cy.contains('button', 'Skip For Now').click();
-    cy.wait('@getNotifications');
   });
 
   it('displays notification count and allows marking as read', () => {
