@@ -13,10 +13,11 @@ from ..middlewares.validation_middleware import validate_json
 REPORT_ROLES = [Role.TEAM_LEAD, Role.ADMIN]
 AUTHENTICATED_ROLES = [Role.DEVELOPER, Role.TEAM_LEAD, Role.ADMIN]
 
+
 def register_routes(bp):
     """Register all report routes with the provided Blueprint"""
 
-    @bp.route('/reports', methods=['POST'])
+    @bp.route("/reports", methods=["POST"])
     @jwt_required()
     @role_required(REPORT_ROLES)
     @validate_json()
@@ -26,7 +27,7 @@ def register_routes(bp):
         """Route to save a generated report"""
         return save_report()
 
-    @bp.route('/reports', methods=['GET'])
+    @bp.route("/reports", methods=["GET"])
     @jwt_required()
     @role_required(REPORT_ROLES)
     @log_api_usage()
@@ -35,7 +36,7 @@ def register_routes(bp):
         """Route to get saved reports"""
         return get_reports()
 
-    @bp.route('/reports/<int:report_id>', methods=['GET'])
+    @bp.route("/reports/<int:report_id>", methods=["GET"])
     @jwt_required()
     @role_required(REPORT_ROLES)
     @log_api_usage()
@@ -44,7 +45,7 @@ def register_routes(bp):
         """Route to get a specific report"""
         return get_report_by_id(report_id)
 
-    @bp.route('/reports/<int:report_id>', methods=['DELETE'])
+    @bp.route("/reports/<int:report_id>", methods=["DELETE"])
     @jwt_required()
     @role_required(REPORT_ROLES)
     @log_api_usage()

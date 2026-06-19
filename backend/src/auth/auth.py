@@ -26,19 +26,19 @@ def register_user():
     data = request.get_json()
 
     # Validate required fields (role is no longer required from the client)
-    if not all(k in data for k in ['name', 'email', 'password']):
-        return jsonify({'message': 'Missing required fields'}), 400
+    if not all(k in data for k in ["name", "email", "password"]):
+        return jsonify({"message": "Missing required fields"}), 400
 
     # Check if email already exists
-    existing_user = User.query.filter_by(email=data['email']).first()
+    existing_user = User.query.filter_by(email=data["email"]).first()
     if existing_user:
-        return jsonify({'message': 'Email already registered'}), 409
+        return jsonify({"message": "Email already registered"}), 409
 
     # Respect admin-controlled registration policy after the first admin bootstrap user
     user_count = User.query.count()
-    allow_self_registration = settings_service.get_bool_setting('allow_self_registration', True)
+    allow_self_registration = settings_service.get_bool_setting("allow_self_registration", True)
     if user_count > 0 and not allow_self_registration:
-        return jsonify({'message': 'User registration is currently disabled by an administrator'}), 403
+        return jsonify({"message": "User registration is currently disabled by an administrator"}), 403
 
     # If this is the very first user, automatically make them an admin
     if user_count == 0:
@@ -52,10 +52,7 @@ def register_user():
 
     try:
         new_user = User(
-            name=data['name'],
-            email=data['email'],
-            password=hash_password(data['password']),
-            role=forced_role
+            name=data["name"], email=data["email"], password=hash_password(data["password"]), role=forced_role
         )
 
         db.session.add(new_user)
@@ -63,133 +60,136 @@ def register_user():
 
         # Record audit log
         audit_service.record(
-            action='user_registered',
-            actor={'user_id': new_user.id, 'role': new_user.role},
-            resource_type='user',
-            resource_id=new_user.id
+            action="user_registered",
+            actor={"user_id": new_user.id, "role": new_user.role},
+            resource_type="user",
+            resource_id=new_user.id,
         )
 
         # Generate tokens for the new user
-        tokens = generate_tokens(new_user.id, {'role': new_user.role})
+        tokens = generate_tokens(new_user.id, {"role": new_user.role})
 
         # Create response with tokens
-        resp = jsonify({
-            'message': 'User registered successfully',
-            'user': {
-                'id': new_user.id,
-                'name': new_user.name,
-                'email': new_user.email,
-                'role': new_user.role,
-                'token': tokens['access_token']
+        resp = jsonify(
+            {
+                "message": "User registered successfully",
+                "user": {
+                    "id": new_user.id,
+                    "name": new_user.name,
+                    "email": new_user.email,
+                    "role": new_user.role,
+                    "token": tokens["access_token"],
+                },
             }
-        })
+        )
 
         # Set cookies
-        set_access_cookies(resp, tokens['access_token'])
-        set_refresh_cookies(resp, tokens['refresh_token'])
+        set_access_cookies(resp, tokens["access_token"])
+        set_refresh_cookies(resp, tokens["refresh_token"])
 
         return resp, 201
 
     except Exception as e:
         db.session.rollback()
         print(f"Registration error: {str(e)}")
-        return jsonify({'message': f'An error occurred while registering the user: {str(e)}'}), 500
+        return jsonify({"message": f"An error occurred while registering the user: {str(e)}"}), 500
+
 
 def login():
     """Function to authenticate a user and create a session"""
     data = request.get_json()
 
     # Validate required fields
-    if not all(k in data for k in ['email', 'password']):
-        return jsonify({'message': 'Missing email or password'}), 400
+    if not all(k in data for k in ["email", "password"]):
+        return jsonify({"message": "Missing email or password"}), 400
 
     # Find user by email
     print(f"Attempting to login user: {data['email']}")
-    user = User.query.filter_by(email=data['email']).first()
+    user = User.query.filter_by(email=data["email"]).first()
 
     # Check if user exists and password is correct
     if not user:
         print(f"User not found: {data['email']}")
-        return jsonify({'message': 'Invalid email or password'}), 401
+        return jsonify({"message": "Invalid email or password"}), 401
 
-    if not verify_password(data['password'], user.password):
+    if not verify_password(data["password"], user.password):
         print(f"Invalid password for user: {data['email']}")
-        return jsonify({'message': 'Invalid email or password'}), 401
+        return jsonify({"message": "Invalid email or password"}), 401
 
     # Generate tokens
-    tokens = generate_tokens(user.id, {'role': user.role})
+    tokens = generate_tokens(user.id, {"role": user.role})
     print(f"Login successful for user: {user.email}, role: {user.role}")
 
     # Check for GitHub connection
     from ..db.models.models import GitHubToken
+
     github_token = GitHubToken.query.filter_by(user_id=user.id).first()
     github_connected = github_token is not None
     github_username = user.github_username
 
     # Record audit log
     audit_service.record(
-        action='user_login',
-        actor={'user_id': user.id, 'role': user.role},
-        resource_type='user',
-        resource_id=user.id
+        action="user_login", actor={"user_id": user.id, "role": user.role}, resource_type="user", resource_id=user.id
     )
 
     # Create response
-    resp = jsonify({
-        'message': 'Login successful',
-        'user': {
-            'id': user.id,
-            'name': user.name,
-            'email': user.email,
-            'role': user.role,
-            'token': tokens['access_token'],  # Include token in response
-            'github_connected': github_connected,
-            'github_username': github_username
+    resp = jsonify(
+        {
+            "message": "Login successful",
+            "user": {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "role": user.role,
+                "token": tokens["access_token"],  # Include token in response
+                "github_connected": github_connected,
+                "github_username": github_username,
+            },
         }
-    })
+    )
 
     # Set cookies
-    set_access_cookies(resp, tokens['access_token'])
-    set_refresh_cookies(resp, tokens['refresh_token'])
+    set_access_cookies(resp, tokens["access_token"])
+    set_refresh_cookies(resp, tokens["refresh_token"])
 
     return resp
+
 
 def refresh_token():
     """Function to refresh an access token"""
     current_user = get_jwt_identity()
     claims = get_jwt()
-    role = claims.get('role')
-    user_id = current_user.get('user_id') if isinstance(current_user, dict) else current_user
+    role = claims.get("role")
+    user_id = current_user.get("user_id") if isinstance(current_user, dict) else current_user
 
     if not role and user_id:
         user = User.query.get(user_id)
         if user:
             role = user.role
 
-    additional_claims = {'role': role} if role else {}
+    additional_claims = {"role": role} if role else {}
 
     # Create new access token
     access_token = create_access_token(identity=current_user, additional_claims=additional_claims)
 
     # Create response
-    resp = jsonify({
-        'message': 'Token refreshed successfully',
-        'token': access_token
-    })
+    resp = jsonify({"message": "Token refreshed successfully", "token": access_token})
 
     # Set new access cookie
     set_access_cookies(resp, access_token)
 
     return resp
 
+
 def logout_user():
     """Function to log out a user"""
-    resp = jsonify({'message': 'Logout successful'})
+    resp = jsonify({"message": "Logout successful"})
 
     # Remove JWT cookies
     unset_jwt_cookies(resp)
 
     return resp
+
 
 # Add a dedicated token endpoint for the frontend to use
 def get_token():
@@ -197,31 +197,27 @@ def get_token():
     data = request.get_json()
 
     # Validate required fields
-    if not all(k in data for k in ['email', 'password']):
-        return jsonify({'message': 'Missing email or password'}), 400
+    if not all(k in data for k in ["email", "password"]):
+        return jsonify({"message": "Missing email or password"}), 400
 
     # Find user by email
-    user = User.query.filter_by(email=data['email']).first()
+    user = User.query.filter_by(email=data["email"]).first()
 
     # Check if user exists and password is correct
     if not user:
-        return jsonify({'message': 'Invalid email or password'}), 401
+        return jsonify({"message": "Invalid email or password"}), 401
 
-    if not verify_password(data['password'], user.password):
-        return jsonify({'message': 'Invalid email or password'}), 401
+    if not verify_password(data["password"], user.password):
+        return jsonify({"message": "Invalid email or password"}), 401
 
     # Generate tokens
-    tokens = generate_tokens(user.id, {'role': user.role})
+    tokens = generate_tokens(user.id, {"role": user.role})
 
     # Create response with just the token
-    response = jsonify({
-        'token': tokens['access_token'],
-        'user_id': user.id,
-        'role': user.role
-    })
+    response = jsonify({"token": tokens["access_token"], "user_id": user.id, "role": user.role})
 
     # Set cookies
-    set_access_cookies(response, tokens['access_token'])
-    set_refresh_cookies(response, tokens['refresh_token'])
+    set_access_cookies(response, tokens["access_token"])
+    set_refresh_cookies(response, tokens["refresh_token"])
 
     return response

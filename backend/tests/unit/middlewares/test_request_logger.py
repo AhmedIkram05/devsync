@@ -6,7 +6,7 @@ import pytest
 from flask import Flask, g, jsonify
 
 # Set up proper import paths
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
 
 # Import after path setup
 from backend.src.api.middlewares.request_logger import apply_request_logger, log_request
@@ -14,13 +14,14 @@ from backend.src.api.middlewares.request_logger import apply_request_logger, log
 # Create a test Flask app
 app = Flask(__name__)
 
+
 def test_log_request_decorator():
     """Test the log_request decorator"""
-    with app.test_request_context(method='GET', path='/test'):
+    with app.test_request_context(method="GET", path="/test"):
         # Mock the logger
         mock_logger = Mock()
 
-        with patch('backend.src.api.middlewares.request_logger.logger', mock_logger):
+        with patch("backend.src.api.middlewares.request_logger.logger", mock_logger):
             # Create test route with logging decorator
             @log_request()
             def test_route():
@@ -43,6 +44,7 @@ def test_log_request_decorator():
             assert response.status_code == 200
             assert response.get_json() == {"success": True}
 
+
 def test_apply_request_logger():
     """Test applying the request logger to an app"""
     test_app = Flask(__name__)
@@ -50,7 +52,7 @@ def test_apply_request_logger():
     # Mock the logger
     mock_logger = Mock()
 
-    with patch('backend.src.api.middlewares.request_logger.logger', mock_logger):
+    with patch("backend.src.api.middlewares.request_logger.logger", mock_logger):
         # Apply request logger to app
         apply_request_logger(test_app)
 
@@ -63,11 +65,11 @@ def test_apply_request_logger():
         assert len(after_funcs) == 1
 
         # Test before_request handler
-        with test_app.test_request_context(method='GET', path='/test'):
+        with test_app.test_request_context(method="GET", path="/test"):
             before_funcs[0]()  # Call the before_request handler
 
             # Check if start time was set
-            assert hasattr(g, 'request_start_time')
+            assert hasattr(g, "request_start_time")
 
             # Check if logger was called
             assert mock_logger.info.call_count == 1

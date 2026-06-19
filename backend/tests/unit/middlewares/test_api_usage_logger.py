@@ -7,7 +7,7 @@ import pytest
 from flask import Flask, g, jsonify
 
 # Set up proper import paths
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
 
 # Import after path setup
 from backend.src.api.middlewares.api_usage_logger import (
@@ -22,6 +22,7 @@ from backend.src.api.middlewares.api_usage_logger import (
 # Create a test Flask app
 app = Flask(__name__)
 
+
 @pytest.fixture
 def reset_usage_stats():
     """Reset API usage stats between tests"""
@@ -31,17 +32,16 @@ def reset_usage_stats():
     with api_usage_lock:
         api_usage_stats.clear()
 
+
 def test_log_api_usage_decorator(reset_usage_stats):
     """Test the log_api_usage decorator"""
-    with app.test_request_context(path='/api/test', method='GET'):
+    with app.test_request_context(path="/api/test", method="GET"):
         # Mock the logger
         mock_logger = Mock()
 
-        with patch('backend.src.api.middlewares.api_usage_logger.logger', mock_logger):
+        with patch("backend.src.api.middlewares.api_usage_logger.logger", mock_logger):
             # Mock JWT identity
-            with patch('backend.src.api.middlewares.api_usage_logger.get_jwt_identity',
-                      return_value={'user_id': 123}):
-
+            with patch("backend.src.api.middlewares.api_usage_logger.get_jwt_identity", return_value={"user_id": 123}):
                 # Create test route with logging decorator
                 @log_api_usage()
                 def test_route():
@@ -66,17 +66,18 @@ def test_log_api_usage_decorator(reset_usage_stats):
                 assert "GET" in stats[None]
                 assert stats[None]["GET"] == 1
 
+
 def test_log_api_usage_without_jwt(reset_usage_stats):
     """Test API usage logging without JWT authentication"""
-    with app.test_request_context(path='/api/test', method='GET'):
+    with app.test_request_context(path="/api/test", method="GET"):
         # Mock the logger
         mock_logger = Mock()
 
-        with patch('backend.src.api.middlewares.api_usage_logger.logger', mock_logger):
+        with patch("backend.src.api.middlewares.api_usage_logger.logger", mock_logger):
             # Mock JWT identity to raise exception (no JWT)
-            with patch('backend.src.api.middlewares.api_usage_logger.get_jwt_identity',
-                      side_effect=Exception("No JWT")):
-
+            with patch(
+                "backend.src.api.middlewares.api_usage_logger.get_jwt_identity", side_effect=Exception("No JWT")
+            ):
                 # Create test route with logging decorator
                 @log_api_usage()
                 def test_route():
@@ -97,6 +98,7 @@ def test_log_api_usage_without_jwt(reset_usage_stats):
                 assert "GET" in stats[None]
                 assert stats[None]["GET"] == 1
 
+
 def test_apply_api_usage_logger(reset_usage_stats):
     """Test applying the API usage logger to an app"""
     test_app = Flask(__name__)
@@ -104,7 +106,7 @@ def test_apply_api_usage_logger(reset_usage_stats):
     # Mock the logger
     mock_logger = Mock()
 
-    with patch('backend.src.api.middlewares.api_usage_logger.logger', mock_logger):
+    with patch("backend.src.api.middlewares.api_usage_logger.logger", mock_logger):
         # Apply API usage logger to app
         apply_api_usage_logger(test_app)
 
@@ -117,18 +119,17 @@ def test_apply_api_usage_logger(reset_usage_stats):
         assert len(after_funcs) == 1
 
         # Test before_request handler
-        with test_app.test_request_context(method='GET', path='/api/test'):
+        with test_app.test_request_context(method="GET", path="/api/test"):
             before_funcs[0]()  # Call the before_request handler
 
             # Check if start time was set
-            assert hasattr(g, 'request_start_time')
+            assert hasattr(g, "request_start_time")
 
             # Test after_request handler with a normal API path
             response = jsonify({"success": True})
 
             # Mock JWT identity
-            with patch('backend.src.api.middlewares.api_usage_logger.get_jwt_identity',
-                      return_value={'user_id': 123}):
+            with patch("backend.src.api.middlewares.api_usage_logger.get_jwt_identity", return_value={"user_id": 123}):
                 result = after_funcs[0](response)  # Call the after_request handler
 
             # Check if logger was called
@@ -144,6 +145,7 @@ def test_apply_api_usage_logger(reset_usage_stats):
             # Check that the original response was returned
             assert result == response
 
+
 def test_skip_static_paths(reset_usage_stats):
     """Test that static paths are skipped in API usage logging"""
     test_app = Flask(__name__)
@@ -151,7 +153,7 @@ def test_skip_static_paths(reset_usage_stats):
     # Mock the logger
     mock_logger = Mock()
 
-    with patch('backend.src.api.middlewares.api_usage_logger.logger', mock_logger):
+    with patch("backend.src.api.middlewares.api_usage_logger.logger", mock_logger):
         # Apply API usage logger to app
         apply_api_usage_logger(test_app)
 
@@ -160,7 +162,7 @@ def test_skip_static_paths(reset_usage_stats):
         assert len(after_funcs) == 1
 
         # Test after_request handler with a static path
-        with test_app.test_request_context(method='GET', path='/static/style.css'):
+        with test_app.test_request_context(method="GET", path="/static/style.css"):
             response = jsonify({"success": True})
             g.request_start_time = 0  # Simulate before_request
 
@@ -172,6 +174,7 @@ def test_skip_static_paths(reset_usage_stats):
             # Check that stats were not updated for static path
             stats = get_api_usage_stats()
             assert not stats  # Should be empty for static paths
+
 
 def test_get_api_usage_stats(reset_usage_stats):
     """Test getting API usage statistics"""
@@ -189,6 +192,7 @@ def test_get_api_usage_stats(reset_usage_stats):
     assert "POST" in stats["test_endpoint"]
     assert stats["test_endpoint"]["GET"] == 10
     assert stats["test_endpoint"]["POST"] == 5
+
 
 def test_reset_api_usage_stats(reset_usage_stats):
     """Test resetting API usage statistics"""

@@ -7,7 +7,7 @@ import pytest
 from flask import Flask, jsonify, request
 
 # Set up proper import paths
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
 
 # Import after path setup
 from backend.src.api.middlewares.rate_limiter import (
@@ -22,6 +22,7 @@ from backend.src.api.middlewares.rate_limiter import (
 # Create a test Flask app
 app = Flask(__name__)
 
+
 @pytest.fixture
 def reset_rate_limit_data():
     """Reset rate limit data between tests"""
@@ -31,23 +32,24 @@ def reset_rate_limit_data():
     request_counts.clear()
     request_timestamps.clear()
 
+
 def test_get_client_identifier_with_jwt():
     """Test getting client identifier with JWT"""
     with app.test_request_context():
         # Mock JWT identity
-        with patch('backend.src.api.middlewares.rate_limiter.get_jwt_identity',
-                  return_value={'user_id': 123}):
+        with patch("backend.src.api.middlewares.rate_limiter.get_jwt_identity", return_value={"user_id": 123}):
             client_id = get_client_identifier()
             assert client_id == 123
+
 
 def test_get_client_identifier_without_jwt():
     """Test getting client identifier without JWT"""
     with app.test_request_context():
         # Mock JWT identity raising an exception
-        with patch('backend.src.api.middlewares.rate_limiter.get_jwt_identity',
-                  side_effect=Exception("No JWT")):
+        with patch("backend.src.api.middlewares.rate_limiter.get_jwt_identity", side_effect=Exception("No JWT")):
             client_id = get_client_identifier()
             assert client_id == f"ip:{request.remote_addr}"
+
 
 def test_clean_old_requests(reset_rate_limit_data):
     """Test cleaning old request timestamps"""
@@ -59,8 +61,8 @@ def test_clean_old_requests(reset_rate_limit_data):
     current_time = time.time()
     request_timestamps[client_id][endpoint] = [
         current_time - 100,  # Old (should be removed)
-        current_time - 30,   # Recent (should be kept)
-        current_time - 10    # Recent (should be kept)
+        current_time - 30,  # Recent (should be kept)
+        current_time - 10,  # Recent (should be kept)
     ]
     request_counts[client_id][endpoint] = 3
 
@@ -75,13 +77,12 @@ def test_clean_old_requests(reset_rate_limit_data):
     for ts in request_timestamps[client_id][endpoint]:
         assert current_time - ts < 60
 
+
 def test_rate_limit_decorator_under_limit(reset_rate_limit_data):
     """Test rate limit decorator when under the limit"""
     with app.test_request_context():
         # Mock client identifier
-        with patch('backend.src.api.middlewares.rate_limiter.get_client_identifier',
-                  return_value="test_client"):
-
+        with patch("backend.src.api.middlewares.rate_limiter.get_client_identifier", return_value="test_client"):
             # Create test route with rate limiting
             @rate_limit(requests_per_window=5, window_seconds=60)
             def test_route():
@@ -93,13 +94,12 @@ def test_rate_limit_decorator_under_limit(reset_rate_limit_data):
                 assert response.status_code == 200
                 assert response.get_json() == {"success": True}
 
+
 def test_rate_limit_decorator_exceeding_limit(reset_rate_limit_data):
     """Test rate limit decorator when exceeding the limit"""
     with app.test_request_context():
         # Mock client identifier
-        with patch('backend.src.api.middlewares.rate_limiter.get_client_identifier',
-                  return_value="test_client"):
-
+        with patch("backend.src.api.middlewares.rate_limiter.get_client_identifier", return_value="test_client"):
             # Create test route with rate limiting
             @rate_limit(requests_per_window=3, window_seconds=60)
             def test_route():
@@ -121,6 +121,7 @@ def test_rate_limit_decorator_exceeding_limit(reset_rate_limit_data):
                         assert response.status_code == 429
                         assert "Rate limit exceeded" in response.get_json()["message"]
 
+
 def test_global_rate_limit(reset_rate_limit_data):
     """Test the global rate limiter"""
     test_app = Flask(__name__)
@@ -133,26 +134,24 @@ def test_global_rate_limit(reset_rate_limit_data):
     assert len(before_funcs) == 1
 
     # Test static path exclusion
-    with test_app.test_request_context(path='/static/css/style.css'):
+    with test_app.test_request_context(path="/static/css/style.css"):
         result = before_funcs[0]()
         assert result is None  # Static paths should be excluded
 
     # Test rate limiting for a regular path
-    with patch('backend.src.api.middlewares.rate_limiter.get_client_identifier',
-              return_value="test_client"):
-
+    with patch("backend.src.api.middlewares.rate_limiter.get_client_identifier", return_value="test_client"):
         # First request should be allowed
-        with test_app.test_request_context(path='/api/test'):
+        with test_app.test_request_context(path="/api/test"):
             result = before_funcs[0]()
             assert result is None  # No response = allowed
 
         # Second request should be allowed
-        with test_app.test_request_context(path='/api/test'):
+        with test_app.test_request_context(path="/api/test"):
             result = before_funcs[0]()
             assert result is None  # No response = allowed
 
         # Third request should be rate limited
-        with test_app.test_request_context(path='/api/test'):
+        with test_app.test_request_context(path="/api/test"):
             result = before_funcs[0]()
             assert result is not None
 

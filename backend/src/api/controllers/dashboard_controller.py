@@ -15,7 +15,7 @@ from ...services.task_rules import count_overdue_tasks, get_project_scope_ids
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-COMPLETED_TASK_STATUSES = {'done', 'completed'}
+COMPLETED_TASK_STATUSES = {"done", "completed"}
 
 
 def _safe_query_all(model):
@@ -34,47 +34,48 @@ def _is_completed_status(status):
 
 
 def _is_completed_task(task):
-    return _is_completed_status(getattr(task, 'status', None))
+    return _is_completed_status(getattr(task, "status", None))
 
 
 def _task_to_dashboard_item(task):
-    project = getattr(task, 'project', None)
+    project = getattr(task, "project", None)
     return {
-        'id': getattr(task, 'id', None),
-        'title': getattr(task, 'title', None),
-        'description': getattr(task, 'description', None),
-        'status': getattr(task, 'status', None),
-        'priority': getattr(task, 'priority', None),
-        'progress': getattr(task, 'progress', 0) or 0,
-        'deadline': getattr(task, 'deadline', None).isoformat() if getattr(task, 'deadline', None) else None,
-        'project_id': getattr(task, 'project_id', None),
-        'project_name': project.name if project else None,
-        'updated_at': getattr(task, 'updated_at', None).isoformat() if getattr(task, 'updated_at', None) else None,
-        'created_at': getattr(task, 'created_at', None).isoformat() if getattr(task, 'created_at', None) else None,
+        "id": getattr(task, "id", None),
+        "title": getattr(task, "title", None),
+        "description": getattr(task, "description", None),
+        "status": getattr(task, "status", None),
+        "priority": getattr(task, "priority", None),
+        "progress": getattr(task, "progress", 0) or 0,
+        "deadline": getattr(task, "deadline", None).isoformat() if getattr(task, "deadline", None) else None,
+        "project_id": getattr(task, "project_id", None),
+        "project_name": project.name if project else None,
+        "updated_at": getattr(task, "updated_at", None).isoformat() if getattr(task, "updated_at", None) else None,
+        "created_at": getattr(task, "created_at", None).isoformat() if getattr(task, "created_at", None) else None,
     }
 
 
 def _github_activity_to_item(link):
-    task = getattr(link, 'task', None)
-    repository = getattr(link, 'repository', None)
-    event_type = 'pull_request' if link.pull_request_number else 'issue' if link.issue_number else 'repository'
+    task = getattr(link, "task", None)
+    repository = getattr(link, "repository", None)
+    event_type = "pull_request" if link.pull_request_number else "issue" if link.issue_number else "repository"
     label_number = link.pull_request_number or link.issue_number
     repo_url = repository.repo_url if repository else None
     if repo_url and label_number:
         if link.pull_request_number:
-            repo_url = f'{repo_url.rstrip("/")}/pull/{link.pull_request_number}'
+            repo_url = f"{repo_url.rstrip('/')}/pull/{link.pull_request_number}"
         elif link.issue_number:
-            repo_url = f'{repo_url.rstrip("/")}/issues/{link.issue_number}'
+            repo_url = f"{repo_url.rstrip('/')}/issues/{link.issue_number}"
 
     return {
-        'id': link.id,
-        'type': event_type,
-        'title': task.title if task else 'GitHub linked task',
-        'repo': repository.repo_name if repository else 'Unknown repository',
-        'url': repo_url,
-        'date': link.created_at.isoformat() if link.created_at else None,
-        'label': f'#{label_number}' if label_number else 'Linked repository',
+        "id": link.id,
+        "type": event_type,
+        "title": task.title if task else "GitHub linked task",
+        "repo": repository.repo_name if repository else "Unknown repository",
+        "url": repo_url,
+        "date": link.created_at.isoformat() if link.created_at else None,
+        "label": f"#{label_number}" if label_number else "Linked repository",
     }
+
 
 def get_user_tasks(user_id):
     """Helper function to get all tasks for a user"""
@@ -84,14 +85,17 @@ def get_user_tasks(user_id):
         logger.error(f"Error fetching user tasks: {str(e)}")
         return []
 
+
 def get_tasks_due_soon(user_id=None, project_ids=None):
     """Helper function to get tasks due soon for a user or a set of projects"""
     try:
         today = datetime.now().date()
         week_later = today + timedelta(days=7)
-        query = Task.query.filter(Task.deadline.isnot(None))\
-            .filter(Task.deadline.between(today, week_later))\
+        query = (
+            Task.query.filter(Task.deadline.isnot(None))
+            .filter(Task.deadline.between(today, week_later))
             .filter(~Task.status.in_(COMPLETED_TASK_STATUSES))
+        )
 
         if project_ids:
             query = query.filter(Task.project_id.in_(project_ids))
@@ -103,17 +107,12 @@ def get_tasks_due_soon(user_id=None, project_ids=None):
         logger.error(f"Error fetching tasks due soon: {str(e)}")
         return []
 
-def get_recent_completed_tasks(user_id, timeframe='month'):
+
+def get_recent_completed_tasks(user_id, timeframe="month"):
     """Helper function to get recent completed tasks for a user, bounding extreme date filters."""
     try:
         today = datetime.now().date()
-        days_map = {
-            'week': 7,
-            'month': 30,
-            'quarter': 90,
-            'year': 365,
-            'century': 36500
-        }
+        days_map = {"week": 7, "month": 30, "quarter": 90, "year": 365, "century": 36500}
         days = days_map.get(timeframe, 30)
 
         # Boundary fallback: default to 30 days if the timeframe exceeds 5 years (e.g. century)
@@ -121,14 +120,18 @@ def get_recent_completed_tasks(user_id, timeframe='month'):
             days = 30
 
         time_ago = today - timedelta(days=days)
-        return Task.query.filter_by(assigned_to=user_id)\
+        return (
+            Task.query.filter_by(assigned_to=user_id)
             .filter(
                 Task.status.in_(COMPLETED_TASK_STATUSES),
                 Task.updated_at >= time_ago,
-            ).all()
+            )
+            .all()
+        )
     except Exception as e:
         logger.error(f"Error fetching completed tasks: {str(e)}")
         return []
+
 
 def get_project_tasks(project_id):
     """Helper function to get all tasks for a project"""
@@ -138,34 +141,39 @@ def get_project_tasks(project_id):
         logger.error(f"Error fetching project tasks: {str(e)}")
         return []
 
+
 def get_project_tasks_due_soon(project_id):
     """Helper function to get tasks due soon for a project"""
     try:
         today = datetime.now().date()
         week_later = today + timedelta(days=7)
-        return Task.query.filter_by(project_id=project_id)\
-            .filter(Task.deadline.isnot(None))\
-            .filter(Task.deadline.between(today, week_later))\
-            .filter(~Task.status.in_(COMPLETED_TASK_STATUSES)).all()
+        return (
+            Task.query.filter_by(project_id=project_id)
+            .filter(Task.deadline.isnot(None))
+            .filter(Task.deadline.between(today, week_later))
+            .filter(~Task.status.in_(COMPLETED_TASK_STATUSES))
+            .all()
+        )
     except Exception as e:
         logger.error(f"Error fetching project tasks due soon: {str(e)}")
         return []
 
+
 def get_recent_updated_project_tasks(project_id):
     """Helper function to get recently updated project tasks"""
     try:
-        return Task.query.filter_by(project_id=project_id)\
-            .order_by(Task.updated_at.desc()).limit(5).all()
+        return Task.query.filter_by(project_id=project_id).order_by(Task.updated_at.desc()).limit(5).all()
     except Exception as e:
         logger.error(f"Error fetching updated project tasks: {str(e)}")
         return []
 
+
 def get_user_dashboard():
     """Controller function to get dashboard data for the current user"""
     try:
-        user_id = get_jwt_identity()['user_id']
+        user_id = get_jwt_identity()["user_id"]
         claims = get_jwt()
-        user_role = claims.get('role')
+        user_role = claims.get("role")
 
         # Log the request details for debugging
         logger.info(f"Getting dashboard for user ID: {user_id}, role: {user_role}")
@@ -174,7 +182,7 @@ def get_user_dashboard():
         user = User.query.get(user_id)
         if not user:
             logger.error(f"User not found: {user_id}")
-            return jsonify({'message': 'User not found'}), 404
+            return jsonify({"message": "User not found"}), 404
 
         # Get assigned tasks
         assigned_tasks = get_user_tasks(user_id)
@@ -190,47 +198,48 @@ def get_user_dashboard():
 
         # Format response data
         dashboard_data = {
-            'user': {
-                'id': user.id,
-                'name': user.name,
-                'role': user.role
+            "user": {"id": user.id, "name": user.name, "role": user.role},
+            "tasks": {
+                "assigned_count": len(assigned_tasks),
+                "pending_count": len([t for t in assigned_tasks if not _is_completed_task(t)]),
+                "completed_count": len([t for t in assigned_tasks if _is_completed_task(t)]),
+                "due_soon": [
+                    {
+                        "id": task.id,
+                        "title": task.title,
+                        "deadline": task.deadline.isoformat() if task.deadline else None,
+                        "status": task.status,
+                        "project_id": task.project_id,
+                    }
+                    for task in tasks_due_soon
+                ],
+                "recently_completed": [
+                    {
+                        "id": task.id,
+                        "title": task.title,
+                        "completed_date": task.updated_at.isoformat() if task.updated_at else None,
+                        "project_id": task.project_id,
+                    }
+                    for task in completed_tasks[:5]
+                ],  # Limit to 5 most recent
             },
-            'tasks': {
-                'assigned_count': len(assigned_tasks),
-                'pending_count': len([t for t in assigned_tasks if not _is_completed_task(t)]),
-                'completed_count': len([t for t in assigned_tasks if _is_completed_task(t)]),
-                'due_soon': [{
-                    'id': task.id,
-                    'title': task.title,
-                    'deadline': task.deadline.isoformat() if task.deadline else None,
-                    'status': task.status,
-                    'project_id': task.project_id
-                } for task in tasks_due_soon],
-                'recently_completed': [{
-                    'id': task.id,
-                    'title': task.title,
-                    'completed_date': task.updated_at.isoformat() if task.updated_at else None,
-                    'project_id': task.project_id
-                } for task in completed_tasks[:5]]  # Limit to 5 most recent
-            },
-            'projects': [{
-                'id': project.id,
-                'name': project.name,
-                'status': project.status
-            } for project in user_projects]
+            "projects": [
+                {"id": project.id, "name": project.name, "status": project.status} for project in user_projects
+            ],
         }
 
         # Add admin-specific data
         if user_role == Role.ADMIN.value:
             # Get team stats if they're an admin (project manager)
-            team_tasks = Task.query.join(Project, Task.project_id == Project.id)\
-                .filter(Project.created_by == user_id).all()
+            team_tasks = (
+                Task.query.join(Project, Task.project_id == Project.id).filter(Project.created_by == user_id).all()
+            )
 
-            dashboard_data['team'] = {
-                'total_tasks': len(team_tasks),
-                'completed_tasks': len([t for t in team_tasks if _is_completed_task(t)]),
-                'in_progress_tasks': len([t for t in team_tasks if t.status == 'in_progress']),
-                'pending_tasks': len([t for t in team_tasks if t.status == 'todo'])
+            dashboard_data["team"] = {
+                "total_tasks": len(team_tasks),
+                "completed_tasks": len([t for t in team_tasks if _is_completed_task(t)]),
+                "in_progress_tasks": len([t for t in team_tasks if t.status == "in_progress"]),
+                "pending_tasks": len([t for t in team_tasks if t.status == "todo"]),
             }
 
         return jsonify(dashboard_data)
@@ -238,14 +247,15 @@ def get_user_dashboard():
         # Log the error with traceback
         logger.error(f"Error in get_user_dashboard: {str(e)}")
         logger.error(traceback.format_exc())
-        return jsonify({'message': 'An error occurred while loading the dashboard', 'error': str(e)}), 500
+        return jsonify({"message": "An error occurred while loading the dashboard", "error": str(e)}), 500
+
 
 def get_client_dashboard():
     """Controller function to get dashboard data for a developer or team lead."""
     try:
-        user_id = get_jwt_identity()['user_id']
+        user_id = get_jwt_identity()["user_id"]
         claims = get_jwt()
-        user_role = claims.get('role')
+        user_role = claims.get("role")
 
         # Log the request details for debugging
         logger.info(f"Getting member dashboard for user ID: {user_id}, role: {user_role}")
@@ -254,7 +264,7 @@ def get_client_dashboard():
         user = User.query.get(user_id)
         if not user:
             logger.error(f"User not found: {user_id}")
-            return jsonify({'message': 'User not found'}), 404
+            return jsonify({"message": "User not found"}), 404
 
         user_projects = list(user.projects.all())
         if user_role == Role.TEAM_LEAD.value:
@@ -277,18 +287,18 @@ def get_client_dashboard():
 
         recent_tasks = sorted(
             scoped_tasks,
-            key=lambda task: getattr(task, 'updated_at', None) or getattr(task, 'created_at', None) or datetime.min,
+            key=lambda task: getattr(task, "updated_at", None) or getattr(task, "created_at", None) or datetime.min,
             reverse=True,
         )
 
         task_stats = {
-            'total': len(scoped_tasks),
-            'assigned': len(scoped_tasks),
-            'todo': _count(scoped_tasks, lambda task: getattr(task, 'status', None) == 'todo'),
-            'in_progress': _count(scoped_tasks, lambda task: getattr(task, 'status', None) == 'in_progress'),
-            'review': _count(scoped_tasks, lambda task: getattr(task, 'status', None) == 'review'),
-            'done': _count(scoped_tasks, lambda task: getattr(task, 'status', None) in {'done', 'completed'}),
-            'due_soon': len(tasks_due_soon),
+            "total": len(scoped_tasks),
+            "assigned": len(scoped_tasks),
+            "todo": _count(scoped_tasks, lambda task: getattr(task, "status", None) == "todo"),
+            "in_progress": _count(scoped_tasks, lambda task: getattr(task, "status", None) == "in_progress"),
+            "review": _count(scoped_tasks, lambda task: getattr(task, "status", None) == "review"),
+            "done": _count(scoped_tasks, lambda task: getattr(task, "status", None) in {"done", "completed"}),
+            "due_soon": len(tasks_due_soon),
         }
 
         github_activity = []
@@ -307,23 +317,26 @@ def get_client_dashboard():
 
         # Format response data
         dashboard_data = {
-            'taskCounts': task_stats,
-            'tasks': task_stats,
-            'recentTasks': [_task_to_dashboard_item(task) for task in recent_tasks],
-            'upcomingDeadlines': [_task_to_dashboard_item(task) for task in tasks_due_soon],
-            'tasks_due_soon': [{
-                'id': task.id,
-                'title': task.title,
-                'deadline': task.deadline.isoformat() if task.deadline and hasattr(task.deadline, 'isoformat') else None,
-                'status': task.status,
-                'project_id': task.project_id
-            } for task in tasks_due_soon],
-            'githubActivity': github_activity,
-            'projects': [{
-                'id': project.id,
-                'name': project.name,
-                'status': project.status
-            } for project in user_projects]
+            "taskCounts": task_stats,
+            "tasks": task_stats,
+            "recentTasks": [_task_to_dashboard_item(task) for task in recent_tasks],
+            "upcomingDeadlines": [_task_to_dashboard_item(task) for task in tasks_due_soon],
+            "tasks_due_soon": [
+                {
+                    "id": task.id,
+                    "title": task.title,
+                    "deadline": task.deadline.isoformat()
+                    if task.deadline and hasattr(task.deadline, "isoformat")
+                    else None,
+                    "status": task.status,
+                    "project_id": task.project_id,
+                }
+                for task in tasks_due_soon
+            ],
+            "githubActivity": github_activity,
+            "projects": [
+                {"id": project.id, "name": project.name, "status": project.status} for project in user_projects
+            ],
         }
 
         return jsonify(dashboard_data)
@@ -331,19 +344,20 @@ def get_client_dashboard():
         # Log the error with traceback
         logger.error(f"Error in get_client_dashboard: {str(e)}")
         logger.error(traceback.format_exc())
-        return jsonify({'message': 'An error occurred while loading the dashboard', 'error': str(e)}), 500
+        return jsonify({"message": "An error occurred while loading the dashboard", "error": str(e)}), 500
+
 
 def get_admin_dashboard():
     """Controller function to get admin dashboard data"""
     try:
-        user_id = get_jwt_identity()['user_id']
+        user_id = get_jwt_identity()["user_id"]
         claims = get_jwt()
-        user_role = claims.get('role')
+        user_role = claims.get("role")
 
         # Check if user is admin or team lead
         if user_role not in [Role.ADMIN.value, Role.TEAM_LEAD.value]:
             logger.warning(f"Unauthorized user {user_id} with role {user_role} attempted to access admin dashboard")
-            return jsonify({'message': 'Unauthorized access'}), 403
+            return jsonify({"message": "Unauthorized access"}), 403
 
         # Log the request details for debugging
         logger.info(f"Getting admin dashboard for user ID: {user_id}")
@@ -354,7 +368,7 @@ def get_admin_dashboard():
         user = User.query.get(user_id)
         if not user:
             logger.error(f"User not found: {user_id}")
-            return jsonify({'message': 'User not found'}), 404
+            return jsonify({"message": "User not found"}), 404
 
         # Get all tasks (guard against schema mismatches in local DB)
         try:
@@ -372,29 +386,29 @@ def get_admin_dashboard():
             logger.error(f"Error querying users for admin dashboard (fallback to empty): {str(e)}")
             users = []
         user_counts = {
-            'total': len(users),
-            'admin': len([u for u in users if u.role == Role.ADMIN.value]),
-            'team_lead': len([u for u in users if u.role == Role.TEAM_LEAD.value]),
-            'developer': len([u for u in users if u.role == Role.DEVELOPER.value]),
+            "total": len(users),
+            "admin": len([u for u in users if u.role == Role.ADMIN.value]),
+            "team_lead": len([u for u in users if u.role == Role.TEAM_LEAD.value]),
+            "developer": len([u for u in users if u.role == Role.DEVELOPER.value]),
         }
 
         # Calculate task statistics
         task_stats = {
-            'total': len(all_tasks),
-            'backlog': len([t for t in all_tasks if t.status == 'backlog']),
-            'todo': len([t for t in all_tasks if t.status == 'todo']),
-            'in_progress': len([t for t in all_tasks if t.status == 'in_progress']),
-            'review': len([t for t in all_tasks if t.status == 'review']),
-            'done': len([t for t in all_tasks if _is_completed_task(t)]),
-            'overdue': count_overdue_tasks(all_tasks, project_ids=admin_project_ids),
+            "total": len(all_tasks),
+            "backlog": len([t for t in all_tasks if t.status == "backlog"]),
+            "todo": len([t for t in all_tasks if t.status == "todo"]),
+            "in_progress": len([t for t in all_tasks if t.status == "in_progress"]),
+            "review": len([t for t in all_tasks if t.status == "review"]),
+            "done": len([t for t in all_tasks if _is_completed_task(t)]),
+            "overdue": count_overdue_tasks(all_tasks, project_ids=admin_project_ids),
         }
 
         # Get user's assigned tasks for "My Tasks" section
-        user_assigned_tasks = [t for t in all_tasks if getattr(t, 'assigned_to', None) == user_id]
+        user_assigned_tasks = [t for t in all_tasks if getattr(t, "assigned_to", None) == user_id]
         user_assigned_tasks_sorted = sorted(
             user_assigned_tasks,
-            key=lambda t: getattr(t, 'updated_at', None) or getattr(t, 'created_at', None) or datetime.min,
-            reverse=True
+            key=lambda t: getattr(t, "updated_at", None) or getattr(t, "created_at", None) or datetime.min,
+            reverse=True,
         )
 
         # For Team Leads: calculate scoped KPIs for managing projects
@@ -410,41 +424,43 @@ def get_admin_dashboard():
             # Find projects with active or on-hold status that TL is on
             scoped_projects = []
             for project in all_projects:
-                project_status = getattr(project, 'status', '').lower().replace('-', '_')
-                if project_status not in ['active', 'on_hold']:
+                project_status = getattr(project, "status", "").lower().replace("-", "_")
+                if project_status not in ["active", "on_hold"]:
                     continue
 
                 # Check if TL is on the project
-                team_members = getattr(project, 'team_members', []) or []
-                if hasattr(team_members, 'all'):
+                team_members = getattr(project, "team_members", []) or []
+                if hasattr(team_members, "all"):
                     team_members = team_members.all()
 
                 is_member = any(
-                    (getattr(m, 'id', None) == user_id or
-                     getattr(m, 'user_id', None) == user_id)
-                    for m in team_members if m is not None
+                    (getattr(m, "id", None) == user_id or getattr(m, "user_id", None) == user_id)
+                    for m in team_members
+                    if m is not None
                 )
-                is_creator = getattr(project, 'created_by', None) == user_id
+                is_creator = getattr(project, "created_by", None) == user_id
 
                 if is_member or is_creator:
                     scoped_projects.append(project)
 
             # Calculate TL-specific KPIs
             scoped_project_ids = set(p.id for p in scoped_projects)
-            scoped_tasks = [t for t in all_tasks if getattr(t, 'project_id', None) in scoped_project_ids]
+            scoped_tasks = [t for t in all_tasks if getattr(t, "project_id", None) in scoped_project_ids]
 
             # KPI 1: Total in review tasks
-            in_review_count = len([t for t in scoped_tasks if getattr(t, 'status', '').lower() in ['review', 'in_review', 'in-review']])
+            in_review_count = len(
+                [t for t in scoped_tasks if getattr(t, "status", "").lower() in ["review", "in_review", "in-review"]]
+            )
 
             # KPI 2: Total tasks due soon (within 7 days)
             today = datetime.now().date()
             week_later = today + timedelta(days=7)
             due_soon_count = 0
             for t in scoped_tasks:
-                deadline = getattr(t, 'deadline', None)
+                deadline = getattr(t, "deadline", None)
                 if deadline is None:
                     continue
-                if hasattr(deadline, 'date'):
+                if hasattr(deadline, "date"):
                     deadline = deadline.date()
                 elif isinstance(deadline, str):
                     try:
@@ -454,8 +470,8 @@ def get_admin_dashboard():
                 else:
                     continue
 
-                task_status = getattr(t, 'status', '').lower().replace('-', '_')
-                if task_status in ['done', 'completed', 'review', 'in_review']:
+                task_status = getattr(t, "status", "").lower().replace("-", "_")
+                if task_status in ["done", "completed", "review", "in_review"]:
                     continue
 
                 if today <= deadline <= week_later:
@@ -464,10 +480,10 @@ def get_admin_dashboard():
             # KPI 3: Total overdue AND NOT (completed OR in-review)
             overdue_not_complete_count = 0
             for t in scoped_tasks:
-                deadline = getattr(t, 'deadline', None)
+                deadline = getattr(t, "deadline", None)
                 if deadline is None:
                     continue
-                if hasattr(deadline, 'date'):
+                if hasattr(deadline, "date"):
                     deadline = deadline.date()
                 elif isinstance(deadline, str):
                     try:
@@ -480,8 +496,8 @@ def get_admin_dashboard():
                 if deadline >= today:
                     continue
 
-                task_status = getattr(t, 'status', '').lower().replace('-', '_')
-                if task_status in ['done', 'completed', 'review', 'in_review']:
+                task_status = getattr(t, "status", "").lower().replace("-", "_")
+                if task_status in ["done", "completed", "review", "in_review"]:
                     continue
 
                 overdue_not_complete_count += 1
@@ -490,49 +506,48 @@ def get_admin_dashboard():
             current_projects_count = len(scoped_projects)
 
             team_lead_kpis = {
-                'in_review_tasks': in_review_count,
-                'due_soon_tasks': due_soon_count,
-                'overdue_not_complete_tasks': overdue_not_complete_count,
-                'current_projects': current_projects_count,
+                "in_review_tasks": in_review_count,
+                "due_soon_tasks": due_soon_count,
+                "overdue_not_complete_tasks": overdue_not_complete_count,
+                "current_projects": current_projects_count,
             }
 
         # Format response data
         dashboard_data = {
-            'users': user_counts,
-            'tasks': task_stats,
-            'projects': {
-                'total': Project.query.count()
-            },
-            'my_assigned_tasks': [_task_to_dashboard_item(t) for t in user_assigned_tasks_sorted],
+            "users": user_counts,
+            "tasks": task_stats,
+            "projects": {"total": Project.query.count()},
+            "my_assigned_tasks": [_task_to_dashboard_item(t) for t in user_assigned_tasks_sorted],
         }
 
         # Add Team Lead KPIs if applicable
         if team_lead_kpis:
-            dashboard_data['team_lead_kpis'] = team_lead_kpis
+            dashboard_data["team_lead_kpis"] = team_lead_kpis
 
         # Include recent projects (top 3 by updated_at)
         try:
             recent_projects_query = Project.query.order_by(Project.updated_at.desc()).limit(3).all()
-            dashboard_data['recentProjects'] = [
+            dashboard_data["recentProjects"] = [
                 {
-                    'id': p.id,
-                    'name': p.name,
-                    'status': p.status,
-                    'created_at': p.created_at.isoformat() if p.created_at else None,
-                    'task_count': len(p.tasks) if getattr(p, 'tasks', None) is not None else 0
+                    "id": p.id,
+                    "name": p.name,
+                    "status": p.status,
+                    "created_at": p.created_at.isoformat() if p.created_at else None,
+                    "task_count": len(p.tasks) if getattr(p, "tasks", None) is not None else 0,
                 }
                 for p in recent_projects_query
             ]
         except Exception as e:
             logger.error(f"Error fetching recent projects for admin dashboard: {str(e)}")
-            dashboard_data['recentProjects'] = []
+            dashboard_data["recentProjects"] = []
 
         return jsonify(dashboard_data)
     except Exception as e:
         # Log the error with traceback
         logger.error(f"Error in get_admin_dashboard: {str(e)}")
         logger.error(traceback.format_exc())
-        return jsonify({'message': 'An error occurred while loading the dashboard', 'error': str(e)}), 500
+        return jsonify({"message": "An error occurred while loading the dashboard", "error": str(e)}), 500
+
 
 def get_project_dashboard(project_id):
     """Controller function to get dashboard data for a specific project"""
@@ -540,24 +555,24 @@ def get_project_dashboard(project_id):
         # Check if project exists
         project = Project.query.get(project_id)
         if not project:
-            return jsonify({'message': 'Project not found'}), 404
+            return jsonify({"message": "Project not found"}), 404
 
         # Get all tasks for this project
         tasks = get_project_tasks(project_id)
 
         # Calculate task statistics
         task_stats = {
-            'total': len(tasks),
-            'todo': len([t for t in tasks if t.status == 'todo']),
-            'in_progress': len([t for t in tasks if t.status == 'in_progress']),
-            'review': len([t for t in tasks if t.status == 'review']),
-            'done': len([t for t in tasks if _is_completed_task(t)])
+            "total": len(tasks),
+            "todo": len([t for t in tasks if t.status == "todo"]),
+            "in_progress": len([t for t in tasks if t.status == "in_progress"]),
+            "review": len([t for t in tasks if t.status == "review"]),
+            "done": len([t for t in tasks if _is_completed_task(t)]),
         }
 
         # Calculate completion percentage
         completion_percentage = 0
-        if task_stats['total'] > 0:
-            completion_percentage = (task_stats['done'] / task_stats['total']) * 100
+        if task_stats["total"] > 0:
+            completion_percentage = (task_stats["done"] / task_stats["total"]) * 100
 
         # Get tasks due soon (within 7 days)
         tasks_due_soon = get_project_tasks_due_soon(project_id)
@@ -569,32 +584,36 @@ def get_project_dashboard(project_id):
         team_members = project.team_members.all()
 
         dashboard_data = {
-            'project': {
-                'id': project.id,
-                'name': project.name,
-                'description': project.description,
-                'status': project.status,
-                'completion_percentage': completion_percentage
+            "project": {
+                "id": project.id,
+                "name": project.name,
+                "description": project.description,
+                "status": project.status,
+                "completion_percentage": completion_percentage,
             },
-            'task_stats': task_stats,
-            'tasks_due_soon': [{
-                'id': task.id,
-                'title': task.title,
-                'deadline': task.deadline.isoformat() if task.deadline and hasattr(task.deadline, 'isoformat') else None,
-                'status': task.status,
-                'assigned_to': task.assigned_to
-            } for task in tasks_due_soon],
-            'recently_updated_tasks': [{
-                'id': task.id,
-                'title': task.title,
-                'status': task.status,
-                'updated_at': task.updated_at.isoformat() if task.updated_at else None
-            } for task in recently_updated],
-            'team_members': [{
-                'id': member.id,
-                'name': member.name,
-                'role': member.role
-            } for member in team_members]
+            "task_stats": task_stats,
+            "tasks_due_soon": [
+                {
+                    "id": task.id,
+                    "title": task.title,
+                    "deadline": task.deadline.isoformat()
+                    if task.deadline and hasattr(task.deadline, "isoformat")
+                    else None,
+                    "status": task.status,
+                    "assigned_to": task.assigned_to,
+                }
+                for task in tasks_due_soon
+            ],
+            "recently_updated_tasks": [
+                {
+                    "id": task.id,
+                    "title": task.title,
+                    "status": task.status,
+                    "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+                }
+                for task in recently_updated
+            ],
+            "team_members": [{"id": member.id, "name": member.name, "role": member.role} for member in team_members],
         }
 
         return jsonify(dashboard_data)
@@ -602,4 +621,4 @@ def get_project_dashboard(project_id):
         # Log the error with traceback
         logger.error(f"Error in get_project_dashboard: {str(e)}")
         logger.error(traceback.format_exc())
-        return jsonify({'message': 'An error occurred while loading the dashboard', 'error': str(e)}), 500
+        return jsonify({"message": "An error occurred while loading the dashboard", "error": str(e)}), 500

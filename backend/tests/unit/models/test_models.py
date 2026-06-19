@@ -7,7 +7,7 @@ import pytest
 from flask import Flask  # added import
 
 # Set up proper import paths
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
 
 # Import models after path setup
 from backend.src.db.models.models import (
@@ -23,7 +23,8 @@ from backend.src.db.models.models import (
     project_members,
 )
 
-app = Flask(__name__)    # added app instance
+app = Flask(__name__)  # added app instance
+
 
 class TestModels:
     def test_user_model_creation(self):
@@ -33,7 +34,7 @@ class TestModels:
             email="test@example.com",
             password="hashed_password",
             role="developer",
-            github_username="testuser"
+            github_username="testuser",
         )
 
         assert user.name == "Test User"
@@ -53,7 +54,7 @@ class TestModels:
             progress=50,
             assigned_to=1,
             created_by=2,
-            deadline=expected_deadline
+            deadline=expected_deadline,
         )
 
         assert task.title == "Test Task"
@@ -71,7 +72,7 @@ class TestModels:
             user_id=1,
             access_token="access_token_123",
             refresh_token="refresh_token_456",
-            token_expires_at=expected_expiry
+            token_expires_at=expected_expiry,
         )
 
         assert token.user_id == 1
@@ -81,11 +82,7 @@ class TestModels:
 
     def test_github_repository_model_creation(self):
         """Test creation of GitHubRepository model"""
-        repo = GitHubRepository(
-            repo_name="test-repo",
-            repo_url="https://github.com/user/test-repo",
-            github_id=123456
-        )
+        repo = GitHubRepository(repo_name="test-repo", repo_url="https://github.com/user/test-repo", github_id=123456)
 
         assert repo.repo_name == "test-repo"
         assert repo.repo_url == "https://github.com/user/test-repo"
@@ -93,12 +90,7 @@ class TestModels:
 
     def test_task_github_link_model_creation(self):
         """Test creation of TaskGitHubLink model"""
-        link = TaskGitHubLink(
-            task_id=1,
-            repo_id=2,
-            issue_number=42,
-            pull_request_number=43
-        )
+        link = TaskGitHubLink(task_id=1, repo_id=2, issue_number=42, pull_request_number=43)
 
         assert link.task_id == 1
         assert link.repo_id == 2
@@ -107,11 +99,7 @@ class TestModels:
 
     def test_comment_model_creation(self):
         """Test creation of Comment model"""
-        comment = Comment(
-            task_id=1,
-            user_id=2,
-            content="This is a test comment"
-        )
+        comment = Comment(task_id=1, user_id=2, content="This is a test comment")
 
         assert comment.task_id == 1
         assert comment.user_id == 2
@@ -126,7 +114,7 @@ class TestModels:
             message="You have been assigned a new task",
             reference_id="task_123",
             task_id=123,
-            is_read=False  # Explicitly set is_read since it's not automatically set to False
+            is_read=False,  # Explicitly set is_read since it's not automatically set to False
         )
 
         assert notification.user_id == 1
@@ -149,7 +137,7 @@ class TestModels:
             reference_id="task_123",
             is_read=True,
             created_at=now,
-            read_at=now
+            read_at=now,
         )
 
         notification_dict = notification.to_dict()
@@ -171,7 +159,7 @@ class TestModels:
             description="This is a test project",
             status="active",
             github_repo="user/test-repo",
-            created_by=1
+            created_by=1,
         )
 
         assert project.name == "Test Project"

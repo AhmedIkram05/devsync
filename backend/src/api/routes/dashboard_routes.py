@@ -13,30 +13,31 @@ from ..middlewares import role_required
 
 MEMBER_DASHBOARD_ROLES = [Role.DEVELOPER, Role.TEAM_LEAD]
 
+
 def register_routes(bp):
     """Register all dashboard routes with the provided Blueprint"""
 
-    @bp.route('/dashboard', methods=['GET'])
+    @bp.route("/dashboard", methods=["GET"])
     @jwt_required()
     def user_dashboard():
         """Route to get dashboard data for current user"""
         return get_user_dashboard()
 
-    @bp.route('/dashboard/client', methods=['GET'])
+    @bp.route("/dashboard/client", methods=["GET"])
     @jwt_required()
     @role_required(MEMBER_DASHBOARD_ROLES)
     def client_dashboard():
         """Route to get developer/team-lead dashboard data"""
         return get_client_dashboard()
 
-    @bp.route('/dashboard/admin', methods=['GET'])
+    @bp.route("/dashboard/admin", methods=["GET"])
     @jwt_required()
     @role_required([Role.ADMIN, Role.TEAM_LEAD])
     def admin_dashboard():
         """Route to get admin-specific dashboard data"""
         return get_admin_dashboard()
 
-    @bp.route('/dashboard/projects/<int:project_id>', methods=['GET'])
+    @bp.route("/dashboard/projects/<int:project_id>", methods=["GET"])
     @jwt_required()
     def project_dashboard(project_id):
         """Route to get dashboard data for a specific project"""

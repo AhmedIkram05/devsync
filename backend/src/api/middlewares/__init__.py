@@ -17,25 +17,26 @@ from .validation_middleware import validate_json, validate_params, validate_sche
 
 def admin_required():
     """Middleware to ensure the user has admin role"""
+
     def wrapper(fn):
         @wraps(fn)
         def decorator(*args, **kwargs):
             verify_jwt_in_request()
             claims = get_jwt()
             if claims.get("role") != Role.ADMIN.value:
-                return jsonify({'message': 'Admin access required'}), 403
+                return jsonify({"message": "Admin access required"}), 403
             return fn(*args, **kwargs)
+
         return decorator
+
     return wrapper
+
 
 def role_required(allowed_roles):
     """Middleware to ensure the user has one of the allowed roles"""
     values = [allowed_roles] if isinstance(allowed_roles, (Role, str)) else list(allowed_roles)
 
-    allowed_role_values = {
-        role.value if isinstance(role, Role) else role
-        for role in values
-    }
+    allowed_role_values = {role.value if isinstance(role, Role) else role for role in values}
 
     def wrapper(fn):
         @wraps(fn)
@@ -43,10 +44,13 @@ def role_required(allowed_roles):
             verify_jwt_in_request()
             claims = get_jwt()
             if claims.get("role") not in allowed_role_values:
-                return jsonify({'message': 'Insufficient permissions'}), 403
+                return jsonify({"message": "Insufficient permissions"}), 403
             return fn(*args, **kwargs)
+
         return decorator
+
     return wrapper
+
 
 def setup_middlewares(app):
     """Initialise and register all middlewares with the Flask app"""

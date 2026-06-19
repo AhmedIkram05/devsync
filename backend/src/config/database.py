@@ -20,15 +20,12 @@ def get_db_connection():
         Exception: If connection fails for any reason
     """
     # Get the DATABASE_URL from environment variables
-    database_url = os.environ.get('DATABASE_URL')
+    database_url = os.environ.get("DATABASE_URL")
 
     if not database_url:
         raise ValueError("DATABASE_URL environment variable not set")
 
     # Connect to the PostgreSQL database
-    conn = psycopg2.connect(
-        database_url,
-        cursor_factory=RealDictCursor
-    )
+    conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
 
     return conn

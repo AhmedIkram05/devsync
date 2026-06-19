@@ -1,6 +1,7 @@
 """
 Database inspection script for seeing details about schema, tables, and indices.
 """
+
 import logging
 import os
 import sys
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 def _quote_sqlite_identifier(identifier):
     """Quote SQLite identifiers for PRAGMA statements."""
     return '"' + identifier.replace('"', '""') + '"'
+
 
 def inspect_database():
     """Inspect database schema in detail"""
@@ -78,6 +80,7 @@ def inspect_database():
     except Exception as e:
         logger.error(f"Error inspecting database: {e}")
         return False
+
 
 if __name__ == "__main__":
     inspect_database()

@@ -23,7 +23,7 @@ from flask import Blueprint
 
 def register_all_routes(app):
     """Register all API routes with the Flask application"""
-    api_bp = Blueprint('api', __name__)
+    api_bp = Blueprint("api", __name__)
 
     # Register routes with blueprint
     auth_routes.register_routes(api_bp)
@@ -38,4 +38,4 @@ def register_all_routes(app):
     audit_routes.register_routes(api_bp)
 
     # Register blueprint with app
-    app.register_blueprint(api_bp, url_prefix='/api')
+    app.register_blueprint(api_bp, url_prefix="/api")

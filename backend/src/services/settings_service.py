@@ -1,15 +1,16 @@
 """System Settings Service"""
+
 from datetime import UTC, datetime, timedelta
 
 from ..db.models import AuditLog, Comment, Notification, Project, SystemSetting, Task, TaskGitHubLink, db
 
 DEFAULT_SETTINGS = {
-    'default_user_role': 'developer',
-    'allow_self_registration': True,
-    'audit_log_retention_days': 30,
-    'auto_archive_completed_projects': True,
-    'project_retention_days': 30,
-    'notify_on_overdue_tasks': True,
+    "default_user_role": "developer",
+    "allow_self_registration": True,
+    "audit_log_retention_days": 30,
+    "auto_archive_completed_projects": True,
+    "project_retention_days": 30,
+    "notify_on_overdue_tasks": True,
 }
 
 SUPPORTED_SETTINGS = set(DEFAULT_SETTINGS.keys())
@@ -20,9 +21,9 @@ def _to_bool(value, default):
         return value
     if isinstance(value, str):
         normalized = value.strip().lower()
-        if normalized in {'true', '1', 'yes', 'on'}:
+        if normalized in {"true", "1", "yes", "on"}:
             return True
-        if normalized in {'false', '0', 'no', 'off'}:
+        if normalized in {"false", "0", "no", "off"}:
             return False
     return default
 
@@ -38,16 +39,17 @@ def _to_int(value, default):
 def _normalize_setting(key, value):
     default = DEFAULT_SETTINGS[key]
 
-    if key in {'allow_self_registration', 'auto_archive_completed_projects', 'notify_on_overdue_tasks'}:
+    if key in {"allow_self_registration", "auto_archive_completed_projects", "notify_on_overdue_tasks"}:
         return _to_bool(value, default)
 
-    if key in {'audit_log_retention_days', 'project_retention_days'}:
+    if key in {"audit_log_retention_days", "project_retention_days"}:
         return _to_int(value, default)
 
-    if key == 'default_user_role':
+    if key == "default_user_role":
         return value if isinstance(value, str) and value else default
 
     return value
+
 
 def get_settings():
     """Retrieve all system settings as a dictionary."""
@@ -63,6 +65,7 @@ def get_settings():
 
     return settings
 
+
 def update_settings(data, actor_id):
     """Update multiple system settings."""
     for key, value in data.items():
@@ -75,18 +78,15 @@ def update_settings(data, actor_id):
             setting.value = normalized_value
             setting.updated_by = actor_id
         else:
-            new_setting = SystemSetting(
-                key=key,
-                value=normalized_value,
-                updated_by=actor_id
-            )
+            new_setting = SystemSetting(key=key, value=normalized_value, updated_by=actor_id)
             db.session.add(new_setting)
 
     db.session.commit()
 
+
 def get_default_role():
     """Get the default role for new users."""
-    return get_settings().get('default_user_role', 'developer')
+    return get_settings().get("default_user_role", "developer")
 
 
 def get_bool_setting(key, default=False):
@@ -100,7 +100,11 @@ def get_int_setting(key, default=0):
 def cleanup_old_audit_logs(retention_days=None):
     """Delete audit logs older than the configured retention window."""
     try:
-        days = get_int_setting('audit_log_retention_days', DEFAULT_SETTINGS['audit_log_retention_days']) if retention_days is None else _to_int(retention_days, DEFAULT_SETTINGS['audit_log_retention_days'])
+        days = (
+            get_int_setting("audit_log_retention_days", DEFAULT_SETTINGS["audit_log_retention_days"])
+            if retention_days is None
+            else _to_int(retention_days, DEFAULT_SETTINGS["audit_log_retention_days"])
+        )
         if days <= 0:
             return 0
 
@@ -116,12 +120,16 @@ def cleanup_old_audit_logs(retention_days=None):
 def cleanup_completed_projects(retention_days=None):
     """Delete completed projects and their dependent records after the retention window."""
     try:
-        days = get_int_setting('project_retention_days', DEFAULT_SETTINGS['project_retention_days']) if retention_days is None else _to_int(retention_days, DEFAULT_SETTINGS['project_retention_days'])
+        days = (
+            get_int_setting("project_retention_days", DEFAULT_SETTINGS["project_retention_days"])
+            if retention_days is None
+            else _to_int(retention_days, DEFAULT_SETTINGS["project_retention_days"])
+        )
         if days <= 0:
             return 0
 
         cutoff = datetime.now(UTC) - timedelta(days=days)
-        completed_projects = Project.query.filter(Project.status == 'completed', Project.updated_at < cutoff).all()
+        completed_projects = Project.query.filter(Project.status == "completed", Project.updated_at < cutoff).all()
 
         deleted_projects = 0
         for project in completed_projects:
@@ -150,6 +158,6 @@ def run_retention_cleanup(audit_retention_days=None, project_retention_days=None
     audit_deleted = cleanup_old_audit_logs(audit_retention_days)
     project_deleted = cleanup_completed_projects(project_retention_days)
     return {
-        'audit_logs_deleted': audit_deleted,
-        'projects_deleted': project_deleted,
+        "audit_logs_deleted": audit_deleted,
+        "projects_deleted": project_deleted,
     }

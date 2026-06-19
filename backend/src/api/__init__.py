@@ -3,7 +3,7 @@
 from flask import Blueprint
 
 # Create main API blueprint
-api_bp = Blueprint('api', __name__, url_prefix='/api/v1')
+api_bp = Blueprint("api", __name__, url_prefix="/api/v1")
 
 # Import routes to register them with blueprint
 from .routes import (
@@ -32,6 +32,7 @@ from .routes import audit_routes, report_routes
 report_routes.register_routes(api_bp)
 audit_routes.register_routes(api_bp)
 github_routes.register_routes(api_bp)  # Add GitHub routes
+
 
 def init_app(app):
     """Register the API blueprint with the Flask app"""

@@ -6,13 +6,14 @@ import pytest
 from flask import Flask, jsonify, request
 
 # Set up proper import paths
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
 
 # Import after path setup
 from backend.src.api.middlewares.validation_middleware import validate_json, validate_params, validate_schema
 
 # Create a test Flask app
 app = Flask(__name__)
+
 
 # Helper schema used by middleware tests
 class SchemaForValidation:
@@ -23,14 +24,15 @@ class SchemaForValidation:
         errors = {}
 
         # Simple validation for email
-        if 'email' in data and '@' not in data['email']:
-            errors['email'] = ["Not a valid email address."]
+        if "email" in data and "@" not in data["email"]:
+            errors["email"] = ["Not a valid email address."]
 
         # Simple validation for name
-        if 'name' not in data:
-            errors['name'] = ["Missing data for required field."]
+        if "name" not in data:
+            errors["name"] = ["Missing data for required field."]
 
         return errors
+
 
 def test_validate_json_success():
     """Test validation of JSON data (success case)"""
@@ -44,6 +46,7 @@ def test_validate_json_success():
         response = test_route()
         assert response.status_code == 200
         assert response.get_json() == {"success": True}
+
 
 def test_validate_json_missing():
     """Test validation when JSON is missing"""
@@ -63,9 +66,11 @@ def test_validate_json_missing():
         assert status == 400
         assert "Missing JSON in request body" in resp.get_json()["message"]
 
+
 def test_validate_json_invalid():
     """Test validation with invalid JSON"""
     import json
+
     with app.test_request_context(data="invalid{json", content_type="application/json"):
         # Create test route with validation
         @validate_json()
@@ -73,7 +78,10 @@ def test_validate_json_invalid():
             return jsonify({"success": True})
 
         # Patch request.get_json via full import path to raise JSONDecodeError
-        with patch('backend.src.api.middlewares.validation_middleware.request.get_json', side_effect=json.JSONDecodeError("msg", "doc", 0)):
+        with patch(
+            "backend.src.api.middlewares.validation_middleware.request.get_json",
+            side_effect=json.JSONDecodeError("msg", "doc", 0),
+        ):
             # Call the route and check result
             response = test_route()
             if isinstance(response, tuple):
@@ -82,6 +90,7 @@ def test_validate_json_invalid():
                 resp, status = response, response.status_code
             assert status == 400
             assert "Invalid JSON format" in resp.get_json()["message"]
+
 
 def test_validate_schema_success():
     """Test schema validation (success case)"""
@@ -95,6 +104,7 @@ def test_validate_schema_success():
         response = test_route()
         assert response.status_code == 200
         assert response.get_json() == {"success": True}
+
 
 def test_validate_schema_missing_json():
     """Test schema validation with missing JSON"""
@@ -112,6 +122,7 @@ def test_validate_schema_missing_json():
             resp, status = response, response.status_code
         assert status == 400
         assert "Missing JSON in request body" in resp.get_json()["message"]
+
 
 def test_validate_schema_validation_error():
     """Test schema validation with invalid data"""
@@ -131,9 +142,10 @@ def test_validate_schema_validation_error():
         assert resp.get_json()["message"] == "Validation error"
         assert "email" in resp.get_json()["errors"]
 
+
 def test_validate_params_success():
     """Test URL parameter validation (success case)"""
-    with app.test_request_context('/?id=1&name=test'):
+    with app.test_request_context("/?id=1&name=test"):
         # Create test route with param validation
         @validate_params("id", "name")
         def test_route():
@@ -144,9 +156,10 @@ def test_validate_params_success():
         assert response.status_code == 200
         assert response.get_json() == {"success": True}
 
+
 def test_validate_params_missing():
     """Test URL parameter validation with missing params"""
-    with app.test_request_context('/?id=1'):
+    with app.test_request_context("/?id=1"):
         # Create test route with param validation
         @validate_params("id", "name")
         def test_route():

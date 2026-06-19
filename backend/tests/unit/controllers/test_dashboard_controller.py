@@ -7,12 +7,13 @@ from unittest.mock import MagicMock, patch
 from flask import Flask
 
 # Set up proper import paths
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
+
 
 class TestDashboardController(unittest.TestCase):
     def setUp(self):
         self.app = Flask(__name__)
-        self.app.config['TESTING'] = True
+        self.app.config["TESTING"] = True
         self.client = self.app.test_client()
 
         # Set up context
@@ -55,31 +56,34 @@ class TestDashboardController(unittest.TestCase):
     def tearDown(self):
         self.app_context.pop()
 
-    @patch('backend.src.api.controllers.dashboard_controller.get_recent_completed_tasks')
-    @patch('backend.src.api.controllers.dashboard_controller.get_tasks_due_soon')
-    @patch('backend.src.api.controllers.dashboard_controller.get_user_tasks')
-    @patch('backend.src.api.controllers.dashboard_controller.get_jwt_identity')
-    @patch('backend.src.api.controllers.dashboard_controller.get_jwt')
-    @patch('backend.src.api.controllers.dashboard_controller.User')
-    @patch('backend.src.api.controllers.dashboard_controller.Task')
-    @patch('backend.src.api.controllers.dashboard_controller.jsonify')
-    def test_get_user_dashboard(self, mock_jsonify, mock_task_class, mock_user_class, mock_get_jwt,
-                              mock_jwt_identity, mock_get_user_tasks, mock_get_tasks_due_soon,
-                              mock_get_recent_completed_tasks):
+    @patch("backend.src.api.controllers.dashboard_controller.get_recent_completed_tasks")
+    @patch("backend.src.api.controllers.dashboard_controller.get_tasks_due_soon")
+    @patch("backend.src.api.controllers.dashboard_controller.get_user_tasks")
+    @patch("backend.src.api.controllers.dashboard_controller.get_jwt_identity")
+    @patch("backend.src.api.controllers.dashboard_controller.get_jwt")
+    @patch("backend.src.api.controllers.dashboard_controller.User")
+    @patch("backend.src.api.controllers.dashboard_controller.Task")
+    @patch("backend.src.api.controllers.dashboard_controller.jsonify")
+    def test_get_user_dashboard(
+        self,
+        mock_jsonify,
+        mock_task_class,
+        mock_user_class,
+        mock_get_jwt,
+        mock_jwt_identity,
+        mock_get_user_tasks,
+        mock_get_tasks_due_soon,
+        mock_get_recent_completed_tasks,
+    ):
         # Import locally to allow patching
         from backend.src.api.controllers.dashboard_controller import get_user_dashboard
 
         # Setup mocks
-        mock_jwt_identity.return_value = {'user_id': 1}
-        mock_get_jwt.return_value = {'role': 'developer'}
+        mock_jwt_identity.return_value = {"user_id": 1}
+        mock_get_jwt.return_value = {"role": "developer"}
 
         # Create a user dict for serialization
-        user_dict = {
-            'id': 1,
-            'name': "Test User",
-            'email': "test@example.com",
-            'role': "developer"
-        }
+        user_dict = {"id": 1, "name": "Test User", "email": "test@example.com", "role": "developer"}
 
         # Create a mock that returns both the mock object and serializes to dict
         user_mock = MagicMock()
@@ -100,20 +104,13 @@ class TestDashboardController(unittest.TestCase):
         mock_get_recent_completed_tasks.return_value = [self.mock_task]
 
         # Create task dict for serialization
-        task_dict = {
-            'id': 1,
-            'title': "Test Task",
-            'status': "in_progress"
-        }
+        task_dict = {"id": 1, "title": "Test Task", "status": "in_progress"}
 
         # Make task serialize to dict
         self.mock_task.to_dict.return_value = task_dict
 
         # Mock project dict
-        project_dict = {
-            'id': 1,
-            'name': "Test Project"
-        }
+        project_dict = {"id": 1, "name": "Test Project"}
         self.mock_project.to_dict.return_value = project_dict
 
         # Mock the task join query
@@ -124,46 +121,46 @@ class TestDashboardController(unittest.TestCase):
 
         # Override jsonify to return a testable dictionary
         # Use the parameter to silence the "x is not accessed" warning
-        mock_jsonify.side_effect = lambda data: {
-            'user': user_dict,
-            'tasks': {
-                'assigned_count': 1,
-                'pending_count': 1,
-                'completed_count': 1,
-                'due_soon': [task_dict]
-            },
-            'projects': [project_dict]
-        } if data else {}
+        mock_jsonify.side_effect = lambda data: (
+            {
+                "user": user_dict,
+                "tasks": {"assigned_count": 1, "pending_count": 1, "completed_count": 1, "due_soon": [task_dict]},
+                "projects": [project_dict],
+            }
+            if data
+            else {}
+        )
 
         # Call the function
         result = get_user_dashboard()
 
         # Check results
-        self.assertIn('user', result)
-        self.assertIn('tasks', result)
-        self.assertIn('projects', result)
+        self.assertIn("user", result)
+        self.assertIn("tasks", result)
+        self.assertIn("projects", result)
 
         # Check user data
-        self.assertEqual(result['user']['id'], 1)
-        self.assertEqual(result['user']['name'], 'Test User')
+        self.assertEqual(result["user"]["id"], 1)
+        self.assertEqual(result["user"]["name"], "Test User")
 
-    @patch('backend.src.api.controllers.dashboard_controller.get_recent_updated_project_tasks')
-    @patch('backend.src.api.controllers.dashboard_controller.get_project_tasks_due_soon')
-    @patch('backend.src.api.controllers.dashboard_controller.get_project_tasks')
-    @patch('backend.src.api.controllers.dashboard_controller.Project')
-    @patch('backend.src.api.controllers.dashboard_controller.jsonify')
-    def test_get_project_dashboard(self, mock_jsonify, mock_project_class, mock_get_project_tasks,
-                                mock_get_project_tasks_due_soon, mock_get_recent_updated_project_tasks):
+    @patch("backend.src.api.controllers.dashboard_controller.get_recent_updated_project_tasks")
+    @patch("backend.src.api.controllers.dashboard_controller.get_project_tasks_due_soon")
+    @patch("backend.src.api.controllers.dashboard_controller.get_project_tasks")
+    @patch("backend.src.api.controllers.dashboard_controller.Project")
+    @patch("backend.src.api.controllers.dashboard_controller.jsonify")
+    def test_get_project_dashboard(
+        self,
+        mock_jsonify,
+        mock_project_class,
+        mock_get_project_tasks,
+        mock_get_project_tasks_due_soon,
+        mock_get_recent_updated_project_tasks,
+    ):
         # Import locally to allow patching
         from backend.src.api.controllers.dashboard_controller import get_project_dashboard
 
         # Create project dict for serialization
-        project_dict = {
-            'id': 1,
-            'name': "Test Project",
-            'description': "A test project",
-            'status': "active"
-        }
+        project_dict = {"id": 1, "name": "Test Project", "description": "A test project", "status": "active"}
 
         # Create a project mock with fixed properties that serializes to dict
         project_mock = MagicMock()
@@ -176,11 +173,7 @@ class TestDashboardController(unittest.TestCase):
         project_mock.to_dict.return_value = project_dict
 
         # User dict for serialization
-        user_dict = {
-            'id': 1,
-            'name': "Test User",
-            'role': "developer"
-        }
+        user_dict = {"id": 1, "name": "Test User", "role": "developer"}
         self.mock_user.to_dict.return_value = user_dict
 
         # Setup mocks
@@ -192,46 +185,40 @@ class TestDashboardController(unittest.TestCase):
         mock_get_recent_updated_project_tasks.return_value = [self.mock_task]
 
         # Task dict for serialization
-        task_dict = {
-            'id': 1,
-            'title': "Test Task",
-            'status': "in_progress"
-        }
+        task_dict = {"id": 1, "title": "Test Task", "status": "in_progress"}
         self.mock_task.to_dict.return_value = task_dict
 
         # Override jsonify to return a testable dictionary
         # Use the parameter to silence the "x is not accessed" warning
-        mock_jsonify.side_effect = lambda data: {
-            'project': project_dict,
-            'task_stats': {
-                'total': 1,
-                'todo': 0,
-                'in_progress': 1,
-                'review': 0,
-                'done': 0
-            },
-            'tasks_due_soon': [task_dict],
-            'recently_updated_tasks': [task_dict],
-            'team_members': [user_dict]
-        } if data else {}
+        mock_jsonify.side_effect = lambda data: (
+            {
+                "project": project_dict,
+                "task_stats": {"total": 1, "todo": 0, "in_progress": 1, "review": 0, "done": 0},
+                "tasks_due_soon": [task_dict],
+                "recently_updated_tasks": [task_dict],
+                "team_members": [user_dict],
+            }
+            if data
+            else {}
+        )
 
         # Call the function
         result = get_project_dashboard(1)
 
         # Check results
-        self.assertIn('project', result)
-        self.assertIn('task_stats', result)
-        self.assertIn('tasks_due_soon', result)
-        self.assertIn('recently_updated_tasks', result)
-        self.assertIn('team_members', result)
+        self.assertIn("project", result)
+        self.assertIn("task_stats", result)
+        self.assertIn("tasks_due_soon", result)
+        self.assertIn("recently_updated_tasks", result)
+        self.assertIn("team_members", result)
 
         # Check project data
-        self.assertEqual(result['project']['id'], 1)
-        self.assertEqual(result['project']['name'], 'Test Project')
+        self.assertEqual(result["project"]["id"], 1)
+        self.assertEqual(result["project"]["name"], "Test Project")
 
-    @patch('backend.src.api.controllers.dashboard_controller.Task')
-    @patch('backend.src.api.controllers.dashboard_controller.datetime')
-    @patch('backend.src.api.controllers.dashboard_controller.logger')
+    @patch("backend.src.api.controllers.dashboard_controller.Task")
+    @patch("backend.src.api.controllers.dashboard_controller.datetime")
+    @patch("backend.src.api.controllers.dashboard_controller.logger")
     def test_get_tasks_due_soon_success(self, mock_logger, mock_datetime, mock_task):
         """Test successful retrieval of tasks due soon"""
         # Import locally to allow patching
@@ -240,7 +227,7 @@ class TestDashboardController(unittest.TestCase):
         # Setup mock tasks
         expected_tasks = [
             MagicMock(id=1, title="Task due tomorrow", status="todo"),
-            MagicMock(id=2, title="Task due in 3 days", status="in_progress")
+            MagicMock(id=2, title="Task due in 3 days", status="in_progress"),
         ]
 
         # Setup datetime mock with fixed date
@@ -271,9 +258,9 @@ class TestDashboardController(unittest.TestCase):
         self.assertEqual(result[0].id, 1)
         self.assertEqual(result[1].id, 2)
 
-    @patch('backend.src.api.controllers.dashboard_controller.Task')
-    @patch('backend.src.api.controllers.dashboard_controller.datetime')
-    @patch('backend.src.api.controllers.dashboard_controller.logger')
+    @patch("backend.src.api.controllers.dashboard_controller.Task")
+    @patch("backend.src.api.controllers.dashboard_controller.datetime")
+    @patch("backend.src.api.controllers.dashboard_controller.logger")
     def test_get_tasks_due_soon_no_tasks(self, mock_logger, mock_datetime, mock_task):
         """Test when there are no tasks due soon"""
         # Import locally to allow patching
@@ -305,8 +292,8 @@ class TestDashboardController(unittest.TestCase):
         self.assertEqual(len(result), 0)
         self.assertEqual(result, [])
 
-    @patch('backend.src.api.controllers.dashboard_controller.Task')
-    @patch('backend.src.api.controllers.dashboard_controller.datetime')
+    @patch("backend.src.api.controllers.dashboard_controller.Task")
+    @patch("backend.src.api.controllers.dashboard_controller.datetime")
     def test_get_recent_completed_tasks_border_timeframes(self, mock_datetime, mock_task):
         """Test extreme date filters (quarter, century) default properly for trend/recent generation"""
         from backend.src.api.controllers.dashboard_controller import get_recent_completed_tasks
@@ -326,7 +313,7 @@ class TestDashboardController(unittest.TestCase):
         mock_task.updated_at.__ge__.return_value = MagicMock(name="BinaryExpressionMock")
 
         # Test quarter (90 days)
-        get_recent_completed_tasks(user_id=1, timeframe='quarter')
+        get_recent_completed_tasks(user_id=1, timeframe="quarter")
 
         # Quarter should offset by 90 days
         today_date - timedelta(days=90)
@@ -340,14 +327,14 @@ class TestDashboardController(unittest.TestCase):
         mock_filter.reset_mock()
 
         # Test century (extreme) defaults back to 30 days
-        get_recent_completed_tasks(user_id=1, timeframe='century')
+        get_recent_completed_tasks(user_id=1, timeframe="century")
 
         today_date - timedelta(days=30)
         # Ensure it didn't crash
         self.assertEqual(mock_filter.all.call_count, 1)
 
-    @patch('backend.src.api.controllers.dashboard_controller.Task')
-    @patch('backend.src.api.controllers.dashboard_controller.datetime')
+    @patch("backend.src.api.controllers.dashboard_controller.Task")
+    @patch("backend.src.api.controllers.dashboard_controller.datetime")
     def test_get_recent_completed_tasks_invalid_timeframe(self, mock_datetime, mock_task):
         """Test invalid date filters fall back to 30 days securely"""
         from backend.src.api.controllers.dashboard_controller import get_recent_completed_tasks
@@ -366,9 +353,9 @@ class TestDashboardController(unittest.TestCase):
         # Configure the mock column to support the >= operator for SQLAlchemy-style comparisons
         mock_task.updated_at.__ge__.return_value = MagicMock(name="BinaryExpressionMock")
 
-        get_recent_completed_tasks(user_id=1, timeframe='ludicrous_speed')
+        get_recent_completed_tasks(user_id=1, timeframe="ludicrous_speed")
         self.assertEqual(mock_filter.all.call_count, 1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

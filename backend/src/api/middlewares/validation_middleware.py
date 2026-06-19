@@ -8,27 +8,25 @@ from flask import jsonify, request
 
 def validate_json():
     """Decorator to validate that the request body contains valid JSON"""
+
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             if not request.is_json:
-                return jsonify({
-                    'status': 'error',
-                    'message': 'Missing JSON in request body'
-                }), 400
+                return jsonify({"status": "error", "message": "Missing JSON in request body"}), 400
 
             # Try to parse JSON to ensure it's valid
             try:
                 request.get_json()
             except json.JSONDecodeError:
-                return jsonify({
-                    'status': 'error',
-                    'message': 'Invalid JSON format in request body'
-                }), 400
+                return jsonify({"status": "error", "message": "Invalid JSON format in request body"}), 400
 
             return f(*args, **kwargs)
+
         return decorated_function
+
     return decorator
+
 
 def validate_schema(schema_class):
     """
@@ -37,15 +35,13 @@ def validate_schema(schema_class):
     Args:
         schema_class: A Marshmallow schema class to validate against
     """
+
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             # Ensure we have JSON data
             if not request.is_json:
-                return jsonify({
-                    'status': 'error',
-                    'message': 'Missing JSON in request body'
-                }), 400
+                return jsonify({"status": "error", "message": "Missing JSON in request body"}), 400
 
             # Get JSON data
             data = request.get_json()
@@ -55,15 +51,14 @@ def validate_schema(schema_class):
             errors = schema.validate(data)
 
             if errors:
-                return jsonify({
-                    'status': 'error',
-                    'message': 'Validation error',
-                    'errors': errors
-                }), 400
+                return jsonify({"status": "error", "message": "Validation error", "errors": errors}), 400
 
             return f(*args, **kwargs)
+
         return decorated_function
+
     return decorator
+
 
 def validate_params(*required_params):
     """
@@ -72,6 +67,7 @@ def validate_params(*required_params):
     Args:
         required_params: List of required parameter names
     """
+
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -82,12 +78,12 @@ def validate_params(*required_params):
                     missing_params.append(param)
 
             if missing_params:
-                return jsonify({
-                    'status': 'error',
-                    'message': 'Missing required URL parameters',
-                    'missing_params': missing_params
-                }), 400
+                return jsonify(
+                    {"status": "error", "message": "Missing required URL parameters", "missing_params": missing_params}
+                ), 400
 
             return f(*args, **kwargs)
+
         return decorated_function
+
     return decorator

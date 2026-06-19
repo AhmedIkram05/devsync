@@ -27,15 +27,15 @@ def get_tls_for_project(project_id):
             return []
 
         team_leads = []
-        members = getattr(project, 'team_members', []) or []
-        if hasattr(members, 'all'):
+        members = getattr(project, "team_members", []) or []
+        if hasattr(members, "all"):
             members = members.all()
 
         for member in members:
             if member is None:
                 continue
-            role = getattr(member, 'role', None)
-            if role == 'team_lead':
+            role = getattr(member, "role", None)
+            if role == "team_lead":
                 team_leads.append(member.id)
 
         return team_leads
@@ -54,7 +54,7 @@ def get_admins_for_project(project_id):
         if not project:
             return []
 
-        creator_id = getattr(project, 'created_by', None)
+        creator_id = getattr(project, "created_by", None)
         if creator_id:
             return [creator_id]
         return []
@@ -65,7 +65,7 @@ def get_admins_for_project(project_id):
 def get_all_admins():
     """Get all admin users in the system"""
     try:
-        admins = User.query.filter_by(role='admin').all()
+        admins = User.query.filter_by(role="admin").all()
         return [admin.id for admin in admins]
     except Exception:
         return []

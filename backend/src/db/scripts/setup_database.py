@@ -1,6 +1,7 @@
 """
 Database setup script with cross-dialect index creation and error handling.
 """
+
 import logging
 import os
 import sys
@@ -24,6 +25,7 @@ def _quote_sqlite_identifier(identifier):
     """Quote SQLite identifiers for PRAGMA statements."""
     return '"' + identifier.replace('"', '""') + '"'
 
+
 def create_index_safely(conn, index_name, table, columns):
     """Create an index with proper error handling"""
     try:
@@ -40,6 +42,7 @@ def create_index_safely(conn, index_name, table, columns):
     except Exception as e:
         logger.error(f"Error creating index {index_name}: {e}")
         return False
+
 
 def setup_database():
     """Create all database tables and indices in one go"""
@@ -70,12 +73,12 @@ def setup_database():
             # Create indices manually - drop and recreate all indices
             with db.engine.connect() as conn:
                 # Check Notification table structure
-                if 'notifications' in tables:
-                    columns = [col['name'] for col in inspector.get_columns('notifications')]
+                if "notifications" in tables:
+                    columns = [col["name"] for col in inspector.get_columns("notifications")]
                     logger.info(f"Notification table columns: {columns}")
 
                     # Check read vs is_read column
-                    read_column = 'is_read' if 'is_read' in columns else ('read' if 'read' in columns else None)
+                    read_column = "is_read" if "is_read" in columns else ("read" if "read" in columns else None)
                     if read_column:
                         logger.info(f"Using '{read_column}' column for notification read status")
                     else:
@@ -103,7 +106,7 @@ def setup_database():
                     ("idx_tasks_progress", "progress"),
                     ("idx_tasks_status", "status"),
                     ("idx_tasks_status_assigned", ["status", "assigned_to"]),
-                    ("idx_tasks_updated_at", "updated_at")
+                    ("idx_tasks_updated_at", "updated_at"),
                 ]
                 for idx_name, columns in task_indices:
                     if create_index_safely(conn, idx_name, "tasks", columns):
@@ -112,7 +115,9 @@ def setup_database():
                 # Notifications indices
                 if create_index_safely(conn, "idx_notifications_created_at", "notifications", "created_at"):
                     indices_created += 1
-                if read_column and create_index_safely(conn, f"idx_notifications_{read_column}", "notifications", read_column):
+                if read_column and create_index_safely(
+                    conn, f"idx_notifications_{read_column}", "notifications", read_column
+                ):
                     indices_created += 1
                 if create_index_safely(conn, "idx_notifications_task_id", "notifications", "task_id"):
                     indices_created += 1
@@ -123,7 +128,7 @@ def setup_database():
                 comment_indices = [
                     ("idx_comments_created_at", "created_at"),
                     ("idx_comments_task_id", "task_id"),
-                    ("idx_comments_user_id", "user_id")
+                    ("idx_comments_user_id", "user_id"),
                 ]
                 for idx_name, columns in comment_indices:
                     if create_index_safely(conn, idx_name, "comments", columns):
@@ -170,10 +175,12 @@ def setup_database():
                                 break
 
                     if not unique_on_repo_url:
-                        conn.execute(text("""
+                        conn.execute(
+                            text("""
                             CREATE UNIQUE INDEX IF NOT EXISTS idx_github_repositories_repo_url_unique
                             ON github_repositories (repo_url);
-                        """))
+                        """)
+                        )
                         logger.info("Created unique index on github_repositories(repo_url)")
                     else:
                         logger.info("Unique constraint/index on github_repositories.repo_url already exists")
@@ -190,6 +197,7 @@ def setup_database():
     except Exception as e:
         logger.error(f"Error setting up database: {e}")
         return False
+
 
 def verify_database_indices():
     """More reliable database indices verification using direct SQL query"""
@@ -231,13 +239,14 @@ def verify_database_indices():
                     unique_index_names = sorted(set(index_names))
                     if unique_index_names:
                         logger.info(f"Indices for {table}: {unique_index_names}")
-                    elif table not in ['alembic_version', 'project_members']:
+                    elif table not in ["alembic_version", "project_members"]:
                         logger.warning(f"No indices found for {table}")
 
         return True
     except Exception as e:
         logger.error(f"Error verifying database: {e}")
         return False
+
 
 if __name__ == "__main__":
     if setup_database():

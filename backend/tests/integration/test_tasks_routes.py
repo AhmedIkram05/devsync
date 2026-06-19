@@ -1,4 +1,5 @@
 """Tests for task routes — Team Lead can update any task field."""
+
 import os
 import sys
 from unittest.mock import MagicMock
@@ -6,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 from flask_jwt_extended import create_access_token
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from src.api.routes import tasks_routes
 from src.app import create_app
@@ -14,14 +15,16 @@ from src.app import create_app
 
 @pytest.fixture
 def app_and_socket(monkeypatch):
-    monkeypatch.setenv('FLASK_ENV', 'testing')
-    app, socketio = create_app({
-        'TESTING': True,
-        'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
-        'JWT_SECRET_KEY': 'test-secret-key-tasks-routes-32ch',
-        'JWT_COOKIE_SECURE': False,
-        'JWT_COOKIE_SAMESITE': 'Lax',
-    })
+    monkeypatch.setenv("FLASK_ENV", "testing")
+    app, socketio = create_app(
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+            "JWT_SECRET_KEY": "test-secret-key-tasks-routes-32ch",
+            "JWT_COOKIE_SECURE": False,
+            "JWT_COOKIE_SAMESITE": "Lax",
+        }
+    )
     return app, socketio
 
 
@@ -38,22 +41,17 @@ def client(app):
 
 def auth_headers(app, role, user_id=1):
     with app.app_context():
-        token = create_access_token(
-            identity={'user_id': user_id},
-            additional_claims={'role': role}
-        )
-    return {'Authorization': f'Bearer {token}'}
+        token = create_access_token(identity={"user_id": user_id}, additional_claims={"role": role})
+    return {"Authorization": f"Bearer {token}"}
 
 
 def test_team_lead_can_update_task(client, app, monkeypatch):
     """Team Lead should reach the update handler."""
-    handler = MagicMock(return_value=({'message': 'Task updated'}, 200))
-    monkeypatch.setattr(tasks_routes, 'update_task_by_id', handler)
+    handler = MagicMock(return_value=({"message": "Task updated"}, 200))
+    monkeypatch.setattr(tasks_routes, "update_task_by_id", handler)
 
     resp = client.put(
-        '/api/v1/tasks/1',
-        headers=auth_headers(app, 'team_lead'),
-        json={'title': 'Updated Title', 'priority': 'high'}
+        "/api/v1/tasks/1", headers=auth_headers(app, "team_lead"), json={"title": "Updated Title", "priority": "high"}
     )
     assert resp.status_code == 200
     handler.assert_called_once_with(1)
@@ -61,40 +59,32 @@ def test_team_lead_can_update_task(client, app, monkeypatch):
 
 def test_admin_can_update_task(client, app, monkeypatch):
     """Admin should reach the update handler."""
-    handler = MagicMock(return_value=({'message': 'Task updated'}, 200))
-    monkeypatch.setattr(tasks_routes, 'update_task_by_id', handler)
+    handler = MagicMock(return_value=({"message": "Task updated"}, 200))
+    monkeypatch.setattr(tasks_routes, "update_task_by_id", handler)
 
-    resp = client.put(
-        '/api/v1/tasks/1',
-        headers=auth_headers(app, 'admin'),
-        json={'title': 'Updated by Admin'}
-    )
+    resp = client.put("/api/v1/tasks/1", headers=auth_headers(app, "admin"), json={"title": "Updated by Admin"})
     assert resp.status_code == 200
     handler.assert_called_once_with(1)
 
 
 def test_developer_can_update_own_assigned_task(client, app, monkeypatch):
     """Developer should reach the update handler (controller enforces ownership)."""
-    handler = MagicMock(return_value=({'message': 'Task updated'}, 200))
-    monkeypatch.setattr(tasks_routes, 'update_task_by_id', handler)
+    handler = MagicMock(return_value=({"message": "Task updated"}, 200))
+    monkeypatch.setattr(tasks_routes, "update_task_by_id", handler)
 
-    resp = client.put(
-        '/api/v1/tasks/1',
-        headers=auth_headers(app, 'developer'),
-        json={'status': 'in_progress'}
-    )
+    resp = client.put("/api/v1/tasks/1", headers=auth_headers(app, "developer"), json={"status": "in_progress"})
     assert resp.status_code == 200
     handler.assert_called_once_with(1)
 
 
 def test_developer_can_create_task(client, app, monkeypatch):
-    handler = MagicMock(return_value=({'message': 'Task created'}, 201))
-    monkeypatch.setattr(tasks_routes, 'create_new_task', handler)
+    handler = MagicMock(return_value=({"message": "Task created"}, 201))
+    monkeypatch.setattr(tasks_routes, "create_new_task", handler)
 
     resp = client.post(
-        '/api/v1/tasks',
-        headers=auth_headers(app, 'developer'),
-        json={'title': 'New Task', 'description': 'Desc', 'status': 'todo'}
+        "/api/v1/tasks",
+        headers=auth_headers(app, "developer"),
+        json={"title": "New Task", "description": "Desc", "status": "todo"},
     )
 
     assert resp.status_code == 201
@@ -102,13 +92,10 @@ def test_developer_can_create_task(client, app, monkeypatch):
 
 
 def test_developer_can_delete_task_route(client, app, monkeypatch):
-    handler = MagicMock(return_value=({'message': 'Task deleted'}, 200))
-    monkeypatch.setattr(tasks_routes, 'delete_task_by_id', handler)
+    handler = MagicMock(return_value=({"message": "Task deleted"}, 200))
+    monkeypatch.setattr(tasks_routes, "delete_task_by_id", handler)
 
-    resp = client.delete(
-        '/api/v1/tasks/1',
-        headers=auth_headers(app, 'developer')
-    )
+    resp = client.delete("/api/v1/tasks/1", headers=auth_headers(app, "developer"))
 
     assert resp.status_code == 200
     handler.assert_called_once_with(1)
@@ -116,5 +103,5 @@ def test_developer_can_delete_task_route(client, app, monkeypatch):
 
 def test_unauthenticated_cannot_update_task(client):
     """Unauthenticated requests must be rejected."""
-    resp = client.put('/api/v1/tasks/1', json={'title': 'hack'})
+    resp = client.put("/api/v1/tasks/1", json={"title": "hack"})
     assert resp.status_code == 401

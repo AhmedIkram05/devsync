@@ -23,16 +23,16 @@ from .models import (
 
 # Export all models for easy importing
 __all__ = [
-    'db',
-    'User',
-    'Task',
-    'Project',
-    'Comment',
-    'Notification',
-    'GitHubToken',
-    'GitHubRepository',
-    'TaskGitHubLink',
-    'Report',
-    'AuditLog',
-    'SystemSetting'
+    "db",
+    "User",
+    "Task",
+    "Project",
+    "Comment",
+    "Notification",
+    "GitHubToken",
+    "GitHubRepository",
+    "TaskGitHubLink",
+    "Report",
+    "AuditLog",
+    "SystemSetting",
 ]

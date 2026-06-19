@@ -1,4 +1,5 @@
 """Audit Logging Service"""
+
 import contextlib
 import logging
 
@@ -9,6 +10,7 @@ from ..db.models import AuditLog, db
 from ..socketio_server import emit_dashboard_refresh
 
 logger = logging.getLogger(__name__)
+
 
 def record(action, *, actor=None, resource_type=None, resource_id=None, metadata=None):
     """
@@ -26,17 +28,17 @@ def record(action, *, actor=None, resource_type=None, resource_id=None, metadata
         actor_role = None
 
         if actor:
-            actor_id = actor.get('user_id')
-            actor_role = actor.get('role')
+            actor_id = actor.get("user_id")
+            actor_role = actor.get("role")
         else:
             try:
                 # Try to get from JWT if active context exists
                 identity = get_jwt_identity()
                 if identity:
-                    actor_id = identity.get('user_id') if isinstance(identity, dict) else identity
+                    actor_id = identity.get("user_id") if isinstance(identity, dict) else identity
                     claims = get_jwt()
                     if claims:
-                        actor_role = claims.get('role')
+                        actor_role = claims.get("role")
             except Exception:
                 pass
 
@@ -57,18 +59,18 @@ def record(action, *, actor=None, resource_type=None, resource_id=None, metadata
             resource_id=str(resource_id) if resource_id is not None else None,
             ip=ip,
             user_agent=user_agent,
-            metadata_info=metadata
+            metadata_info=metadata,
         )
 
         db.session.add(audit_entry)
         db.session.commit()
         emit_dashboard_refresh(
-            'audit_log_recorded',
+            "audit_log_recorded",
             resource_type=resource_type,
             resource_id=resource_id,
             payload={
-                'action': action,
-                'metadata': metadata or {},
+                "action": action,
+                "metadata": metadata or {},
             },
         )
     except Exception as e:
