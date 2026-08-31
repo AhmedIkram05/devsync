@@ -47,5 +47,5 @@ gevent-websocket==0.10.1
 supervisor==4.2.5
 
 # API documentation
-pydantic>=2.9.0
+pydantic>=2.13.4
 pyAml==12.12.3
