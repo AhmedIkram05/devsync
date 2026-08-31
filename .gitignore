@@ -34,9 +34,6 @@ ENV/
 .vscode/
 *.swp
 *.swo
-/.github/*
-!/.github/workflows/
-!/.github/workflows/**
 
 # Database
 *.sqlite3
