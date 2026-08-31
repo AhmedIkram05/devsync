@@ -37,7 +37,7 @@ marshmallow==3.26.2
 flask-swagger-ui==4.11.1
 
 # Background task processing
-celery==5.3.6
+celery==5.6.3
 redis==5.0.1
 
 # Production deployment
