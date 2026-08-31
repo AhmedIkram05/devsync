@@ -25,7 +25,7 @@ breaches fail the build.
    - `GET /api/v1/dashboard/client`
 3. Enforces thresholds **in-script** (so local and CI runs agree):
    - error rate < 1%
-   - `http_req_duration` p(95) < 1000ms, p(99) < 2000ms
+   - `http_req_duration` p(95) < 500ms, p(99) < 1000ms
 
 `/reports` is intentionally excluded: it requires TEAM_LEAD/ADMIN, so hitting
 it as a developer is load-testing a permission denial, not a feature.

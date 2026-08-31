@@ -71,7 +71,7 @@ flowchart TD
         integration["Integration tests\npytest · in-memory SQLite"]
 e2e["E2E: 5 Cypress tests\nFull stack: Postgres → backend → serve"]
         docker["Docker build check\nLayer-cached via GHA cache"]
-        load["Load test: k6\nP95 ≤ 1s sustained · baseline regression gate"]
+        load["Load test: k6\nP95 ≤ 500ms sustained · baseline regression gate"]
     end
   
     PR --> changes
@@ -109,7 +109,7 @@ e2e["E2E: 5 Cypress tests\nFull stack: Postgres → backend → serve"]
 | **Container strategy** | Multi-stage Docker builds for both frontend and backend | Backend: `python:3.11-slim` with build deps (`gcc`, `libpq-dev`) in build stage only → runtime image is ~330MB (was 600MB). Frontend: `node:20-alpine` builds, `nginx:1.27-alpine` serves - zero runtime toolchain. |
 | **Compose architecture** | Separated infra (Postgres) from app (backend + frontend) via two compose files | Start DB alone for host-based dev (`docker compose -f docker-compose.local-postgres.yml up`), or full stack with `-f docker-compose.local.yml -f docker-compose.local-postgres.yml`. Standard Docker composition pattern. |
 | **CI pipeline** | 8 job types, path-aware execution | Lint (ruff + ESLint), security (pip-audit + npm audit), unit tests, integration tests, E2E (Cypress), Docker build (layer-cached), k6 load test, and weekly CodeQL. Each job runs only when its paths change. |
-| **Load test gate** | k6 script with in-script thresholds + committed baseline | Every backend change runs 10 VUs of authenticated traffic for 30s against the live API. P95 > 1s / P99 > 2s / error rate > 1% fails the build; a committed baseline catches order-of-magnitude regressions (3× P95, 4× P99, +5pp errors, −30% throughput). Separate from the functional test count — load iterations are measurements, not tests. |
+| **Load test gate** | k6 script with in-script thresholds + committed baseline | Every backend change runs 10 VUs of authenticated traffic for 30s against the live API. P95 > 500ms / P99 > 1s / error rate > 1% fails the build; a committed baseline catches order-of-magnitude regressions (3× P95, 4× P99, +5pp errors, −30% throughput). Separate from the functional test count — load iterations are measurements, not tests. |
 | **CI caching** | Docker layer caching + pip/npm dependency caching | Docker builds use `type=gha` cache (GitHub Actions cache layer sharing). Python pip and npm `node_modules` are cached via `actions/setup-python` / `setup-node`. |
 | **Real-time layer** | Socket.IO with gevent workers and JWT-authenticated rooms | Each project is a separate Socket.IO room - broadcasts never leak across projects. Gevent async worker handles concurrent WebSocket connections efficiently. |
 | **Deployment gating** | Backend health check → Frontend deploy | Pipeline explicitly waits for ECS rolling update to pass health checks before deploying to CloudFront. Zero API/UI version mismatch in production. |
@@ -131,7 +131,7 @@ e2e["E2E: 5 Cypress tests\nFull stack: Postgres → backend → serve"]
 | Docker caching | GitHub Actions cache layers — multi-minute savings on re-runs |
 | Container startup | Migrations + optional bootstrap + health check under 20s |
 | API response time | Sub‑300ms p99 for authenticated JSON endpoints |
-| Load test gate | k6: P95 ≤ 1s · P99 ≤ 2s · <1% errors at 10 VUs sustained — enforced per PR |
+| Load test gate | k6: P95 ≤ 500ms · P99 ≤ 1s · <1% errors at 10 VUs sustained — enforced per PR |
 | Database | 12 tables, FK-indexed, Alembic migrations |
 | Infrastructure cost | **$0** (offline — full AWS deployment validated, now torn down) |
 | CI/CD auth | Zero static secrets — OIDC federation for all AWS access |
@@ -365,7 +365,7 @@ flowchart LR
         Cypress["Cypress · 5 tests\nPostgres → backend → serve"]
     end
 
-    Load["Load Test (k6)\n10 VUs · P95 ≤ 1s\nbaseline regression gate"]
+    Load["Load Test (k6)\n10 VUs · P95 ≤ 500ms\nbaseline regression gate"]
 
     Changes -->|"backend/** or frontend/**"| BackendJobs
     Changes -->|"frontend/**"| FrontendJobs
@@ -442,7 +442,7 @@ erDiagram
 | Backend unit + integration | Pytest (pytest-cov, pytest-xdist) | 521 | 85% line coverage (main) · in-memory SQLite — real SQL semantics verified live by the k6 load gate |
 | Frontend unit + component | Jest + React Testing Library | 929 | Branches ≥75%, Functions ≥85%, Lines ≥85% |
 | End-to-end | Cypress | 5 | Runs in CI against full-stack stack |
-| Load testing | k6 | — | P95 ≤ 1s · P99 ≤ 2s · <1% errors at 10 VUs · baseline regression gate · reported separately from the 1,455 test count |
+| Load testing | k6 | — | P95 ≤ 500ms · P99 ≤ 1s · <1% errors at 10 VUs · baseline regression gate · reported separately from the 1,455 test count |
 | **Total tests** | | **1,455** | All must pass |
 | Lint | ruff (Python) + ESLint (JS) | — | Zero warnings |
 | Security | pip-audit + npm audit + CodeQL | — | Zero high/critical vulns |
@@ -494,7 +494,7 @@ Every PR is validated end-to-end - tests run in parallel, and any failure or cov
 Every backend change is load-tested before merge. The `perf` CI job stands up Postgres and the real Gunicorn server (the exact artifacts CI already uses for integration/E2E), then drives authenticated traffic with k6:
 
 <p align="center">
-  <img src="docs/assets/k6-load-test.png" alt="k6 load test result — 1,385 authenticated requests, 0 failed, P95 42.4ms, 45 req/s" width="680">
+  <img src="docs/assets/k6-load-test.png" alt="k6 load test result — 1,288 authenticated requests, 0 failed, P95 79ms, 41.8 req/s, p(95)<500ms and p(99)<1s thresholds met" width="680">
 </p>
 
 ```bash
@@ -502,7 +502,7 @@ k6 run --vus 10 --duration 30s --summary-export=/tmp/k6-summary.json tests/perf/
 ```
 
 - **Real user path, not a synthetic ping** — the script registers a throwaway user, logs in, and hits the JWT-protected developer read surface (`GET /api/v1/dashboard`, `GET /api/v1/dashboard/client`) under 10 constant VUs. `/reports` is excluded deliberately: it requires Team Lead/Admin, so hitting it as a developer would load-test a permission denial.
-- **Thresholds in the script (`backend/tests/perf/api-load.js`)** — error rate < 1%, `http_req_duration` P95 < 1s, P99 < 2s. These are CI execution ceilings (single gevent worker on a shared 2-vCPU runner), not production SLOs — the job's role is to stop order-of-magnitude regressions from merging.
+- **Thresholds in the script (`backend/tests/perf/api-load.js`)** — error rate < 1%, `http_req_duration` P95 < 500ms, P99 < 1s. These are CI execution ceilings (single gevent worker on a shared 2-vCPU runner), not production SLOs — the job's role is to stop order-of-magnitude regressions from merging.
 - **Committed baseline gate (`backend/tests/perf/check_baseline.py`)** — a baseline JSON captured from a clean run trips the build on ~3× P95, 4× P99, +5pp error rate, or −30% throughput. First-run (no baseline) passes with a warning; arm it by committing the artifact's numbers.
 - **Deliberately not part of the test count** — load iterations are measurements, so they never inflate the 1,455. Results upload as the `load-test-results` artifact instead.
 

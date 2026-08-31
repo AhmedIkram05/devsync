@@ -21,9 +21,13 @@ export const options = {
   thresholds: {
     // Error budget: <1% of requests may fail outright.
     http_req_failed: ['rate<0.01'],
-    // Latency ceilings sized for the CI stack (single gevent worker,
-    // shared runner). Tighten only alongside a production-like environment.
-    http_req_duration: ['p(95)<1000', 'p(99)<2000'],
+    // Latency ceilings sized for the CI stack (single gevent worker, shared
+    // runner). Production SLOs (p95 < 300ms / p99 < 800ms) belong to a
+    // production-like environment. Local P95 measured at ~42-87ms, so 500ms
+    // still admits ~6-10x CI noise before failing.
+    // Note: k6 does not export p(99) in --summary-export, so check_baseline.py
+    // tracks p95 only; this p99 threshold still gates the run in CI.
+    http_req_duration: ['p(95)<500', 'p(99)<1000'],
   },
 };
 
