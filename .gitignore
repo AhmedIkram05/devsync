@@ -62,3 +62,5 @@ node_modules/
 
 # Environment Variables
 .env
+
+graphify-out
