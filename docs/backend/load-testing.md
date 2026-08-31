@@ -63,14 +63,23 @@ The absolute thresholds gate every run. The relative gate works like this:
 ## Running locally
 
 ```sh
-# 1. DB (Postgres) + backend, same way the e2e/backend CI jobs do it
-make db-up
-cd backend && export DATABASE_URL=postgresql://devsync:devsync@localhost:5432/devsync-test
-export FLASK_ENV=testing JWT_SECRET_KEY=dev-local-jwt-secret
+# 1. DB (Postgres) + backend
+make db-up                                   # local compose maps Postgres to :5433
+cd backend && export DATABASE_URL=postgresql://devsync:devsync@localhost:5433/devsync
+# development (NOT testing — testing pins SQLite in-memory, so the schema
+# created by this process would never reach the gunicorn process under load)
+export FLASK_ENV=development JWT_SECRET_KEY=dev-local-jwt-secret
 export RATE_LIMIT_REQUESTS_PER_WINDOW=0   # load-test override only
 .venv/bin/python -c "from src.app import create_app; from src.db.models import db; a,_=create_app(); c=a.app_context(); c.push(); db.create_all(); c.pop()"
 .venv/bin/gunicorn src.wsgi:app -c gunicorn.conf.py &
 
-# 2. k6 (brew install k6)
+# 2. k6 (brew install k6, or Docker if no local k6:)
+#    docker run --rm -v "$PWD/tests/perf:/perf" grafana/k6 \
+#      run --vus 10 --duration 30s --summary-export=/perf/summary.json \
+#      -e BASE_URL=http://host.docker.internal:8000 /perf/api-load.js
 k6 run --vus 10 --duration 30s --summary-export=/tmp/k6-summary.json tests/perf/api-load.js
 ```
+
+> The CI `perf` job runs `FLASK_ENV=development` for the same reason: `testing`
+> swaps in a per-process in-memory SQLite DB, which would leave the gunicorn
+> worker staring at an empty database.

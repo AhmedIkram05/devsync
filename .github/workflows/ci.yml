@@ -418,7 +418,9 @@ jobs:
         working-directory: backend
         env:
           DATABASE_URL: postgresql://devsync:devsync@localhost:5432/devsync-test
-          FLASK_ENV: testing
+          # development (not testing): testing pins SQLite in-memory, which
+          # would silently drop the schema in a separate gunicorn process.
+          FLASK_ENV: development
           JWT_SECRET_KEY: ci-jwt-secret-key
         run: |
           python -c "from src.app import create_app; from src.db.models import db; app, _ = create_app(); ctx = app.app_context(); ctx.push(); db.create_all(); ctx.pop()"
@@ -427,7 +429,9 @@ jobs:
         working-directory: backend
         env:
           DATABASE_URL: postgresql://devsync:devsync@localhost:5432/devsync-test
-          FLASK_ENV: testing
+          # development (not testing): the load test must hit the real Postgres
+          # schema created above, not a per-process empty in-memory SQLite DB.
+          FLASK_ENV: development
           JWT_SECRET_KEY: ci-jwt-secret-key
           # Disable the global rate limiter: the load test must saturate the
           # app, not its throttle. Never set this outside a load-test env.
