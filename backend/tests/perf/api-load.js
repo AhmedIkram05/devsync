@@ -29,7 +29,7 @@ export const options = {
 
 // load-test@devsync.test-style throwaway accounts; one per setup() call so
 // parallel/rerun jobs never collide.
-const EMAIL_HOST = `load-${Date.now()}.devsync.test`;
+const EMAIL_HOST = `load-${Date.now()}@devsync.test`;
 
 export function setup() {
   const payload = { name: 'Load Tester', email: EMAIL_HOST, password: 'load-test-password' };
