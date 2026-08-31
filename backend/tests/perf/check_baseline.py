@@ -7,6 +7,16 @@ build only on *order-of-magnitude* regressions against a previously measured
 run, because CI load tests run on shared, noisy runners where small deltas are
 infrastructure noise, not code signal.
 
+Metric extraction matches the real `k6 --summary-export` schema (verified
+against grafana/k6 v0.5x):
+    - trend metrics (http_req_duration): percentiles at the top level
+      ({"avg","min","med","max","p(90)","p(95)"}); p(99) is NOT exported,
+      so the p99 tripwire only applies when a baseline has it.
+    - rate metrics (http_req_failed): "value" is the real 0..1 rate. The
+      "passes"/"fails" fields on this metric are NOT trustworthy (k6 reports
+      fails==total on zero-failure runs); never use them.
+    - counter metrics (http_reqs): "rate" (req/s) at the top level.
+
 Baseline lifecycle:
     - No baseline.json → exits 0 with a warning: the gate is armed by
       committing a baseline, not before.
@@ -33,18 +43,17 @@ RPS_DROP_MIN = 0.7          # fail if sustained req/s falls below 70% of baselin
 def extract_metrics(summary_path):
     with open(summary_path) as fh:
         data = json.load(fh)
-    metrics = data["metrics"]
+    metrics = data.get("metrics") or {}
 
-    def trend_value(metric, key):
-        return metrics.get(metric, {}).get("values", {}).get(key)
+    duration = metrics.get("http_req_duration") or {}
+    p95 = duration.get("p(95)")
+    p99 = duration.get("p(99)")  # absent in k6 exports by default
 
-    p95 = trend_value("http_req_duration", "p(95)")
-    p99 = trend_value("http_req_duration", "p(99)")
-    error_rate = (metrics.get("http_req_failed", {}).get("values") or {}).get("rate")
-    rps = (metrics.get("http_reqs", {}).get("values") or {}).get("rate")
+    error_rate = (metrics.get("http_req_failed") or {}).get("value")  # 0..1
+    rps = (metrics.get("http_reqs") or {}).get("rate")
 
-    if p95 is None or error_rate is None or rps is None:
-        sys.exit(f"summary is missing core metrics (p95={p95}, error_rate={error_rate}, rps={rps})")
+    if p95 is None:
+        sys.exit("summary is missing http_req_duration.p(95); is this a k6 --summary-export file?")
     return {"p95_ms": p95, "p99_ms": p99, "error_rate": error_rate, "rps": rps}
 
 
@@ -52,7 +61,7 @@ def baseline_exists(path):
     try:
         with open(path) as fh:
             data = json.load(fh)
-        return all(k in data for k in ("p95_ms", "p99_ms", "error_rate", "rps"))
+        return "p95_ms" in data
     except (FileNotFoundError, json.JSONDecodeError):
         return False
 
@@ -84,16 +93,20 @@ def main():
         base = json.load(fh)
 
     failures = []
-    if current["p95_ms"] > base["p95_ms"] * P95_BLOWUP_FACTOR:
-        failures.append(f"p95 {current['p95_ms']:.0f}ms > {P95_BLOWUP_FACTOR}x baseline ({base['p95_ms']:.0f}ms)")
-    if current["p99_ms"] and current["p99_ms"] > base["p99_ms"] * P99_BLOWUP_FACTOR:
-        failures.append(f"p99 {current['p99_ms']:.0f}ms > {P99_BLOWUP_FACTOR}x baseline ({base['p99_ms']:.0f}ms)")
-    if current["error_rate"] > base["error_rate"] + ERROR_RATE_ADD_PP:
-        failures.append(
-            f"error rate {current['error_rate']:.1%} > baseline {base['error_rate']:.1%} + {ERROR_RATE_ADD_PP:.0%}"
-        )
-    if current["rps"] < base["rps"] * RPS_DROP_MIN:
-        failures.append(f"rps {current['rps']:.1f} < {RPS_DROP_MIN:.0%} of baseline ({base['rps']:.1f})")
+    if base.get("p95_ms"):
+        if current["p95_ms"] > base["p95_ms"] * P95_BLOWUP_FACTOR:
+            failures.append(f"p95 {current['p95_ms']:.0f}ms > {P95_BLOWUP_FACTOR}x baseline ({base['p95_ms']:.0f}ms)")
+    if base.get("p99_ms") and current["p99_ms"]:
+        if current["p99_ms"] > base["p99_ms"] * P99_BLOWUP_FACTOR:
+            failures.append(f"p99 {current['p99_ms']:.0f}ms > {P99_BLOWUP_FACTOR}x baseline ({base['p99_ms']:.0f}ms)")
+    if base.get("error_rate") is not None and current["error_rate"] is not None:
+        if current["error_rate"] > base["error_rate"] + ERROR_RATE_ADD_PP:
+            failures.append(
+                f"error rate {current['error_rate']:.1%} > baseline {base['error_rate']:.1%} + {ERROR_RATE_ADD_PP:.0%}"
+            )
+    if base.get("rps") is not None and current["rps"] is not None:
+        if current["rps"] < base["rps"] * RPS_DROP_MIN:
+            failures.append(f"rps {current['rps']:.1f} < {RPS_DROP_MIN:.0%} of baseline ({base['rps']:.1f})")
 
     if failures:
         print("LOAD TEST REGRESSION:")

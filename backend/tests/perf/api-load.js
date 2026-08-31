@@ -29,23 +29,32 @@ export const options = {
 
 // load-test@devsync.test-style throwaway accounts; one per setup() call so
 // parallel/rerun jobs never collide.
-const EMAIL_HOST = `load-${Date.now()}@devsync.test`;
+const EMAIL_HOST_NAME = 'devsync.test';
 
 export function setup() {
-  const payload = { name: 'Load Tester', email: EMAIL_HOST, password: 'load-test-password' };
   const headers = { 'Content-Type': 'application/json' };
+  // Transient setup failures (a blip on a shared runner, a busy gevent worker)
+  // must not flake a 15-minute pipeline job: retry a few times, fresh identity
+  // per attempt.
+  let lastRegister = -1;
+  let lastLogin = -1;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const payload = { name: 'Load Tester', email: `load-${Date.now()}-${attempt}@${EMAIL_HOST_NAME}`, password: 'load-test-password' };
+    const register = http.post(`${BASE_URL}/api/v1/auth/register`, JSON.stringify(payload), { headers });
+    lastRegister = register.status;
+    check(register, { 'register succeeds': (r) => r.status >= 200 && r.status < 300 });
 
-  const register = http.post(`${BASE_URL}/api/v1/auth/register`, JSON.stringify(payload), { headers });
-  check(register, { 'register succeeds': (r) => r.status >= 200 && r.status < 300 });
+    const login = http.post(`${BASE_URL}/api/v1/auth/login`, JSON.stringify(payload), { headers });
+    lastLogin = login.status;
+    check(login, { 'login succeeds': (r) => r.status === 200 });
 
-  const login = http.post(`${BASE_URL}/api/v1/auth/login`, JSON.stringify(payload), { headers });
-  check(login, { 'login succeeds': (r) => r.status === 200 });
-
-  const token = login.json('user.token');
-  if (!token) {
-    throw new Error(`setup() could not obtain a JWT (login HTTP ${login.status})`);
+    const token = login.json('user.token');
+    if (token) {
+      return { token };
+    }
+    sleep(1); // back off between attempts
   }
-  return { token };
+  throw new Error(`setup() could not obtain a JWT after 3 attempts (register HTTP ${lastRegister}, login HTTP ${lastLogin})`);
 }
 
 // Endpoint mix: the two reads every developer session hits. /reports is
