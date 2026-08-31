@@ -1,4 +1,4 @@
-name: Test Suite
+name: CI
 
 permissions:
   contents: read
@@ -22,11 +22,13 @@ env:
 jobs:
   # ── Path Change Detection ──────────────────────────────────────────────
   changes:
+    name: Change detection — path filters
     runs-on: ubuntu-latest
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
       e2e: ${{ steps.filter.outputs.e2e }}
+      perf: ${{ steps.filter.outputs.perf }}
     steps:
       - uses: actions/checkout@v4
 
@@ -49,9 +51,15 @@ jobs:
               - 'frontend/**'
               - 'docker-compose*.yml'
               - '.github/workflows/ci.yml'
+            perf:
+              - 'backend/**'
+              - 'pyproject.toml'
+              - 'pytest.ini'
+              - '.github/workflows/ci.yml'
 
   # ── Lint & Format ──────────────────────────────────────────────────────
   lint:
+    name: Lint & format (ruff + ESLint)
     needs: changes
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
@@ -94,6 +102,7 @@ jobs:
 
   # ── Security Scanning ─────────────────────────────────────────────────
   security:
+    name: Dependency security scan (pip-audit + npm audit)
     needs: changes
     if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
@@ -113,12 +122,14 @@ jobs:
         if: needs.changes.outputs.backend == 'true'
         working-directory: backend
         run: |
+          # PYSEC-2026-1325: ecdsa 0.19.2, transitive via python-jose — latest on PyPI, no fix published yet
           pip-audit -r requirements.txt \
             --ignore-vuln CVE-2026-27205 \
             --ignore-vuln CVE-2024-6866 \
             --ignore-vuln CVE-2024-6844 \
             --ignore-vuln CVE-2024-6839 \
-            --ignore-vuln CVE-2026-30922
+            --ignore-vuln CVE-2026-30922 \
+            --ignore-vuln PYSEC-2026-1325
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -132,8 +143,9 @@ jobs:
         working-directory: frontend
         run: npm audit --audit-level=critical
 
-  # ── Backend Tests (unit + integration with Postgres) ──────────────────
+  # ── Backend Tests (unit + integration, in-memory SQLite) ───────────────
   backend-tests:
+    name: Backend tests (pytest)
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
@@ -196,6 +208,7 @@ jobs:
 
   # ── Backend Docker Image Build (with layer caching) ───────────────────
   backend-image-build:
+    name: Backend Docker image build
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
@@ -218,6 +231,7 @@ jobs:
 
   # ── Frontend Tests ────────────────────────────────────────────────────
   frontend-tests:
+    name: Frontend tests (Jest)
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
@@ -269,6 +283,7 @@ jobs:
 
   # ── End-to-End Tests (Cypress) ────────────────────────────────────────
   e2e-tests:
+    name: End-to-end tests (Cypress)
     needs: changes
     if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
@@ -368,8 +383,118 @@ jobs:
           path: /tmp/backend.log
           if-no-files-found: ignore
 
+  # ── API Load Testing (k6) ────────────────────────────────────────────
+  # Hard gate: k6 thresholds live in backend/tests/perf/api-load.js and fail
+  # the build on breach. A committed baseline (backend/tests/perf/baseline.json)
+  # adds order-of-magnitude regression detection via check_baseline.py.
+  perf:
+    name: Load test (k6)
+    needs: changes
+    if: needs.changes.outputs.perf == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: devsync
+          POSTGRES_PASSWORD: devsync
+          POSTGRES_DB: devsync-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Create database schema
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://devsync:devsync@localhost:5432/devsync-test
+          # development (not testing): testing pins SQLite in-memory, which
+          # would silently drop the schema in a separate gunicorn process.
+          FLASK_ENV: development
+          JWT_SECRET_KEY: ci-jwt-secret-key
+        run: |
+          python -c "from src.app import create_app; from src.db.models import db; app, _ = create_app(); ctx = app.app_context(); ctx.push(); db.create_all(); ctx.pop()"
+
+      - name: Start backend server
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://devsync:devsync@localhost:5432/devsync-test
+          # development (not testing): the load test must hit the real Postgres
+          # schema created above, not a per-process empty in-memory SQLite DB.
+          FLASK_ENV: development
+          JWT_SECRET_KEY: ci-jwt-secret-key
+          # Disable the global rate limiter: the load test must saturate the
+          # app, not its throttle. Never set this outside a load-test env.
+          RATE_LIMIT_REQUESTS_PER_WINDOW: "0"
+        run: |
+          nohup gunicorn src.wsgi:app -c gunicorn.conf.py > /tmp/backend.log 2>&1 &
+          echo "Waiting for backend to be ready..."
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+              echo "Backend ready!"
+              break
+            fi
+            sleep 2
+          done
+
+      - name: Set up k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Run k6 load test
+        working-directory: backend
+        env:
+          BASE_URL: http://localhost:8000
+        run: |
+          k6 run \
+            --vus 10 --duration 30s \
+            --summary-export=/tmp/k6-summary.json \
+            tests/perf/api-load.js
+
+      - name: Check against committed baseline
+        run: |
+          python3 backend/tests/perf/check_baseline.py \
+            /tmp/k6-summary.json \
+            --baseline backend/tests/perf/baseline.json
+
+      - name: Upload k6 load test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-results
+          path: /tmp/k6-summary.json
+          if-no-files-found: ignore
+
+      - name: Upload backend logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-backend-logs
+          path: /tmp/backend.log
+          if-no-files-found: ignore
+
   # ── Coverage Upload (Codecov) ─────────────────────────────────────────
   coverage:
+    name: Coverage upload (Codecov)
     needs: [changes, backend-tests, frontend-tests]
     if: github.ref == 'refs/heads/main' && !cancelled()
     runs-on: ubuntu-latest

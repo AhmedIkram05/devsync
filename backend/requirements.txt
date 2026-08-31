@@ -15,7 +15,8 @@ Flask-Migrate==4.0.5
 flask-cors==5.0.1
 
 # Authentication
-python-jose[cryptography]==3.4.0
+python-jose[cryptography]==3.5.0
+pyasn1>=0.6.4  # transitive via python-jose/rsa — fixes PYSEC-2026-3455/3456/3457 (needs python-jose>=3.5.0 which relaxes its pyasn1<0.5 pin)
 passlib==1.7.4
 bcrypt==4.1.2
 python-multipart==0.0.31

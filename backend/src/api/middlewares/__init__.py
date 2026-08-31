@@ -1,5 +1,6 @@
 """API middlewares package initialisation"""
 
+import os
 from functools import wraps
 
 from flask import jsonify
@@ -63,5 +64,11 @@ def setup_middlewares(app):
     # Apply API usage tracking
     apply_api_usage_logger(app)
 
-    # Apply global rate limiting
-    apply_global_rate_limit(app, requests_per_window=300, window_seconds=60)
+    # Apply global rate limiting.
+    # Env-tunable so the k6 load-test job can disable the throttle
+    # (RATE_LIMIT_REQUESTS_PER_WINDOW=0) and saturate the app instead of its
+    # limiter. Defaults (300 req / 60s) are unchanged for every other env.
+    requests_per_window = int(os.getenv("RATE_LIMIT_REQUESTS_PER_WINDOW", "300"))
+    window_seconds = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+    if requests_per_window > 0:
+        apply_global_rate_limit(app, requests_per_window=requests_per_window, window_seconds=window_seconds)

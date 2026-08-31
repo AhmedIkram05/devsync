@@ -1,6 +1,6 @@
 # DevSync
 
-> Production full-stack project management platform with real-time collaboration, GitHub OAuth 2.0 integration, and bidirectional Issue/PR sync. Built with React 18 + Flask + PostgreSQL, deployed on AWS ECS Fargate with OIDC-authenticated CI/CD, containerized via multi-stage Docker builds, and guarded by 1,452 automated tests plus linting (ruff + ESLint), dependency auditing (pip-audit + npm audit), and CodeQL security analysis. Every PR that fails any check or drops coverage below 85% backend / 85% frontend is automatically rejected before it reaches deployment.
+> Production full-stack project management platform with real-time collaboration, GitHub OAuth 2.0 integration, and bidirectional Issue/PR sync. Built with React 18 + Flask + PostgreSQL, deployed on AWS ECS Fargate with OIDC-authenticated CI/CD, containerized via multi-stage Docker builds, and guarded by 1,455 automated tests plus a k6 load-test gate (P95 latency ceiling at sustained load), linting (ruff + ESLint), dependency auditing (pip-audit + npm audit), and CodeQL security analysis. Every PR that fails any check or drops coverage below 85% backend / 85% frontend is automatically rejected before it reaches deployment.
 
 <p align="center">
   <img src="https://img.shields.io/badge/React-61DAFB?style=for-the-badge&labelColor=000000&logo=react">
@@ -12,6 +12,7 @@
   <img src="https://img.shields.io/badge/AWS-232F3E?style=for-the-badge&labelColor=000000&logo=amazonaws">
   <img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&labelColor=000000&logo=githubactions">
   <img src="https://img.shields.io/badge/Socket.io-010101?style=for-the-badge&labelColor=000000&logo=socketdotio">
+  <img src="https://img.shields.io/badge/k6-7D64FF?style=for-the-badge&labelColor=000000&logo=k6">
 </p>
 
 <p align="center">
@@ -42,6 +43,7 @@
   - [CI/CD Pipeline](#cicd-pipeline)
   - [Database Design](#database-design)
   - [Testing Strategy](#testing-strategy)
+  - [Load Testing (k6)](#load-testing-k6)
   - [Security Model](#security-model)
 - [Design Decisions](#design-decisions)
 - [Features](#features)
@@ -65,12 +67,13 @@ flowchart TD
         changes["Path detection\nbackend/** · frontend/** dotfiles"]
         lint["Lint: ruff (Python) · ESLint (JS)\nFormat check"]
         security["Security: pip-audit · npm audit"]
-        unit["Unit tests: 518 Pytest · 929 Jest"]
-        integration["Integration tests\nPostgres 15 service container"]
-        e2e["E2E: 5 Cypress tests\nFull stack: Postgres → backend → serve"]
+        unit["Unit tests: 521 Pytest · 929 Jest"]
+        integration["Integration tests\npytest · in-memory SQLite"]
+e2e["E2E: 5 Cypress tests\nFull stack: Postgres → backend → serve"]
         docker["Docker build check\nLayer-cached via GHA cache"]
+        load["Load test: k6\nP95 ≤ 500ms sustained · baseline regression gate"]
     end
- 
+  
     PR --> changes
     changes --> lint
     changes --> security
@@ -78,7 +81,8 @@ flowchart TD
     changes --> integration
     changes --> e2e
     changes --> docker
-    lint & security & unit & integration & e2e & docker --> Gate{"All checks\npassed?"}
+    changes --> load
+    lint & security & unit & integration & e2e & docker & load --> Gate{"All checks\npassed?"}
     Gate -->|"Yes"| DeployOK["✅ CI passes"]
     Gate -->|"No"| DeployFail["❌ PR blocked"]
  
@@ -94,7 +98,7 @@ flowchart TD
     ECS --> RDS["RDS PostgreSQL (private subnet)\nNo public endpoint\nOnly ECS on port 5432"]
 ```
 
-**End-to-end flow:** A PR triggers GitHub Actions → path detection fires only relevant checks → linting (ruff + ESLint) and security auditing (pip-audit + npm audit) run first → backend unit + integration tests (against a real Postgres 15 service container) and frontend Jest tests run in parallel → if frontend/backend changed, Cypress E2E tests spin up the full stack (Postgres → backend server → frontend served locally) → Docker build check validates the image with layer caching. All checks must pass before the pipeline blocks further progress.
+**End-to-end flow:** A PR triggers GitHub Actions → path detection fires only relevant checks → linting (ruff + ESLint) and security auditing (pip-audit + npm audit) run first → backend unit + integration tests (pytest — fast, in-memory SQLite) and frontend Jest tests run in parallel → if frontend/backend changed, Cypress E2E tests spin up the full stack (Postgres → backend server → frontend served locally) → Docker build check validates the image with layer caching → k6 load test drives authenticated traffic at the API and fails the PR on threshold breach or baseline regression. All checks must pass before the pipeline blocks further progress.
 
 ---
 
@@ -103,8 +107,9 @@ flowchart TD
 | Area | Decision | Why |
 |---|---|---|
 | **Container strategy** | Multi-stage Docker builds for both frontend and backend | Backend: `python:3.11-slim` with build deps (`gcc`, `libpq-dev`) in build stage only → runtime image is ~330MB (was 600MB). Frontend: `node:20-alpine` builds, `nginx:1.27-alpine` serves - zero runtime toolchain. |
-| **Compose architecture** | Separated infra (Postgres) from app (backend + frontend) via two compose files | Start DB alone for host-based dev (`docker compose -f postgres.yml up`), or full stack with `-f postgres.yml -f app.yml`. Standard Docker composition pattern. |
-| **CI pipeline** | 7 job types, path-aware execution | Lint (ruff + ESLint), security (pip-audit + npm audit), unit tests, integration tests (real Postgres), E2E (Cypress), Docker build (layer-cached), and weekly CodeQL. Each job runs only when its paths change. |
+| **Compose architecture** | Separated infra (Postgres) from app (backend + frontend) via two compose files | Start DB alone for host-based dev (`docker compose -f docker-compose.local-postgres.yml up`), or full stack with `-f docker-compose.local.yml -f docker-compose.local-postgres.yml`. Standard Docker composition pattern. |
+| **CI pipeline** | 8 job types, path-aware execution | Lint (ruff + ESLint), security (pip-audit + npm audit), unit tests, integration tests, E2E (Cypress), Docker build (layer-cached), k6 load test, and weekly CodeQL. Each job runs only when its paths change. |
+| **Load test gate** | k6 script with in-script thresholds + committed baseline | Every backend change runs 10 VUs of authenticated traffic for 30s against the live API. P95 > 500ms / P99 > 1s / error rate > 1% fails the build; a committed baseline catches order-of-magnitude regressions (3× P95, 4× P99, +5pp errors, −30% throughput). Separate from the functional test count — load iterations are measurements, not tests. |
 | **CI caching** | Docker layer caching + pip/npm dependency caching | Docker builds use `type=gha` cache (GitHub Actions cache layer sharing). Python pip and npm `node_modules` are cached via `actions/setup-python` / `setup-node`. |
 | **Real-time layer** | Socket.IO with gevent workers and JWT-authenticated rooms | Each project is a separate Socket.IO room - broadcasts never leak across projects. Gevent async worker handles concurrent WebSocket connections efficiently. |
 | **Deployment gating** | Backend health check → Frontend deploy | Pipeline explicitly waits for ECS rolling update to pass health checks before deploying to CloudFront. Zero API/UI version mismatch in production. |
@@ -118,7 +123,7 @@ flowchart TD
 
 | Metric | Value |
 |---|---|
-| Automated tests | **1,452 total** — 518 Pytest + 929 Jest + 5 Cypress |
+| Automated tests | **1,455 total** — 521 Pytest + 929 Jest + 5 Cypress |
 | Code quality gates | ruff linting + ruff format check (Python) · ESLint (JS) |
 | Security gates | pip-audit + npm audit (per-PR) · CodeQL `security-and-quality` (weekly) |
 | Coverage gates | 85% backend line · 85% frontend branches/functions/lines |
@@ -126,6 +131,7 @@ flowchart TD
 | Docker caching | GitHub Actions cache layers — multi-minute savings on re-runs |
 | Container startup | Migrations + optional bootstrap + health check under 20s |
 | API response time | Sub‑300ms p99 for authenticated JSON endpoints |
+| Load test gate | k6: P95 ≤ 500ms · P99 ≤ 1s · <1% errors at 10 VUs sustained — enforced per PR |
 | Database | 12 tables, FK-indexed, Alembic migrations |
 | Infrastructure cost | **$0** (offline — full AWS deployment validated, now torn down) |
 | CI/CD auth | Zero static secrets — OIDC federation for all AWS access |
@@ -346,8 +352,8 @@ flowchart LR
     
     subgraph BackendJobs["Backend Jobs"]
         direction TB
-        BT["Unit: pytest · 518 tests\n--cov-fail-under=85"]
-        IT["Integration: pytest\nPostgres 15 service container"]
+        BT["Unit: pytest · 521 tests\n--cov-fail-under=85"]
+        IT["Integration: pytest\nin-memory SQLite (fast)"]
         DockerBuild["Docker build\nlayer-cached (type=gha)"]
     end
 
@@ -359,11 +365,14 @@ flowchart LR
         Cypress["Cypress · 5 tests\nPostgres → backend → serve"]
     end
 
+    Load["Load Test (k6)\n10 VUs · P95 ≤ 500ms\nbaseline regression gate"]
+
     Changes -->|"backend/** or frontend/**"| BackendJobs
     Changes -->|"frontend/**"| FrontendJobs
     Changes -->|"backend/** or frontend/**"| E2E
+    Changes -->|"backend/**"| Load
 
-    BT & IT & DockerBuild & FT & Cypress --> Gate{"All checks\npassed?"}
+    BT & IT & DockerBuild & FT & Cypress & Load --> Gate{"All checks\npassed?"}
     
     Gate -->|"Yes"| Pipeline["✅ Pipeline passes"]
     Gate -->|"No"| Abort["❌ PR blocked\nFailure reported"]
@@ -374,15 +383,17 @@ flowchart LR
 | Phase | Jobs | Trigger |
 |---|---|---|
 | Fast checks | Lint (ruff + ESLint) · Security (pip-audit + npm audit) | Backend / frontend / any |
-| Test suites | Pytest unit + integration (Postgres service) · Jest · Cypress E2E | Changed paths |
+| Test suites | Pytest unit + integration (in-memory SQLite) · Jest · Cypress E2E | Changed paths |
+| Load testing | k6 against the live Flask API (10 VUs / 30s, authenticated) | Backend changes |
 | Build check | Docker layer-cached build | Backend changes |
 | Weekly security | CodeQL analysis (Python + JavaScript) | Scheduled + push to main |
 
 **Key design choices:**
 
-- **Integration tests against a real Postgres** — the `backend-tests` job spins up a Postgres 15 service container so integration tests exercise genuine SQL semantics, not SQLite-in-memory approximations.
+- **Load gate on the real stack** — unit + integration tests run on fast in-memory SQLite, and the `perf` job spins up a Postgres 15 service container so the k6 load gate exercises genuine SQL semantics (schema, queries, auth) under real concurrent load.
 - **E2E tests run in CI now** — Cypress executes against the full stack: Postgres service → Flask backend (started as a background process) → frontend production build (served via `npx serve`). Screenshots and backend logs are captured on failure.
 - **Docker layer caching** — The `backend-image-build` job uses `docker/build-push-action` with `type=gha` cache, sharing layers across runs. A rebuild with only application code changes resolves in seconds instead of minutes.
+- **Load-tested before merge** — the `perf` job stands up Postgres + the real Gunicorn server, then drives authenticated k6 traffic (register → login → JWT → dashboard reads). Load iterations are measured, not counted as tests: results ship as a separate `load-test-results` artifact, and a committed baseline catches order-of-magnitude regressions that unit tests can't see.
 - **Path-aware execution** — Backend tests skip when only frontend files change, and vice versa. Lint and security run for their respective ecosystems. The `changes` job drives all gating.
 
 ---
@@ -428,19 +439,20 @@ erDiagram
 
 | Layer | Framework | Count | Coverage / Quality Gate |
 |---|---|---|---|
-| Backend unit + integration | Pytest (pytest-cov, pytest-xdist) | 518 | 85% line coverage (main) · Real Postgres 15 in CI |
+| Backend unit + integration | Pytest (pytest-cov, pytest-xdist) | 521 | 85% line coverage (main) · in-memory SQLite — real SQL semantics verified live by the k6 load gate |
 | Frontend unit + component | Jest + React Testing Library | 929 | Branches ≥75%, Functions ≥85%, Lines ≥85% |
 | End-to-end | Cypress | 5 | Runs in CI against full-stack stack |
-| **Total tests** | | **1,452** | All must pass |
+| Load testing | k6 | — | P95 ≤ 500ms · P99 ≤ 1s · <1% errors at 10 VUs · baseline regression gate · reported separately from the 1,455 test count |
+| **Total tests** | | **1,455** | All must pass |
 | Lint | ruff (Python) + ESLint (JS) | — | Zero warnings |
 | Security | pip-audit + npm audit + CodeQL | — | Zero high/critical vulns |
 
 Every PR is validated end-to-end - tests run in parallel, and any failure or coverage regression aborts the pipeline before deployment.
 
 <p align="center">
-  <img src="docs/demo/backend-tests.png" alt="Backend test results - 518 passed" width="500">
+  <img src="docs/demo/backend-tests.png" alt="Backend test results — 521 passed, in-memory SQLite" width="500">
   <br>
-  <em>Backend: 518 Pytest tests, all passing. Coverage gate: 85%.</em>
+  <em>Backend: 521 Pytest tests, all passing. Coverage gate: 85%.</em>
 </p>
 
 <p align="center">
@@ -451,7 +463,7 @@ Every PR is validated end-to-end - tests run in parallel, and any failure or cov
 
 **Test architecture:**
 
-- **Backend (Pytest):** Tests are split into `unit/` and `integration/` directories under `backend/tests/`. Unit tests mock external dependencies (database, GitHub API, OAuth providers). Integration tests run against a **real Postgres 15 service container** in CI — genuine SQL semantics, not in-memory approximations. The root `conftest.py` provides session-scoped fixtures for the Flask app, test client, and auth tokens. Parallel execution via pytest-xdist (`-n auto`). Coverage enforced at 85% (`--cov-fail-under=85`).
+- **Backend (Pytest):** Tests are split into `unit/` and `integration/` directories under `backend/tests/`. Unit tests mock external dependencies (database, GitHub API, OAuth providers). Integration tests run on in-memory SQLite for speed (the root `conftest.py` pins the URI); the **k6 load gate** is what runs against the real Postgres 15 service container — genuine SQL semantics under concurrent load. The root `conftest.py` provides session-scoped fixtures for the Flask app, test client, and auth tokens. Parallel execution via pytest-xdist (`-n auto`). Coverage enforced at 85% (`--cov-fail-under=85`).
 
   ```bash
   # Run unit tests only (no Postgres needed)
@@ -460,8 +472,7 @@ Every PR is validated end-to-end - tests run in parallel, and any failure or cov
   # Run all backend tests with coverage
   pytest backend/tests -n auto --cov=backend/src --cov-fail-under=85
 
-  # Run integration tests against Postgres
-  DATABASE_URL=postgresql://user:pass@localhost:5432/testdb \
+  # Run integration tests (in-memory SQLite — no database needed)
   pytest backend/tests/integration -n auto -x -q
   ```
 
@@ -474,7 +485,28 @@ Every PR is validated end-to-end - tests run in parallel, and any failure or cov
 
 - **E2E (Cypress):** Covers critical user journeys — login, project creation, task assignment, and GitHub link flow. Runs in CI against the full stack: Postgres 15 service container → Flask backend (background process) → production frontend build (served via `npx serve`). On failure, Cypress screenshots and backend logs are uploaded as artifacts for debugging.
 
-**Gate behavior:** CI uses path-aware filtering via `dorny/paths-filter` — backend jobs run only when `backend/**` changes, frontend jobs only when `frontend/**` changes, and E2E tests trigger when either or both change. Every job (lint, security, unit, integration, E2E, Docker build) must pass for the pipeline to succeed. Coverage thresholds are enforced on `main` (85% backend line, 75% frontend branches, 85% frontend lines/functions). Any failure — test, lint warning, vulnerability, coverage drop — blocks the pipeline with the relevant output reported. Coverage XML artifacts are uploaded on `main` for tracking.
+**Gate behavior:** CI uses path-aware filtering via `dorny/paths-filter` — backend jobs run only when `backend/**` changes, frontend jobs only when `frontend/**` changes, and E2E tests trigger when either or both change. Every job (lint, security, unit, integration, E2E, load test, Docker build) must pass for the pipeline to succeed. Coverage thresholds are enforced on `main` (85% backend line, 75% frontend branches, 85% frontend lines/functions). Any failure — test, lint warning, vulnerability, coverage drop — blocks the pipeline with the relevant output reported. Coverage XML artifacts are uploaded on `main` for tracking.
+
+---
+
+### Load Testing (k6)
+
+Every backend change is load-tested before merge. The `perf` CI job stands up Postgres and the real Gunicorn server (the exact artifacts CI already uses for integration/E2E), then drives authenticated traffic with k6:
+
+<p align="center">
+  <img src="docs/assets/k6-load-test.png" alt="k6 load test result — 1,288 authenticated requests, 0 failed, P95 79ms, 41.8 req/s, p(95)<500ms and p(99)<1s thresholds met" width="680">
+</p>
+
+```bash
+k6 run --vus 10 --duration 30s --summary-export=/tmp/k6-summary.json tests/perf/api-load.js
+```
+
+- **Real user path, not a synthetic ping** — the script registers a throwaway user, logs in, and hits the JWT-protected developer read surface (`GET /api/v1/dashboard`, `GET /api/v1/dashboard/client`) under 10 constant VUs. `/reports` is excluded deliberately: it requires Team Lead/Admin, so hitting it as a developer would load-test a permission denial.
+- **Thresholds in the script (`backend/tests/perf/api-load.js`)** — error rate < 1%, `http_req_duration` P95 < 500ms, P99 < 1s. These are CI execution ceilings (single gevent worker on a shared 2-vCPU runner), not production SLOs — the job's role is to stop order-of-magnitude regressions from merging.
+- **Committed baseline gate (`backend/tests/perf/check_baseline.py`)** — a baseline JSON captured from a clean run trips the build on ~3× P95, 4× P99, +5pp error rate, or −30% throughput. First-run (no baseline) passes with a warning; arm it by committing the artifact's numbers.
+- **Deliberately not part of the test count** — load iterations are measurements, so they never inflate the 1,455. Results upload as the `load-test-results` artifact instead.
+
+Full details — including the rate-limiter override used only in the load-test environment, and local run instructions — in [`docs/backend/load-testing.md`](docs/backend/load-testing.md).
 
 ---
 
@@ -517,7 +549,8 @@ Key decisions that shaped the architecture, beyond what the Engineering Highligh
 | **Nginx `envsubst` template (not build-time config)** | The same frontend Docker image deploys to any environment because `API_UPSTREAM` is injected at container start. Build-time ARGs would couple the image to one environment. |
 | **OIDC (not static AWS keys)** | IAM role assumption means no credentials to leak, rotate, or audit. The trust policy is declarative - `repo:owner/repo:ref:refs/heads/main` - and scoped to the exact CI trigger. |
 | **Rolling ECS update (not blue/green)** | Blue/green doubles the compute cost during deploy (two full ECS services running). Rolling replaces tasks incrementally - no capacity overhead, zero-downtime if health checks pass, and automatic rollback if they don't. |
-| **SQLite in-memory for tests (not test PostgreSQL)** | Every test run creates and destroys an in-memory database. No Docker dependency, no connection pooling overhead, no test pollution. SQLAlchemy's abstraction layer makes this transparent - the same code runs against PostgreSQL in production. |
+| **Fast pytest, honest load gate** | Unit + integration tests run on in-memory SQLite for speed; the k6 load gate drives the real Postgres 15 service container end to end — schema, queries, and auth under concurrent load. |
+| **k6 thresholds in-script + committed baseline (not a fixed CI config)** | The P95 ceiling and regression tripwires live next to the code they gate, so local runs and CI agree, and the numbers evolve with the product. No build-time number buried in a YAML file that someone must remember to bump. |
 | **HTTP-only cookie + bearer (dual auth)** | The cookie satisfies browser SameSite/CSRF requirements; the bearer header supports mobile and API clients without cookies. Both decode the same JWT - no dual-token complexity. |
 
 ---
@@ -608,7 +641,8 @@ DevSync/
 │   ├── Dockerfile              # Multi-stage: python:3.11-slim build → runtime
 │   ├── entrypoint.sh           # Migrations → optional bootstrap → gunicorn
 │   ├── gunicorn.conf.py        # Gevent async worker config
-│   └── src/                    # Flask app (factory pattern, blueprints, models)
+│   ├── src/                    # Flask app (factory pattern, blueprints, models)
+│   └── tests/perf/             # k6 load-test script (api-load.js) + baseline gate (check_baseline.py)
 ├── frontend/
 │   ├── Dockerfile              # Multi-stage: node:20-alpine build → nginx:1.27-alpine
 │   ├── nginx.conf.template     # SPA fallback, API proxy, envsubst for API_UPSTREAM
@@ -616,7 +650,7 @@ DevSync/
 ├── .github/
 │   ├── dependabot.yml               # Weekly dep updates for pip, npm, GH Actions
 │   ├── workflows/
-│   │   ├── ci.yml                    # 7 job types: lint, security, unit, integration, E2E, Docker, coverage
+│   │   ├── ci.yml                    # 8 job types: lint, security, unit, integration, E2E, load, Docker, coverage
 │   │   ├── cd.yml                    # AWS ECS + S3/CloudFront deploy (infra offline)
 │   │   └── codeql-analysis.yml       # Weekly + per-PR CodeQL security analysis
 │   └── instructions/                 # Copilot coding guidelines
@@ -630,7 +664,8 @@ DevSync/
 │   ├── backend/                      # Developer docs
 │   │   ├── swagger.yaml              # OpenAPI specification (all routes, schemas)
 │   │   ├── rbac.md                   # Role-based access control reference
-│   │   └── models.md                 # Database entity relationships
+│   │   ├── models.md                 # Database entity relationships
+│   │   └── load-testing.md           # k6 load-testing: thresholds, baseline gate, runbook
 │   └── demo/                         # Screenshots and recordings
 │       ├── dev.gif / tl.gif / admin.gif / aws.gif
 │       ├── backend-tests.png
@@ -648,6 +683,7 @@ Additional reference docs for those who want to dive deeper:
 | [**OpenAPI Spec**](docs/backend/swagger.yaml) | Complete API reference: all `/api/v1/*` routes, request/response schemas, auth methods (2143 lines) |
 | [**RBAC Reference**](docs/backend/rbac.md) | Full role-permission matrix for Developer, Team Lead, and Admin roles with endpoint-level authorization rules |
 | [**Database Models**](docs/backend/models.md) | Entity descriptions, relationships, and field types for all 12 tables |
+| [**Load Testing (k6)**](docs/backend/load-testing.md) | k6 gate: script structure, in-script thresholds, baseline-armament workflow, rate-limiter override, local runbook |
 | [**Design Proposal**](docs/Design.pdf) | Original architecture design document outlining requirements and system design decisions |
 
 ## Related Projects

@@ -10,6 +10,7 @@ from flask import Flask, jsonify, request
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
 
 # Import after path setup
+from backend.src.api.middlewares import setup_middlewares
 from backend.src.api.middlewares.rate_limiter import (
     apply_global_rate_limit,
     clean_old_requests,
@@ -163,3 +164,35 @@ def test_global_rate_limit(reset_rate_limit_data):
             else:
                 assert result.status_code == 429
                 assert "Global rate limit exceeded" in result.get_json()["message"]
+
+
+def test_setup_middlewares_default_rate_limit(monkeypatch, reset_rate_limit_data):
+    """Default global limit (300 req / 60s) is applied when no env override is set"""
+    monkeypatch.delenv("RATE_LIMIT_REQUESTS_PER_WINDOW", raising=False)
+    monkeypatch.delenv("RATE_LIMIT_WINDOW_SECONDS", raising=False)
+    test_app = Flask(__name__)
+
+    with patch("backend.src.api.middlewares.apply_global_rate_limit") as mock_apply:
+        setup_middlewares(test_app)
+        mock_apply.assert_called_once_with(test_app, requests_per_window=300, window_seconds=60)
+
+
+def test_setup_middlewares_env_override_rate_limit(monkeypatch, reset_rate_limit_data):
+    """Custom env values flow into the global rate limiter"""
+    monkeypatch.setenv("RATE_LIMIT_REQUESTS_PER_WINDOW", "100000")
+    monkeypatch.setenv("RATE_LIMIT_WINDOW_SECONDS", "120")
+    test_app = Flask(__name__)
+
+    with patch("backend.src.api.middlewares.apply_global_rate_limit") as mock_apply:
+        setup_middlewares(test_app)
+        mock_apply.assert_called_once_with(test_app, requests_per_window=100000, window_seconds=120)
+
+
+def test_setup_middlewares_env_disables_rate_limit(monkeypatch, reset_rate_limit_data):
+    """RATE_LIMIT_REQUESTS_PER_WINDOW=0 skips the limiter (k6 load-test escape hatch)"""
+    monkeypatch.setenv("RATE_LIMIT_REQUESTS_PER_WINDOW", "0")
+    test_app = Flask(__name__)
+
+    with patch("backend.src.api.middlewares.apply_global_rate_limit") as mock_apply:
+        setup_middlewares(test_app)
+        mock_apply.assert_not_called()
