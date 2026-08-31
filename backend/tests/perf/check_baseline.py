@@ -28,16 +28,17 @@ Baseline lifecycle:
 Usage:
     python3 check_baseline.py SUMMARY.json --baseline baseline.json [--update]
 """
+
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # Multipliers/deltas are the regression tripwires. Wide on purpose (see above).
 P95_BLOWUP_FACTOR = 3.0
 P99_BLOWUP_FACTOR = 4.0
-ERROR_RATE_ADD_PP = 0.05   # percentage points, not relative
-RPS_DROP_MIN = 0.7          # fail if sustained req/s falls below 70% of baseline
+ERROR_RATE_ADD_PP = 0.05  # percentage points, not relative
+RPS_DROP_MIN = 0.7  # fail if sustained req/s falls below 70% of baseline
 
 
 def extract_metrics(summary_path):
@@ -76,7 +77,7 @@ def main():
     current = extract_metrics(args.summary)
 
     if args.update:
-        current["captured_at"] = datetime.now(timezone.utc).isoformat()
+        current["captured_at"] = datetime.now(UTC).isoformat()
         with open(args.baseline, "w") as fh:
             json.dump(current, fh, indent=2)
         print(f"Baseline written to {args.baseline}: {current}")
@@ -93,20 +94,20 @@ def main():
         base = json.load(fh)
 
     failures = []
-    if base.get("p95_ms"):
-        if current["p95_ms"] > base["p95_ms"] * P95_BLOWUP_FACTOR:
-            failures.append(f"p95 {current['p95_ms']:.0f}ms > {P95_BLOWUP_FACTOR}x baseline ({base['p95_ms']:.0f}ms)")
-    if base.get("p99_ms") and current["p99_ms"]:
-        if current["p99_ms"] > base["p99_ms"] * P99_BLOWUP_FACTOR:
-            failures.append(f"p99 {current['p99_ms']:.0f}ms > {P99_BLOWUP_FACTOR}x baseline ({base['p99_ms']:.0f}ms)")
-    if base.get("error_rate") is not None and current["error_rate"] is not None:
-        if current["error_rate"] > base["error_rate"] + ERROR_RATE_ADD_PP:
-            failures.append(
-                f"error rate {current['error_rate']:.1%} > baseline {base['error_rate']:.1%} + {ERROR_RATE_ADD_PP:.0%}"
-            )
-    if base.get("rps") is not None and current["rps"] is not None:
-        if current["rps"] < base["rps"] * RPS_DROP_MIN:
-            failures.append(f"rps {current['rps']:.1f} < {RPS_DROP_MIN:.0%} of baseline ({base['rps']:.1f})")
+    if base.get("p95_ms") and current["p95_ms"] > base["p95_ms"] * P95_BLOWUP_FACTOR:
+        failures.append(f"p95 {current['p95_ms']:.0f}ms > {P95_BLOWUP_FACTOR}x baseline ({base['p95_ms']:.0f}ms)")
+    if base.get("p99_ms") and current["p99_ms"] and current["p99_ms"] > base["p99_ms"] * P99_BLOWUP_FACTOR:
+        failures.append(f"p99 {current['p99_ms']:.0f}ms > {P99_BLOWUP_FACTOR}x baseline ({base['p99_ms']:.0f}ms)")
+    if (
+        base.get("error_rate") is not None
+        and current["error_rate"] is not None
+        and current["error_rate"] > base["error_rate"] + ERROR_RATE_ADD_PP
+    ):
+        failures.append(
+            f"error rate {current['error_rate']:.1%} > baseline {base['error_rate']:.1%} + {ERROR_RATE_ADD_PP:.0%}"
+        )
+    if base.get("rps") is not None and current["rps"] is not None and current["rps"] < base["rps"] * RPS_DROP_MIN:
+        failures.append(f"rps {current['rps']:.1f} < {RPS_DROP_MIN:.0%} of baseline ({base['rps']:.1f})")
 
     if failures:
         print("LOAD TEST REGRESSION:")

@@ -43,6 +43,15 @@ export function setup() {
   let lastRegister = -1;
   let lastLogin = -1;
   for (let attempt = 0; attempt < 3; attempt++) {
+    // On a FRESH database the backend auto-promotes the FIRST registered user
+    // to admin ("First user registration detected!..."). /dashboard/client is
+    // developer/team-lead only, so an admin load user gets 403 on half the
+    // requests. Register a throwaway seed user first to absorb the promotion,
+    // then register the real load user (forced to developer — see
+    // validate_registration_data).
+    const seedPayload = { name: 'Seed', email: `seed-${Date.now()}-${attempt}@${EMAIL_HOST_NAME}`, password: 'load-test-password' };
+    http.post(`${BASE_URL}/api/v1/auth/register`, JSON.stringify(seedPayload), { headers });
+
     const payload = { name: 'Load Tester', email: `load-${Date.now()}-${attempt}@${EMAIL_HOST_NAME}`, password: 'load-test-password' };
     const register = http.post(`${BASE_URL}/api/v1/auth/register`, JSON.stringify(payload), { headers });
     lastRegister = register.status;

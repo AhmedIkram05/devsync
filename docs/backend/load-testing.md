@@ -19,7 +19,9 @@ breaches fail the build.
 
 `backend/tests/perf/api-load.js`:
 
-1. Registers a throwaway user, logs in, extracts the JWT.
+1. Registers two throwaway users: a seed user (which absorbs the app's
+   first-user auto-promotion to admin on a fresh database) and then the load
+   user (a plain developer), logs in as the latter, extracts the JWT.
 2. Under constant VUs (10 VUs / 30s in CI), hits the developer read surface:
    - `GET /api/v1/dashboard`
    - `GET /api/v1/dashboard/client`
@@ -83,3 +85,19 @@ k6 run --vus 10 --duration 30s --summary-export=/tmp/k6-summary.json tests/perf/
 > The CI `perf` job runs `FLASK_ENV=development` for the same reason: `testing`
 > swaps in a per-process in-memory SQLite DB, which would leave the gunicorn
 > worker staring at an empty database.
+
+## Latest measured results
+
+Real runs, `10 VUs × 30s` against the authenticated developer surface
+(`register → login → JWT → /dashboard + /dashboard/client`), single gevent
+gunicorn worker + Postgres 16:
+
+| Run | Requests | Failed | P95 | Sustained rate | Checks |
+| --- | --- | --- | --- | --- | --- |
+| Fresh-DB CI conditions (local Docker, 2026-08) | 1,308 | 0 (0.00%) | **74.1 ms** | **42.0 req/s** | all pass |
+| Warm local DB (2026-08) | 1,288 | 0 (0.00%) | 79.0 ms | 41.8 req/s | all pass |
+
+Against thresholds of p(95) < 500ms · p(99) < 1s · error rate < 1%, the
+measured p95 runs ~6× under the ceiling. Every CI job that runs this also
+stores the full k6 metric export as the `load-test-results` artifact (per-run
+JSON: percentiles, counts, per-endpoint checks) — pull it for exact numbers.
