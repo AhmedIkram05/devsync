@@ -23,7 +23,7 @@ python-multipart==0.0.31
 Flask-JWT-Extended==4.5.3
 
 # GitHub API integration
-PyGithub==2.1.1
+PyGithub==2.10.0
 
 # Additional utilities
 requests==2.33.0
