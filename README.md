@@ -44,28 +44,34 @@ DevSync goes past the project board: three-role access control, sockets that pus
 
 ## How It Fits Together
 
-The application runs entirely inside a custom VPC with public and private subnets:
+The React SPA and the Flask API talk over load-balanced HTTPS; every stateful and realtime layer sits inside a custom VPC:
 
 ```mermaid
 flowchart LR
-    subgraph Public[Public]
-        CF[CloudFront + S3\nReact SPA\nHTTPS via ACM]
+    subgraph Client["Browser"]
+        SPA["React 18 SPA<br/>CloudFront + S3"]
     end
 
-    subgraph VPC["Custom VPC"]
-        direction TB
-        ALB["ALB\nport 443\nACM TLS cert"]
-        subgraph Private[Private subnets]
-            ECS["ECS Fargate\nport 8000\nFlask + Socket.IO"]
-            RDS["RDS PostgreSQL\nport 5432"]
+    subgraph GitHub["GitHub"]
+        GH["GitHub API<br/>OAuth 2.0 · Issue/PR sync"]
+    end
+
+    subgraph AWS_VPC["AWS VPC"]
+        ALB["ALB · port 443<br/>ACM TLS"]
+        subgraph ECS["ECS Fargate (private)"]
+            NX["nginx<br/>envsubst upstream"]
+            APP["Flask + Flask-SocketIO<br/>Gunicorn · gevent · port 8000"]
         end
+        RDS[("RDS PostgreSQL<br/>port 5432 · 12 tables")]
     end
 
-    INTERNET1[Internet] -->|HTTP/2| CF
-    CF -->|OAC origin| S3[(S3 bucket)]
-    INTERNET2[Internet] -->|HTTPS| ALB
-    ALB -->|SG: only ALB| ECS
-    ECS -->|SG: only ECS| RDS
+    SPA -->|"HTTPS · /api/* · Socket.IO"| ALB
+    ALB --> NX
+    NX --> APP
+    APP -->|"SQLAlchemy 2.0"| RDS
+    SPA -.->|"JWT HTTP-only cookie + bearer"| APP
+    APP -.->|"OAuth login · PyGithub Issue/Task sync"| GH
+    APP -.->|"project rooms · realtime events"| SPA
 ```
 
 **End-to-end flow:** a user signs in (credentials or GitHub OAuth) → the backend issues a JWT delivered as an HTTP-only cookie plus bearer header → the React SPA, served from CloudFront/S3, calls `/api/*` → nginx proxies to Flask on Gunicorn gevent → role decorators authorize the route → Socket.IO joins that user to their project rooms → task updates, comments, and GitHub sync events broadcast in real time.
