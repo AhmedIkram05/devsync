@@ -19,6 +19,7 @@
 <a href="https://k6.io/"><img src="https://img.shields.io/badge/k6-7D64FF?style=for-the-badge&labelColor=000000&logo=k6"></a>
 <a href="https://docs.pytest.org/"><img src="https://img.shields.io/badge/pytest-0A9EDC?style=for-the-badge&labelColor=000000&logo=pytest"></a>
 <a href="https://www.cypress.io/"><img src="https://img.shields.io/badge/Cypress-17202C?style=for-the-badge&labelColor=000000&logo=cypress"></a>
+<a href="https://jestjs.io/"><img src="https://img.shields.io/badge/Jest-C21325?style=for-the-badge&labelColor=000000&logo=jest"></a>
 </p>
 
 <p align="center">
