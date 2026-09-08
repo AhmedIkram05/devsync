@@ -1,6 +1,6 @@
 # DevSync
 
-> Full-stack project management platform with real-time collaboration, GitHub OAuth 2.0 integration, and bidirectional Issue/PR sync - guarded by 1,462 automated tests, a k6 load-test gate (P95 latency ceiling at sustained load), path-aware CI, ruff + ESLint, pip-audit + npm audit, and CodeQL. Every PR that fails a check or drops coverage below 85% is rejected automatically.
+> Full-stack project management platform with real-time collaboration, GitHub OAuth 2.0 integration, and two-way task ↔ GitHub linking (read-only issue/PR sync + comment write-back) - guarded by 1,466 automated tests, a k6 load-test gate (P95 latency ceiling at sustained load), path-aware CI, ruff + ESLint, pip-audit + npm audit, and CodeQL. Checks must pass on every PR; coverage is enforced on merges to `main` (80% backend line, 85% frontend lines/functions/statements, 75% branches).
 
 <p align="center">
 <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-61DAFB?style=for-the-badge&labelColor=000000&logo=react"></a>
@@ -36,11 +36,11 @@
 
 <br/>
 
-DevSync goes past the project board: three-role access control, sockets that push updates the instant a teammate edits a task, and GitHub Issues/PRs wired to tasks in both directions. The interesting part is under the hood - every PR is measured, not just tested.
+DevSync goes past the project board: three-role access control, sockets that push updates the instant a teammate edits a task, and GitHub issues/PRs linked to tasks - pulled read-only into the board, with comments written back to GitHub. The interesting part is under the hood - every PR is measured, not just tested.
 
 - **RBAC** - Developer, Team Lead, and Admin roles with endpoint-level permission enforcement
-- **Real-time collaboration** - Socket.IO rooms scoped per project; JWT handshake; broadcasts never leak across projects
-- **GitHub integration** - OAuth 2.0 account linking with bidirectional Issue/PR ↔ Task sync
+- **Real-time collaboration** - Socket.IO rooms scoped per project; JWT handshake; server-enforced project membership on join; broadcasts never leak across projects
+- **GitHub integration** - OAuth 2.0 account linking, two-way task ↔ GitHub linking with read-only issue/PR sync and comment write-back
 - **Admin controls** - audit logs, user management, system-wide reports with filters
 
 ## How It Fits Together
@@ -54,7 +54,7 @@ flowchart LR
     end
 
     subgraph GitHub["GitHub"]
-        GH["GitHub API<br/>OAuth 2.0 · Issue/PR sync"]
+        GH["GitHub API<br/>OAuth 2.0 · read-only issue/PR sync + comment write-back"]
     end
 
     subgraph AWS_VPC["AWS VPC"]
@@ -71,11 +71,11 @@ flowchart LR
     NX --> APP
     APP -->|"SQLAlchemy 2.0"| RDS
     SPA -.->|"JWT HTTP-only cookie + bearer"| APP
-    APP -.->|"OAuth login · PyGithub Issue/Task sync"| GH
+    APP -.->|"OAuth login · PyGithub issue/PR pulls + comment write-back"| GH
     APP -.->|"project rooms · realtime events"| SPA
 ```
 
-**End-to-end flow:** a user signs in (credentials or GitHub OAuth) → the backend issues a JWT delivered as an HTTP-only cookie plus bearer header → the React SPA, served from CloudFront/S3, calls `/api/*` → nginx proxies to Flask on Gunicorn gevent → role decorators authorize the route → Socket.IO joins that user to their project rooms → task updates, comments, and GitHub sync events broadcast in real time.
+**End-to-end flow:** a user signs in (credentials or GitHub OAuth) → the backend issues a JWT delivered as an HTTP-only cookie plus bearer header → the React SPA, served from CloudFront/S3, calls `/api/*` → nginx proxies to Flask on Gunicorn gevent → role decorators authorize the route → Socket.IO verifies project membership and joins that user to their project rooms → task updates, comments, and GitHub link events broadcast in real time.
 
 ## Every Piece, in One Line
 
@@ -86,7 +86,7 @@ flowchart LR
 | **CI pipeline** | 8 job types, path-aware execution | Lint (ruff + ESLint), security (pip-audit + npm audit), unit tests, integration tests, E2E (Cypress), Docker build (layer-cached), k6 load test, and weekly CodeQL. Each job runs only when its paths change. |
 | **Load test gate** | k6 script with in-script thresholds + committed baseline | Every backend change runs 10 VUs of authenticated traffic for 30s against the live API. P95 > 500ms / P99 > 1s / error rate > 1% fails the build; a committed baseline catches order-of-magnitude regressions (3× P95, 4× P99, +5pp errors, −30% throughput). Separate from the functional test count - load iterations are measurements, not tests. |
 | **CI caching** | Docker layer caching + pip/npm dependency caching | Docker builds use `type=gha` cache (GitHub Actions cache layer sharing). Python pip and npm `node_modules` are cached via `actions/setup-python` / `setup-node`. |
-| **Real-time layer** | Socket.IO with gevent workers and JWT-authenticated rooms | Each project is a separate Socket.IO room - broadcasts never leak across projects. Gevent async worker handles concurrent WebSocket connections efficiently. |
+| **Real-time layer** | Socket.IO with gevent workers and JWT-authenticated rooms | Each project is a separate Socket.IO room; the server verifies project membership (`project_members`, admins bypass) before allowing a join, so broadcasts never leak across projects. Gevent async worker handles concurrent WebSocket connections efficiently. |
 | **Deployment gating** | Backend health check → Frontend deploy | Pipeline explicitly waits for ECS rolling update to pass health checks before deploying to CloudFront. Zero API/UI version mismatch on deploy. |
 | **Network isolation** | Three-tier security groups | Internet → ALB (443) → ECS (8000) → RDS (5432). No public database, no direct ECS access. |
 | **Frontend proxy** | Nginx with `envsubst` template for runtime API upstream resolution | Same frontend image deploys to any environment - `API_UPSTREAM` is injected at container start. Docker DNS resolver handles service discovery. |
@@ -97,7 +97,7 @@ flowchart LR
 | What | Why a reviewer should care |
 |---|---|
 | **A load gate, not just a test gate** | Every PR runs 10 VUs of authenticated k6 traffic for 30s against the real Postgres 15 service container. In-script thresholds (P95 ≤ 500ms, P99 ≤ 1s, <1% errors) plus a committed baseline that trips on 3× P95, 4× P99, +5pp errors, or −30% throughput. Load numbers are enforced by CI, not collected in a dashboard. |
-| **Rooms that cannot leak** | Socket.IO rooms are per project with a JWT-authenticated handshake - there is no code path for a broadcast to cross projects. Real-time done with gevent on a single worker, no separate WebSocket server. |
+| **Rooms that cannot leak** | Socket.IO rooms are per project with a JWT-authenticated handshake and a server-side project-membership check before join - there is no code path for a non-member to enter a room or for a broadcast to cross projects. Real-time done with gevent on a single worker, no separate WebSocket server. |
 | **Zero credentials, zero bill** | OIDC federation: IAM roles assumed per CI run, scoped to `main`, with zero static AWS secrets in GitHub. And the AWS deployment was fully built, validated, and recorded - then torn down, so running cost is $0. |
 | **One image, every environment** | Frontend nginx config is an `envsubst` template: `API_UPSTREAM` is injected at container start, so the same image serves local, staging, and production. No per-environment builds. |
 
@@ -105,14 +105,14 @@ flowchart LR
 
 | Metric | Value |
 |---|---|
-| Automated tests | **1,462 total** - 521 Pytest + 929 Jest + 12 Cypress (across 5 specs) |
+| Automated tests | **1,466 total** - 525 Pytest + 929 Jest + 12 Cypress (across 5 specs) |
 | Test spread | 61 backend test files · 71 frontend test suites |
-| Coverage gates | 85% backend line · 85% frontend (branches/functions/lines) |
+| Coverage gates | 80% backend line · 85% frontend (functions/lines/statements) + 75% branches - enforced on merges to `main` |
 | Code quality gates | ruff linting + format check (Python) · ESLint (JS) |
 | Security gates | pip-audit + npm audit (per-PR) · CodeQL `security-and-quality` (weekly) |
 | Docker image size | **~330MB** (was 600MB before multi-stage refactor) |
 | Container startup | Migrations + optional bootstrap + health check under 20s |
-| API response time | Sub-300ms p99 for authenticated JSON endpoints |
+| API response time | p95 ~79ms across CI load-gated endpoints (10 concurrent authenticated VUs); CI SLO thresholds p95<500ms / p99<1000ms |
 | Load test gate | k6: P95 ≤ 500ms · P99 ≤ 1s · <1% errors at 10 VUs sustained - enforced per PR |
 | Database | 12 tables, FK-indexed, Alembic migrations, RDS in private subnet |
 | Infrastructure cost | **$0** (offline - full AWS deployment validated, now torn down) |
@@ -123,7 +123,7 @@ flowchart LR
 
 ### AWS Infrastructure - ECS Fargate in custom VPC, RDS in private subnet, CloudFront frontend
 
-> Infrastructure proof: the recorded walkthrough of the AWS Console confirming the ECS cluster, security group rules, RDS private subnet, CloudFront distribution, and a passing pipeline run with OIDC federation. The app was fully deployed on AWS - now offline to control costs.
+> Infrastructure proof: the recorded walkthrough of the AWS Console confirming the ECS cluster, security group rules, RDS private subnet, CloudFront distribution, and a passing pipeline run with OIDC federation. The app was fully deployed on AWS - now offline to control costs. Transparency note: infrastructure was provisioned via the AWS console (recorded walkthrough in `docs/demo`); Terraform IaC is not yet committed.
 
 ![AWS Architecture](docs/demo/aws.gif)
 
