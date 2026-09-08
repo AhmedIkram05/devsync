@@ -195,21 +195,55 @@ def test_socket_room_flow_and_broadcast_events(app_and_socket, app):
     socket_module.connected_users.clear()
     socket_module.project_rooms.clear()
 
+    # Seed project 88 with two members and one non-member so the room join is
+    # server-side membership-gated.
+    from src.db.models import Project, User, db, project_members
+
+    with app.app_context():
+        db.create_all()
+        db.session.add_all(
+            [
+                User(id=1, name="Member One", email="member1@example.com", password="x", role="developer"),
+                User(id=2, name="Member Two", email="member2@example.com", password="x", role="developer"),
+                User(id=3, name="Outsider", email="outsider@example.com", password="x", role="developer"),
+                Project(id=88, name="Project 88", created_by=1),
+            ]
+        )
+        db.session.flush()
+        db.session.execute(
+            project_members.insert(),
+            [
+                {"project_id": 88, "user_id": 1},
+                {"project_id": 88, "user_id": 2},
+            ],
+        )
+        db.session.commit()
+
     client_one = socketio.test_client(app, headers=auth_headers(app, user_id=1))
     client_two = socketio.test_client(app, headers=auth_headers(app, user_id=2))
+    client_three = socketio.test_client(app, headers=auth_headers(app, user_id=3))
 
     assert client_one.is_connected()
     assert client_two.is_connected()
+    assert client_three.is_connected()
 
     register_one = client_one.emit("register", {}, callback=True)
     register_two = client_two.emit("register", {}, callback=True)
+    register_three = client_three.emit("register", {}, callback=True)
     assert register_one["status"] == "success"
     assert register_two["status"] == "success"
+    assert register_three["status"] == "success"
 
     join_one = client_one.emit("join_project", {"project_id": 88}, callback=True)
     join_two = client_two.emit("join_project", {"project_id": 88}, callback=True)
     assert join_one["status"] == "success"
     assert join_two["status"] == "success"
+
+    # A non-member is refused entry to the project room.
+    join_three = client_three.emit("join_project", {"project_id": 88}, callback=True)
+    assert join_three["status"] == "error"
+    assert "not a member" in join_three["message"]
+
     assert set(socket_module.project_rooms[88]) == {1, 2}
 
     task_update_ack = client_one.emit(
@@ -245,6 +279,7 @@ def test_socket_room_flow_and_broadcast_events(app_and_socket, app):
 
     client_one.disconnect()
     client_two.disconnect()
+    client_three.disconnect()
 
     assert 1 not in socket_module.connected_users
     assert 2 not in socket_module.connected_users

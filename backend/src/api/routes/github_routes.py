@@ -5,6 +5,7 @@ from urllib.parse import urlencode
 from flask import current_app, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
+from ...auth.encryption import encrypt_token
 from ...auth.rbac import Role, require_permission
 from ...db.models import GitHubToken, User, db
 from ...services.github_client import GitHubClient
@@ -95,15 +96,15 @@ def register_routes(bp):
             existing_token = GitHubToken.query.filter_by(user_id=user_id).first()
 
             if existing_token:
-                existing_token.access_token = token_data["access_token"]
-                existing_token.refresh_token = token_data.get("refresh_token")
+                existing_token.access_token = encrypt_token(token_data["access_token"])
+                existing_token.refresh_token = encrypt_token(token_data.get("refresh_token"))
                 existing_token.token_expires_at = token_data.get("token_expires_at")
             else:
-                # Create a new token record
+                # Create a new token record (encrypted at rest)
                 github_token = GitHubToken(
                     user_id=user_id,
-                    access_token=token_data["access_token"],
-                    refresh_token=token_data.get("refresh_token"),
+                    access_token=encrypt_token(token_data["access_token"]),
+                    refresh_token=encrypt_token(token_data.get("refresh_token")),
                     token_expires_at=token_data.get("token_expires_at"),
                 )
                 db.session.add(github_token)
@@ -221,15 +222,15 @@ def register_routes(bp):
             existing_token = GitHubToken.query.filter_by(user_id=user_id).first()
 
             if existing_token:
-                existing_token.access_token = token_data["access_token"]
-                existing_token.refresh_token = token_data.get("refresh_token")
+                existing_token.access_token = encrypt_token(token_data["access_token"])
+                existing_token.refresh_token = encrypt_token(token_data.get("refresh_token"))
                 existing_token.token_expires_at = token_data.get("token_expires_at")
             else:
-                # Create a new token record
+                # Create a new token record (encrypted at rest)
                 github_token = GitHubToken(
                     user_id=user_id,
-                    access_token=token_data["access_token"],
-                    refresh_token=token_data.get("refresh_token"),
+                    access_token=encrypt_token(token_data["access_token"]),
+                    refresh_token=encrypt_token(token_data.get("refresh_token")),
                     token_expires_at=token_data.get("token_expires_at"),
                 )
                 db.session.add(github_token)
@@ -259,11 +260,9 @@ def register_routes(bp):
         # Handle both GET and POST requests
         if request.method == "GET":
             user_id = request.args.get("userId")
-            state = request.args.get("state")
         else:  # POST
             data = request.get_json() or {}
             user_id = data.get("userId")
-            state = data.get("state")
 
         if not user_id:
             return jsonify({"error": "User ID is required"}), 400
@@ -277,8 +276,9 @@ def register_routes(bp):
         if not user:
             return jsonify({"error": "User not found"}), 404
 
-        if not state:
-            state = GitHubClient.create_state_param(user_id)
+        # A client-supplied state may be forged; only server-signed states are
+        # accepted on the callback, so always issue a fresh signed one.
+        state = GitHubClient.create_state_param(user_id)
 
         # Directly redirect to GitHub OAuth
         client_id = current_app.config.get("GITHUB_CLIENT_ID")

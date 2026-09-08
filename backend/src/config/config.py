@@ -99,6 +99,10 @@ class Config:
     JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
 
+    # At-rest encryption key for tokens stored in the DB (e.g. GitHub OAuth).
+    # Optional: when unset, a Fernet key is derived deterministically from SECRET_KEY.
+    FERNET_KEY = os.getenv("FERNET_KEY", "")
+
     # GitHub OAuth Configuration
     GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
     GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")

@@ -2,6 +2,8 @@ from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from backend.src.services.github_client import GitHubClient as RealGitHubClient
+
 
 def _issue_payload(number=1):
     return {
@@ -134,15 +136,18 @@ def test_github_callback_success_existing_token(
     mock_token.query.filter_by.return_value.first.return_value = existing_token
     mock_user.query.get.return_value = SimpleNamespace(github_username=None, github_connected=False)
 
+    mock_client.parse_state_param.side_effect = RealGitHubClient.parse_state_param
     mock_client.exchange_code_for_token.return_value = {"access_token": "new-token"}
     client_instance = mock_client.return_value
     client_instance.get_user_profile.return_value = {"login": "octocat"}
 
-    with patch("base64.b64decode", return_value=b'{"userId": 7}'):
-        with app.test_request_context("/github/callback?code=abc&state=Zm9v"):
-            from backend.src.api.controllers.github_controller import github_callback
+    with app.app_context():
+        signed_state = RealGitHubClient.create_state_param(7)
 
-            result = github_callback()
+    with app.test_request_context(f"/github/callback?code=abc&state={signed_state}"):
+        from backend.src.api.controllers.github_controller import github_callback
+
+        result = github_callback()
 
     assert "success=true" in result
     mock_db.session.commit.assert_called_once()
@@ -511,15 +516,18 @@ def test_github_callback_success_new_token(mock_client, mock_token, mock_user, m
     mock_token.query.filter_by.return_value.first.return_value = None
     mock_user.query.get.return_value = SimpleNamespace(github_username=None, github_connected=False)
 
+    mock_client.parse_state_param.side_effect = RealGitHubClient.parse_state_param
     mock_client.exchange_code_for_token.return_value = {"access_token": "new-token"}
     client_instance = mock_client.return_value
     client_instance.get_user_profile.return_value = {"login": "octocat"}
 
-    with patch("base64.b64decode", return_value=b'{"userId": 7}'):
-        with app.test_request_context("/github/callback?code=abc&state=Zm9v"):
-            from backend.src.api.controllers.github_controller import github_callback
+    with app.app_context():
+        signed_state = RealGitHubClient.create_state_param(7)
 
-            result = github_callback()
+    with app.test_request_context(f"/github/callback?code=abc&state={signed_state}"):
+        from backend.src.api.controllers.github_controller import github_callback
+
+        result = github_callback()
 
     assert "success=true" in result
     mock_db.session.add.assert_called_once()

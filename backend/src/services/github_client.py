@@ -2,9 +2,9 @@
 GitHub API client utilities for DevSync with rate limit handling
 """
 
-import base64
 import json
 import logging
+import os
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 from flask import current_app
+from itsdangerous import BadData, SignatureExpired, URLSafeTimedSerializer
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -43,38 +44,35 @@ class GitHubClient:
         return None
 
     @staticmethod
+    def _state_serializer():
+        """Signed state serializer keyed off the app SECRET_KEY."""
+        try:
+            secret_key = current_app.config.get("SECRET_KEY")
+        except RuntimeError:
+            secret_key = None
+        secret = secret_key or os.getenv("JWT_SECRET_KEY", "dev-secret-key")
+        return URLSafeTimedSerializer(secret, salt="github-oauth-state")
+
+    @staticmethod
     def create_state_param(user_id):
-        """Create a secure state parameter with encoded user ID"""
-        # Create a dictionary with user ID and a random component
+        """Create an HMAC-signed state parameter bound to a user ID and nonce."""
         state_data = {"userId": user_id, "nonce": str(uuid.uuid4())}
-
-        # Convert to JSON and encode as base64
-        state_json = json.dumps(state_data)
-        state = base64.b64encode(state_json.encode("utf-8")).decode("utf-8")
-
-        # Replace characters that might cause issues in URLs
-        state = state.replace("+", "-").replace("/", "_").replace("=", "")
-
-        return state
+        return GitHubClient._state_serializer().dumps(state_data)
 
     @staticmethod
     def parse_state_param(state):
-        """Parse a state parameter to extract the user ID"""
+        """Verify a state parameter's signature and age, returning the user ID or None."""
+        if not state:
+            return None
         try:
-            # Add padding if necessary
-            padding = len(state) % 4
-            if padding:
-                state += "=" * (4 - padding)
-
-            # Replace URL-safe characters with base64 standard
-            state = state.replace("-", "+").replace("_", "/")
-
-            # Decode the base64 string
-            decoded_bytes = base64.b64decode(state)
-            decoded_state = json.loads(decoded_bytes.decode("utf-8"))
-
-            # Extract the user ID
+            decoded_state = GitHubClient._state_serializer().loads(state, max_age=600)
             return decoded_state.get("userId")
+        except SignatureExpired:
+            logger.error("OAuth state parameter expired")
+            return None
+        except BadData:
+            logger.error("OAuth state parameter failed signature verification")
+            return None
         except Exception as e:
             logger.error(f"Error parsing state parameter: {str(e)}")
             return None

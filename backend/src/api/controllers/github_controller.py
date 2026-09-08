@@ -9,6 +9,7 @@ from datetime import datetime
 from flask import current_app, jsonify, redirect, request
 from flask_jwt_extended import get_jwt_identity
 
+from ...auth.encryption import decrypt_token, encrypt_token
 from ...db.models import (
     GitHubRepository,
     GitHubToken,
@@ -88,34 +89,13 @@ def github_callback():
             # Clean up used state
             del oauth_states[state]
         else:
-            # This might be a URL-safe base64-encoded state from frontend
-            import base64
-            import json
+            # Otherwise it must be an HMAC-signed state token issued by this
+            # server; a forged or expired state is rejected here.
+            user_id = GitHubClient.parse_state_param(state)
 
-            # Add padding back if needed for base64 decoding
-            padding = len(state) % 4
-            if padding:
-                state += "=" * (4 - padding)
-
-            # Replace URL-safe characters back to standard base64
-            state = state.replace("-", "+").replace("_", "/")
-
-            # Decode the base64 string
-            try:
-                decoded_bytes = base64.b64decode(state)
-                decoded_state = json.loads(decoded_bytes.decode("utf-8"))
-
-                # Extract the user_id from the decoded state
-                user_id = decoded_state.get("userId")
-
-                if not user_id:
-                    logger.error("No userId found in decoded state")
-                    return jsonify({"error": "Invalid state parameter format - missing userId"}), 400
-
-                logger.info(f"Successfully decoded state with userId: {user_id}")
-            except Exception as e:
-                logger.error(f"Error decoding state: {str(e)}")
-                return jsonify({"error": "Invalid state parameter format - decoding error"}), 400
+            if not user_id:
+                logger.error("Rejected OAuth callback: state not signed by this server or expired")
+                return jsonify({"error": "Invalid state parameter format"}), 400
     except Exception as e:
         logger.error(f"Error processing state parameter: {str(e)}")
         return jsonify({"error": "Invalid state parameter format - processing error"}), 400
@@ -143,16 +123,16 @@ def github_callback():
     existing_token = GitHubToken.query.filter_by(user_id=user_id).first()
 
     if existing_token:
-        # Update existing token
-        existing_token.access_token = token_data["access_token"]
-        existing_token.refresh_token = token_data.get("refresh_token")
+        # Update existing token (encrypted at rest)
+        existing_token.access_token = encrypt_token(token_data["access_token"])
+        existing_token.refresh_token = encrypt_token(token_data.get("refresh_token"))
         existing_token.token_expires_at = token_data.get("token_expires_at")
     else:
-        # Create new token record
+        # Create new token record (encrypted at rest)
         github_token = GitHubToken(
             user_id=user_id,
-            access_token=token_data["access_token"],
-            refresh_token=token_data.get("refresh_token"),
+            access_token=encrypt_token(token_data["access_token"]),
+            refresh_token=encrypt_token(token_data.get("refresh_token")),
             token_expires_at=token_data.get("token_expires_at"),
         )
         db.session.add(github_token)
@@ -187,7 +167,7 @@ def get_github_repositories():
         return jsonify({"message": "GitHub account not connected"}), 401
 
     # Create GitHub client
-    github_client = GitHubClient(token.access_token)
+    github_client = GitHubClient(decrypt_token(token.access_token))
 
     # Fetch repositories (with pagination support)
     page = request.args.get("page", 1, type=int)
@@ -423,7 +403,7 @@ def add_github_repository():
         return jsonify({"message": "GitHub account not connected"}), 401
 
     # Create GitHub client
-    github_client = GitHubClient(token.access_token)
+    github_client = GitHubClient(decrypt_token(token.access_token))
 
     # Parse repository name (owner/repo)
     repo_parts = data["repository_name"].split("/")
@@ -480,7 +460,7 @@ def get_repository_issues(repo_id):
         return jsonify({"message": "GitHub account not connected"}), 401
 
     # Create GitHub client
-    github_client = GitHubClient(token.access_token)
+    github_client = GitHubClient(decrypt_token(token.access_token))
 
     # Parse repository name to get owner and repo
     repo_parts = repo.repo_name.split("/")
@@ -533,7 +513,7 @@ def get_repository_pulls(repo_id):
         return jsonify({"message": "GitHub account not connected"}), 401
 
     # Create GitHub client
-    github_client = GitHubClient(token.access_token)
+    github_client = GitHubClient(decrypt_token(token.access_token))
 
     # Parse repository name to get owner and repo
     repo_parts = repo.repo_name.split("/")
@@ -624,7 +604,7 @@ def link_task_with_github(task_id):
     # If we have a GitHub token, add a comment to the issue/PR referencing this task
     token = GitHubToken.query.filter_by(user_id=user_id).first()
     if token and (data.get("issue_number") or data.get("pull_request_number")):
-        github_client = GitHubClient(token.access_token)
+        github_client = GitHubClient(decrypt_token(token.access_token))
 
         # Parse repository name
         repo_parts = repo.repo_name.split("/")
