@@ -2,7 +2,6 @@
 
 import pytest
 from sqlalchemy import text
-
 from src.auth.encryption import decrypt_token, encrypt_token
 from src.db.models import GitHubToken, db
 
