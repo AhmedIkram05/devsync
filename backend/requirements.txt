@@ -11,7 +11,7 @@ Flask==2.3.3
 flask-socketio==5.3.1
 Flask-SQLAlchemy==3.1.1
 SQLAlchemy>=2.0.30
-Flask-Migrate==4.0.5
+Flask-Migrate==4.1.0
 flask-cors==5.0.1
 
 # Authentication
