@@ -6,6 +6,9 @@ from flask_jwt_extended import decode_token
 from flask_socketio import SocketIO, disconnect, emit, join_room, leave_room
 from jwt.exceptions import InvalidTokenError
 
+from .auth.rbac import Role
+from .db.models import User, db, project_members
+
 # Initialize SocketIO
 socketio = SocketIO(cors_allowed_origins="*")
 logger = logging.getLogger(__name__)
@@ -145,6 +148,21 @@ def handle_register(data, user_id):
     return {"status": "success", "message": "Registered successfully"}
 
 
+def _membership_denied(project_id, user_id):
+    """Return True when *user_id* may not join *project_id*'s room: project members and admins pass."""
+    try:
+        project_id = int(project_id)
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return True
+
+    if db.session.query(project_members).filter_by(project_id=project_id, user_id=user_id).first() is not None:
+        return False
+
+    user = db.session.get(User, user_id)
+    return not (user is not None and user.role == Role.ADMIN.value)
+
+
 # Room management handlers
 @socketio.on("join_project")
 @authenticated_only
@@ -153,6 +171,11 @@ def handle_join_project(data, user_id):
     project_id = data.get("project_id")
     if not project_id:
         return {"status": "error", "message": "Project ID required"}
+
+    # Server-side enforcement: only project members (or admins) may join a room.
+    if _membership_denied(project_id, user_id):
+        print(f"Rejected non-member {user_id} from joining project {project_id}")
+        return {"status": "error", "message": "You are not a member of this project"}
 
     # Add user to project room
     join_room(f"project_{project_id}")

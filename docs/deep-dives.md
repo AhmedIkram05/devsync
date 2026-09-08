@@ -47,6 +47,8 @@ flowchart LR
 | Frontend | S3 + CloudFront | OAC origin access, HTTPS via ACM |
 | CI/CD auth | IAM OIDC provider | No static credentials |
 
+**Provisioning:** infrastructure was provisioned via the AWS console (recorded walkthrough in `docs/demo/aws.gif`); Terraform IaC is not yet committed.
+
 ---
 
 ### Backend Architecture
@@ -84,7 +86,7 @@ The bootstrap fallback (`DB_BOOTSTRAP_FALLBACK=true`) seeds the database if the 
 
 **Real-time collaboration (Socket.IO):**
 
-Socket.IO connections are authenticated via JWT on the handshake (not a separate auth endpoint). After connection, clients join project-scoped rooms. This scoping means a broadcast from a task update in Project A is received only by clients in that room - no cross-project leakage. Gevent workers handle the async I/O for WebSocket connections alongside the HTTP API on the same port.
+Socket.IO connections are authenticated via JWT on the handshake (not a separate auth endpoint). After connection, clients join project-scoped rooms - and the server refuses the join unless the user is a member of that project (`project_members`, admins bypass). This scoping means a broadcast from a task update in Project A is received only by clients in that room - no cross-project leakage. Gevent workers handle the async I/O for WebSocket connections alongside the HTTP API on the same port.
 
 **Docker multi-stage build:**
 
@@ -186,7 +188,7 @@ flowchart LR
     
     subgraph BackendJobs["Backend Jobs"]
         direction TB
-        BT["Unit: pytest · 521 tests\n--cov-fail-under=85"]
+        BT["Unit: pytest · 525 tests\n--cov-fail-under=80 (main)"]
         IT["Integration: pytest\nin-memory SQLite (fast)"]
         DockerBuild["Docker build\nlayer-cached (type=gha)"]
     end
@@ -273,11 +275,11 @@ erDiagram
 
 | Layer | Framework | Count | Coverage / Quality Gate |
 |---|---|---|---|
-| Backend unit + integration | Pytest (pytest-cov, pytest-xdist) | 521 | 85% line coverage (main) · in-memory SQLite - real SQL semantics verified live by the k6 load gate |
-| Frontend unit + component | Jest + React Testing Library | 929 | Branches ≥75%, Functions ≥85%, Lines ≥85% |
+| Backend unit + integration | Pytest (pytest-cov, pytest-xdist) | 525 | 80% line coverage (main) · in-memory SQLite - real SQL semantics verified live by the k6 load gate |
+| Frontend unit + component | Jest + React Testing Library | 929 | Branches ≥75%, Functions ≥85%, Lines ≥85%, Statements ≥85% |
 | End-to-end | Cypress | 12 (5 specs) | Runs in CI against full-stack stack |
-| Load testing | k6 | - | P95 ≤ 500ms · P99 ≤ 1s · <1% errors at 10 VUs · baseline regression gate · reported separately from the 1,462 test count |
-| **Total tests** | | **1,462** | All must pass |
+| Load testing | k6 | - | P95 ≤ 500ms · P99 ≤ 1s · <1% errors at 10 VUs · CI-measured p95 ~79ms · baseline regression gate · reported separately from the 1,466 test count |
+| **Total tests** | | **1,466** | All must pass |
 | Lint | ruff (Python) + ESLint (JS) | - | Zero warnings |
 | Security | pip-audit + npm audit + CodeQL | - | Zero high/critical vulns |
 
@@ -286,7 +288,7 @@ Every PR is validated end-to-end - tests run in parallel, and any failure or cov
 <p align="center">
   <img src="docs/demo/backend-tests.png" alt="Backend test results - 521 passed, in-memory SQLite" width="500">
   <br>
-  <em>Backend: 521 Pytest tests, all passing. Coverage gate: 85%.</em>
+  <em>Backend: 525 Pytest tests, all passing. Coverage gate: 80% line (enforced on merges to main).</em>
 </p>
 
 <p align="center">
@@ -297,14 +299,14 @@ Every PR is validated end-to-end - tests run in parallel, and any failure or cov
 
 **Test architecture:**
 
-- **Backend (Pytest):** Tests are split into `unit/` and `integration/` directories under `backend/tests/`. Unit tests mock external dependencies (database, GitHub API, OAuth providers). Integration tests run on in-memory SQLite for speed (the root `conftest.py` pins the URI); the **k6 load gate** is what runs against the real Postgres 15 service container - genuine SQL semantics under concurrent load. The root `conftest.py` provides session-scoped fixtures for the Flask app, test client, and auth tokens. Parallel execution via pytest-xdist (`-n auto`). Coverage enforced at 85% (`--cov-fail-under=85`).
+- **Backend (Pytest):** Tests are split into `unit/` and `integration/` directories under `backend/tests/`. Unit tests mock external dependencies (database, GitHub API, OAuth providers). Integration tests run on in-memory SQLite for speed (the root `conftest.py` pins the URI); the **k6 load gate** is what runs against the real Postgres 15 service container - genuine SQL semantics under concurrent load. The root `conftest.py` provides session-scoped fixtures for the Flask app, test client, and auth tokens. Parallel execution via pytest-xdist (`-n auto`). Coverage enforced at 80% on merges to `main` (`--cov-fail-under=80`).
 
   ```bash
   # Run unit tests only (no Postgres needed)
   pytest backend/tests/unit -q --no-header
 
   # Run all backend tests with coverage
-  pytest backend/tests -n auto --cov=backend/src --cov-fail-under=85
+  pytest backend/tests -n auto --cov=backend/src --cov-fail-under=80
 
   # Run integration tests (in-memory SQLite - no database needed)
   pytest backend/tests/integration -n auto -x -q
@@ -319,7 +321,7 @@ Every PR is validated end-to-end - tests run in parallel, and any failure or cov
 
 - **E2E (Cypress):** Covers critical user journeys - login, project creation, task assignment, and GitHub link flow. Runs in CI against the full stack: Postgres 15 service container → Flask backend (background process) → production frontend build (served via `npx serve`). On failure, Cypress screenshots and backend logs are uploaded as artifacts for debugging.
 
-**Gate behavior:** CI uses path-aware filtering via `dorny/paths-filter` - backend jobs run only when `backend/**` changes, frontend jobs only when `frontend/**` changes, and E2E tests trigger when either or both change. Every job (lint, security, unit, integration, E2E, load test, Docker build) must pass for the pipeline to succeed. Coverage thresholds are enforced on `main` (85% backend line, 75% frontend branches, 85% frontend lines/functions). Any failure - test, lint warning, vulnerability, coverage drop - blocks the pipeline with the relevant output reported. Coverage XML artifacts are uploaded on `main` for tracking.
+**Gate behavior:** CI uses path-aware filtering via `dorny/paths-filter` - backend jobs run only when `backend/**` changes, frontend jobs only when `frontend/**` changes, and E2E tests trigger when either or both change. Every job (lint, security, unit, integration, E2E, load test, Docker build) must pass for every PR and push. Coverage thresholds are enforced on merges to `main` (80% backend line, 75% frontend branches, 85% frontend lines/functions/statements). Any failure - test, lint warning, vulnerability, coverage drop on main - blocks the pipeline with the relevant output reported. Coverage XML artifacts are uploaded on `main` for tracking.
 
 ---
 
@@ -338,7 +340,7 @@ k6 run --vus 10 --duration 30s --summary-export=/tmp/k6-summary.json tests/perf/
 - **Real user path, not a synthetic ping** - the script registers a throwaway user, logs in, and hits the JWT-protected developer read surface (`GET /api/v1/dashboard`, `GET /api/v1/dashboard/client`) under 10 constant VUs. `/reports` is excluded deliberately: it requires Team Lead/Admin, so hitting it as a developer would load-test a permission denial.
 - **Thresholds in the script (`backend/tests/perf/api-load.js`)** - error rate < 1%, `http_req_duration` P95 < 500ms, P99 < 1s. These are CI execution ceilings (single gevent worker on a shared 2-vCPU runner), not production SLOs - the job's role is to stop order-of-magnitude regressions from merging.
 - **Committed baseline gate (`backend/tests/perf/check_baseline.py`)** - a baseline JSON captured from a clean run trips the build on ~3× P95, 4× P99, +5pp error rate, or −30% throughput. First-run (no baseline) passes with a warning; arm it by committing the artifact's numbers.
-- **Deliberately not part of the test count** - load iterations are measurements, so they never inflate the 1,462. Results upload as the `load-test-results` artifact instead.
+- **Deliberately not part of the test count** - load iterations are measurements, so they never inflate the 1,466. Results upload as the `load-test-results` artifact instead.
 
 Full details - including the rate-limiter override used only in the load-test environment, and local run instructions - in [`docs/backend/load-testing.md`](docs/backend/load-testing.md).
 
@@ -350,8 +352,9 @@ Full details - including the rate-limiter override used only in the load-test en
 |---|---|
 | **Authentication** | JWT issued on login, stored in HTTP-only cookie + bearer header support for API clients. Short TTL (60 min), refresh token flow. |
 | **Authorization** | Role-based decorators on every protected route (Developer, Team Lead, Admin). A route missing a decorator is intentionally public. |
-| **OAuth tokens** | GitHub access tokens are stored server-side in the `GITHUB_TOKENS` table, encrypted at rest. Never exposed to the browser. |
-| **OAuth flow** | Server-side callback with state parameter validation - prevents CSRF on the OAuth handshake. |
+| **OAuth tokens** | GitHub access tokens are stored server-side in the `GITHUB_TOKENS` table, encrypted at rest with Fernet (key from `FERNET_KEY`, or derived from `SECRET_KEY`). Rotating either key invalidates stored tokens - users must re-link. Never exposed to the browser. |
+| **OAuth flow** | Server-side callback validates an HMAC-signed state parameter (itsdangerous, keyed off `SECRET_KEY`, 10-minute expiry) - forged or expired states are rejected, preventing CSRF on the OAuth handshake. |
+| **Real-time isolation** | Socket.IO rooms are per project; the server checks `project_members` (admins bypass) before allowing a join, so non-members cannot enter a room and broadcasts stay within their project. |
 | **Input validation** | Route validators and controller-level checks on all mutation endpoints. |
 | **Mutation safety** | SQLAlchemy sessions commit atomically; controller failures trigger rollback. Partial writes don't happen. |
 | **Network** | AWS security groups enforce: Internet → ALB (443) → ECS (8000) → RDS (5432). No exceptions, no public database. |

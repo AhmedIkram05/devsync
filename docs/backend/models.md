@@ -20,7 +20,7 @@ This document explains the database models used in DevSync to help team members 
 
 ### GitHub Integration Models
 
-- **GitHubToken**: Stores OAuth tokens for accessing the GitHub API
+- **GitHubToken**: Stores OAuth tokens for accessing the GitHub API. `access_token` and `refresh_token` are encrypted at rest with Fernet (`FERNET_KEY`, or derived from `SECRET_KEY`); authorizing code encrypts on write and decrypts on read. Rotating the key invalidates stored tokens - users must re-link their GitHub account.
 - **GitHubRepository**: Represents tracked repositories
 - **TaskGitHubLink**: Maps tasks to GitHub issues/PRs in specific repositories. Each link stores a `task_id`, `repo_id`, and either an `issue_number` or `pull_request_number`.
 

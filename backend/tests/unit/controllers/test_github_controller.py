@@ -1,5 +1,3 @@
-import base64
-import json
 import os
 import sys
 import unittest
@@ -26,6 +24,8 @@ from backend.src.api.controllers.github_controller import (
     initiate_github_auth,
     link_task_with_github,
 )
+from backend.src.auth.encryption import decrypt_token
+from backend.src.services.github_client import GitHubClient as RealGitHubClient
 
 
 class TestGitHubController(unittest.TestCase):
@@ -338,16 +338,15 @@ class TestGitHubController(unittest.TestCase):
     def test_github_callback_base64_encoded_state(
         self, mock_user_class, mock_token_class, mock_db, mock_oauth_states, mock_github_client
     ):
-        """Test github_callback with base64 encoded state"""
-        # Create a state parameter that mimics what the frontend might send
-        state_data = {"userId": 42}
-        json_state = json.dumps(state_data).encode("utf-8")
-        b64_state = base64.b64encode(json_state).decode("utf-8")
-        # Replace standard base64 chars with URL-safe ones
-        url_safe_state = b64_state.replace("+", "-").replace("/", "_").rstrip("=")
+        """Test github_callback with an HMAC-signed state parameter"""
+        # Use the real serializer implementation for signature verification
+        mock_github_client.parse_state_param.side_effect = RealGitHubClient.parse_state_param
+
+        # A state signed by this server (the old unsigned base64 form is now rejected)
+        signed_state = RealGitHubClient.create_state_param(42)
 
         # Setup mocks
-        mock_request.args = ImmutableMultiDict([("code", "test-code"), ("state", url_safe_state)])
+        mock_request.args = ImmutableMultiDict([("code", "test-code"), ("state", signed_state)])
 
         # Mock oauth_states to not contain this state
         mock_oauth_states.__contains__.return_value = False
@@ -419,8 +418,9 @@ class TestGitHubController(unittest.TestCase):
         github_callback()
 
         # Assertions
-        self.assertEqual(mock_existing_token.access_token, "new-access-token")
-        self.assertEqual(mock_existing_token.refresh_token, "new-refresh-token")
+        self.assertNotEqual(mock_existing_token.access_token, "new-access-token")  # stored encrypted
+        self.assertEqual(decrypt_token(mock_existing_token.access_token), "new-access-token")
+        self.assertEqual(decrypt_token(mock_existing_token.refresh_token), "new-refresh-token")
         self.assertEqual(mock_existing_token.token_expires_at, "2023-12-31T23:59:59Z")
         self.assertEqual(mock_user.github_username, "updateduser")
         self.assertEqual(mock_user.github_connected, True)

@@ -19,11 +19,13 @@ from .models import (
     Task,
     TaskGitHubLink,
     User,
+    project_members,
 )
 
 # Export all models for easy importing
 __all__ = [
     "db",
+    "project_members",
     "User",
     "Task",
     "Project",
