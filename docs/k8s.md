@@ -1,4 +1,4 @@
-# DevSync on K8s (standing GKE Autopilot, teardown ≤T+14)
+# DevSync on K8s (standing GKE Standard, teardown ≤T+14)
 
 Thin pointer. Full design: `docs/planning/k8s-prod-platform.md` §§5.5/6/8/10/11 (v1.9).
 
@@ -9,10 +9,10 @@ from first deploy to local teardown no later than 14 days after first `apply`
 ## Topology
 
 ```
-Browser → Ingress (GCE, TLS via Google-managed cert) → FE (nginx x2) → BE (Flask singleton :8000) → PG (demo in-cluster) / managed (Cloud SQL overlay, unapplied)
+Browser → Ingress (GCE, TLS via Google-managed cert) → FE (nginx x2) → BE (Flask singleton :8000) → PG (in-cluster standing env) / managed (Cloud SQL overlay, unapplied)
 ```
 
-- Demo overlay (`k8s/overlays/demo`): in-cluster `postgres:16`, live host `gcp.devsyncapp.me` (standing, first deploy → teardown).
+- Prod overlay (`k8s/overlays/prod`): in-cluster `postgres:16`, live host `gcp.devsyncapp.me` (standing, first deploy → teardown).
 - PR overlay (`k8s/overlays/pr`): per-`pr-<n>` namespace, no Ingress/certs, port-forward smoke.
 - managed-db overlay (`k8s/overlays/managed-db`): prod shape — drops `postgres.yaml`, `DATABASE_URL` stays a Secret Manager ref pointed at Cloud SQL. Reviewed but **never applied** (no live DB).
 
@@ -23,10 +23,10 @@ Browser → Ingress (GCE, TLS via Google-managed cert) → FE (nginx x2) → BE 
 | D1 | Deployments (FE+BE) + migrate Job only |
 | D2 | Backend `replicas: 1` singleton (Socket.IO rooms in-memory, `workers=1`) |
 | D3 | Frontend `replicas: 2` + dormant HPA (2–6, CPU 60%) |
-| D4 | Standing zonal Autopilot `us-central1-a`, local teardown ≤14 days after first apply (~$1–3/day idle) |
+| D4 | Standing **standard zonal** `us-central1-a` (two regional create attempts died in `GCE_STOCKOUT`; single-zone control plane acceptable for ≤14 days), teardown ≤14 days after first apply (~$1–3/day idle) |
 | D5 | TF platform, Kustomize workloads |
 | D6 | Migrations via K8s Job, `MIGRATE_ON_BOOT=false` |
-| D7 | Demo DB in-cluster ephemeral, explicitly demo-only |
+| D7 | In-cluster Postgres DB (standing env); promotion path is the managed-db overlay, unapplied by design |
 | D8 | No Redis/Celery in v1 (dead deps) |
 | D9 | AR digest-pinned, Trivy gate, cosign keyless + SBOM + SLSA |
 | D10 | Namecheap A-record (one-time, after first deploy) + GCE Ingress + Google-managed cert, live first deploy → teardown |
@@ -48,7 +48,7 @@ No `k8s-destroy.yml` — teardown is a local RUNBOOK checklist (see `RUNBOOK.md`
 - Backend: _TODO — `REGION-docker.pkg.dev/PROJECT/devsync-repo/devsync-backend@sha256:<digest>`_
 - Frontend: _TODO — `REGION-docker.pkg.dev/PROJECT/devsync-repo/devsync-frontend@sha256:<digest>`_
 
-Deployed via `kustomize edit set image` with digests (see `Makefile` `k8s-up` guard — refuses `:latest` placeholders without `BACKEND_DIGEST`/`FRONTEND_DIGEST`).
+Digest-pinned two ways to the same result: CD (`k8s-cd.yml`) uses `kustomize edit set image`; local deploys use the `make k8s-up` render-pipe (its guard refuses `:latest` placeholders without `BACKEND_DIGEST`/`FRONTEND_DIGEST`).
 
 Verify (reviewer line, plan §5.1):
 
