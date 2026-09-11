@@ -10,7 +10,7 @@ const API_BASE_URL = (() => {
 
   const protocol = window.location.protocol || 'http:';
   const hostname = window.location.hostname || 'localhost';
-  return `${protocol}//${hostname}:8000/api/v1`;
+  return process.env.NODE_ENV === 'development' ? `${protocol}//${hostname}:8000/api/v1` : `${protocol}//${hostname}/api/v1`;
 })();
 
 const BASE_URL = `${API_BASE_URL}/github`;

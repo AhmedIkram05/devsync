@@ -1,15 +1,19 @@
 #!/bin/bash
 set -e
 
-echo "Running database migrations..."
-python -c "
+if [ "${MIGRATE_ON_BOOT:-true}" != "false" ]; then
+    echo "Running database migrations..."
+    python -c "
 from src.app import create_app
 from flask_migrate import upgrade
 app, socketio = create_app()
 with app.app_context():
     upgrade()
 "
-echo "Migrations complete."
+    echo "Migrations complete."
+else
+    echo "MIGRATE_ON_BOOT=false; skipping on-boot migrations (migrate Job owns them)."
+fi
 
 if [ "${DB_BOOTSTRAP_FALLBACK:-false}" = "true" ]; then
     echo "DB_BOOTSTRAP_FALLBACK enabled; verifying database bootstrap..."

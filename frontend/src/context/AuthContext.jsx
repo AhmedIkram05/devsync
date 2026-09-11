@@ -82,7 +82,7 @@ export const AuthProvider = ({ children }) => {
               setPermissions(user.permissions);
             } else {
               // Fetch permissions if not in localStorage
-              fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1'}/auth/permissions`, {
+              fetch(`${process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000/api/v1' : '')}/auth/permissions`, {
                 headers: { 'Authorization': `Bearer ${user.token}` }
               })
                 .then(res => res.json())
@@ -177,7 +177,7 @@ export const AuthProvider = ({ children }) => {
         
         // Fetch permissions
         try {
-          const permRes = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1'}/auth/permissions`, {
+          const permRes = await fetch(`${process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000/api/v1' : '')}/auth/permissions`, {
             headers: { 'Authorization': `Bearer ${userWithToken.token}` }
           });
           const permData = await permRes.json();
