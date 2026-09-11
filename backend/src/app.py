@@ -10,6 +10,7 @@ from flask_swagger_ui import get_swaggerui_blueprint
 from src.api import init_app as init_api
 from src.api.middlewares import setup_middlewares
 from src.config.config import get_config
+from src.logging_config import setup_json_logging
 
 # Import before config-dependent modules to allow env vars to be read.
 from src.db.models import db
@@ -29,6 +30,7 @@ from flask_migrate import Migrate
 
 
 def create_app(config_class=None):
+    setup_json_logging()
     app = Flask(__name__)
     app.config.from_object(config_class or get_config())
     app_env = os.getenv("FLASK_ENV", "development").lower()
