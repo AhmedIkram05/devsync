@@ -1,0 +1,487 @@
+name: K8s CD (standing GKE Standard)
+
+# Plan: docs/planning/k8s-prod-platform.md §5.5.
+# CD is gated on CI success (workflow_run trigger) plus path filtering in
+# the `changes` job — docs-only pushes to main can never ship images.
+# Build → filter → sign → apply → migrate → deploy → verify vs live URL.
+# The env stays up; every qualifying push redeploys it, exactly like prod.
+# No destroy job, no manual inputs — teardown is a local RUNBOOK checklist.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # GCP WIF (OIDC federation) + cosign keyless
+
+concurrency:
+  group: k8s-cd-${{ github.ref }}
+  # Never cancel a live rollout mid-apply; queue successive deploys.
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: ${{ secrets.GCP_REGION }}
+  GCP_TF_STATE_BUCKET: ${{ secrets.GCP_TF_STATE_BUCKET }}
+  AR_REPOSITORY: ${{ secrets.AR_REPOSITORY }}
+  CLUSTER_NAME: devsync-prod
+  CLUSTER_LOCATION: us-central1-a
+  NAMESPACE: devsync
+  LIVE_HOST: gcp.devsyncapp.me
+
+jobs:
+  # ── Gate: CI green on main + relevant paths ────────────────────────────
+  changes:
+    name: Gate — CI success on main + path filter
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    outputs:
+      app: ${{ steps.filter.outputs.app || steps.force.outputs.app }}
+    steps:
+      - name: Checkout triggering CI commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Detect changed paths
+        id: filter
+        if: github.event_name != 'workflow_dispatch' && github.event.workflow_run.before != '' && github.event.workflow_run.before != '0000000000000000000000000000000000000000'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          base: ${{ github.event.workflow_run.before }}
+          filters: |
+            app:
+              - 'backend/**'
+              - 'frontend/**'
+              - 'k8s/**'
+              - 'infra/terraform/**'
+              - '.github/workflows/k8s-cd.yml'
+
+      - name: Force deploy (dispatch or first-ever workflow_run)
+        id: force
+        if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.before == '' || github.event.workflow_run.before == '0000000000000000000000000000000000000000'
+        run: echo "app=true" >> "$GITHUB_OUTPUT"
+
+  build-push:
+    name: Build + push images (AR, Trivy gate)
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      backend-digest: ${{ steps.build-backend.outputs.digest }}
+      frontend-digest: ${{ steps.build-frontend.outputs.digest }}
+      backend-image: ${{ steps.img-names.outputs.backend-image }}
+      frontend-image: ${{ steps.img-names.outputs.frontend-image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Resolve image names
+        id: img-names
+        run: |
+          AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
+          echo "backend-image=${AR}/devsync-backend" >> "$GITHUB_OUTPUT"
+          echo "frontend-image=${AR}/devsync-frontend" >> "$GITHUB_OUTPUT"
+
+      - name: Build + push backend
+        id: build-backend
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ steps.img-names.outputs.backend-image }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy gate — backend (HIGH,CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.img-names.outputs.backend-image }}@${{ steps.build-backend.outputs.digest }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+      - name: Build + push frontend (both transports)
+        id: build-frontend
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ steps.img-names.outputs.frontend-image }}:${{ github.sha }}
+          build-args: REACT_APP_SOCKET_TRANSPORT=both
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy gate — frontend (HIGH,CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.img-names.outputs.frontend-image }}@${{ steps.build-frontend.outputs.digest }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+  sign:
+    name: Sign images (cosign keyless + SBOM attest + verify)
+    needs: build-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    steps:
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Cosign sign — backend (keyless via OIDC)
+        run: cosign sign --yes "${{ needs.build-push.outputs.backend-image }}@${{ needs.build-push.outputs.backend-digest }}"
+
+      - name: Cosign sign — frontend (keyless via OIDC)
+        run: cosign sign --yes "${{ needs.build-push.outputs.frontend-image }}@${{ needs.build-push.outputs.frontend-digest }}"
+
+      - name: SBOM — backend (Syft)
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: ${{ needs.build-push.outputs.backend-image }}@${{ needs.build-push.outputs.backend-digest }}
+          output-file: backend.spdx.json
+
+      - name: Attest SBOM — backend
+        run: cosign attest --yes --predicate backend.spdx.json --type spdx "${{ needs.build-push.outputs.backend-image }}@${{ needs.build-push.outputs.backend-digest }}"
+
+      - name: SBOM — frontend (Syft)
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: ${{ needs.build-push.outputs.frontend-image }}@${{ needs.build-push.outputs.frontend-digest }}
+          output-file: frontend.spdx.json
+
+      - name: Attest SBOM — frontend
+        run: cosign attest --yes --predicate frontend.spdx.json --type spdx "${{ needs.build-push.outputs.frontend-image }}@${{ needs.build-push.outputs.frontend-digest }}"
+
+      - name: Cosign verify — backend (§5.1 identity)
+        run: |
+          cosign verify \
+            --certificate-identity-regexp 'https://github.com/AhmedIkram05/DevSync/\.github/workflows/k8s-cd\.yml@.*' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${{ needs.build-push.outputs.backend-image }}@${{ needs.build-push.outputs.backend-digest }}"
+
+      - name: Cosign verify — frontend (§5.1 identity)
+        run: |
+          cosign verify \
+            --certificate-identity-regexp 'https://github.com/AhmedIkram05/DevSync/\.github/workflows/k8s-cd\.yml@.*' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${{ needs.build-push.outputs.frontend-image }}@${{ needs.build-push.outputs.frontend-digest }}"
+
+  slsa-backend:
+    name: SLSA provenance — backend
+    needs: build-push
+    permissions:
+      id-token: write
+      contents: write
+      actions: read
+      packages: write
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
+    with:
+      image: ${{ needs.build-push.outputs.backend-image }}
+      digest: ${{ needs.build-push.outputs.backend-digest }}
+      # Identifiers (not secrets) — repo Actions VARIABLES. The WIF provider
+      # resource path and service-account email are the trusted identity for
+      # keyless signing; the actual credential is the OIDC token exchange.
+      # secrets context is rejected in reusable-workflow with: (actionlint).
+      gcp-workload-identity-provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      gcp-service-account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+  slsa-frontend:
+    name: SLSA provenance — frontend
+    needs: build-push
+    permissions:
+      id-token: write
+      contents: write
+      actions: read
+      packages: write
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
+    with:
+      image: ${{ needs.build-push.outputs.frontend-image }}
+      digest: ${{ needs.build-push.outputs.frontend-digest }}
+      gcp-workload-identity-provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      gcp-service-account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+  tf-apply:
+    name: Terraform apply
+    needs: [build-push, sign, slsa-backend, slsa-frontend]
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+
+      - name: Terraform init + apply (idempotent, GCS backend)
+        working-directory: infra/terraform
+        env:
+          TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+        run: |
+          terraform init -input=false -backend-config=bucket="$GCP_TF_STATE_BUCKET"
+          terraform apply -input=false -auto-approve
+
+      - name: Resolve GCP_PROJECT_ID placeholders in k8s/base
+        uses: ./.github/actions/resolve-gcp-placeholders
+
+  migrate:
+    name: Apply migrate Job + wait Complete
+    needs: [tf-apply, build-push]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          location: ${{ env.CLUSTER_LOCATION }}
+
+      - name: Set up Kustomize
+        uses: imranismail/setup-kustomize@53f941b41dca13ed61874bbc6b4b6e1562877530 # v3.0.0
+        with:
+          kustomize-version: 5.4.3
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      # Re-verify chain of custody at deploy time — the registry is read
+      # unauthenticated by default in other processes; don't trust it.
+      - name: Cosign verify at deploy time — backend + frontend
+        run: |
+          for ref in \
+            "${{ needs.build-push.outputs.backend-image }}@${{ needs.build-push.outputs.backend-digest }}" \
+            "${{ needs.build-push.outputs.frontend-image }}@${{ needs.build-push.outputs.frontend-digest }}"
+          do
+            cosign verify \
+              --certificate-identity-regexp 'https://github.com/AhmedIkram05/DevSync/\.github/workflows/k8s-cd\.yml@.*' \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "$ref"
+          done
+
+      - name: Resolve GCP_PROJECT_ID placeholders in k8s/base
+        uses: ./.github/actions/resolve-gcp-placeholders
+
+      - name: Pin digests + apply overlay
+        run: |
+          cd k8s/overlays/prod
+          kustomize edit set image "devsync-backend=${{ needs.build-push.outputs.backend-image }}@${{ needs.build-push.outputs.backend-digest }}"
+          kustomize edit set image "devsync-frontend=${{ needs.build-push.outputs.frontend-image }}@${{ needs.build-push.outputs.frontend-digest }}"
+          # Completed Job specs are immutable — drop before re-applying with new digests.
+          kubectl delete job devsync-migrate -n "$NAMESPACE" --ignore-not-found=true
+          kubectl apply -k .
+
+      - name: Wait for migrate Job Complete (600s)
+        run: |
+          kubectl wait --for=condition=complete job/devsync-migrate -n "$NAMESPACE" --timeout=600s
+          kubectl logs job/devsync-migrate -n "$NAMESPACE" --tail=50
+
+  deploy:
+    name: Deploy digests + wait Available
+    needs: [migrate, build-push]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          location: ${{ env.CLUSTER_LOCATION }}
+
+      - name: Set up Kustomize
+        uses: imranismail/setup-kustomize@53f941b41dca13ed61874bbc6b4b6e1562877530 # v3.0.0
+        with:
+          kustomize-version: 5.4.3
+
+      - name: Resolve GCP_PROJECT_ID placeholders in k8s/base
+        uses: ./.github/actions/resolve-gcp-placeholders
+
+      - name: Pin digests + apply
+        run: |
+          cd k8s/overlays/prod
+          kustomize edit set image "devsync-backend=${{ needs.build-push.outputs.backend-image }}@${{ needs.build-push.outputs.backend-digest }}"
+          kustomize edit set image "devsync-frontend=${{ needs.build-push.outputs.frontend-image }}@${{ needs.build-push.outputs.frontend-digest }}"
+          kubectl apply -k .
+
+      - name: Wait for Deployments Available (10m)
+        run: |
+          kubectl wait --for=condition=available deploy/devsync-backend -n "$NAMESPACE" --timeout=10m
+          kubectl wait --for=condition=available deploy/devsync-frontend -n "$NAMESPACE" --timeout=10m
+
+  verify:
+    name: Verify vs live URL (OAuth check + BE health + Cypress + k6)
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          location: ${{ env.CLUSTER_LOCATION }}
+
+      - name: Log Ingress status (informational)
+        run: |
+          kubectl get ingress devsync-frontend -n "$NAMESPACE" -o wide || true
+          {
+            echo "## Verify — ingress"
+            echo '```'
+            kubectl get ingress devsync-frontend -n "$NAMESPACE" -o wide || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify GitHub OAuth config (live URL, mirrors cd.yml)
+        run: |
+          for _ in $(seq 1 10); do
+            resp=$(curl -fsS "https://${LIVE_HOST}/api/v1/github/config-check" || true)
+            echo "$resp" | grep -q '"client_id_set":true' && \
+            echo "$resp" | grep -q '"client_secret_set":true' && \
+            echo "$resp" | grep -q '"redirect_uri_set":true' && \
+            echo "$resp" | grep -q "\"frontend_url\":\"https://${LIVE_HOST}\"" && exit 0
+            echo "GitHub OAuth config not ready yet. Retrying..."
+            sleep 10
+          done
+          echo "GitHub OAuth config check failed."
+          exit 1
+
+      - name: Backend /health via port-forward (avoids FE SPA fallback)
+        run: |
+          kubectl port-forward svc/devsync-backend 8000:8000 -n "$NAMESPACE" > /tmp/pf.log 2>&1 &
+          PF_PID=$!
+          for _ in $(seq 1 30); do
+            curl -sf http://localhost:8000/health && break
+            sleep 2
+          done
+          curl -fsS http://localhost:8000/health
+          kill $PF_PID || true
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Cypress against live URL (baseUrl override)
+        uses: cypress-io/github-action@09090944bd8aaa2a517cefb6e38bf1aae336b42b # v7.4.3
+        with:
+          working-directory: frontend
+          config: baseUrl=https://${{ env.LIVE_HOST }}
+        env:
+          CYPRESS_BASE_URL: https://${{ env.LIVE_HOST }}
+
+      - name: Set up k6
+        uses: grafana/setup-k6-action@db07bd9765aac508ef18982e52ab937fe633a065 # v1.2.1
+
+      - name: k6 against live URL
+        working-directory: backend
+        env:
+          BASE_URL: https://${{ env.LIVE_HOST }}
+        run: |
+          k6 run \
+            --vus 10 --duration 30s \
+            --summary-export=/tmp/k6-live.json \
+            tests/perf/api-load.js
+
+      - name: Upload k6 live results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: k6-live-results
+          path: /tmp/k6-live.json
+          if-no-files-found: ignore
+
+  collect:
+    name: Collect logs → summary + artifacts
+    needs: verify
+    if: ${{ always() && needs.verify.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          location: ${{ env.CLUSTER_LOCATION }}
+
+      - name: Dump pod logs into run summary
+        if: always()
+        run: |
+          kubectl logs deploy/devsync-backend -n "$NAMESPACE" --tail=100 > /tmp/k8s-cd-backend.log || true
+          kubectl logs deploy/devsync-frontend -n "$NAMESPACE" --tail=50 > /tmp/k8s-cd-frontend.log || true
+          {
+            echo "## K8s CD — workload logs"
+            echo ""
+            echo "### Backend"
+            echo '```'
+            cat /tmp/k8s-cd-backend.log
+            echo '```'
+            echo "### Frontend"
+            echo '```'
+            cat /tmp/k8s-cd-frontend.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload workload logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: k8s-cd-logs
+          path: /tmp/k8s-cd-*.log
+          if-no-files-found: ignore
