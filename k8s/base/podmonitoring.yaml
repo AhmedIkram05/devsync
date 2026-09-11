@@ -1,0 +1,10 @@
+# Monitoring placeholder — intentionally NOT a rendered resource (no
+# PodMonitoring here by design, and this file is not listed in
+# base/kustomization.yaml resources).
+#
+# The backend exposes /health but no Prometheus /metrics on :8000
+# (plan §5.4), so any PodMonitoring scraping /metrics would fail
+# continuously. Do not re-add a scrape until the backend serves /metrics.
+# When it does, the intended shape is GMP managed collection via
+# PodMonitoring (port http, path /metrics, 30s interval) plus a
+# BackendDown-style alert on the series.

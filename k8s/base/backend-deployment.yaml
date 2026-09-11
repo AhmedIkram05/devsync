@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devsync-backend
+  namespace: devsync
+  labels:
+    app: devsync-backend
+    app.kubernetes.io/part-of: devsync
+spec:
+  # Singleton by design (D2): Socket.IO rooms live in process memory and
+  # gunicorn pins workers=1, so a second replica would split-brain rooms.
+  replicas: 1
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: devsync-backend
+  template:
+    metadata:
+      labels:
+        app: devsync-backend
+        app.kubernetes.io/part-of: devsync
+    spec:
+      serviceAccountName: devsync-ksa
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: backend
+        # Bare name = the kustomize image selector (devsync-backend) matches;
+        # workflows/Makefile pin the full AR digest at deploy time.
+        image: devsync-backend
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: devsync-config
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: devsync-app-secrets
+              key: DATABASE_URL
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: devsync-app-secrets
+              key: JWT_SECRET_KEY
+        - name: GITHUB_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: devsync-app-secrets
+              key: GITHUB_CLIENT_ID
+        - name: GITHUB_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: devsync-app-secrets
+              key: GITHUB_CLIENT_SECRET
+        - name: FERNET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: devsync-app-secrets
+              key: FERNET_KEY
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}

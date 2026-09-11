@@ -1,0 +1,17 @@
+# PR overlay: nginx `resolver` does no search-domain expansion, so the
+# upstream must be the FQDN of the PR namespace. Base says
+# devsync-backend.devsync.svc...; this points it at the pr-0 placeholder,
+# and the PR workflow seds pr-0 -> pr-<n> before applying.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devsync-frontend
+  namespace: devsync
+spec:
+  template:
+    spec:
+      containers:
+      - name: frontend
+        env:
+        - name: API_UPSTREAM
+          value: http://devsync-backend.pr-0.svc.cluster.local:8000

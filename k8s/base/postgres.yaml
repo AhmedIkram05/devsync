@@ -1,0 +1,109 @@
+# Standing-environment database (in-cluster Postgres). Promotion path to
+# managed Cloud SQL is the k8s/overlays/managed-db overlay (reviewed,
+# unapplied by design) — that overlay deletes this file via patch.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: devsync-postgres
+  namespace: devsync
+  labels:
+    app: devsync-postgres
+    app.kubernetes.io/part-of: devsync
+spec:
+  serviceName: devsync-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: devsync-postgres
+  template:
+    metadata:
+      labels:
+        app: devsync-postgres
+        app.kubernetes.io/part-of: devsync
+    spec:
+      serviceAccountName: devsync-ksa
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        # No runAsNonRoot: the stock postgres:16 entrypoint must start as
+        # root before gosu-dropping to the postgres user; forcing non-root
+        # breaks startup and fresh-volume chown. Contained by drop ALL +
+        # allowPrivilegeEscalation:false below instead.
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: postgres
+        image: postgres:16
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: postgres
+          containerPort: 5432
+        env:
+        - name: PGDATA
+          # Never point PGDATA at the PD mount root: initdb refuses a
+          # non-empty mount point (lost+found). Subdirectory is the
+          # documented pattern for block volumes.
+          value: /var/lib/postgresql/data/pgdata
+        - name: POSTGRES_DB
+          value: devsync
+        - name: POSTGRES_USER
+          value: devsync
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: devsync-app-secrets
+              key: POSTGRES_PASSWORD
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", "devsync", "-d", "devsync"]
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          exec:
+            command: ["pg_isready", "-U", "devsync", "-d", "devsync"]
+          initialDelaySeconds: 30
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        volumeMounts:
+        - name: pgdata
+          mountPath: /var/lib/postgresql/data
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - CHOWN
+            - FOWNER
+            - DAC_OVERRIDE
+            - SETUID
+            - SETGID
+  volumeClaimTemplates:
+  - metadata:
+      name: pgdata
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: devsync-postgres
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  clusterIP: None
+  selector:
+    app: devsync-postgres
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: 5432

@@ -1,0 +1,12 @@
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: devsync-prod-cert
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  # Placeholder only: the prod overlay patches this to the live host, and
+  # the pr overlay drops this resource entirely.
+  domains:
+  - placeholder.example.com

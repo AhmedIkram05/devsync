@@ -1,0 +1,68 @@
+# managed-db overlay: prod DB shape, reviewed-but-UNAPPLIED.
+# No live Cloud SQL instance exists; do not apply in the standing window.
+# DATABASE_URL stays a Secret Manager secretKeyRef (same as base) — the prod
+# value behind that key would be the Cloud SQL connection string
+# (private IP, sslmode=require). No credential value lives in git.
+# postgres.yaml resources are removed via strategic-merge $patch: delete,
+# and the Cloud SQL instance annotation marks the Auth Proxy attachment
+# point (IAM role roles/cloudsql.client lives on the GSA, plan §5.2).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: devsync-postgres
+  namespace: devsync
+$patch: delete
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: devsync-postgres
+  namespace: devsync
+$patch: delete
+---
+# Backend: attach Cloud SQL instance annotation; DATABASE_URL secretRef
+# unchanged (prod Secret Manager value points at Cloud SQL, not in-cluster PG).
+# Private-IP-direct in v1: no Cloud SQL Auth Proxy sidecar is injected here
+# by design — connectivity is the instance's private IP with
+# sslmode=require, IAM via roles/cloudsql.client on the GSA (plan §5.2).
+# Add the proxy sidecar only if public-IP or IAM-DB-auth is ever needed.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devsync-backend
+  namespace: devsync
+spec:
+  template:
+    metadata:
+      annotations:
+        cloudsql.cloud.google.com/instances: PROJECT:REGION:devsync-db
+    spec:
+      containers:
+      - name: backend
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: devsync-app-secrets
+              key: DATABASE_URL
+---
+# Migrate Job: same rewiring — must migrate the managed DB, never the in-cluster PG.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: devsync-migrate
+  namespace: devsync
+spec:
+  template:
+    metadata:
+      annotations:
+        cloudsql.cloud.google.com/instances: PROJECT:REGION:devsync-db
+    spec:
+      containers:
+      - name: migrate
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: devsync-app-secrets
+              key: DATABASE_URL

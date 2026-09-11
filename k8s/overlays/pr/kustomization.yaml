@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Placeholder namespace: the PR workflow runs
+# `kustomize edit set namespace pr-<n>` and renames pr-0 in
+# namespace-pr.yaml to match before applying. The workflow must also provide
+# the devsync-app-secrets Secret (this overlay drops ESO by design).
+namespace: pr-0
+resources:
+- ../../base
+- namespace-pr.yaml
+patches:
+- path: drop-namespace.yaml
+- path: drop-ingress.yaml
+- path: drop-managedcertificate.yaml
+- path: drop-clustersecretstore.yaml
+- path: drop-externalsecret.yaml
+- path: patch-frontend-upstream.yaml

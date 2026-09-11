@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: devsync-backend
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  type: ClusterIP
+  selector:
+    app: devsync-backend
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000

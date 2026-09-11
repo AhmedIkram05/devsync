@@ -1,0 +1,10 @@
+# Prod overlay: the ONLY place the live host is set. Base keeps placeholder
+# URLs so pr/port-forward envs never inherit prod OAuth URLs.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: devsync-config
+  namespace: devsync
+data:
+  FRONTEND_URL: "https://gcp.devsyncapp.me"
+  GITHUB_REDIRECT_URI: "https://gcp.devsyncapp.me/api/v1/github/callback"

@@ -1,0 +1,107 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: devsync-migrate
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: devsync-migrate
+        app.kubernetes.io/part-of: devsync
+    spec:
+      serviceAccountName: devsync-ksa
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: migrate
+        # Bare name = the kustomize image selector (devsync-backend) matches;
+        # workflows/Makefile pin the full AR digest at deploy time.
+        image: devsync-backend
+        imagePullPolicy: IfNotPresent
+        # Mirrors backend/entrypoint.sh so migrations run once as a Job
+        # instead of racing on every pod boot (D6), including the
+        # DB_BOOTSTRAP_FALLBACK seed path for fresh databases.
+        command:
+        - python
+        - -c
+        - |
+          import os
+          from src.app import create_app
+          from flask_migrate import upgrade
+          app, socketio = create_app()
+          with app.app_context():
+              upgrade()
+          if os.getenv("DB_BOOTSTRAP_FALLBACK", "false") == "true":
+              from sqlalchemy import inspect
+              from src.db.models import db
+              from src.db.scripts.setup_database import setup_database
+              with app.app_context():
+                  if not inspect(db.engine).has_table("users"):
+                      print("users table missing after migrations; running setup_database bootstrap...")
+                      if not setup_database():
+                          raise RuntimeError("Database bootstrap failed")
+                  else:
+                      print("users table exists; skipping bootstrap.")
+        envFrom:
+        - configMapRef:
+            name: devsync-config
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: devsync-app-secrets
+              key: DATABASE_URL
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: devsync-app-secrets
+              key: JWT_SECRET_KEY
+        - name: GITHUB_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: devsync-app-secrets
+              key: GITHUB_CLIENT_ID
+        - name: GITHUB_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: devsync-app-secrets
+              key: GITHUB_CLIENT_SECRET
+        - name: FERNET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: devsync-app-secrets
+              key: FERNET_KEY
+        # Same var as backend/entrypoint.sh: on a fresh standing-env PG the
+        # migrations leave an empty DB, so run the setup_database seed.
+        - name: DB_BOOTSTRAP_FALLBACK
+          value: "true"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        # Read-only root: stdlib/gunicorn may mkstemp in /tmp (same as BE pod)
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
