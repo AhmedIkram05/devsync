@@ -231,7 +231,9 @@ jobs:
       contents: write
       actions: read
       packages: write
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@refs/tags/v2.1.0
+# Bare tag (GHA uses: fetcher rejects refs/tags/ form); SLSA builder-fetch
+# re-derives refs/tags/vX.Y.Z internally from the tag-pinned ref.
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.1.0
     with:
       image: ${{ needs.build-push.outputs.backend-image }}
       digest: ${{ needs.build-push.outputs.backend-digest }}
@@ -253,7 +255,9 @@ jobs:
       contents: write
       actions: read
       packages: write
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@refs/tags/v2.1.0
+# Bare tag (GHA uses: fetcher rejects refs/tags/ form); SLSA builder-fetch
+# re-derives refs/tags/vX.Y.Z internally from the tag-pinned ref.
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.1.0
     with:
       image: ${{ needs.build-push.outputs.frontend-image }}
       digest: ${{ needs.build-push.outputs.frontend-digest }}
