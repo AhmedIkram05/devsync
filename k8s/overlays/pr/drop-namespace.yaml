@@ -1,0 +1,9 @@
+# PR overlay helpers: one strategic-merge patch per kind — kustomize 5.4
+# segfaults on multi-doc SMP patch files, and namespace-less targets match
+# before the kustomization-level namespace rewrite (ns is set by the
+# transformer, not at patch time).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devsync
+$patch: delete

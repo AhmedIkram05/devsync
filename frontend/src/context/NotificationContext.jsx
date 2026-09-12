@@ -191,7 +191,9 @@ export const NotificationProvider = ({ children }) => {
                 return configuredApiUrl.replace(/\/api\/v1\/?$/, '');
               }
             })()
-          : `${window.location.protocol}//${window.location.hostname}:8000`;
+          : process.env.NODE_ENV === 'development'
+            ? `${window.location.protocol}//${window.location.hostname}:8000`
+            : `${window.location.protocol}//${window.location.hostname}`;
 
         const configuredTransport = (process.env.REACT_APP_SOCKET_TRANSPORT || 'polling').toLowerCase();
         const transportMap = {

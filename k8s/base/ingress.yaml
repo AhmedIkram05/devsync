@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: devsync-frontend
+  namespace: devsync
+  annotations:
+    networking.gke.io/managed-certificates: devsync-prod-cert
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  ingressClassName: gce
+  # No host rule on purpose: any domain pointed at the LB (devsyncapp.me,
+  # www.devsyncapp.me, gcp.devsyncapp.me) routes to this backend. The pr
+  # overlay drops this Ingress entirely.
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: devsync-frontend
+            port:
+              number: 80

@@ -1,0 +1,9 @@
+# Prod overlay: point the Google-managed cert at the live host.
+# JSON 6902 patch (referenced via patches: with a target): strategic merge cannot
+# target this CRD, kustomize has no merge schema for it.
+- op: replace
+  path: /spec/domains
+  value:
+  - devsyncapp.me
+  - www.devsyncapp.me
+  - gcp.devsyncapp.me

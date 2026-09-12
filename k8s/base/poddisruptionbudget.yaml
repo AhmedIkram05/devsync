@@ -1,0 +1,27 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: devsync-frontend
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: devsync-frontend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: devsync-backend
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  # Zero: the backend is a singleton (D2), so voluntary eviction must not
+  # take the only pod. States the D2 constraint in scheduling terms.
+  maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: devsync-backend

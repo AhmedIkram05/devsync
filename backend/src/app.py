@@ -13,6 +13,7 @@ from src.config.config import get_config
 
 # Import before config-dependent modules to allow env vars to be read.
 from src.db.models import db
+from src.logging_config import setup_json_logging
 from src.socketio_server import init_socketio
 
 load_dotenv(override=False)
@@ -29,6 +30,7 @@ from flask_migrate import Migrate
 
 
 def create_app(config_class=None):
+    setup_json_logging()
     app = Flask(__name__)
     app.config.from_object(config_class or get_config())
     app_env = os.getenv("FLASK_ENV", "development").lower()
@@ -113,6 +115,7 @@ def create_app(config_class=None):
     explicit_allowed_origins = {
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "https://devsyncapp.me",
         "https://www.devsyncapp.me",
     }
 

@@ -50,3 +50,7 @@ supervisor==4.2.5
 # API documentation
 pydantic>=2.9.0
 pyAml==12.12.3
+
+# Force fixed vendored copies (setuptools vendors jaraco.context + wheel)
+setuptools>=80
+wheel>=0.46.2

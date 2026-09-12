@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devsync-frontend
+  namespace: devsync
+  labels:
+    app: devsync-frontend
+    app.kubernetes.io/part-of: devsync
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: devsync-frontend
+  template:
+    metadata:
+      labels:
+        app: devsync-frontend
+        app.kubernetes.io/part-of: devsync
+    spec:
+      serviceAccountName: devsync-ksa
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: frontend
+        # Bare name = the kustomize image selector (devsync-frontend) matches;
+        # workflows/Makefile pin the full AR digest at deploy time.
+        image: devsync-frontend
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 80
+        env:
+        - name: API_UPSTREAM
+          # FQDN, not short name: nginx's `resolver` directive does no
+          # search-domain expansion, so short names are NXDOMAIN for it.
+          # The pr overlay patches this to the pr-0 FQDN (workflow seds the ns).
+          value: http://devsync-backend.devsync.svc.cluster.local:8000
+        # GKE node-local DNS: 127.0.0.11 (Docker built-in, the image default)
+        # does not exist in a pod, so nginx's runtime resolver must point here.
+        - name: NGINX_RESOLVER
+          value: 169.254.20.10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+            # Stock nginx listens on :80, so non-root uid 101 needs this one
+            # capability to bind. Everything else stays dropped.
+            add:
+            - NET_BIND_SERVICE
+        # Stock nginx:alpine expects writable cache/run/conf.d at runtime.
+        volumeMounts:
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
+        - name: nginx-run
+          mountPath: /var/run
+        - name: nginx-conf
+          mountPath: /etc/nginx/conf.d
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: nginx-cache
+        emptyDir: {}
+      - name: nginx-run
+        emptyDir: {}
+      - name: nginx-conf
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}

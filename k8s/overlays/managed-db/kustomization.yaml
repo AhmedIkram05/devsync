@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Prod shape, reviewed-but-unapplied (plan §5.3, build step 6 LAST).
+# No live Cloud SQL instance is provisioned; this overlay is never applied
+# in the standing window. It reuses the pr-overlay delete pattern: postgres.yaml
+# resources go away via strategic-merge $patch: delete in
+# patch-database-url.yaml, and DATABASE_URL stays a Secret Manager secretRef
+# whose prod value would point at Cloud SQL.
+resources:
+- ../../base
+patches:
+- path: patch-database-url.yaml

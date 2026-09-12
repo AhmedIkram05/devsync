@@ -1,0 +1,327 @@
+name: K8s PR Environment (ephemeral namespace)
+
+# Plan: docs/planning/k8s-prod-platform.md §5.5.
+# Every PR touching app or manifests gets a K8s namespace pr-<n> on the
+# standing cluster: build+push its own images → smoke → sticky comment →
+# GC on close. No Ingress/certs per PR (deliberate — avoids LE rate limits).
+# The pr overlay drops ESO/ExternalSecret by design, so the workflow creates
+# devsync-app-secrets directly from GH secrets (Deployments reference it via
+# secretKeyRef).
+#
+# ACCEPTED RISK (documented, revisit during infra work): PR namespaces live on
+# the shared standing prod cluster (CLUSTER_NAME=devsync-prod). This workflow
+# must therefore stay restricted to same-repo PRs — the head-repo guards on
+# build-push / pr-env / comment below reject fork PRs entirely (they never get
+# secrets, cluster creds, or a namespace). Hard cluster-isolation for PRs
+# (dedicated cluster or node pool + taints) is an infra/terraform task, not a
+# workflow-file change.
+#
+# workflow_dispatch exists to rebuild a stuck/failed preview namespace without
+# push-bumping the PR: pass the PR number via the pr_number input.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "k8s/**"
+      - "infra/terraform/**"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number whose preview environment should be rebuilt"
+        type: number
+        required: true
+
+permissions:
+  contents: read
+  id-token: write # GCP WIF (OIDC federation) + Trivy/AR auth
+  pull-requests: write # sticky comment
+
+concurrency:
+  group: k8s-pr-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: ${{ secrets.GCP_REGION }}
+  AR_REPOSITORY: ${{ secrets.AR_REPOSITORY }}
+  CLUSTER_NAME: devsync-prod
+  CLUSTER_LOCATION: us-central1-a
+  PR_NS: pr-${{ github.event.pull_request.number || inputs.pr_number }}
+
+jobs:
+  build-push:
+    name: Build + push PR images (AR, Trivy gate)
+    if: github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Resolve image names
+        id: img-names
+        run: |
+          AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
+          echo "backend-image=${AR}/devsync-backend" >> "$GITHUB_OUTPUT"
+          echo "frontend-image=${AR}/devsync-frontend" >> "$GITHUB_OUTPUT"
+
+      - name: Build + push backend
+        id: build-backend
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ steps.img-names.outputs.backend-image }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy gate — backend (HIGH,CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.img-names.outputs.backend-image }}@${{ steps.build-backend.outputs.digest }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Build + push frontend (both transports)
+        id: build-frontend
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ steps.img-names.outputs.frontend-image }}:${{ github.sha }}
+          build-args: REACT_APP_SOCKET_TRANSPORT=both
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy gate — frontend (HIGH,CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.img-names.outputs.frontend-image }}@${{ steps.build-frontend.outputs.digest }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+
+  pr-env:
+    name: Deploy PR #${{ github.event.pull_request.number || inputs.pr_number }} + smoke
+    needs: build-push
+    if: github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          location: ${{ env.CLUSTER_LOCATION }}
+
+      - name: Set up Kustomize
+        uses: imranismail/setup-kustomize@53f941b41dca13ed61874bbc6b4b6e1562877530 # v3.0.0
+        with:
+          kustomize-version: 5.4.3
+
+      - name: Resolve GCP_PROJECT_ID placeholders in k8s/base
+        uses: ./.github/actions/resolve-gcp-placeholders
+
+      - name: Create namespace + app secrets (pr overlay drops ESO)
+        run: |
+          kubectl create namespace "$PR_NS" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create secret generic devsync-app-secrets -n "$PR_NS" \
+            --from-literal=DATABASE_URL="${{ secrets.PR_DATABASE_URL }}" \
+            --from-literal=JWT_SECRET_KEY="${{ secrets.PR_JWT_SECRET_KEY }}" \
+            --from-literal=GITHUB_CLIENT_ID="${{ secrets.PR_GITHUB_CLIENT_ID }}" \
+            --from-literal=GITHUB_CLIENT_SECRET="${{ secrets.PR_GITHUB_CLIENT_SECRET }}" \
+            --from-literal=FERNET_KEY="${{ secrets.PR_FERNET_KEY }}" \
+            --from-literal=POSTGRES_PASSWORD="${{ secrets.PR_POSTGRES_PASSWORD }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply pr overlay with PR-built images
+        run: |
+          set -euo pipefail
+          cd k8s/overlays/pr
+          AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
+          kustomize edit set namespace "$PR_NS"
+          kustomize edit set image "devsync-backend=${AR}/devsync-backend:${{ github.sha }}"
+          kustomize edit set image "devsync-frontend=${AR}/devsync-frontend:${{ github.sha }}"
+          # Tripwire: kustomize silently converts "name=:tag" into a tag-only
+          # change, which would ship bare docker.io names. Refuse instead.
+          RENDER="$(kubectl kustomize .)"
+          echo "$RENDER" | grep -Fqw "image: ${AR}/devsync-backend:${{ github.sha }}" || { echo "::error::backend image not pinned to ${AR}"; exit 1; }
+          echo "$RENDER" | grep -Fqw "image: ${AR}/devsync-frontend:${{ github.sha }}" || { echo "::error::frontend image not pinned to ${AR}"; exit 1; }
+          # A completed/failed Job's template is immutable; drop it so this run's
+          # migrate spec applies fresh (migrations are idempotent).
+          kubectl delete job devsync-migrate -n "$PR_NS" --ignore-not-found=true
+          echo "$RENDER" | kubectl apply -f -
+
+      - name: Migrate + wait
+        run: |
+          kubectl wait --for=condition=complete job/devsync-migrate -n "$PR_NS" --timeout=600s
+
+      - name: Wait for Deployments Available
+        run: |
+          kubectl wait --for=condition=available deploy/devsync-backend -n "$PR_NS" --timeout=10m
+          kubectl wait --for=condition=available deploy/devsync-frontend -n "$PR_NS" --timeout=10m
+
+      - name: Smoke via port-forward (/health + login)
+        run: |
+          kubectl port-forward svc/devsync-backend 8000:8000 -n "$PR_NS" > /tmp/pf.log 2>&1 &
+          PF_PID=$!
+          for _ in $(seq 1 30); do
+            curl -sf http://localhost:8000/health && break
+            sleep 2
+          done
+          curl -fsS http://localhost:8000/health | tee /tmp/smoke.log
+          EMAIL="pr${{ github.event.pull_request.number || inputs.pr_number }}-$(date +%s)@devsync.test"
+          curl -fsS -X POST http://localhost:8000/api/v1/auth/register \
+            -H 'Content-Type: application/json' \
+            -d "{\"name\":\"PR Smoke\",\"email\":\"$EMAIL\",\"password\":\"smoke-test-password\"}" | tee -a /tmp/smoke.log
+          kill $PF_PID || true
+
+      - name: Upload smoke log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-smoke-${{ github.event.pull_request.number || inputs.pr_number }}
+          path: /tmp/smoke.log
+          if-no-files-found: ignore
+
+      - name: Delete pr namespace (always, pass or fail)
+        if: always()
+        run: kubectl delete namespace "$PR_NS" --ignore-not-found=true --wait=false
+
+  comment:
+    name: Sticky PR comment
+    needs: pr-env
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Comment smoke result
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          header: k8s-pr-env
+          message: |
+            ## K8s PR env `${{ env.PR_NS }}` — ${{ needs.pr-env.result == 'success' && 'smoke green' || 'smoke FAILED' }}
+            - Backend image: `${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPOSITORY }}/devsync-backend:${{ github.sha }}`
+            - Frontend image: `${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPOSITORY }}/devsync-frontend:${{ github.sha }}`
+            - Smoke: `curl /health` + register via port-forward (see `pr-smoke` artifact)
+            - No Ingress/certs per PR by design — namespace deleted after the run (pass or fail).
+
+  tf-plan:
+    name: Terraform plan (infra/terraform diffs)
+    if: github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Detect infra/terraform changes
+        id: tf
+        run: |
+          set -euo pipefail
+          if git diff --name-only "origin/${{ github.base_ref }}...${{ github.sha }}" | grep -q '^infra/terraform/'; then
+            echo "tf=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tf=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Auth to GCP (WIF)
+        if: steps.tf.outputs.tf == 'true'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Terraform
+        if: steps.tf.outputs.tf == 'true'
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+
+      - name: Terraform Init (GCS backend)
+        if: steps.tf.outputs.tf == 'true'
+        working-directory: infra/terraform
+        env:
+          TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+        run: terraform init -input=false -backend-config=bucket="${{ secrets.GCP_TF_STATE_BUCKET }}"
+
+      - name: Terraform Plan
+        id: plan
+        if: steps.tf.outputs.tf == 'true'
+        working-directory: infra/terraform
+        env:
+          TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+        run: |
+          rc=0
+          terraform plan -input=false -refresh=false -no-color -detailed-exitcode -out=tfplan > /tmp/tfplan.txt 2>&1 || rc=$?
+          tail -200 /tmp/tfplan.txt
+          if [ "$rc" = 0 ]; then
+            status="NO CHANGES"
+          elif [ "$rc" = 2 ]; then
+            status="PLAN HAS CHANGES"
+          else
+            status="PLAN ERROR (exit $rc)"
+          fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          {
+            echo "body<<TFPLAN_EOF"
+            echo "## Terraform plan — ${status}"
+            echo ''
+            echo '```text'
+            head -c 15000 /tmp/tfplan.txt
+            echo
+            echo '```'
+            echo "TFPLAN_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Report plan on PR
+        if: ${{ always() && steps.tf.outputs.tf == 'true' }}
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          header: terraform-plan
+          message: ${{ steps.plan.outputs.body || 'Plan Preview skipped (infra/terraform unchanged or init failed)' }}
+
+  gc:
+    name: Delete PR #${{ github.event.pull_request.number }} namespace on close
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          location: ${{ env.CLUSTER_LOCATION }}
+
+      - name: Delete namespace (idempotent)
+        run: kubectl delete namespace "$PR_NS" --ignore-not-found=true --wait=true

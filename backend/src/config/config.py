@@ -1,8 +1,9 @@
 """Application configuration for DevSync."""
 
 import os
+import re
 from ipaddress import ip_address
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit, urlunsplit
 
 from dotenv import load_dotenv
 
@@ -33,6 +34,22 @@ def _is_local_database_host(hostname):
         return False
 
 
+def _mask_database_url(database_url):
+    """Log-safe view of the connection string: scheme/user/host/port/dbname
+    kept, password masked as *** (DATABASE_URL carries the DB password)."""
+    if not database_url:
+        return database_url
+
+    parts = urlsplit(database_url)
+    if parts.password is None:
+        # No recognizable password region (e.g. malformed URL) — blind-scrub
+        # any user:pass@ segment so credentials can never leak into logs.
+        return re.sub(r"\S+:\S+@", ":***@", database_url)
+
+    masked_netloc = parts.netloc.replace(f":{parts.password}@", ":***@", 1)
+    return urlunsplit(parts._replace(netloc=masked_netloc))
+
+
 def _append_default_sslmode(database_url):
     """Default sslmode to match local Docker and cloud Postgres setups."""
     if not database_url.startswith("postgresql://") or "sslmode=" in database_url:
@@ -51,9 +68,9 @@ def _resolve_database_uri(env):
 
     database_url = os.getenv("DATABASE_URL")
 
-    # Debug logs
+    # Debug logs (password masked — DATABASE_URL carries the DB credential)
     print(f"[DB CONFIG] FLASK_ENV: {env}")
-    print(f"[DB CONFIG] Raw DATABASE_URL: {database_url}")
+    print(f"[DB CONFIG] Raw DATABASE_URL: {_mask_database_url(database_url)}")
 
     if not database_url:
         raise ValueError(
@@ -63,10 +80,10 @@ def _resolve_database_uri(env):
         )
 
     database_url = database_url.strip()
-    print(f"[DB CONFIG] Stripped DATABASE_URL: {database_url}")
+    print(f"[DB CONFIG] Stripped DATABASE_URL: {_mask_database_url(database_url)}")
 
     database_url = _normalize_postgres_scheme(database_url)
-    print(f"[DB CONFIG] Normalized DATABASE_URL: {database_url}")
+    print(f"[DB CONFIG] Normalized DATABASE_URL: {_mask_database_url(database_url)}")
 
     if database_url.startswith("sqlite:"):
         raise ValueError(
@@ -77,12 +94,12 @@ def _resolve_database_uri(env):
 
     if not database_url.startswith("postgresql://"):
         raise ValueError(
-            f"Unsupported DATABASE_URL scheme: {database_url}. "
+            f"Unsupported DATABASE_URL scheme: {_mask_database_url(database_url)}. "
             f"Use a postgresql:// connection string, for example: {POSTGRES_URL_EXAMPLE}"
         )
 
     final_url = _append_default_sslmode(database_url)
-    print(f"[DB CONFIG] Final DATABASE_URL (with sslmode): {final_url}")
+    print(f"[DB CONFIG] Final DATABASE_URL (with sslmode): {_mask_database_url(final_url)}")
 
     return final_url
 

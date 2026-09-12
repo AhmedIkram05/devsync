@@ -30,11 +30,11 @@ jobs:
       e2e: ${{ steps.filter.outputs.e2e }}
       perf: ${{ steps.filter.outputs.perf }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Detect changed paths
         id: filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: |
             backend:
@@ -65,26 +65,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install ruff
-        run: pip install ruff
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
 
       - name: Ruff check — Python linting
         if: needs.changes.outputs.backend == 'true'
-        run: ruff check backend/
+        run: uvx ruff@0.16.7 check backend/
 
       - name: Ruff format check
         if: needs.changes.outputs.backend == 'true'
-        run: ruff format --check backend/
+        run: uvx ruff@0.16.7 format --check backend/
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "20"
           cache: npm
@@ -108,31 +103,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
       - name: Install pip-audit
-        run: pip install pip-audit
+        run: uv pip install --system "pip-audit==2.10.1"
 
       - name: pip-audit — Python dependency vulnerabilities
         if: needs.changes.outputs.backend == 'true'
         working-directory: backend
-        run: |
-          # PYSEC-2026-1325: ecdsa 0.19.2, transitive via python-jose — latest on PyPI, no fix published yet
-          pip-audit -r requirements.txt \
-            --ignore-vuln CVE-2026-27205 \
-            --ignore-vuln CVE-2024-6866 \
-            --ignore-vuln CVE-2024-6844 \
-            --ignore-vuln CVE-2024-6839 \
-            --ignore-vuln CVE-2026-30922 \
-            --ignore-vuln PYSEC-2026-1325
+        run: bash scripts/pip-audit.sh
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "20"
           cache: npm
@@ -167,26 +157,26 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: backend/requirements.txt
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt pytest-xdist
+        run: uv pip install --system -r backend/requirements.txt "pytest-xdist==3.8.0"
 
       - name: Run unit tests
         run: |
           pytest backend/tests/unit \
             -n auto \
             -x \
-            ${{ github.ref == 'refs/heads/main' && '--cov=backend/src --cov-report=term-missing --cov-report=xml:backend/coverage.xml --cov-fail-under=80' || '-q' }}
+            --cov=backend/src --cov-report=term-missing --cov-report=xml:backend/coverage.xml \
+            ${{ github.ref == 'refs/heads/main' && '--cov-fail-under=80' || '' }}
 
       - name: Run integration tests
         env:
@@ -199,8 +189,8 @@ jobs:
             -q
 
       - name: Upload backend coverage artifact
-        if: github.ref == 'refs/heads/main' && always()
-        uses: actions/upload-artifact@v4
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: backend-coverage
           path: backend/coverage.xml
@@ -215,13 +205,13 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Build backend container image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ./backend
           load: true
@@ -238,10 +228,10 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "20"
           cache: npm
@@ -253,20 +243,19 @@ jobs:
 
       - name: Run frontend tests
         working-directory: frontend
+        env:
+          # shellcheck does not grok inline ${{ }} in run blocks — carry the
+          # flag via env instead. Threshold stays enforced on main only.
+          COVERAGE_THRESHOLD_FLAG: ${{ github.ref == 'refs/heads/main' && '--coverageThreshold={"global":{"branches":75,"functions":85,"lines":85,"statements":85}}' || '' }}
         run: |
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            CI=true npm test -- \
-              --watchAll=false \
-              --coverage \
-              --coverageReporters=text-summary \
-              --coverageReporters=lcov \
-              --maxWorkers=50% \
-              --coverageThreshold='{"global":{"branches":75,"functions":85,"lines":85,"statements":85}}'
-          else
-            CI=true npm test -- \
-              --watchAll=false \
-              --maxWorkers=50%
-          fi
+          # shellcheck disable=SC2086
+          CI=true npm test -- \
+            --watchAll=false \
+            --coverage \
+            --coverageReporters=text-summary \
+            --coverageReporters=lcov \
+            --maxWorkers=50% \
+            $COVERAGE_THRESHOLD_FLAG
 
       - name: Build frontend production bundle
         if: github.ref == 'refs/heads/main'
@@ -274,8 +263,8 @@ jobs:
         run: npm run build
 
       - name: Upload frontend coverage artifact
-        if: github.ref == 'refs/heads/main' && always()
-        uses: actions/upload-artifact@v4
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: frontend-coverage
           path: frontend/coverage/
@@ -305,22 +294,21 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: backend/requirements.txt
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
 
       - name: Install backend dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt
+        run: uv pip install --system -r backend/requirements.txt
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "20"
           cache: npm
@@ -348,16 +336,17 @@ jobs:
           cd backend
           nohup gunicorn src.wsgi:app -c gunicorn.conf.py > /tmp/backend.log 2>&1 &
           echo "Waiting for backend to be ready..."
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -s http://localhost:8000/health > /dev/null 2>&1; then
               echo "Backend ready!"
               break
             fi
             sleep 2
           done
+          curl -sf http://localhost:8000/health || { echo "backend never came up"; tail -100 /tmp/backend.log; exit 1; }
 
       - name: Run Cypress E2E tests
-        uses: cypress-io/github-action@v7
+        uses: cypress-io/github-action@09090944bd8aaa2a517cefb6e38bf1aae336b42b # v7.4.3
         with:
           working-directory: frontend
           start: npx serve -s build -l 3000 --no-clipboard
@@ -369,7 +358,7 @@ jobs:
 
       - name: Upload Cypress screenshots (on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cypress-screenshots
           path: frontend/cypress/screenshots/
@@ -377,7 +366,7 @@ jobs:
 
       - name: Upload backend logs (on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: backend-logs
           path: /tmp/backend.log
@@ -410,19 +399,18 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: backend/requirements.txt
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
 
       - name: Install backend dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt
+        run: uv pip install --system -r backend/requirements.txt
 
       - name: Create database schema
         working-directory: backend
@@ -449,16 +437,17 @@ jobs:
         run: |
           nohup gunicorn src.wsgi:app -c gunicorn.conf.py > /tmp/backend.log 2>&1 &
           echo "Waiting for backend to be ready..."
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -s http://localhost:8000/health > /dev/null 2>&1; then
               echo "Backend ready!"
               break
             fi
             sleep 2
           done
+          curl -sf http://localhost:8000/health || { echo "backend never came up"; tail -100 /tmp/backend.log; exit 1; }
 
       - name: Set up k6
-        uses: grafana/setup-k6-action@v1
+        uses: grafana/setup-k6-action@db07bd9765aac508ef18982e52ab937fe633a065 # v1.2.1
 
       - name: Run k6 load test
         working-directory: backend
@@ -478,7 +467,7 @@ jobs:
 
       - name: Upload k6 load test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: load-test-results
           path: /tmp/k6-summary.json
@@ -486,7 +475,7 @@ jobs:
 
       - name: Upload backend logs (on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: perf-backend-logs
           path: /tmp/backend.log
@@ -496,29 +485,29 @@ jobs:
   coverage:
     name: Coverage upload (Codecov)
     needs: [changes, backend-tests, frontend-tests]
-    if: github.ref == 'refs/heads/main' && !cancelled()
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download backend coverage
         if: needs.changes.outputs.backend == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: backend-coverage
           path: backend/
 
       - name: Download frontend coverage
         if: needs.changes.outputs.frontend == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: frontend-coverage
           path: frontend/coverage/
 
       - name: Upload coverage to Codecov
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           files: backend/coverage.xml,frontend/coverage/lcov.info
           flags: unittests
@@ -526,3 +515,30 @@ jobs:
           verbose: true
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  # ── K8s Manifest Validation (kustomize + kubeconform) ──────────────────
+  # Plan docs/planning/k8s-prod-platform.md §5.5: additive only — validates
+  # prod/pr overlays with strict schema conformance.
+  k8s-validate:
+    name: K8s manifests (kustomize + kubeconform)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Kustomize
+        uses: imranismail/setup-kustomize@53f941b41dca13ed61874bbc6b4b6e1562877530 # v3.0.0
+        with:
+          kustomize-version: 5.4.3
+
+      - name: Install kubeconform
+        run: |
+          KUBECONFORM_VERSION=0.6.7
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar xz -C /tmp
+          sudo mv /tmp/kubeconform /usr/local/bin/kubeconform
+
+      - name: Build overlays + kubeconform -strict
+        run: |
+          kustomize build k8s/overlays/prod | kubeconform -strict -ignore-missing-schemas
+          kustomize build k8s/overlays/pr | kubeconform -strict -ignore-missing-schemas

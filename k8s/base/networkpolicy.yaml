@@ -1,0 +1,172 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    # GKE node-local DNS proxy (node link-local, not a pod) — first hop
+    # for every query; without this, default-deny kills all resolution.
+    - ipBlock:
+        cidr: 169.254.20.10/32
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-https
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  # GitHub API + Artifact Registry pulls. FQDN policy later.
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+    ports:
+    - protocol: TCP
+      port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-internal
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app
+      operator: In
+      values: [devsync-backend, devsync-migrate]
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Frontend to backend only.
+  - from:
+    - podSelector:
+        matchLabels:
+          app: devsync-frontend
+    ports:
+    - protocol: TCP
+      port: 8000
+  egress:
+  # Backend/migrate to backend (self) and Postgres. Frontend is NOT here:
+  # only backend/migrate may reach PG:5432 (see allow-frontend-egress).
+  - to:
+    - podSelector:
+        matchLabels:
+          app: devsync-backend
+    ports:
+    - protocol: TCP
+      port: 8000
+  - to:
+    - podSelector:
+        matchLabels:
+          app: devsync-postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-egress
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  podSelector:
+    matchLabels:
+      app: devsync-frontend
+  policyTypes:
+  - Egress
+  egress:
+  # Frontend talks to the backend only — no path to Postgres.
+  - to:
+    - podSelector:
+        matchLabels:
+          app: devsync-backend
+    ports:
+    - protocol: TCP
+      port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-ingress
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  podSelector:
+    matchLabels:
+      app: devsync-frontend
+  policyTypes:
+  - Ingress
+  ingress:
+  # GCE load-balancer health checks + client traffic to the frontend.
+  - from:
+    - ipBlock:
+        cidr: 130.211.0.0/22
+    - ipBlock:
+        cidr: 35.191.0.0/16
+    ports:
+    - protocol: TCP
+      port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-ingress
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  podSelector:
+    matchLabels:
+      app: devsync-postgres
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [devsync-backend, devsync-migrate]
+    ports:
+    - protocol: TCP
+      port: 5432

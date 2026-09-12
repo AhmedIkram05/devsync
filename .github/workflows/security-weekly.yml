@@ -1,0 +1,69 @@
+name: Security Weekly Audit
+
+# Report-only weekly audit. Runs pip-audit with NO ignores and npm audit at
+# every severity, then writes both to the job summary. Purpose: surface when
+# allow-listed vulnerabilities (see backend/scripts/pip-audit.sh) get fixed
+# upstream, so entries in that script can be retired. It never flips a build
+# red — compare its output against the allow-list each Monday.
+
+on:
+  schedule:
+    - cron: "30 10 * * 1" # Mon 10:30 UTC — after CodeQL (10:00), before CI crunch
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    name: pip-audit (no ignores) — python deps
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
+      - name: Install pip-audit
+        run: uv pip install --system "pip-audit==2.10.1"
+
+      - name: pip-audit (no ignore-list) → summary
+        id: audit
+        continue-on-error: true
+        run: |
+          echo "## pip-audit report (no ignores) — $(date -u +%F)" >> "$GITHUB_STEP_SUMMARY"
+          pip-audit -r backend/requirements.txt 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true
+          echo "This is the no-ignore view: any CVE listed here AND allow-listed in backend/scripts/pip-audit.sh with a fix available upstream should be retired there." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Exit status note
+        run: |
+          echo "pip-audit step conclusion: ${{ steps.audit.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+
+  npm-audit:
+    name: npm audit — frontend deps
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: npm audit (full severity) → summary
+        continue-on-error: true
+        working-directory: frontend
+        run: |
+          echo "## npm audit report (all severities) — $(date -u +%F)" >> "$GITHUB_STEP_SUMMARY"
+          npm audit 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true

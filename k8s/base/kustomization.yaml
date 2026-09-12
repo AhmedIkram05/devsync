@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- namespace.yaml
+- serviceaccount.yaml
+- configmap.yaml
+- clustersecretstore.yaml
+- externalsecret.yaml
+- backend-deployment.yaml
+- frontend-deployment.yaml
+- horizontalpodautoscaler.yaml
+- poddisruptionbudget.yaml
+- service-backend.yaml
+- service-frontend.yaml
+- ingress.yaml
+- managedcertificate.yaml
+- migrate-job.yaml
+- postgres.yaml
+- resourcequota.yaml
+- limitrange.yaml
+- networkpolicy.yaml
+# podmonitoring.yaml is a document-only placeholder (no /metrics on the
+# backend yet) and is deliberately not listed here.

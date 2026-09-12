@@ -1,0 +1,15 @@
+# Base stays host-less: placeholder URLs only. The prod overlay patches in
+# the live host (patch-config-host.yaml); pr/port-forward envs must never
+# inherit prod OAuth URLs from here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: devsync-config
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+data:
+  FLASK_ENV: "production"
+  FRONTEND_URL: "https://devsync.local"
+  GITHUB_REDIRECT_URI: "https://devsync.local/api/v1/github/callback"
+  MIGRATE_ON_BOOT: "false"

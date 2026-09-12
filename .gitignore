@@ -61,3 +61,10 @@ node_modules/
 .env
 
 graphify-out
+
+# Terraform
+.terraform/
+*.tfvars
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info

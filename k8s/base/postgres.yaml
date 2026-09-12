@@ -1,0 +1,123 @@
+# Standing-environment database (in-cluster Postgres). Promotion path to
+# managed Cloud SQL is the k8s/overlays/managed-db overlay (reviewed,
+# unapplied by design) — that overlay deletes this file via patch.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: devsync-postgres
+  namespace: devsync
+  labels:
+    app: devsync-postgres
+    app.kubernetes.io/part-of: devsync
+spec:
+  serviceName: devsync-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: devsync-postgres
+  template:
+    metadata:
+      labels:
+        app: devsync-postgres
+        app.kubernetes.io/part-of: devsync
+    spec:
+      serviceAccountName: devsync-ksa
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        # No runAsNonRoot: the stock postgres:16 entrypoint must start as
+        # root before gosu-dropping to the postgres user; forcing non-root
+        # breaks startup and fresh-volume chown. Contained by drop ALL +
+        # allowPrivilegeEscalation:false below instead.
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: postgres
+        image: postgres:16
+        imagePullPolicy: IfNotPresent
+        # Routine LOG-level lines (checkpoint start/complete etc.) are pure
+        # noise in Cloud Logging, which labels every postgres stderr line
+        # ERROR. Keep >= WARNING: real problems still surface.
+        args:
+        - -c
+        - log_min_messages=warning
+        ports:
+        - name: postgres
+          containerPort: 5432
+        env:
+        - name: PGDATA
+          # Never point PGDATA at the PD mount root: initdb refuses a
+          # non-empty mount point (lost+found). Subdirectory is the
+          # documented pattern for block volumes.
+          value: /var/lib/postgresql/data/pgdata
+        - name: POSTGRES_DB
+          value: devsync
+        - name: POSTGRES_USER
+          value: devsync
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: devsync-app-secrets
+              key: POSTGRES_PASSWORD
+        readinessProbe:
+          exec:
+            command: ["pg_isready", "-U", "devsync", "-d", "devsync"]
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          exec:
+            command: ["pg_isready", "-U", "devsync", "-d", "devsync"]
+          initialDelaySeconds: 30
+          periodSeconds: 20
+        # Right-sized 2026-09-12 after 96%-allocated node memory deadlocked
+        # this pod's own scheduling. Requests must fit a node; limits stay
+        # headroomed for the managed-db promotion path.
+        resources:
+          requests:
+            cpu: 100m
+            memory: 192Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        volumeMounts:
+        - name: pgdata
+          mountPath: /var/lib/postgresql/data
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - CHOWN
+            - FOWNER
+            - DAC_OVERRIDE
+            - SETUID
+            - SETGID
+  volumeClaimTemplates:
+  - metadata:
+      name: pgdata
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: devsync-postgres
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  clusterIP: None
+  # Publish DNS before the pod is ready: the deploy-time wait-for-db init
+  # container polls connect() itself, so early unanswered connections are
+  # harmless — but without this the DNS name doesn't exist at all during
+  # postgres boot, which is what crashed backend/migrate pods at rollout.
+  publishNotReadyAddresses: true
+  selector:
+    app: devsync-postgres
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: 5432

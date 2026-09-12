@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../../base
+patches:
+- path: patch-db-prod.yaml
+- path: patch-config-host.yaml
+# Base Ingress stays rule-host-less on purpose: any domain pointed at the LB
+# (devsyncapp.me, www, gcp.devsyncapp.me) routes to the frontend service.
+# pr drops the Ingress entirely.
+- target:
+    group: networking.gke.io
+    version: v1
+    kind: ManagedCertificate
+    name: devsync-prod-cert
+    namespace: devsync
+  path: patch-ingress-host.yaml

@@ -1,0 +1,16 @@
+name: Resolve GCP_PROJECT_ID placeholders
+description: >-
+  Substitutes the GCP_PROJECT_ID env value into k8s/base manifests that ship
+  with placeholders, then fails the step if any placeholder survives.
+
+runs:
+  using: "composite"
+  steps:
+    - name: Sed placeholders + fail if any remain
+      shell: bash
+      run: |
+        set -euo pipefail
+        sed -i "s/GCP_PROJECT_ID/${GCP_PROJECT_ID}/g" \
+          k8s/base/clustersecretstore.yaml \
+          k8s/base/serviceaccount.yaml
+        grep -rn "GCP_PROJECT_ID" k8s/base/ && exit 1 || echo "No placeholders left."
