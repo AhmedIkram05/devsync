@@ -53,6 +53,8 @@ resource "google_project_iam_member" "cicd" {
     "roles/serviceusage.serviceUsageAdmin",  # services.tf API enablement
     "roles/resourcemanager.projectIamAdmin", # nodes_ar_reader project-level binding
     "roles/compute.viewer",                  # provider refresh reads instanceGroupUrls (compute.instanceGroupManagers.get)
+    "roles/iam.serviceAccountAdmin",         # module.iam owns google_service_account.runner + impersonation member
+    "roles/iam.workloadIdentityPoolAdmin",   # module.iam owns WIF pool `github` + provider `github-actions`
   ])
   project = var.project_id
   role    = each.value
