@@ -117,7 +117,7 @@ jobs:
           ignore-unfixed: true
 
   pr-env:
-    name: Deploy pr-<n> + smoke
+    name: Deploy PR #${{ github.event.pull_request.number || inputs.pr_number }} + smoke
     needs: build-push
     if: github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
@@ -207,6 +207,10 @@ jobs:
           path: /tmp/smoke.log
           if-no-files-found: ignore
 
+      - name: Delete pr namespace (always, pass or fail)
+        if: always()
+        run: kubectl delete namespace "$PR_NS" --ignore-not-found=true --wait=false
+
   comment:
     name: Sticky PR comment
     needs: pr-env
@@ -223,7 +227,7 @@ jobs:
             - Backend image: `${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPOSITORY }}/devsync-backend:${{ github.sha }}`
             - Frontend image: `${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPOSITORY }}/devsync-frontend:${{ github.sha }}`
             - Smoke: `curl /health` + register via port-forward (see `pr-smoke` artifact)
-            - No Ingress/certs per PR by design — namespace GC'd on close.
+            - No Ingress/certs per PR by design — namespace deleted after the run (pass or fail).
 
   tf-plan:
     name: Terraform plan (infra/terraform diffs)
@@ -302,7 +306,7 @@ jobs:
           message: ${{ steps.plan.outputs.body || 'Plan Preview skipped (infra/terraform unchanged or init failed)' }}
 
   gc:
-    name: Delete pr-<n> namespace on close
+    name: Delete PR #${{ github.event.pull_request.number }} namespace on close
     if: github.event.action == 'closed'
     runs-on: ubuntu-latest
     timeout-minutes: 10
