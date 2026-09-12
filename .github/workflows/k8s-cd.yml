@@ -172,14 +172,9 @@ jobs:
         run: |
           set -euo pipefail
           AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
-          token=$(gcloud auth print-access-token)
+          gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
           for img in backend frontend; do
-            digest=$(curl -fsS -o /dev/null -D - \
-              -H "Authorization: Bearer $token" \
-              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
-              "https://${AR}/v2/devsync-${img}/manifests/${IMAGE_TAG}" \
-              | tr -d '\r' \
-              | awk 'tolower($1)=="docker-content-digest:"{print $2}')
+            digest=$(docker buildx imagetools inspect "${AR}/devsync-${img}:${IMAGE_TAG}" | awk '/^Digest:/{print $2}')
             test -n "$digest" || { echo "::error::no digest resolved for devsync-${img}"; exit 1; }
             echo "${img^^}_IMG=${AR}/devsync-${img}@${digest}" >> "$GITHUB_ENV"
             echo "${img^^}_AR=${AR}" >> "$GITHUB_ENV"
@@ -337,14 +332,9 @@ jobs:
         run: |
           set -euo pipefail
           AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
-          token=$(gcloud auth print-access-token)
+          gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
           for img in backend frontend; do
-            digest=$(curl -fsS -o /dev/null -D - \
-              -H "Authorization: Bearer $token" \
-              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
-              "https://${AR}/v2/devsync-${img}/manifests/${IMAGE_TAG}" \
-              | tr -d '\r' \
-              | awk 'tolower($1)=="docker-content-digest:"{print $2}')
+            digest=$(docker buildx imagetools inspect "${AR}/devsync-${img}:${IMAGE_TAG}" | awk '/^Digest:/{print $2}')
             test -n "$digest" || { echo "::error::no digest resolved for devsync-${img}"; exit 1; }
             echo "${img^^}_IMG=${AR}/devsync-${img}@${digest}" >> "$GITHUB_ENV"
             echo "${img^^}_AR=${AR}" >> "$GITHUB_ENV"
@@ -422,14 +412,9 @@ jobs:
           set -euo pipefail
           # Self-contained digest resolution (no cross-job outputs hop).
           AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
-          token=$(gcloud auth print-access-token)
+          gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
           for img in backend frontend; do
-            digest=$(curl -fsS -o /dev/null -D - \
-              -H "Authorization: Bearer $token" \
-              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
-              "https://${AR}/v2/devsync-${img}/manifests/${IMAGE_TAG}" \
-              | tr -d '\r' \
-              | awk 'tolower($1)=="docker-content-digest:"{print $2}')
+            digest=$(docker buildx imagetools inspect "${AR}/devsync-${img}:${IMAGE_TAG}" | awk '/^Digest:/{print $2}')
             test -n "$digest" || { echo "::error::no digest resolved for devsync-${img}"; exit 1; }
             echo "${img^^}_IMG=${AR}/devsync-${img}@${digest}" >> "$GITHUB_ENV"
           done
