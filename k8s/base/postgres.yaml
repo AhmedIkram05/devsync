@@ -34,6 +34,12 @@ spec:
       - name: postgres
         image: postgres:16
         imagePullPolicy: IfNotPresent
+        # Routine LOG-level lines (checkpoint start/complete etc.) are pure
+        # noise in Cloud Logging, which labels every postgres stderr line
+        # ERROR. Keep >= WARNING: real problems still surface.
+        args:
+        - -c
+        - log_min_messages=warning
         ports:
         - name: postgres
           containerPort: 5432
@@ -62,10 +68,13 @@ spec:
             command: ["pg_isready", "-U", "devsync", "-d", "devsync"]
           initialDelaySeconds: 30
           periodSeconds: 20
+        # Right-sized 2026-09-12 after 96%-allocated node memory deadlocked
+        # this pod's own scheduling. Requests must fit a node; limits stay
+        # headroomed for the managed-db promotion path.
         resources:
           requests:
-            cpu: 250m
-            memory: 256Mi
+            cpu: 100m
+            memory: 192Mi
           limits:
             cpu: 1000m
             memory: 1Gi
@@ -101,6 +110,11 @@ metadata:
     app.kubernetes.io/part-of: devsync
 spec:
   clusterIP: None
+  # Publish DNS before the pod is ready: the deploy-time wait-for-db init
+  # container polls connect() itself, so early unanswered connections are
+  # harmless — but without this the DNS name doesn't exist at all during
+  # postgres boot, which is what crashed backend/migrate pods at rollout.
+  publishNotReadyAddresses: true
   selector:
     app: devsync-postgres
   ports:

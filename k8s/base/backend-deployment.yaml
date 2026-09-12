@@ -32,6 +32,42 @@ spec:
         runAsUser: 10000
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+      - name: wait-for-db
+        # The postgres Service is headless, so its DNS record only exists once
+        # a pod reports ready — backend pods used to crash-loop on
+        # "could not translate host name devsync-postgres" during rollouts.
+        # Same app image (kustomize selector matches initContainers too), no
+        # extra registry dep. Retries 60×2s = 120s ceiling.
+        image: devsync-backend
+        imagePullPolicy: IfNotPresent
+        command:
+        - python
+        - -c
+        - |
+          import socket, sys, time
+          for i in range(60):
+              try:
+                  socket.create_connection(("devsync-postgres", 5432), timeout=2).close()
+                  print(f"DB ready after {i} probes", flush=True)
+                  sys.exit(0)
+              except OSError as exc:
+                  print(f"DB not ready ({exc}); retrying", flush=True)
+                  time.sleep(2)
+          sys.exit("devsync-postgres:5432 unreachable after 120s")
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
       containers:
       - name: backend
         # Bare name = the kustomize image selector (devsync-backend) matches;
@@ -82,10 +118,14 @@ spec:
             port: 8000
           initialDelaySeconds: 10
           periodSeconds: 10
+        # Right-sized 2026-09-12: gunicorn single-worker actually uses ~90Mi.
+        # The 512Mi request used to consume every free slot on the 4-node
+        # e2-small pool and deadlocked postgres scheduling during rollouts
+        # (requests must fit, limits stay generous for spikes).
         resources:
           requests:
             cpu: 250m
-            memory: 512Mi
+            memory: 256Mi
           limits:
             cpu: 1000m
             memory: 1Gi
