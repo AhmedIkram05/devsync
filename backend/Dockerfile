@@ -37,6 +37,10 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
 # Copy pre-built packages from build stage
 COPY --from=build /install /usr/local
 
+# Replace base-image setuptools/wheel in place: the COPY overlay leaves the
+# base's setuptools 79.0.1 (vendored jaraco.context 5.3.0, Trivy HIGH) behind.
+RUN pip install --no-cache-dir --upgrade "setuptools>=80" "wheel>=0.46.2"
+
 # Copy application code
 COPY . .
 
