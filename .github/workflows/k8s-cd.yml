@@ -71,6 +71,9 @@ jobs:
     if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # ONLY consumer left of these outputs: the SLSA generator (a reusable
+    # `uses:` job cannot run a digest-harvesting step). If the hop renders
+    # empty again, the generator fails loudly on digest format — acceptable.
     outputs:
       backend-digest: ${{ steps.build-backend.outputs.digest }}
       frontend-digest: ${{ steps.build-frontend.outputs.digest }}
@@ -148,43 +151,77 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      # Self-contained: resolve digests from the registry by tag so this job
+      # never depends on a cross-job outputs hop (which silently rendered
+      # empty in run 34696085848).
+      - name: Resolve image digests
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ secrets.GCP_REGION }}
+          AR_REPOSITORY: ${{ secrets.AR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
+          token=$(gcloud auth print-access-token)
+          for img in backend frontend; do
+            digest=$(curl -fsSI \
+              -H "Authorization: Bearer $token" \
+              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
+              "https://${AR}/v2/devsync-${img}/manifests/${IMAGE_TAG}" \
+              | tr -d '\r' \
+              | awk 'tolower($1)=="docker-content-digest:"{print $2}')
+            test -n "$digest" || { echo "::error::no digest resolved for devsync-${img}"; exit 1; }
+            echo "${img^^}_IMG=${AR}/devsync-${img}@${digest}" >> "$GITHUB_ENV"
+            echo "${img^^}_AR=${AR}" >> "$GITHUB_ENV"
+          done
+
       - name: Cosign sign — backend (keyless via OIDC)
-        run: cosign sign --yes "${{ needs.build-push.outputs.backend-image }}@${{ needs.build-push.outputs.backend-digest }}"
+        run: cosign sign --yes "$BACKEND_IMG"
 
       - name: Cosign sign — frontend (keyless via OIDC)
-        run: cosign sign --yes "${{ needs.build-push.outputs.frontend-image }}@${{ needs.build-push.outputs.frontend-digest }}"
+        run: cosign sign --yes "$FRONTEND_IMG"
 
       - name: SBOM — backend (Syft)
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
-          image: ${{ needs.build-push.outputs.backend-image }}@${{ needs.build-push.outputs.backend-digest }}
+          image: ${{ env.BACKEND_IMG }}
           output-file: backend.spdx.json
 
       - name: Attest SBOM — backend
-        run: cosign attest --yes --predicate backend.spdx.json --type spdx "${{ needs.build-push.outputs.backend-image }}@${{ needs.build-push.outputs.backend-digest }}"
+        run: cosign attest --yes --predicate backend.spdx.json --type spdx "$BACKEND_IMG"
 
       - name: SBOM — frontend (Syft)
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
-          image: ${{ needs.build-push.outputs.frontend-image }}@${{ needs.build-push.outputs.frontend-digest }}
+          image: ${{ env.FRONTEND_IMG }}
           output-file: frontend.spdx.json
 
       - name: Attest SBOM — frontend
-        run: cosign attest --yes --predicate frontend.spdx.json --type spdx "${{ needs.build-push.outputs.frontend-image }}@${{ needs.build-push.outputs.frontend-digest }}"
+        run: cosign attest --yes --predicate frontend.spdx.json --type spdx "$FRONTEND_IMG"
 
       - name: Cosign verify — backend (§5.1 identity)
         run: |
           cosign verify \
             --certificate-identity-regexp 'https://github.com/AhmedIkram05/DevSync/\.github/workflows/k8s-cd\.yml@.*' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "${{ needs.build-push.outputs.backend-image }}@${{ needs.build-push.outputs.backend-digest }}"
+            "$BACKEND_IMG"
 
       - name: Cosign verify — frontend (§5.1 identity)
         run: |
           cosign verify \
             --certificate-identity-regexp 'https://github.com/AhmedIkram05/DevSync/\.github/workflows/k8s-cd\.yml@.*' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "${{ needs.build-push.outputs.frontend-image }}@${{ needs.build-push.outputs.frontend-digest }}"
+            "$FRONTEND_IMG"
 
   slsa-backend:
     name: SLSA provenance — backend
@@ -281,14 +318,35 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
 
+      # Self-contained: no cross-job outputs hop (silently empty in run
+      # 34696085848). Digests are re-resolved from the registry by tag.
+      - name: Resolve image digests
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ secrets.GCP_REGION }}
+          AR_REPOSITORY: ${{ secrets.AR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
+          token=$(gcloud auth print-access-token)
+          for img in backend frontend; do
+            digest=$(curl -fsSI \
+              -H "Authorization: Bearer $token" \
+              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
+              "https://${AR}/v2/devsync-${img}/manifests/${IMAGE_TAG}" \
+              | tr -d '\r' \
+              | awk 'tolower($1)=="docker-content-digest:"{print $2}')
+            test -n "$digest" || { echo "::error::no digest resolved for devsync-${img}"; exit 1; }
+            echo "${img^^}_IMG=${AR}/devsync-${img}@${digest}" >> "$GITHUB_ENV"
+            echo "${img^^}_AR=${AR}" >> "$GITHUB_ENV"
+          done
+
       # Re-verify chain of custody at deploy time — the registry is read
       # unauthenticated by default in other processes; don't trust it.
       - name: Cosign verify at deploy time — backend + frontend
         run: |
-          for ref in \
-            "${{ needs.build-push.outputs.backend-image }}@${{ needs.build-push.outputs.backend-digest }}" \
-            "${{ needs.build-push.outputs.frontend-image }}@${{ needs.build-push.outputs.frontend-digest }}"
-          do
+          for ref in "$BACKEND_IMG" "$FRONTEND_IMG"; do
             cosign verify \
               --certificate-identity-regexp 'https://github.com/AhmedIkram05/DevSync/\.github/workflows/k8s-cd\.yml@.*' \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com \
@@ -300,12 +358,18 @@ jobs:
 
       - name: Pin digests + apply overlay
         run: |
+          set -euo pipefail
           cd k8s/overlays/prod
-          kustomize edit set image "devsync-backend=${{ needs.build-push.outputs.backend-image }}@${{ needs.build-push.outputs.backend-digest }}"
-          kustomize edit set image "devsync-frontend=${{ needs.build-push.outputs.frontend-image }}@${{ needs.build-push.outputs.frontend-digest }}"
+          kustomize edit set image "devsync-backend=${BACKEND_IMG}"
+          kustomize edit set image "devsync-frontend=${FRONTEND_IMG}"
+          # Tripwire: a pin that silently no-ops would ship bare-name images
+          # (exact failure mode of run 34696085848). Assert the render.
+          RENDER="$(kubectl kustomize .)"
+          echo "$RENDER" | grep -Fqw "image: ${BACKEND_IMG}" || { echo '::error::backend image not pinned'; exit 1; }
+          echo "$RENDER" | grep -Fqw "image: ${FRONTEND_IMG}" || { echo '::error::frontend image not pinned'; exit 1; }
           # Completed Job specs are immutable — drop before re-applying with new digests.
           kubectl delete job devsync-migrate -n "$NAMESPACE" --ignore-not-found=true
-          kubectl apply -k .
+          echo "$RENDER" | kubectl apply -f -
 
       - name: Wait for migrate Job Complete (600s)
         run: |
@@ -341,11 +405,34 @@ jobs:
         uses: ./.github/actions/resolve-gcp-placeholders
 
       - name: Pin digests + apply
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ secrets.GCP_REGION }}
+          AR_REPOSITORY: ${{ secrets.AR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
+          set -euo pipefail
+          # Self-contained digest resolution (no cross-job outputs hop).
+          AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
+          token=$(gcloud auth print-access-token)
+          for img in backend frontend; do
+            digest=$(curl -fsSI \
+              -H "Authorization: Bearer $token" \
+              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
+              "https://${AR}/v2/devsync-${img}/manifests/${IMAGE_TAG}" \
+              | tr -d '\r' \
+              | awk 'tolower($1)=="docker-content-digest:"{print $2}')
+            test -n "$digest" || { echo "::error::no digest resolved for devsync-${img}"; exit 1; }
+            echo "${img^^}_IMG=${AR}/devsync-${img}@${digest}" >> "$GITHUB_ENV"
+          done
           cd k8s/overlays/prod
-          kustomize edit set image "devsync-backend=${{ needs.build-push.outputs.backend-image }}@${{ needs.build-push.outputs.backend-digest }}"
-          kustomize edit set image "devsync-frontend=${{ needs.build-push.outputs.frontend-image }}@${{ needs.build-push.outputs.frontend-digest }}"
-          kubectl apply -k .
+          kustomize edit set image "devsync-backend=${BACKEND_IMG}"
+          kustomize edit set image "devsync-frontend=${FRONTEND_IMG}"
+          # Tripwire: silent pin no-ops ship bare-name images (run 34696085848).
+          RENDER="$(kubectl kustomize .)"
+          echo "$RENDER" | grep -Fqw "image: ${BACKEND_IMG}" || { echo '::error::backend image not pinned'; exit 1; }
+          echo "$RENDER" | grep -Fqw "image: ${FRONTEND_IMG}" || { echo '::error::frontend image not pinned'; exit 1; }
+          echo "$RENDER" | kubectl apply -f -
 
       - name: Wait for Deployments Available (10m)
         run: |

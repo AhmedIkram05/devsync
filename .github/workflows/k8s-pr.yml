@@ -57,9 +57,6 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    outputs:
-      backend-image: ${{ steps.img-names.outputs.backend-image }}
-      frontend-image: ${{ steps.img-names.outputs.frontend-image }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -162,13 +159,21 @@ jobs:
 
       - name: Apply pr overlay with PR-built images
         run: |
+          set -euo pipefail
           cd k8s/overlays/pr
+          AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
           kustomize edit set namespace "$PR_NS"
-          kustomize edit set image "devsync-backend=${{ needs.build-push.outputs.backend-image }}:${{ github.sha }}"
-          kustomize edit set image "devsync-frontend=${{ needs.build-push.outputs.frontend-image }}:${{ github.sha }}"
-          # nginx resolver needs the FQDN of the real PR namespace
-          sed -i "s/devsync-backend\.pr-0\.svc/devsync-backend.${PR_NS}.svc/g" patch-frontend-upstream.yaml
-          kubectl apply -k .
+          kustomize edit set image "devsync-backend=${AR}/devsync-backend:${{ github.sha }}"
+          kustomize edit set image "devsync-frontend=${AR}/devsync-frontend:${{ github.sha }}"
+          # Tripwire: kustomize silently converts "name=:tag" into a tag-only
+          # change, which would ship bare docker.io names. Refuse instead.
+          RENDER="$(kubectl kustomize .)"
+          echo "$RENDER" | grep -Fqw "image: ${AR}/devsync-backend:${{ github.sha }}" || { echo "::error::backend image not pinned to ${AR}"; exit 1; }
+          echo "$RENDER" | grep -Fqw "image: ${AR}/devsync-frontend:${{ github.sha }}" || { echo "::error::frontend image not pinned to ${AR}"; exit 1; }
+          # A completed/failed Job's template is immutable; drop it so this run's
+          # migrate spec applies fresh (migrations are idempotent).
+          kubectl delete job devsync-migrate -n "$PR_NS" --ignore-not-found=true
+          echo "$RENDER" | kubectl apply -f -
 
       - name: Migrate + wait
         run: |
@@ -204,7 +209,7 @@ jobs:
 
   comment:
     name: Sticky PR comment
-    needs: [pr-env, build-push]
+    needs: pr-env
     if: ${{ always() && (github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -215,8 +220,8 @@ jobs:
           header: k8s-pr-env
           message: |
             ## K8s PR env `${{ env.PR_NS }}` — ${{ needs.pr-env.result == 'success' && 'smoke green' || 'smoke FAILED' }}
-            - Backend image: `${{ needs.build-push.outputs.backend-image }}:${{ github.sha }}`
-            - Frontend image: `${{ needs.build-push.outputs.frontend-image }}:${{ github.sha }}`
+            - Backend image: `${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPOSITORY }}/devsync-backend:${{ github.sha }}`
+            - Frontend image: `${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPOSITORY }}/devsync-frontend:${{ github.sha }}`
             - Smoke: `curl /health` + register via port-forward (see `pr-smoke` artifact)
             - No Ingress/certs per PR by design — namespace GC'd on close.
 
