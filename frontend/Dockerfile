@@ -1,11 +1,14 @@
 # ===== Build Stage =====
 FROM node:20-alpine AS build
 
+# Pull patched alpine packages (openssl, expat, libpng, etc. — Trivy gate)
+RUN apk upgrade --no-cache
+
 WORKDIR /app
 
 # Copy dependency manifests first for layer caching
 COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 
 # Copy source and build
 COPY . .
@@ -15,6 +18,9 @@ RUN npm run build
 
 # ===== Production Serve Stage =====
 FROM nginx:1.27-alpine
+
+# Pull patched alpine packages (openssl, expat, libpng, etc. — Trivy gate)
+RUN apk upgrade --no-cache
 
 # Copy built assets from build stage
 COPY --from=build /app/build /usr/share/nginx/html

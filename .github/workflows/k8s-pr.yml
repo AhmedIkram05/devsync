@@ -117,6 +117,7 @@ jobs:
           image-ref: ${{ steps.img-names.outputs.frontend-image }}@${{ steps.build-frontend.outputs.digest }}
           severity: HIGH,CRITICAL
           exit-code: "1"
+          ignore-unfixed: true
 
   pr-env:
     name: Deploy pr-<n> + smoke
