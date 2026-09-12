@@ -44,9 +44,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  GCP_REGION: ${{ secrets.GCP_REGION }}
-  AR_REPOSITORY: ${{ secrets.AR_REPOSITORY }}
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  GCP_REGION: ${{ vars.GCP_REGION }}
+  AR_REPOSITORY: ${{ vars.AR_REPOSITORY }}
   CLUSTER_NAME: devsync-prod
   CLUSTER_LOCATION: us-central1-a
   PR_NS: pr-${{ github.event.pull_request.number || inputs.pr_number }}
@@ -54,7 +54,7 @@ env:
 jobs:
   build-push:
     name: Build + push PR images (AR, Trivy gate)
-    if: github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)
+    if: (github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)) && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -119,7 +119,7 @@ jobs:
   pr-env:
     name: Deploy PR #${{ github.event.pull_request.number || inputs.pr_number }} + smoke
     needs: build-push
-    if: github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)
+    if: (github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)) && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -133,7 +133,7 @@ jobs:
 
       - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           location: ${{ env.CLUSTER_LOCATION }}
 
@@ -214,7 +214,7 @@ jobs:
   comment:
     name: Sticky PR comment
     needs: pr-env
-    if: ${{ always() && (github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)) }}
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)) && github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -224,14 +224,14 @@ jobs:
           header: k8s-pr-env
           message: |
             ## K8s PR env `${{ env.PR_NS }}` — ${{ needs.pr-env.result == 'success' && 'smoke green' || 'smoke FAILED' }}
-            - Backend image: `${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPOSITORY }}/devsync-backend:${{ github.sha }}`
-            - Frontend image: `${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.AR_REPOSITORY }}/devsync-frontend:${{ github.sha }}`
+            - Backend image: `${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/devsync-backend:${{ github.sha }}`
+            - Frontend image: `${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/devsync-frontend:${{ github.sha }}`
             - Smoke: `curl /health` + register via port-forward (see `pr-smoke` artifact)
             - No Ingress/certs per PR by design — namespace deleted after the run (pass or fail).
 
   tf-plan:
     name: Terraform plan (infra/terraform diffs)
-    if: github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)
+    if: (github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)) && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -264,7 +264,7 @@ jobs:
         if: steps.tf.outputs.tf == 'true'
         working-directory: infra/terraform
         env:
-          TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
+          TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
         run: terraform init -input=false -backend-config=bucket="${{ secrets.GCP_TF_STATE_BUCKET }}"
 
@@ -273,7 +273,7 @@ jobs:
         if: steps.tf.outputs.tf == 'true'
         working-directory: infra/terraform
         env:
-          TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
+          TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
         run: |
           rc=0
@@ -319,7 +319,7 @@ jobs:
 
       - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           location: ${{ env.CLUSTER_LOCATION }}
 

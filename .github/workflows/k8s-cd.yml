@@ -23,10 +23,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  GCP_REGION: ${{ secrets.GCP_REGION }}
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  GCP_REGION: ${{ vars.GCP_REGION }}
   GCP_TF_STATE_BUCKET: ${{ secrets.GCP_TF_STATE_BUCKET }}
-  AR_REPOSITORY: ${{ secrets.AR_REPOSITORY }}
+  AR_REPOSITORY: ${{ vars.AR_REPOSITORY }}
   CLUSTER_NAME: devsync-prod
   CLUSTER_LOCATION: us-central1-a
   NAMESPACE: devsync
@@ -165,16 +165,16 @@ jobs:
       # empty in run 34696085848).
       - name: Resolve image digests
         env:
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          GCP_REGION: ${{ secrets.GCP_REGION }}
-          AR_REPOSITORY: ${{ secrets.AR_REPOSITORY }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          AR_REPOSITORY: ${{ vars.AR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           set -euo pipefail
           AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
           token=$(gcloud auth print-access-token)
           for img in backend frontend; do
-            digest=$(curl -fsSI \
+            digest=$(curl -fsS \
               -H "Authorization: Bearer $token" \
               -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
               "https://${AR}/v2/devsync-${img}/manifests/${IMAGE_TAG}" \
@@ -241,6 +241,9 @@ jobs:
       # secrets context is rejected in reusable-workflow with: (actionlint).
       gcp-workload-identity-provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
       gcp-service-account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      # Repo is private: explicitly allow the repo name into the public Rekor
+      # transparency log (keyless provenance is public by design).
+      private-repository: true
 
   slsa-frontend:
     name: SLSA provenance — frontend
@@ -256,6 +259,7 @@ jobs:
       digest: ${{ needs.build-push.outputs.frontend-digest }}
       gcp-workload-identity-provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
       gcp-service-account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      private-repository: true
 
   tf-apply:
     name: Terraform apply
@@ -278,7 +282,7 @@ jobs:
       - name: Terraform init + apply (idempotent, GCS backend)
         working-directory: infra/terraform
         env:
-          TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
+          TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
         run: |
           terraform init -input=false -backend-config=bucket="$GCP_TF_STATE_BUCKET"
@@ -303,7 +307,7 @@ jobs:
 
       - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           location: ${{ env.CLUSTER_LOCATION }}
 
@@ -322,16 +326,16 @@ jobs:
       # 34696085848). Digests are re-resolved from the registry by tag.
       - name: Resolve image digests
         env:
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          GCP_REGION: ${{ secrets.GCP_REGION }}
-          AR_REPOSITORY: ${{ secrets.AR_REPOSITORY }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          AR_REPOSITORY: ${{ vars.AR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           set -euo pipefail
           AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
           token=$(gcloud auth print-access-token)
           for img in backend frontend; do
-            digest=$(curl -fsSI \
+            digest=$(curl -fsS \
               -H "Authorization: Bearer $token" \
               -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
               "https://${AR}/v2/devsync-${img}/manifests/${IMAGE_TAG}" \
@@ -392,7 +396,7 @@ jobs:
 
       - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           location: ${{ env.CLUSTER_LOCATION }}
 
@@ -406,9 +410,9 @@ jobs:
 
       - name: Pin digests + apply
         env:
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          GCP_REGION: ${{ secrets.GCP_REGION }}
-          AR_REPOSITORY: ${{ secrets.AR_REPOSITORY }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          AR_REPOSITORY: ${{ vars.AR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -416,7 +420,7 @@ jobs:
           AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
           token=$(gcloud auth print-access-token)
           for img in backend frontend; do
-            digest=$(curl -fsSI \
+            digest=$(curl -fsS \
               -H "Authorization: Bearer $token" \
               -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
               "https://${AR}/v2/devsync-${img}/manifests/${IMAGE_TAG}" \
@@ -455,7 +459,7 @@ jobs:
 
       - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           location: ${{ env.CLUSTER_LOCATION }}
 
@@ -545,7 +549,7 @@ jobs:
 
       - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           location: ${{ env.CLUSTER_LOCATION }}
 
