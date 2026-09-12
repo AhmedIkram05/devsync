@@ -41,14 +41,13 @@ resource "google_monitoring_dashboard" "devsync" {
         {
           width  = 6
           height = 4
-          xPos   = 0
-          yPos   = 0
           widget = {
             title = "Backend / Frontend CPU"
             xyChart = {
               dataSets = [
                 {
-                  plotType = "LINE"
+                  plotType   = "LINE"
+                  targetAxis = "Y1"
                   timeSeriesQuery = {
                     unitOverride = "1"
                     timeSeriesFilter = {
@@ -62,7 +61,8 @@ resource "google_monitoring_dashboard" "devsync" {
                   }
                 },
                 {
-                  plotType = "LINE"
+                  plotType   = "LINE"
+                  targetAxis = "Y1"
                   timeSeriesQuery = {
                     unitOverride = "1"
                     timeSeriesFilter = {
@@ -87,13 +87,13 @@ resource "google_monitoring_dashboard" "devsync" {
           width  = 6
           height = 4
           xPos   = 6
-          yPos   = 0
           widget = {
             title = "Container restarts"
             xyChart = {
               dataSets = [
                 {
-                  plotType = "STACKED_BAR"
+                  plotType   = "STACKED_BAR"
+                  targetAxis = "Y1"
                   timeSeriesQuery = {
                     timeSeriesFilter = {
                       filter = "metric.type=\"kubernetes.io/container/restart_count\" resource.type=\"k8s_container\" resource.label.\"namespace_name\"=\"devsync\""
@@ -117,7 +117,6 @@ resource "google_monitoring_dashboard" "devsync" {
         {
           width  = 6
           height = 4
-          xPos   = 0
           yPos   = 4
           widget = {
             title = "BackendDown alert"
