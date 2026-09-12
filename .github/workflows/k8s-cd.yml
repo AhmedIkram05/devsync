@@ -201,8 +201,15 @@ jobs:
           image: ${{ env.BACKEND_IMG }}
           output-file: backend.spdx.json
 
+      # cosign v3.1.3 forces the SPDX predicate through a bundle path that
+      # fails with "failed to fetch envelope statement: invalid attestation:
+      # decoding json" against AR — bisected locally with a valid SPDX file.
+      # --type custom carries the same SPDX payload and verifies fine.
       - name: Attest SBOM — backend
-        run: cosign attest --yes --key env://COSIGN_PRIVATE_KEY --predicate backend.spdx.json --type spdx "$BACKEND_IMG"
+        run: |
+          test -s backend.spdx.json || { echo '::error::backend.spdx.json missing or empty'; exit 1; }
+          python3 -m json.tool backend.spdx.json > /dev/null || { echo '::error::backend.spdx.json not valid JSON'; exit 1; }
+          cosign attest --yes --key env://COSIGN_PRIVATE_KEY --predicate backend.spdx.json --type custom "$BACKEND_IMG"
 
       - name: SBOM — frontend (Syft)
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
@@ -211,7 +218,10 @@ jobs:
           output-file: frontend.spdx.json
 
       - name: Attest SBOM — frontend
-        run: cosign attest --yes --key env://COSIGN_PRIVATE_KEY --predicate frontend.spdx.json --type spdx "$FRONTEND_IMG"
+        run: |
+          test -s frontend.spdx.json || { echo '::error::frontend.spdx.json missing or empty'; exit 1; }
+          python3 -m json.tool frontend.spdx.json > /dev/null || { echo '::error::frontend.spdx.json not valid JSON'; exit 1; }
+          cosign attest --yes --key env://COSIGN_PRIVATE_KEY --predicate frontend.spdx.json --type custom "$FRONTEND_IMG"
 
       - name: Cosign verify — backend (public key)
         run: cosign verify --key env://COSIGN_PUBLIC_KEY --insecure-ignore-tlog "$BACKEND_IMG"
