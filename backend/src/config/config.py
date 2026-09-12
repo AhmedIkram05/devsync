@@ -3,7 +3,7 @@
 import os
 import re
 from ipaddress import ip_address
-from urllib.parse import urlsplit, urlunsplit, urlparse
+from urllib.parse import urlparse, urlsplit, urlunsplit
 
 from dotenv import load_dotenv
 

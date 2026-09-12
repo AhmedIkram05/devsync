@@ -1,5 +1,5 @@
 # ===== Build Stage =====
-FROM python:3.11-slim AS build
+FROM python:3.11-slim-bookworm AS build
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Install build dependencies for psycopg2
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     libpq-dev \
@@ -15,11 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # ===== Runtime Stage =====
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -30,7 +30,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Install only runtime system deps (no build tools)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     libpq5 \
  && rm -rf /var/lib/apt/lists/*
 

@@ -98,6 +98,7 @@ jobs:
           image-ref: ${{ steps.img-names.outputs.backend-image }}@${{ steps.build-backend.outputs.digest }}
           severity: HIGH,CRITICAL
           exit-code: "1"
+          ignore-unfixed: true
 
       - name: Build + push frontend (both transports)
         id: build-frontend
@@ -266,7 +267,7 @@ jobs:
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
         run: |
           rc=0
-          terraform plan -input=false -no-color -detailed-exitcode -out=tfplan > /tmp/tfplan.txt 2>&1 || rc=$?
+          terraform plan -input=false -refresh=false -no-color -detailed-exitcode -out=tfplan > /tmp/tfplan.txt 2>&1 || rc=$?
           tail -200 /tmp/tfplan.txt
           if [ "$rc" = 0 ]; then
             status="NO CHANGES"

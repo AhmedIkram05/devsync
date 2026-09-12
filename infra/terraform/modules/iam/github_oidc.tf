@@ -52,6 +52,7 @@ resource "google_project_iam_member" "cicd" {
     "roles/monitoring.editor",               # dashboard.tf alert/channel/dashboard
     "roles/serviceusage.serviceUsageAdmin",  # services.tf API enablement
     "roles/resourcemanager.projectIamAdmin", # nodes_ar_reader project-level binding
+    "roles/compute.viewer",                  # provider refresh reads instanceGroupUrls (compute.instanceGroupManagers.get)
   ])
   project = var.project_id
   role    = each.value

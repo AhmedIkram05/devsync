@@ -1,14 +1,15 @@
 """JSON log format for GMP Cloud Logging (stdlib only)."""
+
 import json
 import logging
 import logging.config
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 class JsonFormatter(logging.Formatter):
     def format(self, record):
         payload = {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "severity": record.levelname,
             "msg": record.getMessage(),

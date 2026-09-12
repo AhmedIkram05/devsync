@@ -10,10 +10,10 @@ from flask_swagger_ui import get_swaggerui_blueprint
 from src.api import init_app as init_api
 from src.api.middlewares import setup_middlewares
 from src.config.config import get_config
-from src.logging_config import setup_json_logging
 
 # Import before config-dependent modules to allow env vars to be read.
 from src.db.models import db
+from src.logging_config import setup_json_logging
 from src.socketio_server import init_socketio
 
 load_dotenv(override=False)

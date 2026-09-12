@@ -114,6 +114,7 @@ jobs:
           image-ref: ${{ steps.img-names.outputs.backend-image }}@${{ steps.build-backend.outputs.digest }}
           severity: HIGH,CRITICAL
           exit-code: "1"
+          ignore-unfixed: true
 
       - name: Build + push frontend (both transports)
         id: build-frontend

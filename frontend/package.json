@@ -53,7 +53,8 @@
     ]
   },
   "overrides": {
-    "@tootallnate/once": "2.0.1"
+    "@tootallnate/once": "2.0.1",
+    "websocket-driver": "0.7.5"
   },
   "devDependencies": {
     "@cypress/code-coverage": "^3.14.7",
