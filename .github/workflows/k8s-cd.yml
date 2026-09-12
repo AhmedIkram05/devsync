@@ -174,7 +174,7 @@ jobs:
           AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
           token=$(gcloud auth print-access-token)
           for img in backend frontend; do
-            digest=$(curl -fsS \
+            digest=$(curl -fsS -o /dev/null -D - \
               -H "Authorization: Bearer $token" \
               -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
               "https://${AR}/v2/devsync-${img}/manifests/${IMAGE_TAG}" \
@@ -231,7 +231,7 @@ jobs:
       contents: write
       actions: read
       packages: write
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@refs/tags/v2.1.0
     with:
       image: ${{ needs.build-push.outputs.backend-image }}
       digest: ${{ needs.build-push.outputs.backend-digest }}
@@ -253,7 +253,7 @@ jobs:
       contents: write
       actions: read
       packages: write
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@refs/tags/v2.1.0
     with:
       image: ${{ needs.build-push.outputs.frontend-image }}
       digest: ${{ needs.build-push.outputs.frontend-digest }}
@@ -335,7 +335,7 @@ jobs:
           AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
           token=$(gcloud auth print-access-token)
           for img in backend frontend; do
-            digest=$(curl -fsS \
+            digest=$(curl -fsS -o /dev/null -D - \
               -H "Authorization: Bearer $token" \
               -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
               "https://${AR}/v2/devsync-${img}/manifests/${IMAGE_TAG}" \
@@ -420,7 +420,7 @@ jobs:
           AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
           token=$(gcloud auth print-access-token)
           for img in backend frontend; do
-            digest=$(curl -fsS \
+            digest=$(curl -fsS -o /dev/null -D - \
               -H "Authorization: Bearer $token" \
               -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.oci.image.manifest.v1+json" \
               "https://${AR}/v2/devsync-${img}/manifests/${IMAGE_TAG}" \
