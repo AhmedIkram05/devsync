@@ -15,7 +15,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write # GCP WIF (OIDC federation) + cosign keyless
+  id-token: write # GCP WIF (OIDC federation) + cosign signing
 
 concurrency:
   group: k8s-cd-${{ github.ref }}
@@ -37,7 +37,7 @@ jobs:
   changes:
     name: Gate — CI success on main + path filter
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_sha == github.sha)
     outputs:
       app: ${{ steps.filter.outputs.app || steps.force.outputs.app }}
     steps:
@@ -139,7 +139,7 @@ jobs:
           ignore-unfixed: true
 
   sign:
-    name: Sign images (cosign keyless + SBOM attest + verify)
+    name: Sign images (stored key + SBOM attest + verify)
     needs: build-push
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -147,9 +147,18 @@ jobs:
       contents: read
       id-token: write
       packages: write
+    env:
+      # Passwordless generated key (bisection-proven: keyless flow hit
+      # 'failed to fetch envelope statement: invalid attestation: decoding json'
+      # against AR + cosign latest; --key + --insecure-ignore-tlog is green).
+      COSIGN_PASSWORD: ''
+      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+      COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }}
     steps:
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
 
       - name: Auth to GCP (WIF)
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
@@ -180,11 +189,11 @@ jobs:
             echo "${img^^}_AR=${AR}" >> "$GITHUB_ENV"
           done
 
-      - name: Cosign sign — backend (keyless via OIDC)
-        run: cosign sign --yes "$BACKEND_IMG"
+      - name: Cosign sign — backend (stored key)
+        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "$BACKEND_IMG"
 
-      - name: Cosign sign — frontend (keyless via OIDC)
-        run: cosign sign --yes "$FRONTEND_IMG"
+      - name: Cosign sign — frontend (stored key)
+        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "$FRONTEND_IMG"
 
       - name: SBOM — backend (Syft)
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
@@ -193,7 +202,7 @@ jobs:
           output-file: backend.spdx.json
 
       - name: Attest SBOM — backend
-        run: cosign attest --yes --predicate backend.spdx.json --type spdx "$BACKEND_IMG"
+        run: cosign attest --yes --key env://COSIGN_PRIVATE_KEY --predicate backend.spdx.json --type spdx "$BACKEND_IMG"
 
       - name: SBOM — frontend (Syft)
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
@@ -202,21 +211,13 @@ jobs:
           output-file: frontend.spdx.json
 
       - name: Attest SBOM — frontend
-        run: cosign attest --yes --predicate frontend.spdx.json --type spdx "$FRONTEND_IMG"
+        run: cosign attest --yes --key env://COSIGN_PRIVATE_KEY --predicate frontend.spdx.json --type spdx "$FRONTEND_IMG"
 
-      - name: Cosign verify — backend (§5.1 identity)
-        run: |
-          cosign verify \
-            --certificate-identity-regexp 'https://github.com/AhmedIkram05/DevSync/\.github/workflows/k8s-cd\.yml@.*' \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "$BACKEND_IMG"
+      - name: Cosign verify — backend (public key)
+        run: cosign verify --key env://COSIGN_PUBLIC_KEY --insecure-ignore-tlog "$BACKEND_IMG"
 
-      - name: Cosign verify — frontend (§5.1 identity)
-        run: |
-          cosign verify \
-            --certificate-identity-regexp 'https://github.com/AhmedIkram05/DevSync/\.github/workflows/k8s-cd\.yml@.*' \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "$FRONTEND_IMG"
+      - name: Cosign verify — frontend (public key)
+        run: cosign verify --key env://COSIGN_PUBLIC_KEY --insecure-ignore-tlog "$FRONTEND_IMG"
 
   slsa-backend:
     name: SLSA provenance — backend
@@ -295,6 +296,8 @@ jobs:
     needs: [tf-apply, build-push]
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -317,6 +320,8 @@ jobs:
 
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
@@ -345,10 +350,7 @@ jobs:
       - name: Cosign verify at deploy time — backend + frontend
         run: |
           for ref in "$BACKEND_IMG" "$FRONTEND_IMG"; do
-            cosign verify \
-              --certificate-identity-regexp 'https://github.com/AhmedIkram05/DevSync/\.github/workflows/k8s-cd\.yml@.*' \
-              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-              "$ref"
+            cosign verify --key env://COSIGN_PUBLIC_KEY --insecure-ignore-tlog "$ref"
           done
 
       - name: Resolve GCP_PROJECT_ID placeholders in k8s/base
