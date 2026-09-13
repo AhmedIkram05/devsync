@@ -25,7 +25,6 @@ def _task(**kwargs):
 def test_dashboard_helpers_basic():
     from backend.src.api.controllers import dashboard_controller as dc
 
-    assert dc._count([1, 2, 3], lambda x: x > 1) == 2
     assert dc._is_completed_status("done") is True
     assert dc._is_completed_status("completed") is True
     assert dc._is_completed_status("todo") is False
@@ -72,8 +71,9 @@ def test_get_user_tasks_and_project_tasks_error_paths(mock_task):
     assert get_project_tasks(10) == []
 
 
+@patch("backend.src.api.controllers.dashboard_controller.joinedload", side_effect=lambda rel: rel)
 @patch("backend.src.api.controllers.dashboard_controller.Task")
-def test_get_tasks_due_soon_filters_user_and_project(mock_task):
+def test_get_tasks_due_soon_filters_user_and_project(mock_task, mock_joinedload):
     from backend.src.api.controllers.dashboard_controller import get_tasks_due_soon
 
     final_query = MagicMock()
@@ -84,12 +84,14 @@ def test_get_tasks_due_soon_filters_user_and_project(mock_task):
     q1.filter.return_value = q2
     q2.filter.return_value = q3
     q3.filter.return_value = final_query
+    final_query.options.return_value = final_query
     final_query.all.return_value = [_task()]
 
     assert len(get_tasks_due_soon(user_id=9)) == 1
 
     final_query2 = MagicMock()
     q3.filter.return_value = final_query2
+    final_query2.options.return_value = final_query2
     final_query2.all.return_value = [_task(project_id=7)]
     assert len(get_tasks_due_soon(project_ids={7})) == 1
 
@@ -256,6 +258,7 @@ def test_get_admin_dashboard_unauthorized(mock_identity, mock_jwt, app):
 @patch("backend.src.api.controllers.dashboard_controller.settings_service.cleanup_completed_projects")
 @patch("backend.src.api.controllers.dashboard_controller.get_project_scope_ids", return_value=set())
 @patch("backend.src.api.controllers.dashboard_controller.count_overdue_tasks", return_value=0)
+@patch("backend.src.api.controllers.dashboard_controller.joinedload", side_effect=lambda rel: rel)
 @patch("backend.src.api.controllers.dashboard_controller.Project")
 @patch("backend.src.api.controllers.dashboard_controller.Task")
 @patch("backend.src.api.controllers.dashboard_controller.User")
@@ -267,6 +270,7 @@ def test_get_admin_dashboard_success(
     mock_user,
     mock_task,
     mock_project,
+    mock_joinedload,
     mock_overdue,
     mock_scope,
     mock_cleanup,
@@ -275,6 +279,7 @@ def test_get_admin_dashboard_success(
     user = SimpleNamespace(id=1)
     mock_user.query.get.return_value = user
     mock_user.query.all.return_value = [SimpleNamespace(role="admin")]
+    mock_task.query.options.return_value = mock_task.query
 
     now = datetime.now()
     task = _task(status="todo", updated_at=now, created_at=now, assigned_to=1)
@@ -350,13 +355,17 @@ def test_get_project_dashboard_success(mock_project, mock_get_tasks, mock_due, m
 @patch("backend.src.api.controllers.dashboard_controller.TaskGitHubLink")
 @patch("backend.src.api.controllers.dashboard_controller.get_tasks_due_soon", return_value=[])
 @patch("backend.src.api.controllers.dashboard_controller.get_user_tasks", return_value=[_task(status="todo")])
+@patch("backend.src.api.controllers.dashboard_controller.joinedload", side_effect=lambda rel: rel)
 @patch("backend.src.api.controllers.dashboard_controller.get_jwt", return_value={"role": "developer"})
 @patch("backend.src.api.controllers.dashboard_controller.get_jwt_identity", return_value={"user_id": 3})
 @patch("backend.src.api.controllers.dashboard_controller.User")
+@patch("backend.src.api.controllers.dashboard_controller.db")
 def test_get_client_dashboard_developer_path_with_github_activity_error(
+    mock_db,
     mock_user,
     mock_identity,
     mock_jwt,
+    mock_joinedload,
     mock_get_user_tasks,
     mock_due_soon,
     mock_links,
@@ -369,6 +378,8 @@ def test_get_client_dashboard_developer_path_with_github_activity_error(
         projects=SimpleNamespace(all=lambda: []),
     )
     mock_user.query.get.return_value = user
+    # Counts now come from one GROUP BY, not from the mocked helper's list.
+    mock_db.session.query.return_value.filter.return_value.group_by.return_value.all.return_value = [("todo", 1)]
 
     link_query = MagicMock()
     mock_links.query.join.return_value = link_query
@@ -449,6 +460,7 @@ def test_get_project_dashboard_zero_completion(mock_project, mock_get_tasks, moc
 @patch("backend.src.api.controllers.dashboard_controller.settings_service.cleanup_completed_projects")
 @patch("backend.src.api.controllers.dashboard_controller.get_project_scope_ids", return_value=set())
 @patch("backend.src.api.controllers.dashboard_controller.count_overdue_tasks", return_value=0)
+@patch("backend.src.api.controllers.dashboard_controller.joinedload", side_effect=lambda rel: rel)
 @patch("backend.src.api.controllers.dashboard_controller.Project")
 @patch("backend.src.api.controllers.dashboard_controller.Task")
 @patch("backend.src.api.controllers.dashboard_controller.User")
@@ -460,6 +472,7 @@ def test_get_admin_dashboard_team_lead_kpis_with_deadline_parsing(
     mock_user,
     mock_task,
     mock_project,
+    mock_joinedload,
     mock_overdue,
     mock_scope,
     mock_cleanup,
@@ -585,6 +598,7 @@ def test_get_admin_dashboard_team_lead_kpis_with_deadline_parsing(
         ),
     ]
     mock_task.query.all.return_value = tasks
+    mock_task.query.options.return_value = mock_task.query
 
     with app.app_context():
         from backend.src.api.controllers.dashboard_controller import get_admin_dashboard

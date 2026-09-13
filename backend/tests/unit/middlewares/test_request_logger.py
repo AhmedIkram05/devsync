@@ -9,7 +9,12 @@ from flask import Flask, g, jsonify
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
 
 # Import after path setup
-from backend.src.api.middlewares.request_logger import apply_request_logger, log_request
+from backend.src.api.middlewares.request_logger import (
+    REQUEST_ID_HEADER,
+    apply_request_logger,
+    get_request_id,
+    log_request,
+)
 
 # Create a test Flask app
 app = Flask(__name__)
@@ -86,3 +91,63 @@ def test_apply_request_logger():
 
             # Check that the original response was returned
             assert result == response
+
+
+def test_request_id_generated_and_echoed():
+    """Every request gets an ID; the response echoes it for client-side correlation."""
+    test_app = Flask(__name__)
+    apply_request_logger(test_app)
+    before_funcs = test_app.before_request_funcs.get(None, [])
+    after_funcs = test_app.after_request_funcs.get(None, [])
+
+    with test_app.test_request_context(method="GET", path="/test"):
+        before_funcs[0]()
+        assert hasattr(g, "request_id")
+        assert len(g.request_id) == 16
+
+        response = jsonify({"success": True})
+        result = after_funcs[0](response)
+
+        assert result.headers[REQUEST_ID_HEADER] == g.request_id
+
+
+def test_request_id_propagated_from_upstream():
+    """LB/CDN-provided IDs pass through untouched (distributed trace continuity)."""
+    test_app = Flask(__name__)
+    apply_request_logger(test_app)
+    before_funcs = test_app.before_request_funcs.get(None, [])
+    after_funcs = test_app.after_request_funcs.get(None, [])
+
+    with test_app.test_request_context(method="GET", path="/test", headers={REQUEST_ID_HEADER: "lb-provided-123"}):
+        before_funcs[0]()
+        assert g.request_id == "lb-provided-123"
+
+        response = jsonify({"success": True})
+        result = after_funcs[0](response)
+        assert result.headers[REQUEST_ID_HEADER] == "lb-provided-123"
+
+
+def test_get_request_id_defaults_outside_request():
+    """Background/boot log lines carry '-' instead of raising."""
+    assert get_request_id() == "-"
+
+
+def test_json_logs_carry_request_id():
+    """The GMP JSON formatter includes the active request ID per record."""
+    import logging
+
+    from backend.src.logging_config import JsonFormatter, RequestIdFilter
+
+    test_app = Flask(__name__)
+    formatter = JsonFormatter()
+    filt = RequestIdFilter()
+
+    with test_app.test_request_context(method="GET", path="/test"):
+        g.request_id = "abc123"
+        record = logging.LogRecord("test", logging.INFO, __file__, 1, "hello", None, None)
+        assert filt.filter(record) is True
+        assert '"request_id": "abc123"' in formatter.format(record)
+
+    outside = logging.LogRecord("test", logging.INFO, __file__, 1, "boot line", None, None)
+    assert filt.filter(outside) is True
+    assert '"request_id": "-"' in formatter.format(outside)

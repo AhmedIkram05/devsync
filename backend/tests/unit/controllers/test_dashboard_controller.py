@@ -219,7 +219,8 @@ class TestDashboardController(unittest.TestCase):
     @patch("backend.src.api.controllers.dashboard_controller.Task")
     @patch("backend.src.api.controllers.dashboard_controller.datetime")
     @patch("backend.src.api.controllers.dashboard_controller.logger")
-    def test_get_tasks_due_soon_success(self, mock_logger, mock_datetime, mock_task):
+    @patch("backend.src.api.controllers.dashboard_controller.joinedload", side_effect=lambda rel: rel)
+    def test_get_tasks_due_soon_success(self, mock_joinedload, mock_logger, mock_datetime, mock_task):
         """Test successful retrieval of tasks due soon"""
         # Import locally to allow patching
         from backend.src.api.controllers.dashboard_controller import get_tasks_due_soon
@@ -248,6 +249,8 @@ class TestDashboardController(unittest.TestCase):
         mock_filter2.filter.return_value = mock_filter3
         mock_filter3.filter.return_value = mock_filter4
         mock_filter4.all.return_value = expected_tasks
+        # .options() must pass the chain through (eager-load hint is a no-op on mocks)
+        mock_filter4.options.return_value = mock_filter4
 
         # Call the function
         result = get_tasks_due_soon(user_id=1)
@@ -294,9 +297,12 @@ class TestDashboardController(unittest.TestCase):
 
     @patch("backend.src.api.controllers.dashboard_controller.Task")
     @patch("backend.src.api.controllers.dashboard_controller.datetime")
-    def test_get_recent_completed_tasks_border_timeframes(self, mock_datetime, mock_task):
+    @patch("backend.src.api.controllers.dashboard_controller.joinedload", side_effect=lambda rel: rel)
+    def test_get_recent_completed_tasks_border_timeframes(self, mock_joinedload, mock_datetime, mock_task):
         """Test extreme date filters (quarter, century) default properly for trend/recent generation"""
         from backend.src.api.controllers.dashboard_controller import get_recent_completed_tasks
+
+        mock_task.query.options.return_value = mock_task.query
 
         today_date = datetime(2023, 7, 15).date()
         mock_now = MagicMock()
@@ -335,9 +341,12 @@ class TestDashboardController(unittest.TestCase):
 
     @patch("backend.src.api.controllers.dashboard_controller.Task")
     @patch("backend.src.api.controllers.dashboard_controller.datetime")
-    def test_get_recent_completed_tasks_invalid_timeframe(self, mock_datetime, mock_task):
+    @patch("backend.src.api.controllers.dashboard_controller.joinedload", side_effect=lambda rel: rel)
+    def test_get_recent_completed_tasks_invalid_timeframe(self, mock_joinedload, mock_datetime, mock_task):
         """Test invalid date filters fall back to 30 days securely"""
         from backend.src.api.controllers.dashboard_controller import get_recent_completed_tasks
+
+        mock_task.query.options.return_value = mock_task.query
 
         today_date = datetime(2023, 7, 15).date()
         mock_now = MagicMock()
