@@ -99,6 +99,38 @@ spec:
     ports:
     - protocol: TCP
       port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: devsync-redis
+    ports:
+    - protocol: TCP
+      port: 6379
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-redis-ingress
+  namespace: devsync
+  labels:
+    app: devsync-redis
+    app.kubernetes.io/part-of: devsync
+spec:
+  podSelector:
+    matchLabels:
+      app: devsync-redis
+  policyTypes:
+  - Ingress
+  ingress:
+  # Only the backend reaches Redis (message queue + rate limiter). No
+  # frontend or inter-redis traffic — default-deny covers the rest.
+  - from:
+    - podSelector:
+        matchLabels:
+          app: devsync-backend
+    ports:
+    - protocol: TCP
+      port: 6379
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

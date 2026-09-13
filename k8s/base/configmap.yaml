@@ -13,3 +13,6 @@ data:
   FRONTEND_URL: "https://devsync.local"
   GITHUB_REDIRECT_URI: "https://devsync.local/api/v1/github/callback"
   MIGRATE_ON_BOOT: "false"
+  # Non-sensitive (plan D4): in-cluster Socket.IO message queue. Works across
+  # both base (this value) and managed-db — no Envoy/IAM grid needed.
+  REDIS_URL: "redis://devsync-redis:6379/0"
