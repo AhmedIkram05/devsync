@@ -55,7 +55,7 @@ resource "google_monitoring_dashboard" "devsync" {
                   timeSeriesQuery = {
                     unitOverride = "1"
                     timeSeriesFilter = {
-                      filter = "metric.type=\"kubernetes.io/container/cpu/core_usage_time\" resource.type=\"k8s_container\" resource.label.\"namespace_name\"=\"devsync\" metric.label.\"container_name\"=\"backend\""
+                      filter = "metric.type=\"kubernetes.io/container/cpu/core_usage_time\" resource.type=\"k8s_container\" resource.label.\"namespace_name\"=\"devsync\" resource.label.\"container_name\"=\"backend\""
                       aggregation = {
                         alignmentPeriod    = "60s"
                         perSeriesAligner   = "ALIGN_RATE"
@@ -70,7 +70,7 @@ resource "google_monitoring_dashboard" "devsync" {
                   timeSeriesQuery = {
                     unitOverride = "1"
                     timeSeriesFilter = {
-                      filter = "metric.type=\"kubernetes.io/container/cpu/core_usage_time\" resource.type=\"k8s_container\" resource.label.\"namespace_name\"=\"devsync\" metric.label.\"container_name\"=\"frontend\""
+                      filter = "metric.type=\"kubernetes.io/container/cpu/core_usage_time\" resource.type=\"k8s_container\" resource.label.\"namespace_name\"=\"devsync\" resource.label.\"container_name\"=\"frontend\""
                       aggregation = {
                         alignmentPeriod    = "60s"
                         perSeriesAligner   = "ALIGN_RATE"
@@ -105,7 +105,7 @@ resource "google_monitoring_dashboard" "devsync" {
                         alignmentPeriod    = "60s"
                         perSeriesAligner   = "ALIGN_DELTA"
                         crossSeriesReducer = "REDUCE_SUM"
-                        groupByFields      = ["metric.label.\"container_name\""]
+                        groupByFields      = ["resource.label.\"container_name\""]
                       }
                     }
                   }
@@ -123,9 +123,14 @@ resource "google_monitoring_dashboard" "devsync" {
           height = 4
           yPos   = 4
           widget = {
-            title = "BackendDown alert"
-            alertChart = {
-              name = google_monitoring_alert_policy.backend_down.id
+            # NOTE: alertChart cannot render log-based alert policies
+            # ("Alert charts do not support log-based alert policies"), so this
+            # tile shows the same signal as logs — the BackendDown alert itself
+            # lives in Alerting and fired by email during the canary.
+            title = "BackendDown signal (log evidence)"
+            logsPanel = {
+              filter        = "resource.type=\"k8s_pod\" resource.labels.namespace_name=\"devsync\" (jsonPayload.reason=\"BackOff\" OR (jsonPayload.reason=\"Unhealthy\" AND jsonPayload.message=~\"eadiness probe failed\"))"
+              resourceNames = ["projects/${var.project_id}"]
             }
           }
         },
