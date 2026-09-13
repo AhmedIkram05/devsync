@@ -8,7 +8,7 @@ from first deploy to local teardown no later than 14 days after first `apply`
 
 ## Topology
 
-```
+```text
 Browser → Ingress (GCE, TLS via Google-managed cert) → FE (nginx x2) → BE (Flask singleton :8000) → PG (in-cluster standing env) / managed (Cloud SQL overlay, unapplied)
 ```
 
