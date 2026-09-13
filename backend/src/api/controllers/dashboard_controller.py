@@ -5,8 +5,11 @@ from datetime import datetime, timedelta
 
 from flask import jsonify
 from flask_jwt_extended import get_jwt, get_jwt_identity
+from sqlalchemy import func
+from sqlalchemy.orm import joinedload
 
 from ...auth.rbac import Role  # Changed to relative import
+from ...db.db_connection import db
 from ...db.models import GitHubRepository, Project, Task, TaskGitHubLink, User  # Changed to relative import
 from ...services import settings_service
 from ...services.task_rules import count_overdue_tasks, get_project_scope_ids
@@ -23,10 +26,6 @@ def _safe_query_all(model):
         return model.query.all()
     except Exception:
         return []
-
-
-def _count(items, predicate):
-    return sum(1 for item in items if predicate(item))
 
 
 def _is_completed_status(status):
@@ -80,7 +79,9 @@ def _github_activity_to_item(link):
 def get_user_tasks(user_id):
     """Helper function to get all tasks for a user"""
     try:
-        return Task.query.filter_by(assigned_to=user_id).all()
+        # joinedload: serializers read task.project per row — without it,
+        # every dashboard row fires its own query (N+1).
+        return Task.query.options(joinedload(Task.project)).filter_by(assigned_to=user_id).all()
     except Exception as e:
         logger.error(f"Error fetching user tasks: {str(e)}")
         return []
@@ -102,7 +103,7 @@ def get_tasks_due_soon(user_id=None, project_ids=None):
         elif user_id is not None:
             query = query.filter(Task.assigned_to == user_id)
 
-        return query.all()
+        return query.options(joinedload(Task.project)).all()
     except Exception as e:
         logger.error(f"Error fetching tasks due soon: {str(e)}")
         return []
@@ -121,7 +122,8 @@ def get_recent_completed_tasks(user_id, timeframe="month"):
 
         time_ago = today - timedelta(days=days)
         return (
-            Task.query.filter_by(assigned_to=user_id)
+            Task.query.options(joinedload(Task.project))
+            .filter_by(assigned_to=user_id)
             .filter(
                 Task.status.in_(COMPLETED_TASK_STATUSES),
                 Task.updated_at >= time_ago,
@@ -136,7 +138,7 @@ def get_recent_completed_tasks(user_id, timeframe="month"):
 def get_project_tasks(project_id):
     """Helper function to get all tasks for a project"""
     try:
-        return Task.query.filter_by(project_id=project_id).all()
+        return Task.query.options(joinedload(Task.project)).filter_by(project_id=project_id).all()
     except Exception as e:
         logger.error(f"Error fetching project tasks: {str(e)}")
         return []
@@ -277,27 +279,46 @@ def get_client_dashboard():
         project_ids = [project.id for project in user_projects]
         is_team_lead = user_role == Role.TEAM_LEAD.value
 
-        # Get tasks in the correct scope for the current role
+        # Counts come from one GROUP BY — loading every row into Python just
+        # to count it is what made this endpoint degrade per row as data grew.
+        scope_filter = Task.project_id.in_(project_ids) if is_team_lead else (Task.assigned_to == user_id)
+        try:
+            status_rows = (
+                db.session.query(Task.status, func.count(Task.id)).filter(scope_filter).group_by(Task.status).all()
+            )
+        except Exception as e:
+            logger.error(f"Error counting scoped tasks: {str(e)}")
+            status_rows = []
+        status_counts = {status or "unknown": count for status, count in status_rows}
+
         if is_team_lead:
-            scoped_tasks = Task.query.filter(Task.project_id.in_(project_ids)).all() if project_ids else []
             tasks_due_soon = get_tasks_due_soon(project_ids=project_ids)
         else:
-            scoped_tasks = get_user_tasks(user_id)
             tasks_due_soon = get_tasks_due_soon(user_id=user_id)
 
-        recent_tasks = sorted(
-            scoped_tasks,
-            key=lambda task: getattr(task, "updated_at", None) or getattr(task, "created_at", None) or datetime.min,
-            reverse=True,
-        )
+        # Recent list is capped in the DB (ORDER BY + LIMIT), not sorted in
+        # Python after loading the whole table. 50 is a UI page, not a loss:
+        # counts above still reflect the full scope.
+        try:
+            recent_tasks = (
+                Task.query.options(joinedload(Task.project))
+                .filter(scope_filter)
+                .order_by(Task.updated_at.desc())
+                .limit(50)
+                .all()
+            )
+        except Exception as e:
+            logger.error(f"Error fetching recent scoped tasks: {str(e)}")
+            recent_tasks = []
 
+        done_count = status_counts.get("done", 0) + status_counts.get("completed", 0)
         task_stats = {
-            "total": len(scoped_tasks),
-            "assigned": len(scoped_tasks),
-            "todo": _count(scoped_tasks, lambda task: getattr(task, "status", None) == "todo"),
-            "in_progress": _count(scoped_tasks, lambda task: getattr(task, "status", None) == "in_progress"),
-            "review": _count(scoped_tasks, lambda task: getattr(task, "status", None) == "review"),
-            "done": _count(scoped_tasks, lambda task: getattr(task, "status", None) in {"done", "completed"}),
+            "total": sum(status_counts.values()),
+            "assigned": sum(status_counts.values()),
+            "todo": status_counts.get("todo", 0),
+            "in_progress": status_counts.get("in_progress", 0),
+            "review": status_counts.get("review", 0),
+            "done": done_count,
             "due_soon": len(tasks_due_soon),
         }
 
@@ -309,7 +330,12 @@ def get_client_dashboard():
             else:
                 recent_links_query = recent_links_query.filter(Task.assigned_to == user_id)
 
-            recent_links = recent_links_query.order_by(TaskGitHubLink.created_at.desc()).limit(5).all()
+            recent_links = (
+                recent_links_query.options(joinedload(TaskGitHubLink.task), joinedload(TaskGitHubLink.repository))
+                .order_by(TaskGitHubLink.created_at.desc())
+                .limit(5)
+                .all()
+            )
             github_activity = [_github_activity_to_item(link) for link in recent_links]
         except Exception as e:
             logger.error(f"Error fetching GitHub activity for client dashboard: {str(e)}")
@@ -372,7 +398,7 @@ def get_admin_dashboard():
 
         # Get all tasks (guard against schema mismatches in local DB)
         try:
-            all_tasks = Task.query.all()
+            all_tasks = Task.query.options(joinedload(Task.project)).all()
         except Exception as e:
             logger.error(f"Error querying tasks for admin dashboard (fallback to empty): {str(e)}")
             all_tasks = []

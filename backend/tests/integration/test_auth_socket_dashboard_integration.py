@@ -312,6 +312,8 @@ def test_socket_handlers_validate_required_payload_fields(app_and_socket, app):
 
 
 def test_dashboard_client_route_returns_computed_task_stats(client, app, monkeypatch):
+    from src.db.models import Task, db
+
     user = SimpleNamespace(
         id=21,
         name="Client User",
@@ -327,19 +329,25 @@ def test_dashboard_client_route_returns_computed_task_stats(client, app, monkeyp
         project_id=5,
     )
 
-    assigned_tasks = [
-        SimpleNamespace(status="todo"),
-        SimpleNamespace(status="done"),
-        SimpleNamespace(status="completed"),
-    ]
-
     class StubUser:
         query = MagicMock()
 
     StubUser.query.get.return_value = user
 
+    # Counts + recent list now come from DB-side queries (GROUP BY / ORDER BY
+    # + LIMIT), so they need real rows — only the due-soon helper stays stubbed.
+    with app.app_context():
+        db.create_all()
+        db.session.add_all(
+            [
+                Task(id=1, title="One", status="todo", assigned_to=21, created_by=21),
+                Task(id=2, title="Two", status="done", assigned_to=21, created_by=21),
+                Task(id=3, title="Three", status="completed", assigned_to=21, created_by=21),
+            ]
+        )
+        db.session.commit()
+
     monkeypatch.setattr(dashboard_controller, "User", StubUser)
-    monkeypatch.setattr(dashboard_controller, "get_user_tasks", MagicMock(return_value=assigned_tasks))
     monkeypatch.setattr(dashboard_controller, "get_tasks_due_soon", MagicMock(return_value=[due_task]))
 
     response = client.get("/api/v1/dashboard/client", headers=auth_headers(app, role="developer", user_id=21))
@@ -363,47 +371,7 @@ def test_dashboard_client_route_scopes_team_leads_to_their_projects(client, app,
         projects=SimpleNamespace(all=lambda: [shared_project]),
     )
 
-    scoped_tasks = [
-        SimpleNamespace(
-            id=1,
-            title="One",
-            status="todo",
-            project_id=5,
-            updated_at=datetime(2099, 1, 3),
-            created_at=datetime(2099, 1, 2),
-            deadline=datetime(2099, 1, 6),
-            assigned_to=None,
-        ),
-        SimpleNamespace(
-            id=2,
-            title="Two",
-            status="done",
-            project_id=8,
-            updated_at=datetime(2099, 1, 4),
-            created_at=datetime(2099, 1, 1),
-            deadline=datetime(2099, 1, 7),
-            assigned_to=None,
-        ),
-        SimpleNamespace(
-            id=3,
-            title="Three",
-            status="in_progress",
-            project_id=8,
-            updated_at=datetime(2099, 1, 5),
-            created_at=datetime(2099, 1, 5),
-            deadline=datetime(2099, 1, 8),
-            assigned_to=None,
-        ),
-    ]
     due_tasks = [SimpleNamespace(id=2, title="Two", deadline=datetime(2099, 1, 7), status="done", project_id=8)]
-    github_link = SimpleNamespace(
-        id=1,
-        task=SimpleNamespace(title="Two"),
-        repository=SimpleNamespace(repo_name="Repo", repo_url="https://github.com/org/repo"),
-        pull_request_number=None,
-        issue_number=7,
-        created_at=datetime(2099, 1, 6),
-    )
 
     class StubUser:
         query = MagicMock()
@@ -411,40 +379,51 @@ def test_dashboard_client_route_scopes_team_leads_to_their_projects(client, app,
     class StubProject:
         query = MagicMock()
 
-    class StubTask:
-        query = MagicMock()
-        project_id = MagicMock()
-        assigned_to = MagicMock()
-
-    class StubLink:
-        query = MagicMock()
-
-    class StubRepo:
-        pass
-
     StubUser.query.get.return_value = user
     StubProject.query.filter_by.return_value.all.return_value = [created_project]
 
-    task_query = MagicMock()
-    task_query.filter.return_value = task_query
-    task_query.all.return_value = scoped_tasks
-    StubTask.query = task_query
-    StubTask.project_id.in_.return_value = MagicMock()
+    # Counts + recent list run real DB-side queries now — seed the rows they
+    # read instead of stubbing the model. Only the due-soon helper (unchanged
+    # logic) and the link-free activity path stay as they are.
+    from src.db.models import Task, db
 
-    link_query = MagicMock()
-    link_query.join.return_value = link_query
-    link_query.outerjoin.return_value = link_query
-    link_query.filter.return_value = link_query
-    link_query.order_by.return_value = link_query
-    link_query.limit.return_value = link_query
-    link_query.all.return_value = [github_link]
-    StubLink.query = link_query
+    with app.app_context():
+        db.create_all()
+        db.session.add_all(
+            [
+                Task(
+                    id=1,
+                    title="One",
+                    status="todo",
+                    project_id=5,
+                    updated_at=datetime(2099, 1, 3),
+                    created_at=datetime(2099, 1, 2),
+                    created_by=21,
+                ),
+                Task(
+                    id=2,
+                    title="Two",
+                    status="done",
+                    project_id=8,
+                    updated_at=datetime(2099, 1, 4),
+                    created_at=datetime(2099, 1, 1),
+                    created_by=21,
+                ),
+                Task(
+                    id=3,
+                    title="Three",
+                    status="in_progress",
+                    project_id=8,
+                    updated_at=datetime(2099, 1, 5),
+                    created_at=datetime(2099, 1, 5),
+                    created_by=21,
+                ),
+            ]
+        )
+        db.session.commit()
 
     monkeypatch.setattr(dashboard_controller, "User", StubUser)
     monkeypatch.setattr(dashboard_controller, "Project", StubProject)
-    monkeypatch.setattr(dashboard_controller, "Task", StubTask)
-    monkeypatch.setattr(dashboard_controller, "TaskGitHubLink", StubLink)
-    monkeypatch.setattr(dashboard_controller, "GitHubRepository", StubRepo)
     monkeypatch.setattr(dashboard_controller, "get_tasks_due_soon", MagicMock(return_value=due_tasks))
 
     response = client.get("/api/v1/dashboard/client", headers=auth_headers(app, role="team_lead", user_id=21))
@@ -459,25 +438,16 @@ def test_dashboard_client_route_scopes_team_leads_to_their_projects(client, app,
 
 
 def test_dashboard_admin_route_returns_user_and_task_totals(client, app, monkeypatch):
+    from src.db.models import Task, db
+
     admin_user = SimpleNamespace(id=1, name="Admin User", role="admin")
     users = [
         SimpleNamespace(role="admin"),
         SimpleNamespace(role="developer"),
         SimpleNamespace(role="team_lead"),
     ]
-    tasks = [
-        SimpleNamespace(status="backlog"),
-        SimpleNamespace(status="todo"),
-        SimpleNamespace(status="in_progress"),
-        SimpleNamespace(status="review"),
-        SimpleNamespace(status="done"),
-        SimpleNamespace(status="completed"),
-    ]
 
     class StubUser:
-        query = MagicMock()
-
-    class StubTask:
         query = MagicMock()
 
     class StubProject:
@@ -485,11 +455,24 @@ def test_dashboard_admin_route_returns_user_and_task_totals(client, app, monkeyp
 
     StubUser.query.get.return_value = admin_user
     StubUser.query.all.return_value = users
-    StubTask.query.all.return_value = tasks
     StubProject.query.count.return_value = 4
 
+    # Task stats run a real .all() now — seed the rows instead of stubbing.
+    with app.app_context():
+        db.create_all()
+        db.session.add_all(
+            [
+                Task(id=1, title="B", status="backlog", created_by=1, assigned_to=2),
+                Task(id=2, title="T", status="todo", created_by=1, assigned_to=2),
+                Task(id=3, title="P", status="in_progress", created_by=1, assigned_to=2),
+                Task(id=4, title="R", status="review", created_by=1, assigned_to=2),
+                Task(id=5, title="D", status="done", created_by=1, assigned_to=2),
+                Task(id=6, title="C", status="completed", created_by=1, assigned_to=2),
+            ]
+        )
+        db.session.commit()
+
     monkeypatch.setattr(dashboard_controller, "User", StubUser)
-    monkeypatch.setattr(dashboard_controller, "Task", StubTask)
     monkeypatch.setattr(dashboard_controller, "Project", StubProject)
 
     response = client.get("/api/v1/dashboard/admin", headers=auth_headers(app, role="admin", user_id=1))

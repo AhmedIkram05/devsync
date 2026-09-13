@@ -196,3 +196,36 @@ def test_setup_middlewares_env_disables_rate_limit(monkeypatch, reset_rate_limit
     with patch("backend.src.api.middlewares.apply_global_rate_limit") as mock_apply:
         setup_middlewares(test_app)
         mock_apply.assert_not_called()
+
+
+def test_global_rate_limit_is_per_endpoint(reset_rate_limit_data):
+    """A chatty page must not starve other endpoints: buckets are per-endpoint."""
+    test_app = Flask(__name__)
+    apply_global_rate_limit(test_app, requests_per_window=2, window_seconds=60)
+    before_funcs = test_app.before_request_funcs.get(None, [])
+    assert len(before_funcs) == 1
+
+    with patch("backend.src.api.middlewares.rate_limiter.get_client_identifier", return_value="same_client"):
+        # Exhaust /api/a
+        with test_app.test_request_context(path="/api/a"):
+            assert before_funcs[0]() is None
+        with test_app.test_request_context(path="/api/a"):
+            assert before_funcs[0]() is None
+        with test_app.test_request_context(path="/api/a"):
+            assert before_funcs[0]() is not None  # 429
+
+        # /api/b is untouched by /api/a's budget
+        with test_app.test_request_context(path="/api/b"):
+            assert before_funcs[0]() is None
+
+
+def test_global_rate_limit_skips_health(reset_rate_limit_data):
+    """Kube probes must never consume request budget."""
+    test_app = Flask(__name__)
+    apply_global_rate_limit(test_app, requests_per_window=2, window_seconds=60)
+    before_funcs = test_app.before_request_funcs.get(None, [])
+
+    with patch("backend.src.api.middlewares.rate_limiter.get_client_identifier", return_value="prober"):
+        for _ in range(5):
+            with test_app.test_request_context(path="/health"):
+                assert before_funcs[0]() is None

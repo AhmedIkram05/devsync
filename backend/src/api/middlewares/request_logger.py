@@ -2,12 +2,25 @@
 
 import logging
 import time
+import uuid
 from functools import wraps
 
 from flask import g, request
 
 # Configure logger
 logger = logging.getLogger("api.requests")
+
+REQUEST_ID_HEADER = "X-Request-ID"
+
+
+def get_request_id():
+    """Request ID for this request: propagated from the LB/CDN when present,
+    generated otherwise. Echoed back on the response so a client report maps
+    to exactly one line in the logs."""
+    try:
+        return g.get("request_id", "-")
+    except RuntimeError:
+        return "-"
 
 
 def log_request():
@@ -54,13 +67,18 @@ def apply_request_logger(app):
     @app.before_request
     def before_request():
         g.request_start_time = time.time()
-        logger.info(f"Request started: {request.method} {request.path} from {request.remote_addr}")
+        g.request_id = request.headers.get(REQUEST_ID_HEADER) or uuid.uuid4().hex[:16]
+        logger.info(
+            f"Request started: {request.method} {request.path} from {request.remote_addr} request_id={g.request_id}"
+        )
 
     @app.after_request
     def after_request(response):
         duration = time.time() - g.get("request_start_time", time.time())
+        request_id = g.get("request_id", "-")
+        response.headers[REQUEST_ID_HEADER] = request_id
         logger.info(
             f"Request completed: {request.method} {request.path} - "
-            f"Status: {response.status_code} - Duration: {duration:.4f}s"
+            f"Status: {response.status_code} - Duration: {duration:.4f}s - request_id={request_id}"
         )
         return response
