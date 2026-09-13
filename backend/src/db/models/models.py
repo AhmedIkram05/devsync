@@ -70,6 +70,8 @@ class Task(db.Model):
         Index("idx_tasks_deadline", "deadline"),
         Index("idx_tasks_deadline_status", "deadline", "status"),
         Index("idx_tasks_progress", "progress"),
+        Index("idx_tasks_project_id", "project_id"),
+        Index("idx_tasks_project_status", "project_id", "status"),
         Index("idx_tasks_status", "status"),
         Index("idx_tasks_status_assigned", "status", "assigned_to"),
         Index("idx_tasks_updated_at", "updated_at"),
@@ -122,6 +124,12 @@ class TaskGitHubLink(db.Model):
     issue_number = db.Column(db.Integer)
     pull_request_number = db.Column(db.Integer)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
+
+    __table_args__ = (
+        Index("idx_task_github_links_task_id", "task_id"),
+        Index("idx_task_github_links_repo_id", "repo_id"),
+        Index("idx_task_github_links_created_at", "created_at"),
+    )
 
     def __repr__(self):
         return f"<TaskGitHubLink task:{self.task_id} repo:{self.repo_id}>"
