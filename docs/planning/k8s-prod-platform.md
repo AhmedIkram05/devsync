@@ -392,8 +392,8 @@ Decisions and deltas per `docs/planning/k8s-phase2-scaling.md`; every item is re
   kubeconform-validated, but `networkPolicy` is absent from the live cluster —
   Dataplane V2 was never enabled at standup, so every policy (incl. the
   Phase 1 deny-all) is a rendered no-op. Enabling DPv2 mid-standing-window
-  would recreate the node pool (rejected). Documented upgrade path: enable
-  DPv2 → managed-db already carries `allow-egress-cloudsql` (PSA CIDR
+  would recreate the node pool (rejected). Upgrade path: enable DPv2 →
+  managed-db already carries `allow-egress-cloudsql` (PSA CIDR
   10.60.0.0/24:5432) so enforcement turns on without cutting the DB.
 - **Cloud SQL reproducibility (audit)**: the instance, PSA range and peering
   are NOT Terraform-managed (a TF resource would make the CD's tf-plan
@@ -412,5 +412,10 @@ Decisions and deltas per `docs/planning/k8s-phase2-scaling.md`; every item is re
   Job): it polls `devsync-postgres:5432`, a Service the overlay deletes — kept,
   every pod restart would CrashLoop 120s on dead DNS. The headless boot-timing
   hack was in-cluster-PG-only; the managed DB is always up outside the ns.
+- **RUNBOOK.md / COST.md retired (2026-09-13, user decision)** — their standing
+  content now lives where it is reviewable: teardown + budget + wire posture in
+  `docs/planning/k8s.md` (D15), ops deltas inline in this §14, cost picture in
+  the §7/§9 phase-2 tables of the scaling plan doc. The reproducible provision
+  script is `infra/scripts/provision-cloudsql.sh`.
 - Scheduling check (D3, pre-scale): measured allocatable 940m/1.36 GiB per e2-small node, ~90% CPU-requested at 3 nodes → the second BE + Redis trigger the autoscaler to a steady ~4 nodes (pool 2–6); PDB `minAvailable: 1` precedes the scale-up.
 - Cost deltas in `COST.md`; operational drift (redis failure, MQ troubleshooting, PDB-at-2, teardown) in `RUNBOOK.md`.

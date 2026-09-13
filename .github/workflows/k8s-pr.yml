@@ -1,9 +1,10 @@
 name: K8s PR Environment (ephemeral namespace)
 
 # Plan: docs/planning/k8s-prod-platform.md §5.5.
-# Every PR touching app or manifests gets a K8s namespace pr-<n> on the
-# standing cluster: build+push its own images → smoke → sticky comment →
-# GC on close. No Ingress/certs per PR (deliberate — avoids LE rate limits).
+# Every PR touching app or manifests gets a run-scoped K8s namespace pr-<n>
+# on the standing cluster: build+push its own images → smoke → sticky comment
+# → namespace deleted after the run (pass or fail — it is a smoke env, not a
+# standing one). The close-event job sweeps leftovers from cancelled runs.
 # The pr overlay drops ESO/ExternalSecret by design, so the workflow creates
 # devsync-app-secrets directly from GH secrets (Deployments reference it via
 # secretKeyRef).
@@ -55,6 +56,9 @@ jobs:
   build-push:
     name: Build + push PR images (AR, Trivy gate)
     if: (github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)) && github.actor != 'dependabot[bot]'
+    outputs:
+      backend_digest: ${{ steps.build-backend.outputs.digest }}
+      frontend_digest: ${{ steps.build-frontend.outputs.digest }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -163,13 +167,16 @@ jobs:
           cd k8s/overlays/pr
           AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
           kustomize edit set namespace "$PR_NS"
-          kustomize edit set image "devsync-backend=${AR}/devsync-backend:${{ github.sha }}"
-          kustomize edit set image "devsync-frontend=${AR}/devsync-frontend:${{ github.sha }}"
+          # Digest pins, not tags (CD parity): the Trivy gate scanned exactly
+          # this digest; a mutable :sha tag could race past the scan between
+          # build and apply.
+          kustomize edit set image "devsync-backend=${AR}/devsync-backend@${{ needs.build-push.outputs.backend_digest }}"
+          kustomize edit set image "devsync-frontend=${AR}/devsync-frontend@${{ needs.build-push.outputs.frontend_digest }}"
           # Tripwire: kustomize silently converts "name=:tag" into a tag-only
           # change, which would ship bare docker.io names. Refuse instead.
           RENDER="$(kubectl kustomize .)"
-          echo "$RENDER" | grep -Fqw "image: ${AR}/devsync-backend:${{ github.sha }}" || { echo "::error::backend image not pinned to ${AR}"; exit 1; }
-          echo "$RENDER" | grep -Fqw "image: ${AR}/devsync-frontend:${{ github.sha }}" || { echo "::error::frontend image not pinned to ${AR}"; exit 1; }
+          echo "$RENDER" | grep -Fqw "image: ${AR}/devsync-backend@${{ needs.build-push.outputs.backend_digest }}" || { echo "::error::backend image not digest-pinned from the scanned build"; exit 1; }
+          echo "$RENDER" | grep -Fqw "image: ${AR}/devsync-frontend@${{ needs.build-push.outputs.frontend_digest }}" || { echo "::error::frontend image not digest-pinned from the scanned build"; exit 1; }
           # A completed/failed Job's template is immutable; drop it so this run's
           # migrate spec applies fresh (migrations are idempotent).
           kubectl delete job devsync-migrate -n "$PR_NS" --ignore-not-found=true
@@ -224,8 +231,8 @@ jobs:
           header: k8s-pr-env
           message: |
             ## K8s PR env `${{ env.PR_NS }}` — ${{ needs.pr-env.result == 'success' && 'smoke green' || 'smoke FAILED' }}
-            - Backend image: `${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/devsync-backend:${{ github.sha }}`
-            - Frontend image: `${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/devsync-frontend:${{ github.sha }}`
+            - Backend image: `${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/devsync-backend@${{ needs.build-push.outputs.backend_digest }}`
+            - Frontend image: `${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPOSITORY }}/devsync-frontend@${{ needs.build-push.outputs.frontend_digest }}`
             - Smoke: `curl /health` + register via port-forward (see `pr-smoke` artifact)
             - No Ingress/certs per PR by design — namespace deleted after the run (pass or fail).
 
@@ -306,7 +313,11 @@ jobs:
           message: ${{ steps.plan.outputs.body || 'Plan Preview skipped (infra/terraform unchanged or init failed)' }}
 
   gc:
-    name: Delete PR #${{ github.event.pull_request.number }} namespace on close
+    # Sweep for leftovers only: the normal path deletes the namespace at the
+    # end of pr-env. This catches cancellations (concurrency group kills
+    # in-flight runs) and manually re-run edges where the always() delete
+    # never executed.
+    name: Sweep leftover seats for PR #${{ github.event.pull_request.number }} on close
     if: github.event.action == 'closed'
     runs-on: ubuntu-latest
     timeout-minutes: 10
