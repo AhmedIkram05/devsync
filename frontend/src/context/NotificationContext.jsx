@@ -29,6 +29,7 @@ export const NotificationProvider = ({ children }) => {
   const lastFetchTimeRef = useRef(0);
   const refreshTimeoutRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
+  const heartbeatIntervalRef = useRef(null);
   const isMountedRef = useRef(true);
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
@@ -216,6 +217,18 @@ export const NotificationProvider = ({ children }) => {
         
         // Store the socket in the ref
         socketRef.current = socketConnection;
+
+        // D5 presence: a 10s heartbeat keeps the server-side 30s presence key
+        // alive (3:1 TTL-to-beat ratio survives one dropped beat). Cleared on
+        // teardown and whenever a new connection replaces this one.
+        if (heartbeatIntervalRef.current) {
+          clearInterval(heartbeatIntervalRef.current);
+        }
+        heartbeatIntervalRef.current = setInterval(() => {
+          if (socketConnection.connected && typeof socketConnection.emit === 'function') {
+            socketConnection.emit('heartbeat', {});
+          }
+        }, 10000);
         
         // Socket event handlers
         socketConnection.on('connect', () => {
@@ -362,6 +375,11 @@ export const NotificationProvider = ({ children }) => {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
+      }
+
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
       }
     };
   }, [currentUser, refreshNotifications, serverDown]);
