@@ -270,7 +270,7 @@ Interview deflects: *Why singleton backend?* (in-memory Socket.IO rooms + `worke
 - [x] PDBs admit nothing disruptive: `kubectl drain --dry-run` on the BE node is denied by `maxUnavailable: 0` (proven 2026-09-12, zero live impact)
 - [x] FE HPA exists (`kubectl get hpa`, min 2 / max 6) with zero scaling events in v1; K8s FE image carries `both` (build-arg visible in run log; live socket upgrades to websocket)
 - [x] Live URL: `gcp.devsyncapp.me` resolves, `ManagedCertificate` `Active`, `curl https://gcp.devsyncapp.me/health` 200 with valid cert; login → task update → Socket.IO broadcast verified across two live clients (proven 2026-09-12, see A11); k6 vs live URL within existing thresholds (proven 2026-09-12 at documented 3-VU shape, see A13)
-- [ ] `docs/demo/k8s-live.gif` + `docs/demo/k8s-dashboard.png` recorded against the live URL and merged
+- [x] `docs/demo/k8s-live.gif` + `docs/demo/k8s-dashboard.png` recorded against the live URL and merged
 - [x] Logs arrive as parseable JSON (`jsonPayload.level` filterable in GMP — live log lines carry both `level` + `severity` keys)
 - [x] PR run: `pr-<n>` namespace smoke green + sticky comment; namespace deleted on close (pr-77 green end-to-end, namespace GC'd)
 - [x] Login → task update → Socket.IO broadcast verified across two port-forwarded clients (rooms don't leak — reuse Cypress spec shape) — proven 2026-09-12, see A11
@@ -292,6 +292,8 @@ Interview deflects: *Why singleton backend?* (in-memory Socket.IO rooms + `worke
 
 ## 12. Phase 2 — Real Scaling (appendix, NOT v1 scope; decisions locked in `docs/adr/`)
 
+> **SUPERSEDED 2026-09-13** by `k8s-phase2-scaling.md` v3.0 (permanent work only): the synthetic load day / chaos battery / managed-DB window are retired; the trigger is now a standing CI socket smoke test, and prod DB is real Cloud SQL. This appendix is frozen as history.
+
 **Trigger to build:** the synthetic load day (ADR 0004) — N=50 sanity must pass on the singleton, N=500 must degrade it. No organic traffic exists to trigger on; the gate opens on manufactured evidence, not vibes. Commit this design to paper now so v1 reads as sequenced, not capped.
 
 - **Unlock (one line + config, ADR 0002):** `SocketIO(..., message_queue="redis://devsync-redis:6379/0")` in `app.py` socketio init; add in-cluster `redis` Service (demo-labelled, same precedent as demo Postgres). Only then does >1 replica stop splitting rooms. **No session affinity by default** — websockets are persistent TCP and the nginx template already negotiates the upgrade; one forced-polling-transport test decides whether affinity earns its way in (GCE Ingress stays either way; nginx-ingress + cookie affinity is the named fallback). The v1 K8s image already builds with `both` (§5.3), so this test runs from the real default, not a special build.
@@ -310,7 +312,7 @@ Original decisions above are frozen as written; this section records what the li
 
 | # | Plan said | As built | Why |
 |---|---|---|---|
-| A1 | D4/§5.2: zonal Autopilot `us-central1-a` | **Standard GKE, zonal `us-central1-a`** — node pool `devsync-pool`, e2-small, autoscale 2–4, auto-repair + auto-upgrade, 02:00 maint window, 60m create timeout | Regional create attempts died twice in `us-central1-f` GCE_STOCKOUT; zonal pin documents the tradeoff in TF. PDB drain proof actually *needs* Standard (Autopilot forbids drain). |
+| A1 | D4/§5.2: zonal Autopilot `us-central1-a` | **Standard GKE, zonal `us-central1-a`** — node pool `devsync-pool`, e2-small, autoscale 2–6, auto-repair + auto-upgrade, 02:00 maint window, 60m create timeout | Regional create attempts died twice in `us-central1-f` GCE_STOCKOUT; zonal pin documents the tradeoff in TF. PDB drain proof actually *needs* Standard (Autopilot forbids drain). Pool ceiling corrected 2026-09-13: Terraform says 6 (2–6), this table previously said 2–4; code truth wins. |
 | A2 | §6: $0 control plane, ~$1–3/day idle | **~$4–5/day** (zonal control plane $0.10/hr) — COST.md updated with honest math | Standard control plane bills; Autopilot's is free. Same T+14 teardown target. |
 | A3 | D9: cosign keyless sign + SBOM `--type spdx` | **Stored key-pair** (`COSIGN_*` GH secrets), cosign v3.1.3 pinned; SBOM attest `--type custom` | cosign v3.1.3 `--type spdx` bundle path fails vs AR (`failed to fetch envelope statement: decoding json`, deterministic, both key types) — bisected locally; `--type custom` carries the same SPDX payload. Keyless OIDC hung with no local token. |
 | A4 | `demo` overlay, `devsync-demo` cluster/cert | **`prod` overlay, cluster `devsync-prod`, cert `devsync-prod-cert`** | `cd.yml` (ECS) deleted by owner; the standing env is prod-shaped. Plan's demo vocabulary retired everywhere except historical quotes. |
@@ -347,3 +349,68 @@ Original decisions above are frozen as written; this section records what the li
 - **What didn't transfer and why:** smoke 1VU/5s crossed p95 on WAN/TLS latency alone; full 10VU/30s run held latency (p95 229ms) but failed 29.7% — root-caused to HTTP 429 from the live Global rate limit (default 300 req/60s, `backend/src/api/middlewares/__init__.py:69-74`; CI disables the throttle with `RATE_LIMIT_REQUESTS_PER_WINDOW=0`). Throttle is production behavior, not a defect — the load shape must respect it.
 - **Green run (same script, same thresholds, throttle-friendly shape):** 3VU/30s ≈ 190 requests inside one 300/window — 250/250 checks passed, 0% failed, p95 232ms, p99 447ms. No failures, no 429s. `k8s-cd.yml` verify pins this exact shape (`--vus 3 --duration 30s`); CI keeps the 10-VU shape where the throttle is disabled.
 - **Shape honesty:** the CI 10-VU shape cannot run green against live by construction (localhost-no-throttle + sub-ms RTT vs WAN + active 300/window throttle). The DoD asks for thresholds, not VU count; green is claimed at the documented 3-VU shape with this annotation, not by weakening any threshold.
+
+## 14. Phase 2 as-built (v3.0, 2026-09-13)
+
+Decisions and deltas per `docs/planning/k8s-phase2-scaling.md`; every item is reviewable repo state, not a run transcript.
+
+### Code (backend/src)
+
+| D | What landed |
+| --- | --- |
+| D2/D4 | `SocketIO(message_queue=REDIS_URL, cors_allowed_origins=prod?[FRONTEND_URL]:"*")` — MQ kwarg only when a URL exists (flask_socketio treats its presence specially); `init_socketio` re-evaluates options per init_app; `async_mode` explicit: `threading` for tests (auto-picked gevent swallowed server→client test-client receipts), `gevent` for prod (gunicorn geventwebsocket worker, unchanged) |
+| D4 | `_safe_emit` guards every room/mention emit — a down MQ logs and drops, handlers return structured acks, never 500s; state stays DB-authoritative, backfill = REST (ADR 0003) |
+| §2.3 | Emit-path membership re-check on task_update/comment_added/project_updated (join-time membership is not sticky proof); same "not a member" contract as join |
+| D5 | Presence: `presence:user:<id>` = `<pod>:<sid>`, SETEX 30s; 10s client heartbeat (3:1); register/join/leave refresh; graceful disconnect deletes — cross-pod reconnect race guarded by comparing the stored `<pod>:<sid>` (only our own key may be deleted); ghosts expire ≤30s |
+| D1 | `rate_limiter.py`: Redis `INCR`+`EXPIRE` on epoch-aligned buckets `rl:<client>:<endpoint>:<window>` (shared across pods, same 300/60s); unset/dead redis falls back to the per-pod in-memory sliding window verbatim (fail-open via `src/services/redis_client.py`, 30s retry cache); `RATE_LIMIT_REQUESTS_PER_WINDOW=0` CI bypass untouched |
+| deps | `kombu==5.6.2` pinned explicitly (MQ rides it); `python-socketio==5.7.1` + `python-engineio==4.4.0` pinned — flask-socketio 5.3.1 packet contracts silently break against socketio ≥5.8 (test-client receipts returned empty); pins are transitive deps made explicit, dead deps (celery/supervisor/fastapi/uvicorn) remain for the separate cleanup PR |
+
+### Manifests
+
+- `k8s/base/redis.yaml`: `redis:7-alpine` ×1, Recreate, emptyDir, save disabled (bus+limiter+presence are stateless), probes `redis-cli ping`, non-root 999, read-only root, 50m/128Mi → 250m/256Mi; ClusterIP Service `devsync-redis:6379`.
+- ConfigMap `REDIS_URL=redis://devsync-redis:6379/0` (non-sensitive, no ESO).
+- NetPol: `allow-internal` egress + `devsync-redis:6379`; new `allow-redis-ingress` (backend only). Redis keeps no egress by default-deny.
+- PDB `devsync-backend`: `maxUnavailable: 0` → `minAvailable: 1` (§13-A singleton constraint retired with the MQ).
+- `devsync-backend` `replicas: 2`; strategy stays `maxUnavailable: 0 / maxSurge: 1`; gunicorn `workers=1` per pod stands (ADR 0002).
+- managed-db overlay: `resources: ../prod` (prod + Cloud SQL); two-phase patch — scrub prod's literal in-cluster DSN **then** re-add `DATABASE_URL` as the Secret Manager secretKeyRef (a single re-patch merges both `value` and `valueFrom` on the same env item — illegal env, kubelet reject — caught by render inspection); Cloud SQL annotation `project-...:us-central1:devsync-db` on Deployment + migrate Job.
+- `k8s-cd.yml`: verify warmup asserts `ready=2 && total=2`; rollout kustomize path switched prod → managed-db; CD's k6 verify shape unchanged (3VU/30s, p95<500ms p99<1000ms <1% fail).
+
+### CI / tests
+
+- `ci.yml`: redis:7-alpine service for the test job; integration split — main run ignores `test_socket_cross_pod_receipt.py`, which runs as its own sequential step (two SocketIO managers share one kombu subscription thread; xdist pooling would tangle it).
+- `tests/unit/middlewares/test_rate_limiter_redis.py` (7): shared-bucket boundary, EXPIRE-first-hit contract, fail-open fallback, unset-URL memory path, decorator + global middleware shapes.
+- `tests/integration/test_socket_broadcast_smoke.py` (7): §4 smoke — 2 members join → task/comment/mention/project emits → leave → disconnect; non-member emit-path guard; admin pass; heartbeat presence shape; GC race guard; MQ-down degrade; CORS/MQ env matrix.
+- `tests/integration/test_socket_cross_pod_receipt.py`: A11-style cross-pod receipt once — a second SocketIO bound to the same kombu queue publishes into a room owned by the first pod's client; its own CI step (kombu threads don't survive xdist worker pooling).
+- Full suite: 558 passed, 1 skip (cross-pod skips locally, runs against the CI redis service + via `kubectl port-forward` live).
+
+### Infra
+
+- Cloud SQL: `sqladmin` + `servicenetworking` APIs; PSA range `google-managed-services-default` (10.60.0.0/24, no CIDR collision with 10.24.0.0/14 pods / 34.118.224.0/20 services / 10.128.0.0/20 subnet); VPC peering to `default`; instance `devsync-db` (POSTGRES_16, db-f1-micro, standard edition, private-IP only, sslmode=require, deletion protection off for the teardown window).
+- DATABASE_URL secret rotation: Secret Manager `DATABASE_URL` = `postgresql://devsync:<pw>@<private-ip>:5432/devsync?sslmode=require` (ESO 1h refresh → force-sync annotation on the ExternalSecret for immediate pickup).
+- Data cutover: `pg_dump` from `devsync-postgres-0` → restore into `devsync-db` from a one-off `postgres:16` pod inside the cluster (peering makes the private IP reachable); counts verified both sides before the overlay flip.
+- **NetPol honesty (audit, 2026-09-13)**: `networkpolicy.yaml` is applied and
+  kubeconform-validated, but `networkPolicy` is absent from the live cluster —
+  Dataplane V2 was never enabled at standup, so every policy (incl. the
+  Phase 1 deny-all) is a rendered no-op. Enabling DPv2 mid-standing-window
+  would recreate the node pool (rejected). Documented upgrade path: enable
+  DPv2 → managed-db already carries `allow-egress-cloudsql` (PSA CIDR
+  10.60.0.0/24:5432) so enforcement turns on without cutting the DB.
+- **Cloud SQL reproducibility (audit)**: the instance, PSA range and peering
+  are NOT Terraform-managed (a TF resource would make the CD's tf-plan
+  Attempt-create a duplicate). The exact provisioning sequence is committed at
+  `infra/scripts/provision-cloudsql.sh`; teardown sequence stays in RUNBOOK.
+- **Memorystore posture (audit)**: per plan D4 the standing env keeps the
+  in-cluster redis; the Memorystore flip stays a drawn-out plan line (REDIS_URL
+  is a ConfigMap value, the PSA range is shared) — no overlay was shipped for
+  it, on purpose.
+- **Backups + cost backstop (audit)**: automated daily backups enabled at
+  03:00 (`backupConfiguration.enabled=True`); the D15 50/80% billing budget
+  still needs a one-time console creation (Billing → Budgets & alerts, $50/mo
+  — gcloud's budget API rejects the create with INVALID_ARGUMENT; console
+  path documented in RUNBOOK).
+- `wait-for-db` initContainer dropped under `managed-db` (Deployment + migrate (Deployment + migrate
+  Job): it polls `devsync-postgres:5432`, a Service the overlay deletes — kept,
+  every pod restart would CrashLoop 120s on dead DNS. The headless boot-timing
+  hack was in-cluster-PG-only; the managed DB is always up outside the ns.
+- Scheduling check (D3, pre-scale): measured allocatable 940m/1.36 GiB per e2-small node, ~90% CPU-requested at 3 nodes → the second BE + Redis trigger the autoscaler to a steady ~4 nodes (pool 2–6); PDB `minAvailable: 1` precedes the scale-up.
+- Cost deltas in `COST.md`; operational drift (redis failure, MQ troubleshooting, PDB-at-2, teardown) in `RUNBOOK.md`.
