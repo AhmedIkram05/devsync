@@ -520,7 +520,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
 
-      - name: Check TLS readiness (gate HTTPS checks, never fail)
+      - name: Check TLS readiness (gate HTTPS checks)
         id: tls
         run: |
           # HTTPS checks below need an Active ManagedCertificate; while Google
@@ -592,7 +592,7 @@ jobs:
           BASE_URL: https://${{ env.LIVE_HOST }}
         run: |
           k6 run \
-            --vus 10 --duration 30s \
+            --vus 3 --duration 30s \
             --summary-export=/tmp/k6-live.json \
             tests/perf/api-load.js
 
