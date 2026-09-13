@@ -80,16 +80,22 @@ def rate_limit(requests_per_window=100, window_seconds=60, by_endpoint=True):
 
 
 def apply_global_rate_limit(app, requests_per_window=300, window_seconds=60):
-    """Apply a global rate limit to all routes"""
+    """Apply a per-client, per-endpoint rate limit to all routes.
+
+    One shared "global" bucket per client meant a single page load (many API
+    calls at once) could 429 itself. Bucketing by endpoint keeps a chatty
+    page from starving other calls, while the per-endpoint decorator stays
+    for strict routes (e.g. login).
+    """
 
     @app.before_request
     def check_rate_limit():
         # Skip rate limiting for certain paths
-        if request.path.startswith("/static") or request.path == "/favicon.ico":
+        if request.path.startswith("/static") or request.path == "/favicon.ico" or request.path == "/health":
             return None
 
         client_id = get_client_identifier()
-        endpoint = "global"
+        endpoint = request.endpoint or request.path
 
         # Clean old requests outside the window
         clean_old_requests(client_id, endpoint, window_seconds)
