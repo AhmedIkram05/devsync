@@ -1,0 +1,20 @@
+# PR envs are for smoke, not scale proof: 1 replica per tier keeps pr-<n>
+# namespaces light (~350m total vs ~700m) so several concurrent PRs fit the
+# standing e2-small pool (it already runs the standing workloads at ~90%
+# CPU-requested). The prod shape (2+2) is what merge deploys. Patches match
+# the base's pre-transform namespace (same convention as the drop-*.yaml).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devsync-backend
+  namespace: devsync
+spec:
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devsync-frontend
+  namespace: devsync
+spec:
+  replicas: 1

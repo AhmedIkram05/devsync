@@ -6,7 +6,7 @@
 # DATABASE_URL secret for ESO. NOT Terraform-managed by design — TF keeps no
 # state for it (adding a TF resource would balloon the CD's tf-plan into a
 # CREATE for an instance that already exists) — instead this script IS the
-# reviewable record, and RUNBOOK.md teardown covers the reverse direction.
+# reviewable record; teardown steps live in docs/planning/k8s.md (D15).
 #
 # Usage:
 #   PROJECT_ID=<id> REGION=us-central1 DB_INSTANCE=devsync-db ./provision-cloudsql.sh
@@ -34,7 +34,7 @@ gcloud services vpc-peerings connect --service=servicenetworking.googleapis.com 
 
 # 3. Instance: POSTGRES_16, db-f1-micro, enterprise edition, private-IP only,
 #    backups at 03:00 (enabled 2026-09-13), deletion protection OFF for the
-#    teardown window (cleanup: RUNBOOK.md).
+#    teardown window (cleanup: docs/planning/k8s.md D15).
 PW=$(openssl rand -hex 24)
 gcloud sql instances create "$DB_INSTANCE" \
   --project="$PROJECT_ID" --database-version=POSTGRES_16 \

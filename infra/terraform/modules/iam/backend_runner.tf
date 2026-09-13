@@ -36,6 +36,14 @@ resource "google_service_account_iam_member" "workload_identity" {
   member             = "serviceAccount:${var.project_id}.svc.id.goog[${var.k8s_namespace}/${var.ksa_name}]"
 }
 
+# Logging CONFIG (not writes): the CD tf-apply creates/updates
+# google_logging_metric resources (RedisDegraded log metric) from the runner.
+resource "google_project_iam_member" "logging_config_writer" {
+  project = var.project_id
+  role    = "roles/logging.configWriter"
+  member  = "serviceAccount:${google_service_account.runner.email}"
+}
+
 resource "google_project_iam_member" "log_writer" {
   project = var.project_id
   role    = "roles/logging.logWriter"
