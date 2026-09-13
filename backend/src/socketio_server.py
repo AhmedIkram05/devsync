@@ -1,5 +1,6 @@
 import functools
 import logging
+import os
 
 from flask import request
 from flask_jwt_extended import decode_token
@@ -8,15 +9,80 @@ from jwt.exceptions import InvalidTokenError
 
 from .auth.rbac import Role
 from .db.models import User, db, project_members
+from .services.redis_client import get_redis
+
+
+def _cors_allowed_origins():
+    """D2: production locks socket origins to the allowed frontend; dev,
+    compose and CI keep the wildcard so tooling keeps working."""
+    if os.getenv("FLASK_ENV", "development").lower() == "production":
+        origins = os.getenv("FRONTEND_URL", "").strip()
+        return [origins] if origins else []
+    return ["*"]
+
+
+def _message_queue():
+    """D4: cross-pod Socket.IO message queue on Redis. Unset in dev/CI means
+    single-process mode (no broker to configure); prod falls back to the
+    in-cluster queue service."""
+    return os.getenv("REDIS_URL") or (
+        "redis://devsync-redis:6379/0" if os.getenv("FLASK_ENV", "development").lower() == "production" else None
+    )
+
 
 # Initialize SocketIO
-socketio = SocketIO(cors_allowed_origins="*")
+_mq_kwargs = {"message_queue": _message_queue()} if _message_queue() else {}
+socketio = SocketIO(cors_allowed_origins=_cors_allowed_origins(), **_mq_kwargs)
 logger = logging.getLogger(__name__)
 
 # Store for connected users and project rooms
 connected_users = {}  # user_id -> session_id
 project_rooms = {}  # project_id -> [user_ids]
 sid_users = {}  # session_id -> user_id
+
+# D5 presence: small keys with short TTLs; the k8s pod name distinguishes
+# replicas so a reconnect through another pod never deletes the newer key.
+PRESENCE_PREFIX = "presence:user:"
+PRESENCE_TTL_SECONDS = 30  # 3:1 with the 10s client heartbeat
+POD_ID = os.getenv("HOSTNAME", "dev-local")
+
+
+def _presence_set(user_id, sid):
+    """D5: write/refresh the 30s presence key (pod:sid value)."""
+    client = get_redis()
+    if not client:
+        return
+    try:
+        client.setex(f"{PRESENCE_PREFIX}{user_id}", PRESENCE_TTL_SECONDS, f"{POD_ID}:{sid}")
+    except Exception:
+        logger.warning("Presence refresh failed; Redis may be down (fail-open)", exc_info=True)
+
+
+def _presence_delete(user_id, sid):
+    """D5: graceful leave/disconnect clears the presence key. The stored value
+    guards the cross-pod reconnect race — only our own (pod, sid) pair may
+    delete; stale ghosts expire via TTL (~30s ceiling)."""
+    client = get_redis()
+    if not client:
+        return
+    key = f"{PRESENCE_PREFIX}{user_id}"
+    try:
+        stored = client.get(key)
+        if stored is None or stored == f"{POD_ID}:{sid}":
+            client.delete(key)
+    except Exception:
+        logger.warning("Presence delete failed; ghost expires via TTL", exc_info=True)
+
+
+def _safe_emit(event, payload, to):
+    """Best-effort emit: a Redis/MQ outage is logged and dropped, never 500.
+    State remains authoritative in the DB; clients backfill via REST (ADR 0003)."""
+    try:
+        emit(event, payload, to=to)
+        return True
+    except Exception:
+        logger.warning("Socket emit %s -> %s failed; MQ may be down (degraded)", event, to, exc_info=True)
+        return False
 
 
 def emit_dashboard_refresh(event_type, *, resource_type=None, resource_id=None, payload=None):
@@ -129,6 +195,7 @@ def handle_disconnect():
 
     if user_id:
         connected_users.pop(user_id, None)
+        _presence_delete(user_id, request.sid)
 
         # Remove user from all project rooms
         for _project_id, members in project_rooms.items():
@@ -144,8 +211,17 @@ def handle_register(data, user_id):
     """Register a user's socket connection"""
     sid_users[request.sid] = user_id
     connected_users[user_id] = request.sid
+    _presence_set(user_id, request.sid)
     print(f"User {user_id} registered with socket ID {request.sid}")
     return {"status": "success", "message": "Registered successfully"}
+
+
+@socketio.on("heartbeat")
+@authenticated_only
+def handle_heartbeat(data=None, user_id=None):
+    """D5: the 10s client heartbeat refreshes the 30s presence key (3:1)."""
+    _presence_set(user_id, request.sid)
+    return {"status": "success", "ttl_seconds": PRESENCE_TTL_SECONDS}
 
 
 def _membership_denied(project_id, user_id):
@@ -187,6 +263,8 @@ def handle_join_project(data, user_id):
     if user_id not in project_rooms[project_id]:
         project_rooms[project_id].append(user_id)
 
+    # Room action refreshes the presence TTL (D5: 3:1 margin vs heartbeat).
+    _presence_set(user_id, request.sid)
     print(f"User {user_id} joined project {project_id}")
     return {"status": "success", "message": "Joined project room"}
 
@@ -206,6 +284,8 @@ def handle_leave_project(data, user_id):
     if project_id in project_rooms and user_id in project_rooms[project_id]:
         project_rooms[project_id].remove(user_id)
 
+    # Room action refreshes the presence TTL (user is still online, just left).
+    _presence_set(user_id, request.sid)
     print(f"User {user_id} left project {project_id}")
     return {"status": "success", "message": "Left project room"}
 
@@ -222,8 +302,13 @@ def handle_task_update(data, user_id):
     if not project_id or not task_id:
         return {"status": "error", "message": "Project ID and Task ID required"}
 
+    # Emit-path membership re-check (plan §2.3): joining is not sticky proof —
+    # memberships can change mid-session, so every broadcast re-verifies.
+    if _membership_denied(project_id, user_id):
+        return {"status": "error", "message": "You are not a member of this project"}
+
     # Broadcast to project room
-    emit(
+    _safe_emit(
         "task_updated",
         {"task_id": task_id, "update_type": update_type, "updated_by": user_id, "timestamp": data.get("timestamp")},
         to=f"project_{project_id}",
@@ -244,8 +329,12 @@ def handle_comment_added(data, user_id):
     if not all([project_id, task_id, comment_id]):
         return {"status": "error", "message": "Missing required data"}
 
+    # Emit-path membership re-check (plan §2.3): see handle_task_update.
+    if _membership_denied(project_id, user_id):
+        return {"status": "error", "message": "You are not a member of this project"}
+
     # Broadcast to project room
-    emit(
+    _safe_emit(
         "new_comment",
         {"task_id": task_id, "comment_id": comment_id, "author_id": user_id, "timestamp": data.get("timestamp")},
         to=f"project_{project_id}",
@@ -254,7 +343,7 @@ def handle_comment_added(data, user_id):
     # Additionally notify specifically mentioned users
     for mentioned_user in mentioned_users:
         if mentioned_user in connected_users:
-            emit(
+            _safe_emit(
                 "user_mentioned",
                 {
                     "task_id": task_id,
@@ -278,8 +367,12 @@ def handle_project_updated(data, user_id):
     if not project_id:
         return {"status": "error", "message": "Project ID required"}
 
+    # Emit-path membership re-check (plan §2.3): see handle_task_update.
+    if _membership_denied(project_id, user_id):
+        return {"status": "error", "message": "You are not a member of this project"}
+
     # Broadcast to project room
-    emit(
+    _safe_emit(
         "project_update",
         {
             "project_id": project_id,
@@ -295,6 +388,20 @@ def handle_project_updated(data, user_id):
 
 
 def init_socketio(app):
-    """Initialize SocketIO with the Flask app"""
-    socketio.init_app(app, cors_allowed_origins="*")
+    """Initialize SocketIO with the Flask app.
+
+    message_queue only lands when a queue URL exists: flask_socketio treats
+    the kwarg's presence (even None) as "wire up a queue manager", which
+    changed handler ack behaviour in test clients. async_mode is decided per
+    init (server rebuilt each init_app): prod keeps gevent (gunicorn
+    geventwebsocket worker), tests force threading — the auto-picked gevent
+    path silently swallows server→client pushes (get_received comes back
+    empty), so any socket receipt test under pytest is dead without it.
+    """
+    socketio.init_app(
+        app,
+        cors_allowed_origins=_cors_allowed_origins(),
+        async_mode="threading" if app.testing else "gevent",
+        **({"message_queue": _message_queue()} if _message_queue() else {}),
+    )
     return socketio

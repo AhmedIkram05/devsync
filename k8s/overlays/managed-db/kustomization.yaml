@@ -1,12 +1,12 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-# Prod shape, reviewed-but-unapplied (plan §5.3, build step 6 LAST).
-# No live Cloud SQL instance is provisioned; this overlay is never applied
-# in the standing window. It reuses the pr-overlay delete pattern: postgres.yaml
-# resources go away via strategic-merge $patch: delete in
-# patch-database-url.yaml, and DATABASE_URL stays a Secret Manager secretRef
-# whose prod value would point at Cloud SQL.
+# Prod shape WITH Cloud SQL (Phase 2 D6, applied): stacks on prod and drops the
+# in-cluster postgres resources so the standing environment runs on Cloud SQL
+# private IP. DATABASE_URL is the Secret Manager secretRef via ESO — the prod
+# value points at the Cloud SQL connection string (private IP, sslmode=require).
+# No credential value lives in git.
 resources:
-- ../../base
+- ../prod
+- allow-egress-cloudsql.yaml
 patches:
 - path: patch-database-url.yaml

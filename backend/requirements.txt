@@ -8,7 +8,7 @@ psycopg2-binary>=2.9.9
 fastapi==0.137.2
 uvicorn==0.24.0
 Flask==2.3.3
-flask-socketio==5.3.1
+flask-socketio==5.5.1
 Flask-SQLAlchemy==3.1.1
 SQLAlchemy>=2.0.30
 Flask-Migrate==4.0.5
@@ -40,6 +40,15 @@ flask-swagger-ui==4.11.1
 # Background task processing
 celery==5.3.6
 redis==5.0.1
+# flask_socketio's redis:// message_queue rides kombu; already present as a
+# transitive dep, pinned explicitly so the MQ path never floats.
+kombu==5.6.2
+# socketio stack pinned at the security-fixed pair (pip-audit CI gate: the
+# short-lived 5.7.1/4.4.0 pins carried PYSEC-2026-1854/3042 + 3032/3033).
+# flask-socketio rides along at 5.5.1 (line 11) — the release built for the
+# modern packet contracts that fixed the test-client receipt breakage.
+python-socketio==5.16.2
+python-engineio==4.13.2
 
 # Production deployment
 gunicorn==22.0.0

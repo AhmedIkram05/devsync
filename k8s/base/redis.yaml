@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devsync-redis
+  namespace: devsync
+  labels:
+    app: devsync-redis
+    app.kubernetes.io/part-of: devsync
+spec:
+  # One replica: the message-queueing + rate-limit state is a single point of
+  # truth; Recreate so a replacement pod never coexists with the old one and
+  # briefly splits pub/sub state mid-rollout.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: devsync-redis
+  template:
+    metadata:
+      labels:
+        app: devsync-redis
+        app.kubernetes.io/part-of: devsync
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        imagePullPolicy: IfNotPresent
+        command: ["redis-server", "--dir", "/data", "--save", "", "--appendonly", "no"]
+        ports:
+        - name: redis
+          containerPort: 6379
+        readinessProbe:
+          exec:
+            command: ["redis-cli", "ping"]
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        livenessProbe:
+          exec:
+            command: ["redis-cli", "ping"]
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 999
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: devsync-redis
+  namespace: devsync
+  labels:
+    app: devsync-redis
+    app.kubernetes.io/part-of: devsync
+spec:
+  # ClusterIP, not headless: one stable VIP for REDIS_URL, unlike postgres
+  # whose headless Service exists for per-pod DNS during StatefulSet rollouts.
+  type: ClusterIP
+  selector:
+    app: devsync-redis
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: redis

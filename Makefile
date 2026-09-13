@@ -46,14 +46,14 @@ db-reset: ## Destroy PostgreSQL data volume & restart
 	$(DC_DB) down -v
 	$(DC_DB) up -d --wait
 
-k8s-up: ## Render + deploy prod overlay (requires GCP_PROJECT_ID + BACKEND_DIGEST + FRONTEND_DIGEST; GCP_REGION/AR_REPOSITORY optional)
+k8s-up: ## Render + deploy managed-db overlay (Cloud SQL; requires GCP_PROJECT_ID + BACKEND_DIGEST + FRONTEND_DIGEST; GCP_REGION/AR_REPOSITORY optional) (requires GCP_PROJECT_ID + BACKEND_DIGEST + FRONTEND_DIGEST; GCP_REGION/AR_REPOSITORY optional)
 	@if [ -z "$(GCP_PROJECT_ID)" ] || [ -z "$(BACKEND_DIGEST)" ] || [ -z "$(FRONTEND_DIGEST)" ]; then \
 		echo "error: refusing to apply unresolved/placeholder images or tokens."; \
 		echo "usage: make k8s-up GCP_PROJECT_ID=<project-id> BACKEND_DIGEST=sha256:<hex> FRONTEND_DIGEST=sha256:<hex>"; \
 		echo "(digests come from building + pushing manifests to Artifact Registry; see docs/k8s.md Images)"; \
 		exit 1; \
 	fi
-	kustomize build k8s/overlays/prod \
+	kustomize build k8s/overlays/managed-db \
 	  | sed -e "s|image: devsync-backend$$|image: $(GCP_REGION)-docker.pkg.dev/$(GCP_PROJECT_ID)/$(AR_REPOSITORY)/devsync-backend@$(BACKEND_DIGEST)|" \
 	        -e "s|image: devsync-frontend$$|image: $(GCP_REGION)-docker.pkg.dev/$(GCP_PROJECT_ID)/$(AR_REPOSITORY)/devsync-frontend@$(FRONTEND_DIGEST)|" \
 	        -e "s/GCP_PROJECT_ID/$(GCP_PROJECT_ID)/g" \
@@ -77,5 +77,5 @@ k8s-logs: ## Tail backend + frontend + migrate logs
 	kubectl logs -l app.kubernetes.io/part-of=devsync -n devsync --tail=200
 
 k8s-down: ## Delete standing-env workloads (then terraform destroy -target=module.gke to $0)
-	kubectl delete -k k8s/overlays/prod --ignore-not-found=true
+	kubectl delete -k k8s/overlays/managed-db --ignore-not-found=true
 	@echo "Next: terraform -chdir=infra/terraform destroy -target=module.gke"

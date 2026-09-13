@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-cloudsql
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app
+      operator: In
+      values: [devsync-backend, devsync-migrate]
+  policyTypes:
+  - Egress
+  egress:
+  # Backend/migrate → Cloud SQL private services access (PSA range for the
+  # peered servicenetworking connection). Dormant today: the cluster predates
+  # Dataplane V2, so no NetworkPolicy is enforced yet (RUNBOOK → "NetPol
+  # declared, not enforced"). Lands without breakage the day DPv2 is enabled —
+  # without this rule the deny-all policy would cut the DB the moment
+  # enforcement turns on.
+  - to:
+    - ipBlock:
+        cidr: 10.60.0.0/24
+    ports:
+    - protocol: TCP
+      port: 5432

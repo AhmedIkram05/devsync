@@ -19,9 +19,9 @@ metadata:
   labels:
     app.kubernetes.io/part-of: devsync
 spec:
-  # Zero: the backend is a singleton (D2), so voluntary eviction must not
-  # take the only pod. States the D2 constraint in scheduling terms.
-  maxUnavailable: 0
+  # With replicas 2 + the Redis message queue (rooms no longer pod-local),
+  # one pod can absorb a voluntary eviction: minAvailable 1, not maxUnavailable 0.
+  minAvailable: 1
   selector:
     matchLabels:
       app: devsync-backend

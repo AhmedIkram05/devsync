@@ -1,4 +1,10 @@
-"""Middleware to implement rate limiting for API requests"""
+"""Middleware to implement rate limiting for API requests
+
+D1: the bucket of record is Redis (INCR/EXPIRE per client + endpoint, one
+shared bucket across all backend pods). When REDIS_URL is unset or Redis is
+unreachable the in-memory dict path below takes over verbatim (fail-open
+per-pod behaviour, same messages and defaults).
+"""
 
 import threading
 import time
@@ -8,7 +14,9 @@ from functools import wraps
 from flask import jsonify, request
 from flask_jwt_extended import get_jwt_identity
 
-# In-memory storage for rate limiting (for a real app, use Redis)
+from ...services.redis_client import get_redis
+
+# In-memory storage for rate limiting (per-pod fallback when Redis is unset/down)
 request_counts = defaultdict(lambda: defaultdict(int))
 request_timestamps = defaultdict(lambda: defaultdict(list))
 rate_limit_lock = threading.Lock()
@@ -42,6 +50,56 @@ def clean_old_requests(client_id, endpoint, window_seconds):
         request_counts[client_id][endpoint] = len(request_timestamps[client_id][endpoint])
 
 
+def _window_bucket(client_id, endpoint, window_seconds):
+    """Epoch-aligned fixed window: one Redis key per (client, endpoint, window)."""
+    epoch = int(time.time() // max(int(window_seconds), 1))
+    return f"rl:{client_id}:{endpoint}:{epoch}"
+
+
+def _redis_hit(client_id, endpoint, requests_per_window, window_seconds):
+    """Count a hit against the shared Redis bucket.
+
+    Returns True/False for a verdict, or None when Redis is unset/failing so
+    the caller falls back to the in-memory path (never raises, never 500).
+    """
+    if requests_per_window <= 0:
+        return False
+    client = get_redis()
+    if not client:
+        return None
+    bucket = _window_bucket(client_id, endpoint, window_seconds)
+    try:
+        # INCR + EXPIRE on first hit (D1 contract); the expires-at first-hit
+        # shape keeps the window pinned to the bucket epoch.
+        count = client.incr(bucket)
+        if count == 1:
+            client.expire(bucket, window_seconds)
+        return count > requests_per_window
+    except Exception:
+        return None
+
+
+def _record_hit(client_id, endpoint, requests_per_window, window_seconds):
+    """Count one request; True = limit exceeded.
+
+    Redis first (shared across pods); unset/dead Redis falls back to the
+    per-pod in-memory sliding window with identical limits and boundaries.
+    """
+    verdict = _redis_hit(client_id, endpoint, requests_per_window, window_seconds)
+    if verdict is not None:
+        return verdict
+
+    # In-memory fallback (remove Redis entirely and this path is the app).
+    clean_old_requests(client_id, endpoint, window_seconds)
+    with rate_limit_lock:
+        if request_counts[client_id][endpoint] >= requests_per_window:
+            return True
+        # Add current request timestamp
+        request_timestamps[client_id][endpoint].append(time.time())
+        request_counts[client_id][endpoint] += 1
+    return False
+
+
 def rate_limit(requests_per_window=100, window_seconds=60, by_endpoint=True):
     """
     Decorator to apply rate limiting to an endpoint
@@ -58,18 +116,8 @@ def rate_limit(requests_per_window=100, window_seconds=60, by_endpoint=True):
             client_id = get_client_identifier()
             endpoint = request.endpoint if by_endpoint else "global"
 
-            # Clean old requests outside the window
-            clean_old_requests(client_id, endpoint, window_seconds)
-
-            # Check if rate limit exceeded
-            with rate_limit_lock:
-                if request_counts[client_id][endpoint] >= requests_per_window:
-                    return jsonify({"status": "error", "message": "Rate limit exceeded. Please try again later."}), 429
-
-                # Add current request timestamp
-                current_time = time.time()
-                request_timestamps[client_id][endpoint].append(current_time)
-                request_counts[client_id][endpoint] += 1
+            if _record_hit(client_id, endpoint, requests_per_window, window_seconds):
+                return jsonify({"status": "error", "message": "Rate limit exceeded. Please try again later."}), 429
 
             # Execute the request handler
             return f(*args, **kwargs)
@@ -97,17 +145,5 @@ def apply_global_rate_limit(app, requests_per_window=300, window_seconds=60):
         client_id = get_client_identifier()
         endpoint = request.endpoint or request.path
 
-        # Clean old requests outside the window
-        clean_old_requests(client_id, endpoint, window_seconds)
-
-        # Check if rate limit exceeded
-        with rate_limit_lock:
-            if request_counts[client_id][endpoint] >= requests_per_window:
-                return jsonify(
-                    {"status": "error", "message": "Global rate limit exceeded. Please try again later."}
-                ), 429
-
-            # Add current request timestamp
-            current_time = time.time()
-            request_timestamps[client_id][endpoint].append(current_time)
-            request_counts[client_id][endpoint] += 1
+        if _record_hit(client_id, endpoint, requests_per_window, window_seconds):
+            return jsonify({"status": "error", "message": "Global rate limit exceeded. Please try again later."}), 429

@@ -155,6 +155,15 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -184,9 +193,18 @@ jobs:
           JWT_SECRET_KEY: ci-jwt-secret-key
         run: |
           pytest backend/tests/integration \
+            --ignore=backend/tests/integration/test_socket_cross_pod_receipt.py \
             -n auto \
             -x \
             -q
+
+      # Cross-pod receipt needs its own process: two SocketIO managers share one
+      # kombu subscription thread, which doesn't survive xdist worker pooling.
+      - name: Run cross-pod socket receipt test
+        env:
+          DATABASE_URL: postgresql://devsync:devsync@localhost:5432/devsync-test
+          JWT_SECRET_KEY: ci-jwt-secret-key
+        run: pytest backend/tests/integration/test_socket_cross_pod_receipt.py -q
 
       - name: Upload backend coverage artifact
         if: always()
@@ -541,4 +559,5 @@ jobs:
       - name: Build overlays + kubeconform -strict
         run: |
           kustomize build k8s/overlays/prod | kubeconform -strict -ignore-missing-schemas
+          kustomize build k8s/overlays/managed-db | kubeconform -strict -ignore-missing-schemas
           kustomize build k8s/overlays/pr | kubeconform -strict -ignore-missing-schemas

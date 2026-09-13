@@ -456,7 +456,7 @@ jobs:
       - name: Pin digests + apply overlay
         run: |
           set -euo pipefail
-          cd k8s/overlays/prod
+          cd k8s/overlays/managed-db
           kustomize edit set image "devsync-backend=${BACKEND_IMG}"
           kustomize edit set image "devsync-frontend=${FRONTEND_IMG}"
           # Tripwire: a pin that silently no-ops would ship bare-name images
@@ -588,7 +588,8 @@ jobs:
           # kubectl wait Available fires while old pods still drain (grace 30s)
           # and NEGs flap (~7min observed) — k6 then measures the rollout,
           # not the app (run #28: p99 30.07s == grace period). Wait for a
-          # single running backend pod, then warm the worker through the
+          # exactly 2 running backend pods (replicas: 2; maxUnavailable 0 means
+            # old pods drain late), then warm the worker through the
           # same LB → frontend → backend path k6 uses to absorb the ~2.7s
           # cold first hit before thresholds apply.
           kubectl rollout status deploy/devsync-backend -n "$NAMESPACE" --timeout=10m
@@ -596,7 +597,7 @@ jobs:
             ready=$(kubectl get pods -n "$NAMESPACE" -l app=devsync-backend \
               -o jsonpath='{range .items[*]}{.metadata.deletionTimestamp}{.status.phase}{"\n"}{end}' | grep -c '^Running' || true)
             total=$(kubectl get pods -n "$NAMESPACE" -l app=devsync-backend --no-headers 2>/dev/null | wc -l | tr -d ' ')
-            [ "$ready" = "1" ] && [ "$total" = "1" ] && break
+            [ "$ready" = "2" ] && [ "$total" = "2" ] && break
             sleep 10
           done
           for _ in $(seq 1 12); do

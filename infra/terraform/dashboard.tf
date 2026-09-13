@@ -151,3 +151,86 @@ resource "google_monitoring_dashboard" "devsync" {
     }
   })
 }
+
+# RedisDegraded (Phase 2 audit): D4/D5 degrade fail-open BY DESIGN — without
+# this alert the only signal failure ever emitted was a backend log line that
+# nobody watched. Log-based metric = the degradation is pageable, not silent.
+resource "google_logging_metric" "redis_degraded" {
+  name   = "devsync-${var.environment}-redis-degraded-events"
+  filter = <<-EOF
+    resource.type="k8s_container"
+    AND resource.labels.namespace_name="devsync"
+    AND resource.labels.container_name="backend"
+    AND ((textPayload=~"Redis unreachable" OR textPayload=~"Presence refresh failed" OR textPayload=~"Socket emit .* failed")
+      OR (jsonPayload.message=~"Redis unreachable" OR jsonPayload.message=~"Presence refresh failed" OR jsonPayload.message=~"Socket emit .* failed"))
+  EOF
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+resource "google_monitoring_alert_policy" "redis_degraded" {
+  display_name = "devsync-${var.environment} RedisDegraded"
+  combiner     = "OR"
+
+  notification_channels = var.alert_email != "" ? [google_monitoring_notification_channel.alert_email[0].id] : []
+
+  conditions {
+    display_name = "backend reports degraded Redis features (MQ/limiter/presence)"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.redis_degraded.name}\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "300s"
+      aggregations {
+        alignment_period   = "60s"
+        per_series_aligner = "ALIGN_RATE"
+      }
+      trigger {
+        count = 1
+      }
+    }
+  }
+
+  alert_strategy {
+    auto_close = "3600s"
+    # Shared with BackendDown: log alerts require an explicit rate limit.
+    notification_rate_limit {
+      period = "1800s"
+    }
+  }
+}
+
+# CloudSQL storage (Phase 2 audit): the DB of record had zero metrics-based
+# alerting. 9 GB over a 10 GB provisioned SSD (auto-resize would cap it) —
+# catches the fix-now point long before disk pressure becomes an outage.
+resource "google_monitoring_alert_policy" "cloudsql_storage_high" {
+  display_name = "devsync-${var.environment} CloudSQL storage > 9 GB"
+  combiner     = "OR"
+
+  notification_channels = var.alert_email != "" ? [google_monitoring_notification_channel.alert_email[0].id] : []
+
+  conditions {
+    display_name = "storage used above 9 GB"
+    condition_threshold {
+      filter          = "metric.type=\"cloudsql.googleapis.com/database/storage/used\" AND resource.type=\"cloudsql_database\" AND resource.label.database_id=\"${var.project_id}:devsync-db\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 9000000000
+      duration        = "300s"
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_MAX"
+      }
+      trigger {
+        count = 1
+      }
+    }
+  }
+
+  alert_strategy {
+    auto_close = "3600s"
+  }
+}

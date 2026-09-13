@@ -7,9 +7,11 @@ metadata:
     app: devsync-backend
     app.kubernetes.io/part-of: devsync
 spec:
-  # Singleton by design (D2): Socket.IO rooms live in process memory and
-  # gunicorn pins workers=1, so a second replica would split-brain rooms.
-  replicas: 1
+  # Two replicas (Phase 2 D3): Socket.IO state used to live in process memory,
+  # but the message queue (REDIS_URL, devsync-redis) publishes each room event
+  # to every replica, so rooms are cluster-wide. gunicorn still pins workers=1
+  # per pod (ADR 0002: no request/session affinity), replicas handle HA + HP.
+  replicas: 2
   revisionHistoryLimit: 5
   strategy:
     type: RollingUpdate
