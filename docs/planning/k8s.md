@@ -39,7 +39,7 @@ Browser → Ingress (GCE, TLS via Google-managed cert) → FE (nginx x2)
 | D8 | Phase 2 adds in-cluster `devsync-redis` (MQ, shared limiter bucket, presence keys) — first Redis is a standing workload, not Celery; dead deps (celery/supervisor/fastapi/uvicorn) still unpruned (separate cleanup PR) |
 | D9 | AR digest-pinned, Trivy gate, cosign keyless + SBOM + SLSA |
 | D10 | Namecheap A-record (one-time, after first deploy) + GCE Ingress + Google-managed cert, live first deploy → teardown |
-| D11 | WI KSA→GSA, ESO from Secret Manager, PDBs (`minAvailable: 1` BE/FE). NetPol deny-all **declared, not enforced**: the cluster was created without Dataplane V2, so policies are render-validated no-ops (k8s-prod-platform §14 "NetPol declared, not enforced"); the overlay ships the Cloud SQL egress rule so enforcement turns on without an outage |
+| D11 | WI KSA→GSA, ESO from Secret Manager, PDBs (`minAvailable: 1` BE/FE); node pool on default compute SA (console repair grant applied; dedicated least-priv node SA = named upgrade). NetPol deny-all **declared, not enforced**: the cluster was created without Dataplane V2, so policies are render-validated no-ops (k8s-prod-platform §14 "NetPol declared, not enforced"); the overlay ships the Cloud SQL egress rule so enforcement turns on without an outage |
 | D12 | GMP PodMonitoring + `BackendDown` alert + JSON logs (`level` + `severity`) + TF dashboard (`severity>=ERROR` log panel) |
 | D13 | Evidence: run links + digests + gif/screenshot anytime up, then local teardown log |
 | D14 | Per-PR `pr-<n>` namespaces are **run-scoped** (created, smoked, deleted after the run); the close-event workflow job sweeps leftovers from cancelled runs |
