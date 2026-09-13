@@ -4,6 +4,13 @@ metadata:
   name: devsync-frontend
   namespace: devsync
   annotations:
+    # LOAD-BEARING: the `gce` IngressClass object does NOT exist in this
+    # cluster (`kubectl get ingressclass` is empty), so spec.ingressClassName
+    # alone matches nothing and GLBC ignores the Ingress entirely (proven
+    # 2026-09-12: spec-only Ingress got zero controller events, LB deleted
+    # and never rebuilt). Keep this annotation until a `gce` IngressClass
+    # exists. Do not "clean up" to spec-only.
+    kubernetes.io/ingress.class: "gce"
     networking.gke.io/managed-certificates: devsync-prod-cert
   labels:
     app.kubernetes.io/part-of: devsync

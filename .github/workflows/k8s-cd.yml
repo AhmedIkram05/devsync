@@ -235,20 +235,45 @@ jobs:
       - name: Cosign verify — frontend (public key)
         run: cosign verify --key env://COSIGN_PUBLIC_KEY --insecure-ignore-tlog "$FRONTEND_IMG"
 
-  slsa-backend:
-    name: SLSA provenance — backend
+      # Enforce SLSA provenance: the generator jobs above emit Build L3
+      # provenance for these digests; verify-image binds each digest back to
+      # this repo + the trusted builder before anything may deploy it.
+      # (slsa-verifier remains the tool for generator-produced container
+      # provenance; its deprecation banner points at the attest-build-
+      # provenance flow, which we do not use. No --source-branch: the
+      # verifier documents it as unsupported for some trigger types, and
+      # our CD fires via workflow_run — source-uri + builder + digest is
+      # the enforced binding. Refs are digest-pinned, so no TOCTOU gap.)
+      - name: Install slsa-verifier
+        uses: slsa-framework/slsa-verifier/actions/installer@ea584f4502babc6f60d9bc799dbbb13c1caa9ee6 # v2.7.1
+
+      - name: Verify SLSA provenance — backend
+        run: slsa-verifier verify-image "$BACKEND_IMG" --source-uri github.com/AhmedIkram05/devsync
+
+      - name: Verify SLSA provenance — frontend
+        run: slsa-verifier verify-image "$FRONTEND_IMG" --source-uri github.com/AhmedIkram05/devsync
+
+  # Single matrix job (renders as ONE graph box with backend/frontend
+  # runs): reusable-workflow calls cannot be steps, but they CAN fan out via
+  # strategy.matrix — same L3 provenance, half the graph noise.
+  slsa:
+    name: SLSA provenance (${{ matrix.image }})
     needs: build-push
     permissions:
       id-token: write
       contents: write
       actions: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [backend, frontend]
 # Bare tag (GHA uses: fetcher rejects refs/tags/ form); SLSA builder-fetch
 # re-derives refs/tags/vX.Y.Z internally from the tag-pinned ref.
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.1.0
     with:
-      image: ${{ needs.build-push.outputs.backend-image }}
-      digest: ${{ needs.build-push.outputs.backend-digest }}
+      image: ${{ needs.build-push.outputs[format('{0}-image', matrix.image)] }}
+      digest: ${{ needs.build-push.outputs[format('{0}-digest', matrix.image)] }}
       # Identifiers (not secrets) — repo Actions VARIABLES. The WIF provider
       # resource path and service-account email are the trusted identity for
       # keyless signing; the actual credential is the OIDC token exchange.
@@ -257,24 +282,6 @@ jobs:
       gcp-service-account: ${{ vars.GCP_SERVICE_ACCOUNT }}
       # Repo is private: explicitly allow the repo name into the public Rekor
       # transparency log (keyless provenance is public by design).
-      private-repository: true
-
-  slsa-frontend:
-    name: SLSA provenance — frontend
-    needs: build-push
-    permissions:
-      id-token: write
-      contents: write
-      actions: read
-      packages: write
-# Bare tag (GHA uses: fetcher rejects refs/tags/ form); SLSA builder-fetch
-# re-derives refs/tags/vX.Y.Z internally from the tag-pinned ref.
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.1.0
-    with:
-      image: ${{ needs.build-push.outputs.frontend-image }}
-      digest: ${{ needs.build-push.outputs.frontend-digest }}
-      gcp-workload-identity-provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-      gcp-service-account: ${{ vars.GCP_SERVICE_ACCOUNT }}
       private-repository: true
 
   # Plan runs OUTSIDE the production environment so the plan diff is
@@ -342,7 +349,7 @@ jobs:
 
   tf-apply:
     name: Terraform apply
-    needs: [build-push, sign, slsa-backend, slsa-frontend, tf-plan]
+    needs: [build-push, sign, slsa, tf-plan]
     environment: production
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -377,11 +384,15 @@ jobs:
       - name: Resolve GCP_PROJECT_ID placeholders in k8s/base
         uses: ./.github/actions/resolve-gcp-placeholders
 
-  migrate:
-    name: Apply migrate Job + wait Complete
+  # Migrate + deploy were two jobs applying the SAME rendered prod overlay
+  # (migrate's apply already ships the Deployments; deploy re-applied it).
+  # One rollout job = one graph box, one runner boot, one apply — with
+  # ordered waits: migrate Job first, Deployments second.
+  rollout:
+    name: Rollout overlay (migrate + deploy) + wait
     needs: [tf-apply, build-push]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }}
     steps:
@@ -465,80 +476,13 @@ jobs:
           code=$?
           set -e
           if [ "$code" -gt 1 ]; then echo '::error::kubectl diff failed'; cat /tmp/k8s-diff-migrate.txt; exit "$code"; fi
-          { echo '### K8s preview (migrate overlay)'; echo '```'; head -c 12000 /tmp/k8s-diff-migrate.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          { echo '### K8s preview (prod overlay)'; echo '```'; head -c 12000 /tmp/k8s-diff-migrate.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           echo "$RENDER" | kubectl apply -f -
 
       - name: Wait for migrate Job Complete (600s)
         run: |
           kubectl wait --for=condition=complete job/devsync-migrate -n "$NAMESPACE" --timeout=600s
           kubectl logs job/devsync-migrate -n "$NAMESPACE" --tail=50
-
-  deploy:
-    name: Deploy digests + wait Available
-    needs: [migrate, build-push]
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Auth to GCP (WIF)
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-
-      - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
-        with:
-          project_id: ${{ vars.GCP_PROJECT_ID }}
-          cluster_name: ${{ env.CLUSTER_NAME }}
-          location: ${{ env.CLUSTER_LOCATION }}
-
-      - name: Set up Kustomize
-        uses: imranismail/setup-kustomize@53f941b41dca13ed61874bbc6b4b6e1562877530 # v3.0.0
-        with:
-          kustomize-version: 5.4.3
-
-      - name: Resolve GCP_PROJECT_ID placeholders in k8s/base
-        uses: ./.github/actions/resolve-gcp-placeholders
-
-      - name: Resolve image digests
-        env:
-          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-          GCP_REGION: ${{ vars.GCP_REGION }}
-          AR_REPOSITORY: ${{ vars.AR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          # Self-contained digest resolution (no cross-job outputs hop).
-          # NOTE: GITHUB_ENV exports land in LATER steps only — the pin step below is separate on purpose.
-          AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
-          gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
-          for img in backend frontend; do
-            digest=$(docker buildx imagetools inspect "${AR}/devsync-${img}:${IMAGE_TAG}" | awk '/^Digest:/{print $2}')
-            test -n "$digest" || { echo "::error::no digest resolved for devsync-${img}"; exit 1; }
-            echo "${img^^}_IMG=${AR}/devsync-${img}@${digest}" >> "$GITHUB_ENV"
-          done
-
-      - name: Pin digests + apply
-        run: |
-          set -euo pipefail
-          cd k8s/overlays/prod
-          kustomize edit set image "devsync-backend=${BACKEND_IMG}"
-          kustomize edit set image "devsync-frontend=${FRONTEND_IMG}"
-          # Tripwire: silent pin no-ops ship bare-name images (run 34696085848).
-          RENDER="$(kubectl kustomize .)"
-          echo "$RENDER" | grep -Fqw "image: ${BACKEND_IMG}" || { echo '::error::backend image not pinned'; exit 1; }
-          echo "$RENDER" | grep -Fqw "image: ${FRONTEND_IMG}" || { echo '::error::frontend image not pinned'; exit 1; }
-          # Plan preview (the K8s analog of terraform plan): server-side
-          # dry-run fails closed; the diff lands in the step summary.
-          echo "$RENDER" | kubectl apply --dry-run=server -f -
-          set +e
-          echo "$RENDER" | kubectl diff -f - > /tmp/k8s-diff-deploy.txt 2>&1
-          code=$?
-          set -e
-          if [ "$code" -gt 1 ]; then echo '::error::kubectl diff failed'; cat /tmp/k8s-diff-deploy.txt; exit "$code"; fi
-          { echo '### K8s preview (deploy overlay)'; echo '```'; head -c 12000 /tmp/k8s-diff-deploy.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          echo "$RENDER" | kubectl apply -f -
 
       - name: Wait for Deployments Available (10m)
         run: |
@@ -547,7 +491,7 @@ jobs:
 
   verify:
     name: Verify vs live URL (OAuth check + BE health + Cypress + k6)
-    needs: deploy
+    needs: rollout
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -574,6 +518,24 @@ jobs:
             kubectl get ingress devsync-frontend -n "$NAMESPACE" -o wide || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Wait for TLS certificate (Active, short-bounded)
+        run: |
+          # First-time runs race Google's domain validation: the Ingress serves
+          # :80 only until the ManagedCertificate is Active, so any https check
+          # before that fails with SSL_ERROR_SYSCALL. Short bounded wait (5m)
+          # absorbs the fast-provision case; steady-state runs (cert already
+          # Active) pass in seconds. If still Provisioning we fail FAST with a
+          # rerun pointer instead of burning runner minutes polling — the
+          # deploy itself is already live, only the TLS proof is pending.
+          for _ in $(seq 1 10); do
+            status=$(kubectl get managedcertificate devsync-prod-cert -n "$NAMESPACE" -o jsonpath='{.status.certificateStatus}' 2>/dev/null || true)
+            echo "certificateStatus=${status:-unknown}"
+            [ "$status" = "Active" ] && exit 0
+            sleep 30
+          done
+          echo "::error::ManagedCertificate devsync-prod-cert not Active after ~5m. Deploy is live; TLS proof pending Google validation. Monitor: kubectl get managedcertificate devsync-prod-cert -n $NAMESPACE; then Re-run failed jobs."
+          exit 1
 
       - name: Verify GitHub OAuth config (live URL, mirrors cd.yml)
         run: |
