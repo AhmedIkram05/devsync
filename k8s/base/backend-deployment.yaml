@@ -106,18 +106,36 @@ spec:
             secretKeyRef:
               name: devsync-app-secrets
               key: FERNET_KEY
+        # Boot takes ~37s (image pull + gunicorn/Flask/alembic import), so a
+        # startupProbe owns the boot window (failureThreshold x period = 120s
+        # ceiling) and liveness/readiness stay tight — tighter initialDelays
+        # rebooted healthy pods mid-boot (observed 1am BackendDown).
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          periodSeconds: 10
+          failureThreshold: 12
+          timeoutSeconds: 5
         livenessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 30
           periodSeconds: 20
+          timeoutSeconds: 5
         readinessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 10
           periodSeconds: 10
+          timeoutSeconds: 5
+        lifecycle:
+          preStop:
+            # GCE LB/NEG deregistration lags SIGTERM: sleep so the endpoint is
+            # drained before gunicorn stops, instead of killing in-flight
+            # requests at the grace boundary (k6 run #28: p99 30.07s).
+            exec:
+              command: ["sleep", "15"]
         # Right-sized 2026-09-12: gunicorn single-worker actually uses ~90Mi.
         # The 512Mi request used to consume every free slot on the 4-node
         # e2-small pool and deadlocked postgres scheduling during rollouts

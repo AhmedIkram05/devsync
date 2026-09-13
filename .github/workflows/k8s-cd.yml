@@ -582,6 +582,29 @@ jobs:
         env:
           CYPRESS_BASE_URL: https://${{ env.LIVE_HOST }}
 
+      - name: Wait for rollout to settle + warmup (steady-state before k6)
+        if: steps.tls.outputs.ready == 'true'
+        run: |
+          # kubectl wait Available fires while old pods still drain (grace 30s)
+          # and NEGs flap (~7min observed) — k6 then measures the rollout,
+          # not the app (run #28: p99 30.07s == grace period). Wait for a
+          # single running backend pod, then warm the worker through the
+          # same LB → frontend → backend path k6 uses to absorb the ~2.7s
+          # cold first hit before thresholds apply.
+          kubectl rollout status deploy/devsync-backend -n "$NAMESPACE" --timeout=10m
+          for _ in $(seq 1 30); do
+            ready=$(kubectl get pods -n "$NAMESPACE" -l app=devsync-backend \
+              -o jsonpath='{range .items[*]}{.metadata.deletionTimestamp}{.status.phase}{"\n"}{end}' | grep -c '^Running' || true)
+            total=$(kubectl get pods -n "$NAMESPACE" -l app=devsync-backend --no-headers 2>/dev/null | wc -l | tr -d ' ')
+            [ "$ready" = "1" ] && [ "$total" = "1" ] && break
+            sleep 10
+          done
+          for _ in $(seq 1 12); do
+            curl -fsS "https://${LIVE_HOST}/api/v1/github/config-check" > /dev/null && break
+            sleep 10
+          done
+          curl -fsS "https://${LIVE_HOST}/api/v1/github/config-check" > /dev/null
+
       - name: Set up k6
         uses: grafana/setup-k6-action@db07bd9765aac508ef18982e52ab937fe633a065 # v1.2.1
 
