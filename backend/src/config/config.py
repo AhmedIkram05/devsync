@@ -109,6 +109,16 @@ class Config:
 
     SQLALCHEMY_DATABASE_URI = _resolve_database_uri(os.getenv("FLASK_ENV", "development").lower())
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # Pool hardening: pre_ping drops stale connections (LB/idle timeouts)
+    # instead of serving the next request a dead socket; recycle bounds
+    # connection age; size/overflow/timeout are env-tunable per environment.
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_pre_ping": True,
+        "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),
+        "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "20")),
+        "pool_timeout": int(os.getenv("DB_POOL_TIMEOUT", "30")),
+        "pool_recycle": int(os.getenv("DB_POOL_RECYCLE", "1800")),
+    }
     SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key")
 
     # JWT Configuration
@@ -146,6 +156,8 @@ class TestingConfig(Config):
 
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    # StaticPool (in-memory SQLite) takes no pool args — keep it bare.
+    SQLALCHEMY_ENGINE_OPTIONS = {}
     JWT_COOKIE_SECURE = False
 
 
