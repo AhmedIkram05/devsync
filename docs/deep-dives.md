@@ -394,8 +394,7 @@ DevSync/
 │   │   └── codeql-analysis.yml       # Weekly + per-PR CodeQL security analysis
 │   └── instructions/                 # Copilot coding guidelines
 ├── pyproject.toml                    # Ruff lint config + pytest settings
-├── docker-compose.local.yml          # Backend + frontend services
-├── docker-compose.local-postgres.yml # PostgreSQL 16 (standalone, composable)
+├── docker-compose.yml                # Backend + frontend + PostgreSQL 16 (service-scoped up for DB-only)
 ├── Makefile                          # up/down/logs/rebuild/shell
 ├── .env.example                      # All required env vars documented
 ├── docs/

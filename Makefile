@@ -1,8 +1,4 @@
-COMPOSE_DB := docker-compose.local-postgres.yml
-COMPOSE_ALL := docker-compose.local.yml
-
-DC_DB := docker compose -f $(COMPOSE_DB)
-DC_ALL := docker compose -f $(COMPOSE_DB) -f $(COMPOSE_ALL)
+DC := docker compose
 
 GCP_REGION ?= us-central1
 AR_REPOSITORY ?= devsync-repo
@@ -14,37 +10,39 @@ help: ## Show this help message
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-25s\033[0m %s\n", $$1, $$2}'
 
 up: ## Build & start all services (DB + backend + frontend)
-	$(DC_ALL) up -d --wait
+	$(DC) up -d --wait
 
 down: ## Stop all services and remove containers
-	$(DC_ALL) down
+	$(DC) down
 
 logs: ## Tail logs. Filter: make logs SVC=backend
-	$(DC_ALL) logs -f $(SVC)
+	$(DC) logs -f $(SVC)
 
 backend-rebuild: ## Rebuild backend image & restart (DB stays running)
-	$(DC_ALL) build backend
-	$(DC_ALL) up -d --wait backend
+	$(DC) build backend
+	$(DC) up -d --wait backend
 
 frontend-rebuild: ## Rebuild frontend image & restart (backend + DB stay running)
-	$(DC_ALL) build frontend
-	$(DC_ALL) up -d --wait frontend
+	$(DC) build frontend
+	$(DC) up -d --wait frontend
 
 backend-shell: ## Open a bash shell in the backend container
-	$(DC_ALL) exec backend bash
+	$(DC) exec backend bash
 
 db-up: ## Start PostgreSQL only (for host-based dev)
-	$(DC_DB) up -d --wait
+	$(DC) up -d --wait devsync-postgres
 
 db-down: ## Stop PostgreSQL only
-	$(DC_DB) down
+	$(DC) stop devsync-postgres
 
 db-shell: ## Open a psql shell in the database
-	$(DC_DB) exec devsync-postgres psql -U devsync -d devsync
+	$(DC) exec devsync-postgres psql -U devsync -d devsync
 
 db-reset: ## Destroy PostgreSQL data volume & restart
-	$(DC_DB) down -v
-	$(DC_DB) up -d --wait
+	$(DC) stop devsync-postgres
+	$(DC) rm -f devsync-postgres
+	-$(DC) volume rm devsync-postgres-data
+	$(DC) up -d --wait devsync-postgres
 
 k8s-up: ## Render + deploy managed-db overlay (Cloud SQL; requires GCP_PROJECT_ID + BACKEND_DIGEST + FRONTEND_DIGEST; GCP_REGION/AR_REPOSITORY optional) (requires GCP_PROJECT_ID + BACKEND_DIGEST + FRONTEND_DIGEST; GCP_REGION/AR_REPOSITORY optional)
 	@if [ -z "$(GCP_PROJECT_ID)" ] || [ -z "$(BACKEND_DIGEST)" ] || [ -z "$(FRONTEND_DIGEST)" ]; then \
