@@ -16,9 +16,13 @@ resource "google_monitoring_alert_policy" "backend_down" {
   notification_channels = var.alert_email != "" ? [google_monitoring_notification_channel.alert_email[0].id] : []
 
   conditions {
+    # NOTE (canary 2026-09-12, proven live): kubelet crash/probe signals
+    # arrive as K8s EVENTS (resource.type="k8s_pod", jsonPayload), never as
+    # container stdout. The old textPayload+k8s_container filter matched
+    # nothing in practice — the crashloop below produced zero hits.
     display_name = "CrashLoop / probe failures in devsync"
     condition_matched_log {
-      filter = "resource.type=\"k8s_container\" AND resource.labels.namespace_name=\"devsync\" AND (textPayload =~ \"CrashLoopBackOff\" OR textPayload =~ \"BackoffLimitExceeded\" OR textPayload =~ \"readiness probe failed\")"
+      filter = "resource.type=\"k8s_pod\" AND resource.labels.namespace_name=\"devsync\" AND (jsonPayload.reason=\"BackOff\" OR (jsonPayload.reason=\"Unhealthy\" AND jsonPayload.message=~\"eadiness probe failed\"))"
     }
   }
 
