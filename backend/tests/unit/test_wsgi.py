@@ -4,6 +4,8 @@ import importlib
 import sys
 from unittest.mock import MagicMock, patch
 
+import src.app  # noqa: F401 — pins src.app in sys.modules; tests below replace sys.path
+
 
 def _fresh_import_wsgi():
     """Import wsgi module with a clean module cache entry."""
