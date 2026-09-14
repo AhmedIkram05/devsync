@@ -1,6 +1,10 @@
 # DevSync
 
-> Full-stack project management platform with real-time collaboration, GitHub OAuth 2.0 integration, and two-way task ↔ GitHub linking (read-only issue/PR sync + comment write-back) - guarded by 1,466 automated tests, a k6 load-test gate (P95 latency ceiling at sustained load), path-aware CI, ruff + ESLint, pip-audit + npm audit, and CodeQL. Checks must pass on every PR; coverage is enforced on merges to `main` (80% backend line, 85% frontend lines/functions/statements, 75% branches).
+> Team task tracker for dev teams with GitHub-synced issues/PRs, realtime rooms with comments and presence, and **3** dev/TL/admin workflows - live on GKE.
+
+DevSync covers the sprint in one place - boards with Assigned and In Progress states, assignments, deadlines, progress bars, realtime comments, GitHub OAuth with issue and PR linking, presence rooms, Reports with per-developer completion, and admin User Mgmt plus self-registration and retention settings.
+
+The architecture is the point - the same board runs live on GKE at https://gcp.devsyncapp.me with Flask-SocketIO rooms, Redis presence, and managed Postgres behind it.
 
 <p align="center">
 <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-61DAFB?style=for-the-badge&labelColor=000000&logo=react"></a>
@@ -11,9 +15,12 @@
 <a href="https://gunicorn.org/"><img src="https://img.shields.io/badge/Gunicorn-499848?style=for-the-badge&labelColor=000000"></a>
 <a href="https://swagger.io/"><img src="https://img.shields.io/badge/Swagger-85EA2D?style=for-the-badge&labelColor=000000&logo=swagger"></a>
 <a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&labelColor=000000&logo=postgresql"></a>
+<a href="https://redis.io/"><img src="https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&labelColor=000000&logo=redis"></a>
 <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&labelColor=000000&logo=docker"></a>
 <a href="https://nginx.org/"><img src="https://img.shields.io/badge/nginx-009639?style=for-the-badge&labelColor=000000&logo=nginx"></a>
-<a href="https://aws.amazon.com/"><img src="https://img.shields.io/badge/AWS-232F3E?style=for-the-badge&labelColor=000000&logo=amazonaws"></a>
+<a href="https://kubernetes.io/"><img src="https://img.shields.io/badge/Kubernetes-326CE5?style=for-the-badge&labelColor=000000&logo=kubernetes"></a>
+<a href="https://cloud.google.com/"><img src="https://img.shields.io/badge/Google_Cloud-4285F4?style=for-the-badge&labelColor=000000&logo=googlecloud"></a>
+<a href="https://www.terraform.io/"><img src="https://img.shields.io/badge/Terraform-7B42BC?style=for-the-badge&labelColor=000000&logo=terraform"></a>
 <a href="https://github.com/features/actions"><img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&labelColor=000000&logo=githubactions"></a>
 <a href="https://socket.io/"><img src="https://img.shields.io/badge/Socket.io-010101?style=for-the-badge&labelColor=000000&logo=socketdotio"></a>
 <a href="https://k6.io/"><img src="https://img.shields.io/badge/k6-7D64FF?style=for-the-badge&labelColor=000000&logo=k6"></a>
@@ -26,6 +33,12 @@
   <a href="https://github.com/AhmedIkram05/devsync/actions/workflows/ci.yml">
     <img src="https://github.com/AhmedIkram05/devsync/actions/workflows/ci.yml/badge.svg" alt="CI">
   </a>
+  <a href="https://github.com/AhmedIkram05/devsync/actions/workflows/k8s-cd.yml">
+    <img src="https://github.com/AhmedIkram05/devsync/actions/workflows/k8s-cd.yml/badge.svg" alt="K8s CD">
+  </a>
+  <a href="https://github.com/AhmedIkram05/devsync/actions/workflows/k8s-pr.yml">
+    <img src="https://github.com/AhmedIkram05/devsync/actions/workflows/k8s-pr.yml/badge.svg" alt="K8s PR">
+  </a>
   <a href="https://github.com/AhmedIkram05/devsync/actions/workflows/codeql-analysis.yml">
     <img src="https://github.com/AhmedIkram05/devsync/actions/workflows/codeql-analysis.yml/badge.svg" alt="CodeQL">
   </a>
@@ -34,139 +47,183 @@
   </a>
 </p>
 
-<br/>
+<p align="center">
+  <img src="docs/assets/gke-carousel.gif" width="600" alt="GKE prod cluster and workloads tour"/>
+  <br/><em>Cluster list 100% healthy, Standard autoscale 2-6 (3 at capture 2026-09-12, ~4 after Phase 2) in us-central1-a, backend 2/2 and frontend 2/2 live.</em>
+</p>
 
-DevSync goes past the project board: three-role access control, sockets that push updates the instant a teammate edits a task, and GitHub issues/PRs linked to tasks - pulled read-only into the board, with comments written back to GitHub. The interesting part is under the hood - every PR is measured, not just tested.
-
-- **RBAC** - Developer, Team Lead, and Admin roles with endpoint-level permission enforcement
-- **Real-time collaboration** - Socket.IO rooms scoped per project; JWT handshake; server-enforced project membership on join; broadcasts never leak across projects
-- **GitHub integration** - OAuth 2.0 account linking, two-way task ↔ GitHub linking with read-only issue/PR sync and comment write-back
-- **Admin controls** - audit logs, user management, system-wide reports with filters
+<p align="center">
+  <img src="docs/assets/gcp-infra-carousel.gif" width="600" alt="GCP infra tour"/>
+  <br/><em>e2-small pool autoscale 2-6 (3 at capture 2026-09-12, ~4 after Phase 2), managed Postgres with CPU chart, 6 synced secrets - the prod estate in one pass.</em>
+</p>
 
 ## How It Fits Together
 
-The React SPA and the Flask API talk over load-balanced HTTPS; every stateful and realtime layer sits inside a custom VPC:
-
 ```mermaid
 flowchart LR
-    subgraph Client["Browser"]
-        SPA["React 18 SPA<br/>CloudFront + S3"]
+    USER["User / browser"]
+    DNS["Namecheap DNS"]
+    ING["GCE Ingress + TLS"]
+
+    subgraph GKE["GKE devsync-prod"]
+        FE["nginx Frontend"]
+        BE["Flask Backend + Socket.IO"]
+        REDIS[("Redis MQ + presence")]
+        SQL[("Cloud SQL prod")]
+        PGDEV[("Postgres dev/PR")]
+        JOB["Migrate Job"]
     end
 
-    subgraph GitHub["GitHub"]
-        GH["GitHub API<br/>OAuth 2.0 · read-only issue/PR sync + comment write-back"]
+    GH["GitHub OAuth + API"]
+
+    subgraph PLAT["Platform"]
+        SM["ESO Secrets x6"]
+        AR["AR Images"]
+        CD["CD Rollout"]
+        MON["Monitoring + alerts"]
     end
 
-    subgraph AWS_VPC["AWS VPC"]
-        ALB["ALB · port 443<br/>ACM TLS"]
-        subgraph ECS["ECS Fargate (private)"]
-            NX["nginx<br/>envsubst upstream"]
-            APP["Flask + Flask-SocketIO<br/>Gunicorn · gevent · port 8000"]
-        end
-        RDS[("RDS PostgreSQL<br/>port 5432 · 12 tables")]
-    end
+    USER --> DNS
+    DNS --> ING
+    ING --> FE
+    FE --> BE
 
-    SPA -->|"HTTPS · /api/* · Socket.IO"| ALB
-    ALB --> NX
-    NX --> APP
-    APP -->|"SQLAlchemy 2.0"| RDS
-    SPA -.->|"JWT HTTP-only cookie + bearer"| APP
-    APP -.->|"OAuth login · PyGithub issue/PR pulls + comment write-back"| GH
-    APP -.->|"project rooms · realtime events"| SPA
+    BE --> REDIS
+    BE --> SQL
+    JOB --> SQL
+    BE <--> GH
+    BE -.-> PGDEV
+
+    SM -.-> BE
+    CD -.-> AR
+    AR -.-> BE
+    CD -.-> BE
+    BE -.-> MON
 ```
 
-**End-to-end flow:** a user signs in (credentials or GitHub OAuth) → the backend issues a JWT delivered as an HTTP-only cookie plus bearer header → the React SPA, served from CloudFront/S3, calls `/api/*` → nginx proxies to Flask on Gunicorn gevent → role decorators authorize the route → Socket.IO verifies project membership and joins that user to their project rooms → task updates, comments, and GitHub link events broadcast in real time.
+End-to-end: Browser hits the GCE Ingress over managed TLS → nginx serves the SPA and proxies `/api/*` and `/socket.io/*` to Flask on Gunicorn gevent → JWT auth plus role checks gate each route → Socket.IO verifies project membership before joining `project_<id>` rooms → broadcasts fan out cluster-wide via the Redis message queue → state persists to Cloud SQL over private IP with presence and rate-limit counters in Redis. Full receipts in [docs/planning/k8s-prod-platform.md](docs/planning/k8s-prod-platform.md) and [docs/planning/k8s-phase2-scaling.md](docs/planning/k8s-phase2-scaling.md).
 
-## Every Piece, in One Line
+## Every Piece in One Line
 
-| Area | Decision | Why |
-|---|---|---|
-| **Container strategy** | Multi-stage Docker builds for both frontend and backend | Backend: `python:3.11-slim` with build deps (`gcc`, `libpq-dev`) in build stage only → runtime image is ~330MB (was 600MB). Frontend: `node:20-alpine` builds, `nginx:1.27-alpine` serves - zero runtime toolchain. |
-| **Compose architecture** | One file: app + Postgres in `docker-compose.yml` | Full stack with `docker compose up -d --wait`, or DB alone for host-based dev with `docker compose up -d --wait devsync-postgres` (service-scoped `up` starts only postgres, which has no dependencies). |
-| **CI pipeline** | 8 job types, path-aware execution | Lint (ruff + ESLint), security (pip-audit + npm audit), unit tests, integration tests, E2E (Cypress), Docker build (layer-cached), k6 load test, and weekly CodeQL. Each job runs only when its paths change. |
-| **Load test gate** | k6 script with in-script thresholds + committed baseline | Every backend change runs 10 VUs of authenticated traffic for 30s against the live API. P95 > 500ms / P99 > 1s / error rate > 1% fails the build; a committed baseline catches order-of-magnitude regressions (3× P95, 4× P99, +5pp errors, −30% throughput). Separate from the functional test count - load iterations are measurements, not tests. |
-| **CI caching** | Docker layer caching + pip/npm dependency caching | Docker builds use `type=gha` cache (GitHub Actions cache layer sharing). Python pip and npm `node_modules` are cached via `actions/setup-python` / `setup-node`. |
-| **Real-time layer** | Socket.IO with gevent workers and JWT-authenticated rooms | Each project is a separate Socket.IO room; the server verifies project membership (`project_members`, admins bypass) before allowing a join, so broadcasts never leak across projects. Gevent async worker handles concurrent WebSocket connections efficiently. |
-| **Deployment gating** | Backend health check → Frontend deploy | Pipeline explicitly waits for ECS rolling update to pass health checks before deploying to CloudFront. Zero API/UI version mismatch on deploy. |
-| **Network isolation** | Three-tier security groups | Internet → ALB (443) → ECS (8000) → RDS (5432). No public database, no direct ECS access. |
-| **Frontend proxy** | Nginx with `envsubst` template for runtime API upstream resolution | Same frontend image deploys to any environment - `API_UPSTREAM` is injected at container start. Docker DNS resolver handles service discovery. |
-| **CI/CD auth** | OIDC federation with AWS - no long-lived credentials | IAM role assumed per-run, scoped to `main` branch only. Zero AWS secrets stored in GitHub. |
+| Piece | What it does |
+| --- | --- |
+| **GKE Standard `devsync-prod`** | Zonal us-central1-a, REGULAR channel, e2-small pool autoscale 2-6 (3 at capture 2026-09-12, ~4 after Phase 2), endpoint computed via TF outputs |
+| **Terraform modules `gke` + `iam`; root `dashboard` + `services`** | Cluster, WIF OIDC for repo AhmedIkram05/devsync, Artifact Registry `devsync-repo` in us-central1, dashboard and alerts |
+| **GCE Ingress + `devsync-prod-cert`** | Catch-all → `frontend:80`, covers devsyncapp.me, www.devsyncapp.me, gcp.devsyncapp.me |
+| **Frontend 2/2** | nginx image, req 100m/128Mi lim 500m/512Mi, proxies to backend FQDN with node-local DNS 169.254.20.10 |
+| **Backend 2/2 + Migrate Job** | Flask-SocketIO on gunicorn, req 250m/256Mi lim 1000m/1Gi, startup/liveness/readiness on `/health:8000`, preStop sleep 15, SA `devsync-ksa`; migrate Job runs first, backoffLimit 3 |
+| **Redis + realtime** | `REDIS_URL=redis://devsync-redis:6379/0`; `message_queue=REDIS_URL` in prod else None with CORS locked to FRONTEND_URL; `presence:user:<id>` SETEX 30s with 10s heartbeat and POD_ID from HOSTNAME; `_membership_denied` re-check on every emit with `_safe_emit` degrading instead of 500ing; Redis INCR/EXPIRE 300/60s fail-open with bypass via env (CI perf sets 0; live verify keeps 300/60s) |
+| **ESO → `devsync-app-secrets`** | Syncs 6 secrets (DATABASE_URL, JWT_SECRET_KEY, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, FERNET_KEY, POSTGRES_PASSWORD) |
+| **`managed-db` overlay (applied)** | Deletes PG StatefulSet, Cloud SQL annotation, DATABASE_URL via secretKeyRef, private IP with no proxy |
+| **NetworkPolicy default-deny** | Only DNS 169.254.20.10:53, frontend→backend :8000, backend/migrate→PG :5432 and Redis :6379, Cloud SQL egress 10.60.0.0/24:5432, LB ranges 130.211.0.0/22 + 35.191.0.0/16, and :443 egress stay open |
+| **PDBs + HPA** | minAvailable 1 on both backends and frontends; frontend HPA 2-6 at CPU 60 |
+| **CI/CD + `pr` previews** | ci.yml: kustomize plus kubeconform strict, socket smoke with broadcast_smoke 7 and cross-pod receipt; k8s-cd.yml: workflow_run on main plus dispatch with build, Trivy HIGH,CRITICAL, cosign v3.1.3 stored-key sign, Syft SBOM, SLSA, fail-closed tf-plan, tf-apply, managed-db rollout with digest tripwire and migrate wait, verify (TLS, OAuth, port-forward, Cypress, k6 `--vus 3 --duration 30s` vs live), then collect; pr overlay gives ephemeral `pr-<n>` namespace at replicas 1 with sticky comment and GC on close |
+| **Observability** | 4-tile dashboard (backend/frontend CPU, container restarts, BackendDown log evidence, error logs) plus 3 alerts (BackendDown on k8s_pod BackOff, RedisDegraded, CloudSQL over 9GB) |
 
 ## Why It's Interesting
 
 | What | Why a reviewer should care |
-|---|---|
-| **A load gate, not just a test gate** | Every PR runs 10 VUs of authenticated k6 traffic for 30s against the real Postgres 15 service container. In-script thresholds (P95 ≤ 500ms, P99 ≤ 1s, <1% errors) plus a committed baseline that trips on 3× P95, 4× P99, +5pp errors, or −30% throughput. Load numbers are enforced by CI, not collected in a dashboard. |
-| **Rooms that cannot leak** | Socket.IO rooms are per project with a JWT-authenticated handshake and a server-side project-membership check before join - there is no code path for a non-member to enter a room or for a broadcast to cross projects. Real-time done with gevent on a single worker, no separate WebSocket server. |
-| **Zero credentials, zero bill** | OIDC federation: IAM roles assumed per CI run, scoped to `main`, with zero static AWS secrets in GitHub. And the AWS deployment was fully built, validated, and recorded - then torn down, so running cost is $0. |
-| **One image, every environment** | Frontend nginx config is an `envsubst` template: `API_UPSTREAM` is injected at container start, so the same image serves local, staging, and production. No per-environment builds. |
+| --- | --- |
+| **One line unlocks scale** | `message_queue` on `REDIS_URL` turns split-brain rooms into cluster-wide rooms; the standing cross-pod receipt test proves it on every run. [Deep dive](docs/deep-dives.md#5-realtime-at-scale) |
+| **Rooms that cannot leak** | Every emit path re-checks `_membership_denied`; two live clients proved broadcast delivery over polling, websocket, and port-forward on 2026-09-12. [Deep dive](docs/deep-dives.md#5-realtime-at-scale) |
+| **Limits that hold across pods** | Redis INCR/EXPIRE shares one 300/60s budget across both replicas and fails open; bypass via env (CI perf sets 0; live verify keeps 300/60s). [Deep dive](docs/deep-dives.md#5-realtime-at-scale) |
+| **Supply chain you can verify** | Digest-pinned rollout with a deploy-time tripwire, stored-key cosign signatures, and SLSA provenance on every image. [Deep dive](docs/deep-dives.md#6-cicd) |
+| **Infra alerts decoupled from app SLOs** | BackendDown watches k8s_pod BackOff events, fired on a real CrashLoop canary with email proof; PDB drain-denied proven with zero live impact. [Deep dive](docs/deep-dives.md#7-observability) |
 
 ## Key Metrics
 
 | Metric | Value |
-|---|---|
-| Automated tests | **1,466 total** - 525 Pytest + 929 Jest + 12 Cypress (across 5 specs) |
-| Test spread | 61 backend test files · 71 frontend test suites |
-| Coverage gates | 80% backend line · 85% frontend (functions/lines/statements) + 75% branches - enforced on merges to `main` |
-| Code quality gates | ruff linting + format check (Python) · ESLint (JS) |
-| Security gates | pip-audit + npm audit (per-PR) · CodeQL `security-and-quality` (weekly) |
-| Docker image size | **~330MB** (was 600MB before multi-stage refactor) |
-| Container startup | Migrations + optional bootstrap + health check under 20s |
-| API response time | p95 ~79ms across CI load-gated endpoints (10 concurrent authenticated VUs); CI SLO thresholds p95<500ms / p99<1000ms |
-| Load test gate | k6: P95 ≤ 500ms · P99 ≤ 1s · <1% errors at 10 VUs sustained - enforced per PR |
-| Database | 12 tables, FK-indexed, Alembic migrations, RDS in private subnet |
-| Infrastructure cost | **$0** (offline - full AWS deployment validated, now torn down) |
-| CI/CD auth | Zero static secrets - OIDC federation for all AWS access |
-| Stack | Python 3.11 · flask + gevent · React 18 · PostgreSQL 15 |
+| --- | --- |
+| Tests | **1,505 total** - 449 unit + 113 integration + 2 cross-pod (564 backend) + 929 Jest across 71 suites + 12 Cypress across 5 specs |
+| Coverage gates | 80% backend line, 85%/75% frontend (lines/functions/statements/branches) |
+| Live k6 vs prod | 3 VU / 30s, **250/250 checks**, p95 232ms, p99 447ms, thresholds p95<500ms, p99<1000ms, <1% fail |
+| CI k6 baseline | p95 9.65ms, 46.58 rps at 10 VU ([baseline.json](backend/tests/perf/baseline.json)) |
+| Realtime proof | Broadcast 2026-09-12 over polling, websocket, and port-forward, all OK |
+| Resilience proofs | BackendDown CrashLoop email fired; PDB drain-denied |
+| Cluster | Standard zonal us-central1-a, e2-small 2-6 (3 at capture 2026-09-12, ~4 after Phase 2), REGULAR, endpoint via TF outputs |
+| Deployments | Backend 2/2 (250m/256Mi → 1000m/1Gi), frontend 2/2 (100m/128Mi → 500m/512Mi), PDBs minAvailable 1, HPA 2-6 CPU 60 |
+| Data | Managed Postgres devsync-db PG16.15 Enterprise 1vCPU 628MB 10GB SSD single zone (console/GIF capture); retention control proven 30d→1d |
+| Cost | **~$4-5/day** (Standard $0.10/hr control plane) until credits out; billing budget $50/mo at 50/80/100% |
+
+> **Metrics provenance:** 1,505 = 564 backend (449 unit + 113 integration + 2 cross-pod) + 929 Jest + 12 Cypress; k6 live numbers are the 2026-09-12 3VU/30s run against <https://gcp.devsyncapp.me> (250/250, p95 232ms, p99 447ms) and sit outside the test count; CI baseline p95 9.65ms at 46.58 rps is the committed localhost gate; broadcast, BackendDown email, and PDB drain-denied receipts live in docs/planning/k8s-prod-platform.md and docs/planning/k8s-phase2-scaling.md.
 
 ## Demos
 
-### AWS Infrastructure - ECS Fargate in custom VPC, RDS in private subnet, CloudFront frontend
+### Monitoring and alerting
 
-> Infrastructure proof: the recorded walkthrough of the AWS Console confirming the ECS cluster, security group rules, RDS private subnet, CloudFront distribution, and a passing pipeline run with OIDC federation. The app was fully deployed on AWS - now offline to control costs. Transparency note: infrastructure was provisioned via the AWS console (recorded walkthrough in `docs/demo`); Terraform IaC is not yet committed.
+<p align="center">
+  <img src="docs/assets/monitoring-carousel.gif" width="600" alt="Monitoring tour"/>
+  <br/><em>Dashboard CPU, restarts, BackendDown Back-off rows, and error logs; 1 firing alert with RedisDegraded, CloudSQL over 9GB, and BackendDown policies; BackendDown CrashLoop email.</em>
+</p>
 
-![AWS Architecture](docs/demo/aws.gif)
+### Test suites
 
-### Developer Dashboard - view and update assigned tasks, collaborate, connect GitHub
+<p align="center">
+  <img src="docs/assets/tests-carousel.gif" width="600" alt="Test suites tour"/>
+  <br/><em>pytest 449 unit plus 113 integration plus 2 cross-pod, Jest 71 suites with 929 tests, Cypress 5 specs with 12 tests all passing.</em>
+</p>
 
-> A walkthrough of the Developer experience: viewing assigned tasks on the dashboard, updating task status and progress, collaborating via real-time comments, and connecting a GitHub account to link Issues and Pull Requests to tasks.
+### Pipelines
 
-![Developer](docs/demo/dev.gif)
+<p align="center">
+  <img src="docs/assets/workflows-carousel.gif" width="600" alt="Pipeline tour"/>
+  <br/><em>CI 166 Success in 3m10s; K8s CD 32 Success in 12m40s from gate to collect; K8s PR 30 Success in 8m10s with sticky comment.</em>
+</p>
 
-### Team Leader Dashboard - assign projects, manage team, view analytics
+### Developer workspace
 
-> A walkthrough of the Team Leader view: creating and assigning projects, managing team members and their roles, viewing project analytics and progress reports, and generating system-wide reports.
+<p align="center">
+  <img src="docs/assets/dev.gif" width="600" alt="Developer dashboard demo"/>
+  <br/><em>Dashboard with Assigned 4 and In Progress 1, GitHub issues and PRs linked to tasks, realtime comments.</em>
+</p>
 
-![Team Leader](docs/demo/tl.gif)
+### Team lead workspace
 
-### Admin Dashboard - system settings, audit logs, user management, reports
+<p align="center">
+  <img src="docs/assets/tl.gif" width="600" alt="Team lead dashboard demo"/>
+  <br/><em>Task at 99%, Reports Developer Performance across 4 members at 17% completion, Team Lead Workspace with 12 assigned.</em>
+</p>
 
-> A walkthrough of administrative controls: managing system settings and feature flags, reviewing audit logs for security events, creating and editing user accounts with role assignments, and generating system-wide reports with filterable views.
+### Admin workspace
 
-![Admin](docs/demo/admin.gif)
+<p align="center">
+  <img src="docs/assets/admin.gif" width="600" alt="Admin dashboard demo"/>
+  <br/><em>User Management across 4 users and roles, System Settings with self-registration plus retention 30d to 1d plus auto-delete.</em>
+</p>
+
+### Load test evidence
+
+<p align="center">
+  <img src="docs/assets/images/k6-load-test.png" width="600" alt="k6 live load test results"/>
+  <br/><em>Live k6 thresholds p95 under 500ms, p99 under 1000ms, under 1% fail - measurements, separate from the 1,505 test count.</em>
+</p>
 
 ## Trade-offs That Mattered
 
-The decisions that shaped the architecture, beyond the every-piece table above:
+| Decision | Alternative | Why |
+| --- | --- | --- |
+| **GKE Standard zonal over regional** | Regional cluster | Regional pools hit stockouts; zonal us-central1-a had proven capacity and keeps PDB drain semantics |
+| **In-cluster Redis, single replica** | Managed memory store | Pub/sub transit plus TTLs rebuild on restart; standing managed cost for zero users was indefensible |
+| **Cloud SQL private IP, no proxy** | Public IP or proxy sidecar | Private IP with sslmode require is simplest; proxy only if private IP or IAM auth ever needs it |
+| **Fail-open limiter on Redis outage** | Fail-closed | A cache outage must not become a self-outage; throttle-disabled CI already proves the open shape |
+| **Stored-key cosign over keyless** | Keyless OIDC | Keyless hung with no local token and the SPDX bundle path failed; stored key with custom attest is green |
+| **Catch-all Ingress, no per-host rules** | Per-host routing | One backend serves devsyncapp.me, www, and gcp hosts; fewer rules, same TLS coverage |
 
-| Decision | Rationale |
-|---|---|
-| **Gunicorn gevent worker (not uWSGI/ASGI)** | Gevent provides cooperative async I/O for Socket.IO alongside HTTP on a single worker - no separate WebSocket server needed. uWSGI and ASGI add deployment complexity that doesn't justify the throughput difference at this scale. |
-| **Single compose file (not two)** | `docker-compose.yml` holds app + database. DB-only mode for native backend iteration works via service-scoped `docker compose up -d --wait devsync-postgres`. The DB never needs rebuilding; `make backend-rebuild` restarts only the app stack. |
-| **Flask (not FastAPI/Django)** | The app predates wide FastAPI adoption. Flask's blueprint model maps cleanly to feature domains (auth, projects, tasks, admin, etc.). The synchronous ORM (SQLAlchemy) paired with gevent gives async WebSocket without async-ifying the entire codebase. |
-| **CRA (not Next.js/Vite)** | This project started before CRA was deprecated. Frontend is a plain SPA - no SSR needed. The nginx reverse proxy serves the same role as Next.js middleware without the Node.js runtime in production. A Vite migration is a valid future improvement. |
-| **Nginx `envsubst` template (not build-time config)** | The same frontend Docker image deploys to any environment because `API_UPSTREAM` is injected at container start. Build-time ARGs would couple the image to one environment. |
-| **OIDC (not static AWS keys)** | IAM role assumption means no credentials to leak, rotate, or audit. The trust policy is declarative - `repo:owner/repo:ref:refs/heads/main` - and scoped to the exact CI trigger. |
-| **Rolling ECS update (not blue/green)** | Blue/green doubles the compute cost during deploy (two full ECS services running). Rolling replaces tasks incrementally - no capacity overhead, zero-downtime if health checks pass, and automatic rollback if they don't. |
-| **Fast pytest, honest load gate** | Unit + integration tests run on in-memory SQLite for speed; the k6 load gate drives the real Postgres 15 service container end to end - schema, queries, and auth under concurrent load. |
-| **k6 thresholds in-script + committed baseline (not a fixed CI config)** | The P95 ceiling and regression tripwires live next to the code they gate, so local runs and CI agree, and the numbers evolve with the product. No build-time number buried in a YAML file that someone must remember to bump. |
-| **HTTP-only cookie + bearer (dual auth)** | The cookie satisfies browser SameSite/CSRF requirements; the bearer header supports mobile and API clients without cookies. Both decode the same JWT - no dual-token complexity. |
+All numbered ADRs plus the full reasoning live in [docs/planning](docs/planning/) with component depth in [docs/deep-dives.md](docs/deep-dives.md).
 
 ## Deep Dives
 
-The full technical detail - AWS infrastructure, backend architecture, frontend architecture, CI/CD pipeline, database design, testing strategy, k6 load testing, security model, and project structure - lives in **[docs/deep-dives.md](docs/deep-dives.md)**.
+Architecture, realtime design, database, testing, k6 methodology, security, Terraform, and CI/CD detail live in **[docs/deep-dives.md](docs/deep-dives.md)** - this README keeps one-liners with proof and links out for depth.
 
 ## Quick Start
+
+### Prerequisites
+
+- Docker + Docker Compose
+- Python 3.11+, Node 20+
+- `gcloud` + Terraform ~1.15 for prod deploys
+
+### Run It
 
 ```bash
 git clone https://github.com/AhmedIkram05/DevSync
@@ -176,31 +233,77 @@ cp .env.example .env
 #   python3 -c "import secrets; print(secrets.token_hex(32))"
 
 make up
-# Starts PostgreSQL DB, Flask Backend and React Frontend Containers in Docker
+# Starts Postgres, Flask backend, and React frontend in Docker
 ```
 
-Open **http://localhost:3000** - the frontend nginx proxies `/api/*` and `/socket.io/*` to the backend transparently.
+Open **<http://localhost:3000>** - the frontend nginx proxies `/api/*` and `/socket.io/*` to the backend transparently.
 
 > **Port conflict?** Docker Desktop binds port 3000 on some setups. Use `DEVSYNC_FRONTEND_PORT=3001 make up`.
 
+### Configuration
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `DATABASE_URL` | Postgres connection string (ESO-synced in prod) | local compose DSN |
+| `JWT_SECRET_KEY` | JWT signing key | - (generate it) |
+| `FRONTEND_URL` | Allowed socket CORS origin in production | `https://gcp.devsyncapp.me` in prod |
+| `REDIS_URL` | Socket queue, presence, and limiter backend | `redis://devsync-redis:6379/0` in prod |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | OAuth login plus issue/PR sync | - |
+| `FERNET_KEY` | OAuth token encryption | - |
+| `RATE_LIMIT_REQUESTS_PER_WINDOW` | Global throttle budget, `0` disables | `300` per 60s |
+
+### Tests
+
+```bash
+# Backend: 449 unit + 113 integration + 2 cross-pod
+pytest backend/tests/unit -q
+pytest backend/tests/integration -q
+
+# Frontend: 929 Jest across 71 suites
+npm test --prefix frontend
+
+# E2E: 12 Cypress across 5 specs
+npx cypress run --project frontend
+```
+
+### Deploy
+
+```bash
+# Prod deploys are push-to-main via k8s-cd.yml:
+# build to Artifact Registry → sign → tf-apply → managed-db rollout → verify → collect
+# Live URL: https://gcp.devsyncapp.me
+# PR previews: ephemeral pr-<n> namespace with sticky comment and GC on close
+```
+
 ## Documentation
 
-Additional reference docs for those who want to dive deeper:
-
 | Doc | What it covers |
-|---|---|
-| [**OpenAPI Spec**](docs/backend/swagger.yaml) | Complete API reference: all `/api/v1/*` routes, request/response schemas, auth methods (2143 lines) |
-| [**RBAC Reference**](docs/backend/rbac.md) | Full role-permission matrix for Developer, Team Lead, and Admin roles with endpoint-level authorization rules |
-| [**Database Models**](docs/backend/models.md) | Entity descriptions, relationships, and field types for all 12 tables |
-| [**Load Testing (k6)**](docs/backend/load-testing.md) | k6 gate: script structure, in-script thresholds, baseline-armament workflow, rate-limiter override, local runbook |
-| [**Design Proposal**](docs/Design.pdf) | Original architecture design document outlining requirements and system design decisions |
+| --- | --- |
+| [docs/deep-dives.md](docs/deep-dives.md) | Architecture, realtime, database, testing, k6, security, Terraform, CI/CD |
+| [docs/planning/k8s-prod-platform.md](docs/planning/k8s-prod-platform.md) | Prod platform plan with A11/A12/A13 live receipts |
+| [docs/planning/k8s-phase2-scaling.md](docs/planning/k8s-phase2-scaling.md) | Permanent hardening: MQ line, presence, limiter, managed DB |
+| [docs/backend/swagger.yaml](docs/backend/swagger.yaml) | Complete API reference for all `/api/v1/*` routes |
+| [docs/backend/rbac.md](docs/backend/rbac.md) | Role-permission matrix for Developer, Team Lead, and Admin |
+| [docs/backend/models.md](docs/backend/models.md) | Entity descriptions for all 12 tables |
+| [docs/backend/load-testing.md](docs/backend/load-testing.md) | k6 gate, thresholds, baseline, and local runbook |
+| [docs/Design.pdf](docs/Design.pdf) | Original architecture design document |
 
-## About This Project
+## About Ahmed Ikram
 
-A personal project by **Ahmed Ikram**, designed and built end-to-end, from the Flask API, JWT auth, and Socket.IO rooms, through the CI and k6 quality gates, to the AWS estate.
+A personal project by **Ahmed Ikram**, designed and built end-to-end - from the Flask API, JWT auth, and cross-pod Socket.IO rooms, through the k6 quality gates and per-PR preview envs, to the standing GKE prod platform with managed Postgres, Redis-backed limits, and Terraform ownership.
 
 ## Related Projects
 
-- [**LAAD**](https://github.com/AhmedIkram05/laad) - ATM log aggregation & diagnostics: Kafka streaming, 3-layer ML anomaly detection, agentic RAG assistant on AWS ECS Fargate
+- [**WikiStream**](https://github.com/AhmedIkram05/WikiStream) - realtime Wikipedia streaming analytics: async SSE consumer, ClickHouse, BigQuery warehouse, Terraform on Google Cloud
+- [**SWE-Qwen**](https://github.com/AhmedIkram05/SWE-Qwen) - SWE-bench to QLoRA fine-tuning to execution-based evaluation LLMOps platform
+- [**LAAD**](https://github.com/AhmedIkram05/laad) - ATM log aggregation and diagnostics: Kafka streaming, 3-layer ML anomaly detection, agentic RAG assistant
 - [**StockLens**](https://github.com/AhmedIkram05/StockLens) - FinTech mobile app: OCR receipt scanning, portfolio analytics, LSTM forecasting, self-built MCP server
-- [**W3C ETL Pipeline**](https://github.com/AhmedIkram05/W3C-ETL-Pipeline) - serverless Azure ETL: W3C web logs through Databricks DLT → dbt → Power BI
+- [**W3C ETL Pipeline**](https://github.com/AhmedIkram05/W3C-ETL-Pipeline) - serverless Azure ETL: W3C web logs through Databricks DLT to dbt to Power BI
+
+---
+
+<p align="center">
+  <b>DevSync</b> - realtime project tracking on GKE: Ingress → nginx → Flask-SocketIO → managed Postgres + Redis.<br/>
+  Built with Python · Flask · React · Postgres · Redis · Kubernetes · Terraform · Google Cloud · GitHub Actions.<br/>
+  MIT © Ahmed Ikram
+</p>
