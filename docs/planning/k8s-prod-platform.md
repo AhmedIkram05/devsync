@@ -4,7 +4,7 @@
 **Status:** As-built v1.10 (v1.9 + §13 as-built amendments, 2026-09-12 — plan title updated: Autopilot → Standard, `demo` → `prod`)
 **Parent:** `README.md` + `docs/deep-dives.md` (ECS/RDS/ALB validated, torn down to $0; Terraform not yet committed — console-provisioned, walkthrough in `docs/demo`)
 **Builds on:** ADRs in docs/adr/(0001-0004)
-**Dependencies:** Compose stack (`docker-compose.local.yml` + `docker-compose.local-postgres.yml`), `Makefile`, CI (`ci.yml` 8 path-aware jobs + k6 gate), CD (`cd.yml` ECS+S3 OIDC), 12-table Postgres + Alembic, Socket.IO rooms
+**Dependencies:** Compose stack (`docker-compose.yml`), `Makefile`, CI (`ci.yml` 8 path-aware jobs + k6 gate), CD (`cd.yml` ECS+S3 OIDC), 12-table Postgres + Alembic, Socket.IO rooms
 **Non-goals:** Replacing proven ECS path. Standing cluster. Backend HPA in v1 (rooms are in-memory until MQ — §12). Service mesh / GitOps operator. Redis/Celery deployment in v1 (dead deps — see D8; Phase 2 wires `message_queue`).
 
 ---
@@ -60,7 +60,7 @@ This is the **third and only user-facing** K8s plan in the series: WikiStream = 
 | Boot | `entrypoint.sh`: `flask_migrate upgrade` on every boot → K8s race with >1 replica (hence migrate Job, §5.3) | `backend/entrypoint.sh:4-12` |
 | Image BE | Multi-stage `python:3.11-slim`, build deps in build stage only (~330MB), non-root `devsync` user, `ENTRYPOINT entrypoint.sh`, `EXPOSE 8000` | `backend/Dockerfile` |
 | Image FE | `node:20-alpine` build → `nginx:1.27-alpine` serve; `nginx.conf.template` proxies `/api/` + `/socket.io/` (WS upgrade, 86400s read timeout) to `${API_UPSTREAM}`, SPA fallback, gzip, security headers | `frontend/Dockerfile`, `frontend/nginx.conf.template` |
-| Compose | `backend` (8000, healthcheck urllib `/`, `depends_on` postgres healthy) + `frontend` (`API_UPSTREAM=http://backend:8000`, depends backend healthy) + `devsync-postgres: postgres:16` + volume + `pg_isready` | `docker-compose.local.yml`, `docker-compose.local-postgres.yml` |
+| Compose | `backend` (8000, healthcheck urllib `/`, `depends_on` postgres healthy) + `frontend` (`API_UPSTREAM=http://backend:8000`, depends backend healthy) + `devsync-postgres: postgres:16` + volume + `pg_isready` | `docker-compose.yml` |
 | Deps | `requirements.txt`: Flask 2.3.3, socketio 5.3.1, SQLAlchemy 2, gunicorn 22 + gevent 23.9 + gevent-websocket, **celery 5.3.6 + redis 5.0.1 + supervisor + fastapi + uvicorn present but unused in `src/`** → dead deps, no Redis in v1 (Phase 2 wires it, §12) | `backend/requirements.txt`, rg `celery\|message_queue\|redis` in `backend/src` = no hits |
 | CI | 8 path-aware jobs: ruff+ESLint, pip-audit+npm audit, pytest unit+integration, docker build, Jest, Cypress E2E (gunicorn + serve), k6 gate (10 VU 30s, P95≤500ms/P99≤1s/<1% + committed baseline), Codecov | `.github/workflows/ci.yml` |
 | CD | `cd.yml` OIDC → ECR push → ECS rolling + Secrets Manager ARNs (`DATABASE_URL`, JWT, GitHub ID/secret) → verify OAuth config → S3 sync + CloudFront invalidate | `.github/workflows/cd.yml` |
