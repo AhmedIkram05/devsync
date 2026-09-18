@@ -356,8 +356,8 @@ erDiagram
 | Cross-pod receipt | Pytest (sequential) | 2 | Own CI step, shared kombu subscription thread |
 | Frontend unit + component | Jest + RTL + MSW | 929 across 71 suites | Branches 75%, functions/lines/statements 85% (main) |
 | End-to-end | Cypress | 12 across 5 specs | Full stack: PG to gunicorn to served build |
-| Load | k6 | - | Thresholds + baseline gate, reported separately from the 1505 count |
-| **Total tests** | | **1505** | All must pass |
+| Load | k6 | - | Thresholds + baseline gate, reported separately from the 1520 count |
+| **Total tests** | | **1520** | All must pass |
 | Lint | ruff + ESLint | - | Zero warnings |
 | Security | pip-audit + npm audit + CodeQL | - | Zero high/critical |
 
@@ -416,7 +416,7 @@ npx cypress run --config baseUrl=http://localhost:3000   # against the served bu
 - Script + thresholds in-script (`backend/tests/perf/api-load.js:20-31`): error rate < 1% (`http_req_failed rate<0.01`), `p(95)<500`, `p(99)<1000`. Thresholds live in the script (not CI YAML) so `k6 run` behaves identically locally and in the pipeline. These are CI execution ceilings (single gevent worker on a shared 2-vCPU runner), not production SLOs.
 - Real user path (`backend/tests/perf/api-load.js:38-88`): register to login to JWT to dashboard reads; seed-user-first trick absorbs the first-registration admin promotion so the load user stays a developer.
 - Committed baseline (`backend/tests/perf/baseline.json:1-7`: p95 9.65ms, 46.58 rps, captured 2026-08-31): `check_baseline.py` trips the build on ~3x p95 / 4x p99 / +5pp error rate / -30% throughput (`.github/workflows/ci.yml:480-484`). First-run (no baseline) passes with a warning.
-- CI shape 10VU/30s with the limiter bypassed (`RATE_LIMIT_REQUESTS_PER_WINDOW=0` at `.github/workflows/ci.yml:454`); load iterations are measurements, never counted - results ship as the `load-test-results` artifact, separate from the 1505.
+- CI shape 10VU/30s with the limiter bypassed (`RATE_LIMIT_REQUESTS_PER_WINDOW=0` at `.github/workflows/ci.yml:454`); load iterations are measurements, never counted - results ship as the `load-test-results` artifact, separate from the 1520.
 - Live shape 3VU/30s (`--vus 3 --duration 30s` at `.github/workflows/k8s-cd.yml:612-621`).
 
 **Why this way:** unit + integration tests run on fast fixtures, and the `perf` job spins up a real Postgres + gunicorn so the k6 gate exercises genuine SQL semantics under real concurrent load. The committed baseline catches order-of-magnitude regressions that unit tests cannot see.
