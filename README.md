@@ -134,7 +134,7 @@ End-to-end: Browser hits the GCE Ingress over managed TLS → nginx serves the S
 
 | Metric | Value |
 | --- | --- |
-| Tests | **1,505 total** - 449 unit + 113 integration + 2 cross-pod (564 backend) + 929 Jest across 71 suites + 12 Cypress across 5 specs |
+| Tests | **1,520 total** - 579 backend expanded (449 unit + 113 integration + 2 cross-pod, base 564) + 929 Jest across 71 suites + 12 Cypress across 5 specs |
 | Coverage gates | 80% backend line, 85%/75% frontend (lines/functions/statements/branches) |
 | Live k6 vs prod | 3 VU / 30s, **250/250 checks**, p95 232ms, p99 447ms, thresholds p95<500ms, p99<1000ms, <1% fail |
 | CI k6 baseline | p95 9.65ms, 46.58 rps at 10 VU ([baseline.json](backend/tests/perf/baseline.json)) |
@@ -145,7 +145,7 @@ End-to-end: Browser hits the GCE Ingress over managed TLS → nginx serves the S
 | Data | Managed Postgres devsync-db PG16.15 Enterprise 1vCPU 628MB 10GB SSD single zone (console/GIF capture); retention control proven 30d→1d |
 | Cost | **~$4-5/day** (Standard $0.10/hr control plane) until credits out; billing budget $50/mo at 50/80/100% |
 
-> **Metrics provenance:** 1,505 = 564 backend (449 unit + 113 integration + 2 cross-pod) + 929 Jest + 12 Cypress; k6 live numbers are the 2026-09-12 3VU/30s run against <https://gcp.devsyncapp.me> (250/250, p95 232ms, p99 447ms) and sit outside the test count; CI baseline p95 9.65ms at 46.58 rps is the committed localhost gate; broadcast, BackendDown email, and PDB drain-denied receipts live in docs/planning/k8s-prod-platform.md and docs/planning/k8s-phase2-scaling.md.
+> **Metrics provenance:** 1,520 = 579 backend expanded (564 base) (449 unit + 113 integration + 2 cross-pod) + 929 Jest + 12 Cypress; k6 live numbers are the 2026-09-12 3VU/30s run against <https://gcp.devsyncapp.me> (250/250, p95 232ms, p99 447ms) and sit outside the test count; CI baseline p95 9.65ms at 46.58 rps is the committed localhost gate; broadcast, BackendDown email, and PDB drain-denied receipts live in docs/planning/k8s-prod-platform.md and docs/planning/k8s-phase2-scaling.md.
 
 ## Demos
 
@@ -160,7 +160,7 @@ End-to-end: Browser hits the GCE Ingress over managed TLS → nginx serves the S
 
 <p align="center">
   <img src="docs/assets/tests-carousel.gif" width="600" alt="Test suites tour"/>
-  <br/><em>pytest 449 unit plus 113 integration plus 2 cross-pod, Jest 71 suites with 929 tests, Cypress 5 specs with 12 tests all passing.</em>
+  <br/><em>pytest 449 unit plus 113 integration plus 2 cross-pod, 579 expanded, Jest 71 suites with 929 tests, Cypress 5 specs with 12 tests all passing.</em>
 </p>
 
 ### Pipelines
@@ -195,7 +195,7 @@ End-to-end: Browser hits the GCE Ingress over managed TLS → nginx serves the S
 
 <p align="center">
   <img src="docs/assets/images/k6-load-test.png" width="600" alt="k6 live load test results"/>
-  <br/><em>Live k6 thresholds p95 under 500ms, p99 under 1000ms, under 1% fail - measurements, separate from the 1,505 test count.</em>
+  <br/><em>Live k6 thresholds p95 under 500ms, p99 under 1000ms, under 1% fail - measurements, separate from the 1,520 test count.</em>
 </p>
 
 ## Trade-offs That Mattered
@@ -255,7 +255,7 @@ Open **<http://localhost:3000>** - the frontend nginx proxies `/api/*` and `/soc
 ### Tests
 
 ```bash
-# Backend: 449 unit + 113 integration + 2 cross-pod
+# Backend: 579 expanded (449 unit + 113 integration + 2 cross-pod, base 564)
 pytest backend/tests/unit -q
 pytest backend/tests/integration -q
 
