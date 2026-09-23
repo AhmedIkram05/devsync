@@ -29,7 +29,7 @@ provider "google" {
 # Talks straight to the cluster from module outputs (never the kubeconfig
 # file: that is stale mid-apply while the cluster is being replaced).
 provider "helm" {
-  kubernetes {
+  kubernetes = {
     host                   = "https://${module.gke.endpoint}"
     token                  = data.google_client_config.current.access_token
     cluster_ca_certificate = module.gke.cluster_ca
