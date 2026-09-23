@@ -259,7 +259,7 @@ describe('Reports page', () => {
 
     expect(await screen.findByText('GitHub Activity')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTitle('Delete Report'));
+    fireEvent.click(screen.getAllByTitle('Delete Report')[0]);
 
     await waitFor(() => {
       expect(api.reportService.deleteReport).toHaveBeenCalledWith('saved-1');
@@ -431,7 +431,7 @@ describe('Reports page', () => {
     render(<Reports />);
     expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTitle('Delete Report'));
+    fireEvent.click(screen.getAllByTitle('Delete Report')[0]);
 
     await waitFor(() => {
       expect(console.error).toHaveBeenCalledWith('Error deleting report:', expect.any(Error));

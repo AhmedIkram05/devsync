@@ -535,7 +535,7 @@ const TaskList = () => {
                                 e.stopPropagation();
                                 handleUpdateStatus(task.id, e.target.value);
                               }}
-                              disabled={updating || (currentUser.role === 'developer' && task.assigned_to !== currentUser.id)}
+                              disabled={updating || (currentUser?.role === 'developer' && task.assigned_to !== currentUser?.id)}
                               className="text-sm border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60 mr-2"
                             >
                               <option value="todo">To Do</option>
