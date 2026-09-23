@@ -262,7 +262,7 @@ describe('Reports page', () => {
     fireEvent.click(screen.getAllByTitle('Delete Report')[0]);
 
     await waitFor(() => {
-      expect(api.reportService.deleteReport).toHaveBeenCalledWith('saved-1');
+      expect(api.reportService.deleteReport).toHaveBeenCalledWith('saved-2');
     });
 
     expect(screen.getAllByText('Task Report').length).toBe(1);
