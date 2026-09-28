@@ -1,10 +1,10 @@
 import '@testing-library/jest-dom';
 
 // react-router v7's CJS build creates TextEncoder/TextDecoder at module scope; jsdom 16 (jest 27) doesn't provide them.
-if (!globalThis.TextEncoder || !globalThis.TextDecoder) {
+if (!window.TextEncoder || !window.TextDecoder) {
 	const { TextEncoder, TextDecoder } = require('util');
-	globalThis.TextEncoder = globalThis.TextEncoder || TextEncoder;
-	globalThis.TextDecoder = globalThis.TextDecoder || TextDecoder;
+	window.TextEncoder = window.TextEncoder || TextEncoder;
+	window.TextDecoder = window.TextDecoder || TextDecoder;
 }
 
 Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
