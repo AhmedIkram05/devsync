@@ -238,6 +238,10 @@ describe('AuthContext', () => {
   });
 
   test('handles explicit GitHub success callback query parameters', async () => {
+    // Server verification must agree with the callback, or its stale-state check
+    // races (and under Router 7's transition flushing, loses) the URL-param flow.
+    githubService.checkConnection.mockResolvedValue({ connected: true, username: 'octocat' });
+
     localStorage.setItem(
       'user',
       JSON.stringify({ id: 9, email: 'dev@example.com', token: 'token-9', role: 'developer', github_connected: false })
