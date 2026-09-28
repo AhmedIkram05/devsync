@@ -607,7 +607,7 @@ jobs:
           curl -fsS "https://${LIVE_HOST}/api/v1/github/config-check" > /dev/null
 
       - name: Set up k6
-        uses: grafana/setup-k6-action@db07bd9765aac508ef18982e52ab937fe633a065 # v1.2.1
+        uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1.2.2
 
       - name: k6 against live URL
         if: steps.tls.outputs.ready == 'true'
