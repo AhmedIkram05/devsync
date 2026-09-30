@@ -42,6 +42,9 @@ The architecture is the point - the same board runs live on GKE at https://gcp.d
   <a href="https://github.com/AhmedIkram05/devsync/actions/workflows/codeql-analysis.yml">
     <img src="https://github.com/AhmedIkram05/devsync/actions/workflows/codeql-analysis.yml/badge.svg" alt="CodeQL">
   </a>
+  <a href="https://github.com/AhmedIkram05/devsync/actions/workflows/security-weekly.yml">
+    <img src="https://github.com/AhmedIkram05/devsync/actions/workflows/security-weekly.yml/badge.svg" alt="Security Audit">
+  </a>
   <a href="https://codecov.io/gh/AhmedIkram05/DevSync">
     <img src="https://codecov.io/gh/AhmedIkram05/DevSync/branch/main/graph/badge.svg" alt="Codecov">
   </a>
