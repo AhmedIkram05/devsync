@@ -24,7 +24,12 @@ permissions:
   id-token: write # GCP WIF (OIDC federation) + cosign signing
 
 concurrency:
-  group: k8s-cd-${{ github.ref }}
+  # v2 suffix: the original k8s-cd-* group lock leaked when a queued run was
+  # cancelled on 2026-09-28 (GitHub concurrency-lock leak) — every later run
+  # queued forever with 0 jobs, and rerun/cancel could not clear it. Renaming
+  # the group busts the stale lock. If this jam ever recurs (runs pending with
+  # 0 jobs for >1h), bump the suffix to v3.
+  group: k8s-cd-v2-${{ github.ref }}
   # Never cancel a live rollout mid-apply; queue successive deploys.
   cancel-in-progress: false
 
