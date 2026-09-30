@@ -74,7 +74,12 @@ jobs:
   build-push:
     name: Build + push images (AR, Trivy gate)
     needs: changes
-    if: needs.changes.outputs.app == 'true'
+    # GKE master switch: the standing-cluster pipeline below (build-push,
+    # sign/slsa, tf-plan/apply, rollout, verify) needs the GKE cluster and
+    # Artifact Registry alive. Gated on the GKE_DEPLOY_ENABLED repo variable
+    # (the workflow-level `changes` job stays cloud-free and ungated);
+    # unset/false = skipped (grey, not red).
+    if: vars.GKE_DEPLOY_ENABLED == 'true' && needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     # ONLY consumer left of these outputs: the SLSA generator (a reusable
@@ -289,9 +294,9 @@ jobs:
   # The plan file crosses the approval boundary as an artifact; apply
   # runs ONLY that file (stale plan = Terraform errors, never applies).
   tf-plan:
-    name: Terraform plan (review before approve)
+    name: Terraform Plan
     needs: [changes]
-    if: needs.changes.outputs.app == 'true'
+    if: vars.GKE_DEPLOY_ENABLED == 'true' && needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
