@@ -461,3 +461,110 @@ def test_get_project_tasks_denies_unassigned_developer(app):
             response, status = get_project_tasks(6)
 
     assert status == 403
+
+
+def _task_row(task_id, deadline=None, created_at=None, updated_at=None):
+    task = MagicMock()
+    task.id = task_id
+    task.title = f"Task {task_id}"
+    task.description = "Body"
+    task.status = "todo"
+    task.priority = "high"
+    task.progress = 10
+    task.assigned_to = 2
+    task.created_by = 1
+    task.deadline = deadline
+    task.created_at = created_at
+    task.updated_at = updated_at
+    return task
+
+
+def test_get_project_tasks_returns_serialized_tasks(app, mock_jwt_identity, mock_jwt):
+    """Admins and team leads bypass the membership check and get every task."""
+    from datetime import datetime
+
+    project = MagicMock()
+    project.id = 6
+    project.created_by = 1
+
+    tasks = [
+        _task_row(1, deadline=datetime(2024, 5, 1, 12, 0, 0)),
+        _task_row(2),
+    ]
+
+    with app.test_request_context():
+        with (
+            patch("backend.src.api.controllers.projects_controller.Project.query") as mock_query,
+            patch("backend.src.api.controllers.projects_controller.Task.query") as mock_task_query,
+        ):
+            mock_query.get_or_404.return_value = project
+            mock_task_query.filter_by.return_value.all.return_value = tasks
+
+            from backend.src.api.controllers.projects_controller import get_project_tasks
+
+            response = get_project_tasks(6)
+
+    data = response.get_json()
+    assert len(data["tasks"]) == 2
+    assert data["tasks"][0]["id"] == 1
+    assert data["tasks"][0]["title"] == "Task 1"
+    assert data["tasks"][0]["priority"] == "high"
+    assert data["tasks"][0]["deadline"] == "2024-05-01T12:00:00"
+    # None datetimes must serialize as null, not raise.
+    assert data["tasks"][1]["deadline"] is None
+    assert data["tasks"][1]["created_at"] is None
+    assert data["tasks"][1]["updated_at"] is None
+
+
+def test_get_project_tasks_scopes_query_to_project(app, mock_jwt_identity, mock_jwt):
+    from backend.src.api.controllers.projects_controller import get_project_tasks
+
+    project = MagicMock()
+    project.id = 6
+    project.created_by = 1
+
+    with app.test_request_context():
+        with (
+            patch("backend.src.api.controllers.projects_controller.Project.query") as mock_query,
+            patch("backend.src.api.controllers.projects_controller.Task.query") as mock_task_query,
+        ):
+            mock_query.get_or_404.return_value = project
+            mock_task_query.filter_by.return_value.all.return_value = []
+
+            response = get_project_tasks(6)
+
+    mock_task_query.filter_by.assert_called_once_with(project_id=6)
+    assert response.get_json() == {"tasks": []}
+
+
+def test_get_project_tasks_allows_assigned_developer(app, mock_jwt_identity):
+    """A developer who is a member passes the ``in`` check and sees the tasks."""
+    mock_jwt_identity.return_value = {"user_id": 9}
+
+    project = MagicMock()
+    project.id = 6
+    project.created_by = 1
+
+    membership = MagicMock()
+    membership.all.return_value = [project]
+    membership.__contains__.return_value = True
+
+    user = MagicMock()
+    user.projects = membership
+
+    with app.test_request_context():
+        with (
+            patch("backend.src.api.controllers.projects_controller.get_jwt", return_value={"role": "developer"}),
+            patch("backend.src.api.controllers.projects_controller.Project.query") as mock_query,
+            patch("backend.src.api.controllers.projects_controller.Task.query") as mock_task_query,
+            patch("backend.src.api.controllers.projects_controller.User") as mock_user_class,
+        ):
+            mock_query.get_or_404.return_value = project
+            mock_user_class.query.get.return_value = user
+            mock_task_query.filter_by.return_value.all.return_value = [_task_row(3)]
+
+            from backend.src.api.controllers.projects_controller import get_project_tasks
+
+            response = get_project_tasks(6)
+
+    assert len(response.get_json()["tasks"]) == 1
