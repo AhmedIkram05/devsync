@@ -137,15 +137,44 @@ Two behaviours look like inconsistencies and are not:
   [rbac.md](rbac.md#task-authority) for the enforced rule and why
   `can_create_tasks` exists but is not checked on the route.
 
+## CSRF: cookie auth is double-submit
+
+The API accepts the JWT from a cookie as well as from an `Authorization`
+header, so any cookie-authenticated mutating request has to prove it was not
+cross-site. `JWT_COOKIE_CSRF_PROTECT = True` enables that.
+
+Login sets two double-submit cookies:
+
+| Cookie | Echoed back on |
+| --- | --- |
+| `csrf_access_token` | any mutating request using the access cookie |
+| `csrf_refresh_token` | `POST /auth/refresh` only |
+
+Copy the cookie value into the `X-CSRF-TOKEN` header. `POST`, `PUT`, `PATCH`
+and `DELETE` are checked; `GET` is exempt, which is why the GitHub OAuth
+callback survives being a cross-site redirect.
+
+Three things worth knowing before you debug a `401`:
+
+- **The cookie wins over the `Authorization` header.** `JWT_TOKEN_LOCATION` is
+  `["cookies", "headers"]` and the first location that yields a token is used,
+  so the CSRF check fires even when a perfectly valid bearer token is also
+  present. Sending the header is not optional on cookie sessions.
+- **The header is compared against a claim inside the JWT**, not against the
+  cookie — `compare_digest(decoded_token["csrf"], header_value)`. A stale
+  cookie with a fresh access token fails, and vice versa.
+- **Access and refresh carry different claims.** A `csrf_access_token` header
+  on `POST /auth/refresh` is rejected.
+
+`frontend/src/services/utils/auth.js` exports `csrfHeaders(token)` for this;
+the frontend's five fetch wrappers use it. Because the cookies are only set
+when CSRF protection is on, sessions issued before this was enabled have no
+csrf cookie and get a `401` until the user logs in again.
+
 ## Known behaviour that looks like a bug
 
 These are real and current; they are recorded so nobody re-derives them.
 
-- **No CSRF protection.** `JWT_COOKIE_CSRF_PROTECT = False` is set
-  unconditionally, and with `JWT_COOKIE_SECURE` on, `JWT_COOKIE_SAMESITE`
-  resolves to `"None"` (`Lax` otherwise). A cookie-authenticated mutating
-  request from another origin is not blocked. `CookieAuth` documents no CSRF
-  token because none is checked.
 - **`/github/connect` and the other GitHub OAuth routes use a bare
   `{ "error": "..." }`.** They skip the shared error helpers, so their 404/500
   responses have neither `status` nor `message`.
@@ -159,3 +188,6 @@ These are real and current; they are recorded so nobody re-derives them.
    than the shared shape.
 4. Back off on `429` without expecting `Retry-After`, and expect the message to
    differ between the per-route and global limiters.
+5. If you authenticate with the cookie, echo `X-CSRF-TOKEN` on every `POST`,
+   `PUT`, `PATCH` and `DELETE` — a bearer token alone is not enough once the
+   cookie is present.

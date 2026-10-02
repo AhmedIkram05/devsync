@@ -101,7 +101,7 @@ def create_app(config_class=None):
     if app.config["JWT_COOKIE_SAMESITE"] == "None" and not app.config["JWT_COOKIE_SECURE"]:
         raise ValueError('JWT_COOKIE_SAMESITE="None" requires JWT_COOKIE_SECURE to be True')
 
-    app.config["JWT_COOKIE_CSRF_PROTECT"] = False
+    app.config["JWT_COOKIE_CSRF_PROTECT"] = True
 
     # Apply any override configurations
     if config_class:

@@ -1,5 +1,5 @@
 // GitHub integration service with improved error handling and token management
-import { authApi } from './utils/auth';
+import { authApi, csrfHeaders } from './utils/auth';
 
 // Base URL for GitHub integration API endpoints
 const API_BASE_URL = (() => {
@@ -35,6 +35,7 @@ const fetchWithAuth = async (url, options = {}) => {
     // Set up headers
     const headers = {
       'Content-Type': 'application/json',
+      ...csrfHeaders(),
       ...options.headers
     };
 

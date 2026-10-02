@@ -43,6 +43,13 @@ components:
       type: apiKey
       in: cookie
       name: access_token_cookie
+      description: >
+        Double-submit CSRF protection is enabled. Any POST, PUT, PATCH or DELETE
+        made with this cookie must also send an X-CSRF-TOKEN header carrying the
+        value of the csrf_access_token cookie; POST /auth/refresh uses
+        csrf_refresh_token instead. GET is exempt. The cookie takes precedence
+        over the Authorization header, so the header is required even when a
+        valid bearer token is also sent. See docs/backend/api-conventions.md.
 
   schemas:
     ErrorResponse:
