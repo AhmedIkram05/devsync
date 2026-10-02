@@ -255,22 +255,17 @@ def register_routes(bp):
             return jsonify({"success": False, "message": str(e)}), 500
 
     @bp.route("/github/connect", methods=["GET", "POST"])
+    @jwt_required()
     def github_connect():
-        """Public route to initiate GitHub OAuth flow without requiring authentication"""
-        # Handle both GET and POST requests
-        if request.method == "GET":
-            user_id = request.args.get("userId")
-        else:  # POST
-            data = request.get_json() or {}
-            user_id = data.get("userId")
-
-        if not user_id:
-            return jsonify({"error": "User ID is required"}), 400
-
+        """Issue a GitHub OAuth URL for the authenticated caller"""
+        # The account being linked is the caller's own. Taking it from the
+        # token instead of the request stops anyone from starting an OAuth
+        # flow against an arbitrary account id.
+        user_id = _extract_user_id()
         try:
             user_id = int(user_id)
         except (TypeError, ValueError):
-            return jsonify({"error": "User ID is invalid"}), 400
+            return jsonify({"error": "Invalid user identity"}), 401
 
         user = User.query.get(user_id)
         if not user:

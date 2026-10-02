@@ -51,6 +51,30 @@ All Team Lead permissions, plus:
 - Modify system settings (`can_manage_system_settings`)
 - View and query audit logs
 
+### Task authority
+
+The permission table above says developers cannot create tasks — but the routes
+do not enforce it. What is actually enforced:
+
+| Action | Enforced rule |
+| --- | --- |
+| `POST /tasks` | any Developer, Team Lead or Admin |
+| `PUT /tasks/{task_id}` | any Developer, Team Lead or Admin |
+| `DELETE /tasks/{task_id}` | any Developer, Team Lead or Admin |
+| `GET /projects/{project_id}` (create) | Team Lead or Admin |
+
+Every `/tasks` route is gated only by
+`role_required([Role.DEVELOPER, Role.TEAM_LEAD, Role.ADMIN])`. The
+`can_create_tasks` permission is defined in `rbac.py` and asserted as
+Team-Lead-only by `backend/tests/unit/auth/test_helpers_rbac.py`, but no route
+calls `require_permission("can_create_tasks")` — so the permission table and the
+enforced behaviour disagree.
+
+**The enforced behaviour is the contract.** Read this table, not the permission
+list above, when deciding what a caller can do. Closing the gap means either
+adding `require_permission("can_create_tasks")` to `POST /tasks` or dropping
+`can_create_tasks` from the permission table.
+
 ## API Endpoint Permission Mapping
 
 | Endpoint | Method | Permission / Guard | Minimum Role |

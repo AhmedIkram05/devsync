@@ -1,6 +1,6 @@
 """Admin API routes"""
 
-from flask import jsonify
+from flask import current_app, jsonify
 from flask_jwt_extended import jwt_required
 
 from ...auth.rbac import Role, role_at_least
@@ -68,16 +68,15 @@ def register_routes(bp):
                 }
             ), 200
         except Exception as exc:
+            current_app.logger.error(f"Retention cleanup failed: {exc}", exc_info=True)
             return jsonify(
                 {
+                    "status": "error",
                     "message": "Retention cleanup failed",
                     "error": str(exc),
-                    "result": {
-                        "audit_logs_deleted": 0,
-                        "projects_deleted": 0,
-                    },
+                    "result": None,
                 }
-            ), 200
+            ), 500
 
     @bp.route("/admin/settings", methods=["PUT"])
     @jwt_required()

@@ -60,9 +60,9 @@ components:
     BadRequestError:
       type: object
       description: >
-        Emitted by `@validate_json` and the schema validators. Note that
-        `GET`/`POST /github/connect` use a bare `{"error": "..."}` body with no
-        `status` field instead - see docs/backend/api-conventions.md.
+        Emitted by `@validate_json` and the schema validators. `GET`/`POST
+        /github/connect` skip this shape entirely and answer their 404/500 with
+        a bare `{"error": "..."}` - see docs/backend/api-conventions.md.
       properties:
         status:
           type: string
@@ -596,11 +596,19 @@ components:
 
     RetentionCleanupResponse:
       type: object
+      description: >
+        Also used for the 500 body: a cleanup that raises returns the same
+        envelope with `status: "error"`, the exception in `error`, and a null
+        `result`, rather than reporting failure as a 200.
       properties:
+        status:
+          type: string
+          example: error
         message:
           type: string
         result:
           type: object
+          nullable: true
           additionalProperties: true
         error:
           type: string
@@ -4435,7 +4443,6 @@ paths:
                   completed_projects_archived: 4
                   notifications_purged: 1875
                   duration_seconds: 12.7
-                error: ''
         '401':
           description: Access token missing, malformed or expired
           content:
@@ -4464,16 +4471,16 @@ paths:
                 status: error
                 message: Global rate limit exceeded. Please try again later.
         '500':
-          description: Unhandled server-side failure
+          description: The cleanup raised; nothing was deleted
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/InternalServerError'
+                $ref: '#/components/schemas/RetentionCleanupResponse'
               example:
                 status: error
-                message: Internal server error
-                error: An unexpected error occurred
-                traceback: null
+                message: Retention cleanup failed
+                error: database is down
+                result: null
 
   /reports:
     post:
@@ -5788,17 +5795,9 @@ paths:
 
   /github/connect:
     get:
-      summary: Get a GitHub OAuth authorization URL for a user
+      summary: Get a GitHub OAuth authorization URL for the authenticated user
       operationId: getGitHubConnectUrl
       tags: [GitHub Integration]
-      security: []
-      parameters:
-        - name: userId
-          in: query
-          required: true
-          description: Numeric id of the user to connect GitHub for.
-          schema:
-            type: integer
       responses:
         '200':
           description: Authorization URL and freshly signed OAuth state
@@ -5814,21 +5813,20 @@ paths:
               example: &connect_example
                 authorization_url: https://github.com/login/oauth/authorize?client_id=Iv1.4a1b2c3d4e5&scope=repo%2Cuser%3Aemail&state=eyJ1c2VyX2lkIjoxfQ.c2lnbmF0dXJl
                 state: eyJ1c2VyX2lkIjoxfQ.c2lnbmF0dXJl
-        '400':
+        '401':
           description: >
-            User ID missing or not an integer. This endpoint answers with a bare
-            `{"error": "..."}` body, not the usual `status`/`message` pair.
+            No access token. The account being linked is read from the JWT, so
+            this endpoint is authenticated.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
+                $ref: '#/components/schemas/UnauthorizedError'
               example:
-                error: User ID is required
+                status: error
+                message: Authentication token is missing
+                error: authorization_required
         '404':
-          description: No user with that id
+          description: No user matches the identity in the token
           content:
             application/json:
               schema:
@@ -5859,22 +5857,9 @@ paths:
               example:
                 error: GitHub OAuth configuration is incomplete
     post:
-      summary: Get a GitHub OAuth authorization URL for a user (JSON body)
+      summary: Get a GitHub OAuth authorization URL for the authenticated user
       operationId: postGitHubConnectUrl
       tags: [GitHub Integration]
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [userId]
-              properties:
-                userId:
-                  type: integer
-            example:
-              userId: 1
       responses:
         '200':
           description: Authorization URL and freshly signed OAuth state
@@ -5888,19 +5873,20 @@ paths:
                   state:
                     type: string
               example: *connect_example
-        '400':
-          description: User ID missing or not an integer
+        '401':
+          description: >
+            No access token. The account being linked is read from the JWT, so
+            this endpoint is authenticated.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
+                $ref: '#/components/schemas/UnauthorizedError'
               example:
-                error: User ID is invalid
+                status: error
+                message: Authentication token is missing
+                error: authorization_required
         '404':
-          description: No user with that id
+          description: No user matches the identity in the token
           content:
             application/json:
               schema:
