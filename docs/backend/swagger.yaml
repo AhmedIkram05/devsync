@@ -6,8 +6,32 @@ info:
 servers:
   - url: http://localhost:8000/api/v1
     description: Local development server
-  - url: https://devsync.com/api/v1
+  - url: https://gcp.devsyncapp.me/api/v1
     description: Production server
+
+tags:
+  - name: Authentication
+    description: Token issue, refresh, logout and permission discovery.
+  - name: Users
+    description: Directory lookups plus the caller's own profile.
+  - name: Projects
+    description: Project lifecycle and per-project task rollups.
+  - name: Tasks
+    description: Task CRUD.
+  - name: Comments
+    description: Comments attached to a task.
+  - name: Dashboard
+    description: Role-scoped dashboard projections.
+  - name: Notifications
+    description: Personal notification inbox.
+  - name: Reports
+    description: Generated reports, restricted to team leads and admins.
+  - name: Admin
+    description: User administration, system settings and audit-log maintenance.
+  - name: Audit
+    description: Read access to the audit trail.
+  - name: GitHub Integration
+    description: GitHub App OAuth, repository linking and issue/PR sync.
 
 components:
   securitySchemes:
@@ -22,12 +46,100 @@ components:
 
   schemas:
     ErrorResponse:
+      description: >
+        Legacy shape, referenced by no operation. The live error bodies are
+        BadRequestError, UnauthorizedError, ForbiddenError, NotFoundError,
+        RateLimitError and InternalServerError - see docs/backend/api-conventions.md.
       type: object
       properties:
         message:
           type: string
         error:
           type: string
+
+    BadRequestError:
+      type: object
+      description: >
+        Emitted by `@validate_json` and the schema validators. Note that
+        `GET`/`POST /github/connect` use a bare `{"error": "..."}` body with no
+        `status` field instead - see docs/backend/api-conventions.md.
+      properties:
+        status:
+          type: string
+          example: error
+        message:
+          type: string
+          example: Missing JSON in request body
+
+    UnauthorizedError:
+      type: object
+      description: Returned by the JWT middleware before any role check runs.
+      properties:
+        status:
+          type: string
+          example: error
+        message:
+          type: string
+          example: Missing or invalid access token
+        error:
+          type: string
+          enum: [token_expired, token_invalid, authorization_required]
+
+    ForbiddenError:
+      type: object
+      description: >
+        Role and permission denials. These bodies omit `status` - a known
+        inconsistency, see docs/backend/api-conventions.md.
+      properties:
+        message:
+          type: string
+          example: Insufficient permissions
+
+    NotFoundError:
+      type: object
+      properties:
+        status:
+          type: string
+          example: error
+        message:
+          type: string
+          example: Resource not found
+        error:
+          type: string
+          example: Task not found
+
+    RateLimitError:
+      type: object
+      description: >
+        Every operation is subject to the global 300 requests / 60s limiter, so
+        this response is possible on any endpoint. A subset of admin endpoints
+        additionally carry a tighter per-route bucket, whose message reads
+        "Rate limit exceeded. Please try again later.".
+      properties:
+        status:
+          type: string
+          example: error
+        message:
+          type: string
+          example: Global rate limit exceeded. Please try again later.
+
+    InternalServerError:
+      type: object
+      properties:
+        status:
+          type: string
+          example: error
+        message:
+          type: string
+          example: Internal server error
+        error:
+          type: string
+          example: An unexpected error occurred
+        traceback:
+          type: string
+          nullable: true
+          description: Only populated when the app runs in DEBUG mode.
+          example: 'Traceback (most recent call last): ...'
 
     Pagination:
       type: object
@@ -735,6 +847,7 @@ paths:
     post:
       summary: Register a new user
       tags: [Authentication]
+      operationId: register
       security: []
       requestBody:
         required: true
@@ -753,6 +866,11 @@ paths:
                 role:
                   type: string
                   enum: [developer, team_lead, admin]
+            example:
+              name: Sara Lindqvist
+              email: sara.lindqvist@devsyncapp.me
+              password: correct-horse-battery
+              role: developer
       responses:
         '201':
           description: User registered successfully
@@ -760,11 +878,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegisterResponse'
+              example:
+                message: Account created. Check your inbox to verify the address.
+                user_id: 12
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /auth/login:
     post:
       summary: Authenticate a user and return JWT tokens
       tags: [Authentication]
+      operationId: login
       security: []
       requestBody:
         required: true
@@ -778,6 +929,9 @@ paths:
                   type: string
                 password:
                   type: string
+            example:
+              email: ahmed.ikram@devsyncapp.me
+              password: correct-horse-battery
       responses:
         '200':
           description: Authentication successful
@@ -785,11 +939,49 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LoginResponse'
+              example:
+                access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNzg5MDc1NjEwMH0.kQ3vZ8s1pL7mW0yR5tN9bH2cJ4xF6dA8eG1iU3oP5qM0
+                refresh_token: rt_7f3c9a21b6e84d5fa0c37d9e5b2148c6f0a9d3e7b5c1f28406a3b9d7e1c5f028
+                user:
+                  id: 1
+                  name: Ahmed Ikram
+                  email: ahmed.ikram@devsyncapp.me
+                  role: admin
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /auth/refresh:
     post:
       summary: Refresh the access token using a refresh token
       tags: [Authentication]
+      operationId: refreshToken
       responses:
         '200':
           description: New access token generated
@@ -797,11 +989,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthTokens'
+              example:
+                access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNzg5MDc1NjEwMH0.kQ3vZ8s1pL7mW0yR5tN9bH2cJ4xF6dA8eG1iU3oP5qM0
+                refresh_token: rt_7f3c9a21b6e84d5fa0c37d9e5b2148c6f0a9d3e7b5c1f28406a3b9d7e1c5f028
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /auth/logout:
     post:
       summary: Log out the current user
       tags: [Authentication]
+      operationId: logout
       responses:
         '200':
           description: Logout successful
@@ -812,11 +1038,44 @@ paths:
                 properties:
                   message:
                     type: string
+              example:
+                message: string
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /auth/me:
     get:
       summary: Get the current user profile
       tags: [Authentication]
+      operationId: getCurrentUser
       responses:
         '200':
           description: Current user profile
@@ -824,11 +1083,52 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserResponse'
+              example:
+                user:
+                  id: 7
+                  name: Lena Fischer
+                  email: lena.fischer@devsyncapp.me
+                  role: developer
+                  github_username: lfischer
+                  avatar: https://avatars.githubusercontent.com/u/77412003?v=4
+                  github_connected: true
+                  created_at: '2026-02-03T10:22:00Z'
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /auth/token:
     post:
       summary: Get an access token directly
       tags: [Authentication]
+      operationId: issueToken
       security: []
       requestBody:
         required: true
@@ -842,6 +1142,9 @@ paths:
                   type: string
                 password:
                   type: string
+            example:
+              identifier: ahmed.ikram@devsyncapp.me
+              role: developer
       responses:
         '200':
           description: Token generated successfully
@@ -849,11 +1152,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthTokens'
+              example:
+                access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNzg5MDc1NjEwMH0.kQ3vZ8s1pL7mW0yR5tN9bH2cJ4xF6dA8eG1iU3oP5qM0
+                refresh_token: rt_7f3c9a21b6e84d5fa0c37d9e5b2148c6f0a9d3e7b5c1f28406a3b9d7e1c5f028
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /auth/permissions:
     get:
       summary: Get permissions for the current role
       tags: [Authentication]
+      operationId: getMyPermissions
       responses:
         '200':
           description: Permission list
@@ -861,11 +1197,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PermissionsResponse'
+              example:
+                role: team_lead
+                permissions:
+                - tasks:read
+                - tasks:write
+                - tasks:assign
+                - projects:read
+                - reports:read
+                - github:read
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /users:
     get:
       summary: List all users visible to the caller
       tags: [Users]
+      operationId: listUsers
       responses:
         '200':
           description: List of users
@@ -873,6 +1249,46 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserListResponse'
+              example:
+                users:
+                - id: 1
+                  name: Ahmed Ikram
+                  email: ahmed.ikram@devsyncapp.me
+                  role: admin
+                  github_username: ahmedikram
+                  avatar: https://avatars.githubusercontent.com/u/58231047?v=4
+                  github_connected: true
+                  created_at: '2026-01-12T08:05:00Z'
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /users/{user_id}:
     parameters:
@@ -884,6 +1300,7 @@ paths:
     get:
       summary: Get a specific user
       tags: [Users]
+      operationId: getUser
       responses:
         '200':
           description: User details
@@ -891,9 +1308,68 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserResponse'
+              example:
+                user:
+                  id: 7
+                  name: Lena Fischer
+                  email: lena.fischer@devsyncapp.me
+                  role: developer
+                  github_username: lfischer
+                  avatar: https://avatars.githubusercontent.com/u/77412003?v=4
+                  github_connected: true
+                  created_at: '2026-02-03T10:22:00Z'
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     put:
       summary: Update a user as an admin
       tags: [Users]
+      operationId: updateUser
       requestBody:
         required: true
         content:
@@ -914,6 +1390,13 @@ paths:
                   type: string
                 avatar:
                   type: string
+            example:
+              name: string
+              email: string
+              role: developer
+              password: string
+              github_username: string
+              avatar: string
       responses:
         '200':
           description: User updated successfully
@@ -921,9 +1404,77 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserResponse'
+              example:
+                user:
+                  id: 7
+                  name: Lena Fischer
+                  email: lena.fischer@devsyncapp.me
+                  role: developer
+                  github_username: lfischer
+                  avatar: https://avatars.githubusercontent.com/u/77412003?v=4
+                  github_connected: true
+                  created_at: '2026-02-03T10:22:00Z'
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     delete:
       summary: Delete a user as an admin
       tags: [Users]
+      operationId: deleteUser
       responses:
         '200':
           description: User deleted successfully
@@ -934,11 +1485,62 @@ paths:
                 properties:
                   message:
                     type: string
+              example:
+                message: string
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /profile:
     get:
       summary: Get the current user's profile
       tags: [Users]
+      operationId: getMyProfile
       responses:
         '200':
           description: Current user profile
@@ -946,9 +1548,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserResponse'
+              example:
+                user:
+                  id: 7
+                  name: Lena Fischer
+                  email: lena.fischer@devsyncapp.me
+                  role: developer
+                  github_username: lfischer
+                  avatar: https://avatars.githubusercontent.com/u/77412003?v=4
+                  github_connected: true
+                  created_at: '2026-02-03T10:22:00Z'
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     put:
       summary: Update the current user's profile
       tags: [Users]
+      operationId: updateMyProfile
       requestBody:
         required: true
         content:
@@ -968,6 +1611,9 @@ paths:
                   type: string
                 new_password:
                   type: string
+            example:
+              name: Ahmed Ikram
+              email: ahmed.ikram@devsyncapp.me
       responses:
         '200':
           description: Profile updated successfully
@@ -975,11 +1621,61 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserResponse'
+              example:
+                user:
+                  id: 7
+                  name: Lena Fischer
+                  email: lena.fischer@devsyncapp.me
+                  role: developer
+                  github_username: lfischer
+                  avatar: https://avatars.githubusercontent.com/u/77412003?v=4
+                  github_connected: true
+                  created_at: '2026-02-03T10:22:00Z'
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /projects:
     get:
       summary: Get all projects visible to the caller
       tags: [Projects]
+      operationId: listProjects
       responses:
         '200':
           description: List of projects
@@ -987,9 +1683,55 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProjectListResponse'
+              example:
+                projects:
+                - id: 2
+                  name: DevSync Web
+                  description: Customer-facing dashboard and task management UI for DevSync.
+                  status: active
+                  github_repo: devsync-team/devsync-web
+                  created_by: 1
+                  creator_name: Ahmed Ikram
+                  team_members:
+                  - id: 7
+                    name: Lena Fischer
+                    role: developer
+                  created_at: '2026-03-18T11:40:00Z'
+                  updated_at: '2026-09-14T09:12:00Z'
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     post:
       summary: Create a new project
       tags: [Projects]
+      operationId: createProject
       requestBody:
         required: true
         content:
@@ -1011,6 +1753,10 @@ paths:
                   type: array
                   items:
                     type: integer
+            example:
+              name: Sprint 14 Retrospective
+              description: Collected retro notes for the sprint 14 close-out.
+              status: active
       responses:
         '201':
           description: Project created successfully
@@ -1018,6 +1764,69 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProjectResponse'
+              example:
+                message: Project updated
+                project:
+                  id: 2
+                  name: DevSync Web
+                  description: Customer-facing dashboard and task management UI for DevSync.
+                  status: active
+                  github_repo: devsync-team/devsync-web
+                  created_by: 1
+                  creator_name: Ahmed Ikram
+                  team_members:
+                  - id: 7
+                    name: Lena Fischer
+                    role: developer
+                  created_at: '2026-03-18T11:40:00Z'
+                  updated_at: '2026-09-14T09:12:00Z'
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /projects/{project_id}:
     parameters:
@@ -1029,6 +1838,7 @@ paths:
     get:
       summary: Get a project by ID
       tags: [Projects]
+      operationId: getProject
       responses:
         '200':
           description: Project details
@@ -1039,9 +1849,65 @@ paths:
                 properties:
                   project:
                     $ref: '#/components/schemas/Project'
+              example:
+                project:
+                  id: 2
+                  name: DevSync Web
+                  description: Customer-facing dashboard and task management UI for DevSync.
+                  status: active
+                  github_repo: devsync-team/devsync-web
+                  created_by: 1
+                  creator_name: Ahmed Ikram
+                  team_members:
+                  - id: 7
+                    name: Lena Fischer
+                    role: developer
+                  created_at: '2026-03-18T11:40:00Z'
+                  updated_at: '2026-09-14T09:12:00Z'
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     put:
       summary: Update a project
       tags: [Projects]
+      operationId: updateProject
       requestBody:
         required: true
         content:
@@ -1062,6 +1928,13 @@ paths:
                   type: array
                   items:
                     type: integer
+            example:
+              name: string
+              description: string
+              status: active
+              github_repo: string
+              team_members:
+              - 1
       responses:
         '200':
           description: Project updated successfully
@@ -1069,12 +1942,134 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProjectResponse'
+              example:
+                message: Project updated
+                project:
+                  id: 2
+                  name: DevSync Web
+                  description: Customer-facing dashboard and task management UI for DevSync.
+                  status: active
+                  github_repo: devsync-team/devsync-web
+                  created_by: 1
+                  creator_name: Ahmed Ikram
+                  team_members:
+                  - id: 7
+                    name: Lena Fischer
+                    role: developer
+                  created_at: '2026-03-18T11:40:00Z'
+                  updated_at: '2026-09-14T09:12:00Z'
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     delete:
       summary: Delete a project
       tags: [Projects]
+      operationId: deleteProject
       responses:
         '204':
           description: Project deleted successfully
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /projects/{project_id}/tasks:
     parameters:
@@ -1086,6 +2081,7 @@ paths:
     get:
       summary: Get all tasks for a project
       tags: [Projects, Tasks]
+      operationId: listProjectTasks
       responses:
         '200':
           description: Task list for the project
@@ -1093,11 +2089,66 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TaskListResponse'
+              example:
+                tasks:
+                - id: 412
+                  title: Add sprint burndown chart to the project dashboard
+                  description: Render a per-sprint burndown chart from the task history endpoint and surface it on the project overview tab.
+                  status: in_progress
+                  priority: high
+                  progress: 65
+                  assigned_to: 7
+                  created_by: 12
+                  deadline: '2026-09-25T17:00:00Z'
+                  created_at: '2026-09-08T07:55:00Z'
+                  updated_at: '2026-09-14T09:31:00Z'
+                  project_id: 2
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /tasks:
     get:
       summary: Fetch tasks filtered by role and query parameters
       tags: [Tasks]
+      operationId: listTasks
       parameters:
         - name: status
           in: query
@@ -1118,9 +2169,54 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TaskListResponse'
+              example:
+                tasks:
+                - id: 412
+                  title: Add sprint burndown chart to the project dashboard
+                  description: Render a per-sprint burndown chart from the task history endpoint and surface it on the project overview tab.
+                  status: in_progress
+                  priority: high
+                  progress: 65
+                  assigned_to: 7
+                  created_by: 12
+                  deadline: '2026-09-25T17:00:00Z'
+                  created_at: '2026-09-08T07:55:00Z'
+                  updated_at: '2026-09-14T09:31:00Z'
+                  project_id: 2
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     post:
       summary: Create a new task
       tags: [Tasks]
+      operationId: createTask
       requestBody:
         required: true
         content:
@@ -1150,6 +2246,12 @@ paths:
                   format: date-time
                 project_id:
                   type: integer
+            example:
+              title: Publish the sprint 14 burndown
+              description: Push the burndown chart to the team channel before standup.
+              project_id: 1
+              status: in_progress
+              priority: high
       responses:
         '201':
           description: Task created successfully
@@ -1157,6 +2259,60 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TaskResponse'
+              example:
+                message: Task created
+                task:
+                  id: 412
+                  title: Add sprint burndown chart to the project dashboard
+                  description: Render a per-sprint burndown chart from the task history endpoint and surface it on the project overview tab.
+                  status: in_progress
+                  priority: high
+                  progress: 65
+                  assigned_to: 7
+                  created_by: 12
+                  deadline: '2026-09-25T17:00:00Z'
+                  created_at: '2026-09-08T07:55:00Z'
+                  updated_at: '2026-09-14T09:31:00Z'
+                  project_id: 2
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /tasks/{task_id}:
     parameters:
@@ -1168,6 +2324,7 @@ paths:
     get:
       summary: Get a task by ID
       tags: [Tasks]
+      operationId: getTask
       responses:
         '200':
           description: Task details
@@ -1178,9 +2335,64 @@ paths:
                 properties:
                   task:
                     $ref: '#/components/schemas/Task'
+              example:
+                task:
+                  id: 412
+                  title: Add sprint burndown chart to the project dashboard
+                  description: Render a per-sprint burndown chart from the task history endpoint and surface it on the project overview tab.
+                  status: in_progress
+                  priority: high
+                  progress: 65
+                  assigned_to: 7
+                  created_by: 12
+                  deadline: '2026-09-25T17:00:00Z'
+                  created_at: '2026-09-08T07:55:00Z'
+                  updated_at: '2026-09-14T09:31:00Z'
+                  project_id: 2
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     put:
       summary: Update a task
       tags: [Tasks]
+      operationId: updateTask
       requestBody:
         required: true
         content:
@@ -1207,6 +2419,14 @@ paths:
                 deadline:
                   type: string
                   format: date-time
+            example:
+              title: string
+              description: string
+              status: backlog
+              priority: low
+              progress: 1
+              assigned_to: 1
+              deadline: '2026-09-14T09:31:00Z'
       responses:
         '200':
           description: Task updated successfully
@@ -1214,12 +2434,126 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TaskResponse'
+              example:
+                message: Task created
+                task:
+                  id: 412
+                  title: Add sprint burndown chart to the project dashboard
+                  description: Render a per-sprint burndown chart from the task history endpoint and surface it on the project overview tab.
+                  status: in_progress
+                  priority: high
+                  progress: 65
+                  assigned_to: 7
+                  created_by: 12
+                  deadline: '2026-09-25T17:00:00Z'
+                  created_at: '2026-09-08T07:55:00Z'
+                  updated_at: '2026-09-14T09:31:00Z'
+                  project_id: 2
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     delete:
       summary: Delete a task
       tags: [Tasks]
+      operationId: deleteTask
       responses:
-        '204':
+        '200':
           description: Task deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+              example:
+                message: Task deleted successfully
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /tasks/{task_id}/comments:
     parameters:
@@ -1231,6 +2565,7 @@ paths:
     get:
       summary: Fetch comments for a task
       tags: [Comments]
+      operationId: listTaskComments
       responses:
         '200':
           description: List of comments
@@ -1238,9 +2573,61 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CommentListResponse'
+              example:
+                comments:
+                - id: 1187
+                  content: Chart is wired up on the branch, needs a final pass on the empty-state copy.
+                  task_id: 412
+                  user_id: 7
+                  user_name: Lena Fischer
+                  author_name: Lena Fischer
+                  user_avatar: https://avatars.githubusercontent.com/u/77412003?v=4
+                  created_at: '2026-09-13T16:04:00Z'
+                  updated_at: '2026-09-13T16:04:00Z'
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     post:
       summary: Add a comment to a task
       tags: [Comments]
+      operationId: createComment
       requestBody:
         required: true
         content:
@@ -1259,6 +2646,8 @@ paths:
                   type: array
                   items:
                     type: integer
+            example:
+              content: Pushed the chart - see the thread above.
       responses:
         '201':
           description: Comment added successfully
@@ -1266,6 +2655,75 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CommentResponse'
+              example:
+                message: Comment added
+                comment:
+                  id: 1187
+                  content: Chart is wired up on the branch, needs a final pass on the empty-state copy.
+                  task_id: 412
+                  user_id: 7
+                  user_name: Lena Fischer
+                  author_name: Lena Fischer
+                  user_avatar: https://avatars.githubusercontent.com/u/77412003?v=4
+                  created_at: '2026-09-13T16:04:00Z'
+                  updated_at: '2026-09-13T16:04:00Z'
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /comments/{comment_id}:
     parameters:
@@ -1277,6 +2735,7 @@ paths:
     put:
       summary: Update a comment
       tags: [Comments]
+      operationId: updateComment
       requestBody:
         required: true
         content:
@@ -1287,6 +2746,8 @@ paths:
               properties:
                 content:
                   type: string
+            example:
+              content: string
       responses:
         '200':
           description: Comment updated successfully
@@ -1299,9 +2760,71 @@ paths:
                     type: string
                   comment:
                     $ref: '#/components/schemas/Comment'
+              example:
+                message: string
+                comment:
+                  id: 1187
+                  content: Chart is wired up on the branch, needs a final pass on the empty-state copy.
+                  task_id: 412
+                  user_id: 7
+                  user_name: Lena Fischer
+                  author_name: Lena Fischer
+                  user_avatar: https://avatars.githubusercontent.com/u/77412003?v=4
+                  created_at: '2026-09-13T16:04:00Z'
+                  updated_at: '2026-09-13T16:04:00Z'
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     delete:
       summary: Delete a comment
       tags: [Comments]
+      operationId: deleteComment
       responses:
         '200':
           description: Comment deleted successfully
@@ -1312,11 +2835,54 @@ paths:
                 properties:
                   message:
                     type: string
+              example:
+                message: string
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /notifications:
     get:
       summary: Get the current user's notifications
       tags: [Notifications]
+      operationId: listNotifications
       parameters:
         - name: is_read
           in: query
@@ -1329,9 +2895,57 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NotificationListResponse'
+              example:
+                notifications:
+                - id: 904
+                  user_id: 7
+                  notification_type: task_assigned
+                  type: task_assigned
+                  title: You were assigned a task
+                  message: Marcus Cole assigned you 'Add sprint burndown chart to the project dashboard'.
+                  content: High priority task, due 2026-09-25.
+                  reference_id: '412'
+                  task_id: 412
+                  is_read: true
+                  read: true
+                  created_at: '2026-09-08T07:56:00Z'
+                  timestamp: '2026-09-08T07:56:00Z'
+                  read_at: '2026-09-08T08:12:00Z'
+                unread_count: 0
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     post:
       summary: Create a notification
       tags: [Notifications]
+      operationId: createNotification
       requestBody:
         required: true
         content:
@@ -1358,6 +2972,10 @@ paths:
                   type: integer
                 is_read:
                   type: boolean
+            example:
+              title: Sprint 14 is closing
+              message: Close out your tickets before 17:00.
+              notification_type: info
       responses:
         '201':
           description: Notification created successfully
@@ -1370,6 +2988,62 @@ paths:
                     type: string
                   notification:
                     $ref: '#/components/schemas/Notification'
+              example:
+                message: string
+                notification:
+                  id: 904
+                  user_id: 7
+                  notification_type: task_assigned
+                  type: task_assigned
+                  title: You were assigned a task
+                  message: Marcus Cole assigned you 'Add sprint burndown chart to the project dashboard'.
+                  content: High priority task, due 2026-09-25.
+                  reference_id: '412'
+                  task_id: 412
+                  is_read: true
+                  read: true
+                  created_at: '2026-09-08T07:56:00Z'
+                  timestamp: '2026-09-08T07:56:00Z'
+                  read_at: '2026-09-08T08:12:00Z'
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /notifications/{notification_id}/read:
     parameters:
@@ -1381,6 +3055,7 @@ paths:
     put:
       summary: Mark a notification as read
       tags: [Notifications]
+      operationId: markNotificationRead
       responses:
         '200':
           description: Notification marked as read
@@ -1391,11 +3066,54 @@ paths:
                 properties:
                   message:
                     type: string
+              example:
+                message: string
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /notifications/read-all:
     put:
       summary: Mark all notifications as read
       tags: [Notifications]
+      operationId: markAllNotificationsRead
       responses:
         '200':
           description: All notifications marked as read
@@ -1406,6 +3124,38 @@ paths:
                 properties:
                   message:
                     type: string
+              example:
+                message: string
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /notifications/{notification_id}:
     parameters:
@@ -1417,6 +3167,7 @@ paths:
     delete:
       summary: Delete a notification
       tags: [Notifications]
+      operationId: deleteNotification
       responses:
         '200':
           description: Notification deleted successfully
@@ -1427,11 +3178,62 @@ paths:
                 properties:
                   message:
                     type: string
+              example:
+                message: string
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /dashboard:
     get:
       summary: Get the current user's dashboard data
       tags: [Dashboard]
+      operationId: getDashboard
       responses:
         '200':
           description: Dashboard payload
@@ -1439,11 +3241,65 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DashboardResponse'
+              example:
+                active_project:
+                  id: 2
+                  name: DevSync Web
+                  status: active
+                tasks_by_status:
+                  backlog: 214
+                  todo: 168
+                  in_progress: 96
+                  review: 54
+                  done: 752
+                overdue_tasks: 6
+                unread_notifications: 4
+                github_sync:
+                  connected: true
+                  username: ahmedikram
+                  last_synced_at: '2026-09-14T08:47:00Z'
+                recent_activity:
+                - task_id: 412
+                  actor_name: Lena Fischer
+                  action: commented
+                  at: '2026-09-13T16:04:00Z'
+                generated_at: '2026-09-14T09:31:00Z'
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /dashboard/client:
     get:
       summary: Get client dashboard data for developers and team leads
       tags: [Dashboard]
+      operationId: getClientDashboard
       responses:
         '200':
           description: Client dashboard payload
@@ -1451,11 +3307,73 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DashboardResponse'
+              example:
+                active_project:
+                  id: 2
+                  name: DevSync Web
+                  status: active
+                tasks_by_status:
+                  backlog: 214
+                  todo: 168
+                  in_progress: 96
+                  review: 54
+                  done: 752
+                overdue_tasks: 6
+                unread_notifications: 4
+                github_sync:
+                  connected: true
+                  username: ahmedikram
+                  last_synced_at: '2026-09-14T08:47:00Z'
+                recent_activity:
+                - task_id: 412
+                  actor_name: Lena Fischer
+                  action: commented
+                  at: '2026-09-13T16:04:00Z'
+                generated_at: '2026-09-14T09:31:00Z'
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /dashboard/admin:
     get:
       summary: Get admin dashboard data
       tags: [Dashboard]
+      operationId: getAdminDashboard
       responses:
         '200':
           description: Admin dashboard payload
@@ -1463,6 +3381,67 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DashboardResponse'
+              example:
+                active_project:
+                  id: 2
+                  name: DevSync Web
+                  status: active
+                tasks_by_status:
+                  backlog: 214
+                  todo: 168
+                  in_progress: 96
+                  review: 54
+                  done: 752
+                overdue_tasks: 6
+                unread_notifications: 4
+                github_sync:
+                  connected: true
+                  username: ahmedikram
+                  last_synced_at: '2026-09-14T08:47:00Z'
+                recent_activity:
+                - task_id: 412
+                  actor_name: Lena Fischer
+                  action: commented
+                  at: '2026-09-13T16:04:00Z'
+                generated_at: '2026-09-14T09:31:00Z'
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /dashboard/projects/{project_id}:
     parameters:
@@ -1474,6 +3453,7 @@ paths:
     get:
       summary: Get dashboard data for a specific project
       tags: [Dashboard]
+      operationId: getProjectDashboard
       responses:
         '200':
           description: Project dashboard payload
@@ -1481,11 +3461,75 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DashboardResponse'
+              example:
+                active_project:
+                  id: 2
+                  name: DevSync Web
+                  status: active
+                tasks_by_status:
+                  backlog: 214
+                  todo: 168
+                  in_progress: 96
+                  review: 54
+                  done: 752
+                overdue_tasks: 6
+                unread_notifications: 4
+                github_sync:
+                  connected: true
+                  username: ahmedikram
+                  last_synced_at: '2026-09-14T08:47:00Z'
+                recent_activity:
+                - task_id: 412
+                  actor_name: Lena Fischer
+                  action: commented
+                  at: '2026-09-13T16:04:00Z'
+                generated_at: '2026-09-14T09:31:00Z'
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /admin/users:
     get:
       summary: List all users for admins and team leads
       tags: [Admin]
+      operationId: adminListUsers
       responses:
         '200':
           description: List of users
@@ -1493,9 +3537,58 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserListResponse'
+              example:
+                users:
+                - id: 1
+                  name: Ahmed Ikram
+                  email: ahmed.ikram@devsyncapp.me
+                  role: admin
+                  github_username: ahmedikram
+                  avatar: https://avatars.githubusercontent.com/u/58231047?v=4
+                  github_connected: true
+                  created_at: '2026-01-12T08:05:00Z'
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     post:
       summary: Create a user as an admin
       tags: [Admin]
+      operationId: adminCreateUser
       requestBody:
         required: true
         content:
@@ -1513,6 +3606,11 @@ paths:
                 role:
                   type: string
                   enum: [developer, team_lead, admin]
+            example:
+              name: Sara Lindqvist
+              email: sara.lindqvist@devsyncapp.me
+              password: correct-horse-battery
+              role: developer
       responses:
         '201':
           description: User created successfully
@@ -1520,6 +3618,63 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserResponse'
+              example:
+                user:
+                  id: 7
+                  name: Lena Fischer
+                  email: lena.fischer@devsyncapp.me
+                  role: developer
+                  github_username: lfischer
+                  avatar: https://avatars.githubusercontent.com/u/77412003?v=4
+                  github_connected: true
+                  created_at: '2026-02-03T10:22:00Z'
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /admin/users/{user_id}:
     parameters:
@@ -1531,6 +3686,7 @@ paths:
     put:
       summary: Update a user as an admin
       tags: [Admin]
+      operationId: adminUpdateUser
       requestBody:
         required: true
         content:
@@ -1551,6 +3707,13 @@ paths:
                   type: string
                 avatar:
                   type: string
+            example:
+              name: string
+              email: string
+              role: developer
+              password: string
+              github_username: string
+              avatar: string
       responses:
         '200':
           description: User updated successfully
@@ -1558,9 +3721,77 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserResponse'
+              example:
+                user:
+                  id: 7
+                  name: Lena Fischer
+                  email: lena.fischer@devsyncapp.me
+                  role: developer
+                  github_username: lfischer
+                  avatar: https://avatars.githubusercontent.com/u/77412003?v=4
+                  github_connected: true
+                  created_at: '2026-02-03T10:22:00Z'
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     delete:
       summary: Delete a user as an admin
       tags: [Admin]
+      operationId: adminDeleteUser
       responses:
         '200':
           description: User deleted successfully
@@ -1571,6 +3802,56 @@ paths:
                 properties:
                   message:
                     type: string
+              example:
+                message: string
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /admin/users/{user_id}/role:
     parameters:
@@ -1582,6 +3863,7 @@ paths:
     put:
       summary: Update a user's role
       tags: [Admin]
+      operationId: updateUserRole
       requestBody:
         required: true
         content:
@@ -1593,6 +3875,8 @@ paths:
                 role:
                   type: string
                   enum: [developer, team_lead, admin]
+            example:
+              role: team_lead
       responses:
         '200':
           description: User role updated successfully
@@ -1600,11 +3884,79 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserResponse'
+              example:
+                user:
+                  id: 7
+                  name: Lena Fischer
+                  email: lena.fischer@devsyncapp.me
+                  role: developer
+                  github_username: lfischer
+                  avatar: https://avatars.githubusercontent.com/u/77412003?v=4
+                  github_connected: true
+                  created_at: '2026-02-03T10:22:00Z'
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /admin/stats:
     get:
       summary: Get system statistics
       tags: [Admin]
+      operationId: getSystemStats
       responses:
         '200':
           description: System statistics
@@ -1612,11 +3964,68 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SystemStatsResponse'
+              example:
+                users:
+                  total: 38
+                  admins: 3
+                  team_leads: 6
+                  developers: 29
+                projects:
+                  total: 21
+                  active: 9
+                  completed: 10
+                  on_hold: 2
+                tasks:
+                  total: 1284
+                  backlog: 214
+                  todo: 168
+                  in_progress: 96
+                  review: 54
+                  done: 752
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /admin/settings:
     get:
       summary: Get system settings
       tags: [Admin]
+      operationId: getSystemSettings
       responses:
         '200':
           description: System settings
@@ -1624,15 +4033,73 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SystemSettingsResponse'
+              example:
+                settings:
+                  default_user_role: developer
+                  allow_self_registration: true
+                  audit_log_retention_days: 180
+                  auto_archive_completed_projects: true
+                  project_retention_days: 365
+                  notify_on_overdue_tasks: true
+                  app_name: DevSync
+                  allow_registration: true
+                  github_integration_enabled: true
+                  notification_settings:
+                    task_assigned: true
+                    task_overdue: true
+                    comment_mention: true
+                    github_sync: false
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     put:
       summary: Update system settings
       tags: [Admin]
+      operationId: updateSystemSettings
       requestBody:
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/SystemSettings'
+            example:
+              notification_settings:
+                email_digest: true
       responses:
         '200':
           description: System settings updated successfully
@@ -1645,11 +4112,76 @@ paths:
                     type: string
                   settings:
                     $ref: '#/components/schemas/SystemSettings'
+              example:
+                message: string
+                settings:
+                  default_user_role: developer
+                  allow_self_registration: true
+                  audit_log_retention_days: 180
+                  auto_archive_completed_projects: true
+                  project_retention_days: 365
+                  notify_on_overdue_tasks: true
+                  app_name: DevSync
+                  allow_registration: true
+                  github_integration_enabled: true
+                  notification_settings:
+                    task_assigned: true
+                    task_overdue: true
+                    comment_mention: true
+                    github_sync: false
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /admin/audit-logs:
     get:
       summary: Get audit logs
       tags: [Admin, Audit]
+      operationId: listAuditLogs
       parameters:
         - name: action
           in: query
@@ -1682,6 +4214,64 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuditLogListResponse'
+              example:
+                logs:
+                - id: 5512
+                  actor_user_id: 12
+                  actor_name: Marcus Cole
+                  actor_role: team_lead
+                  action: task.update
+                  resource_type: task
+                  resource_id: '412'
+                  ip: 10.4.19.87
+                  user_agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15
+                  metadata:
+                    changed_fields:
+                    - status
+                    - priority
+                    previous_status: todo
+                  created_at: '2026-09-14T09:31:04Z'
+                total: 8814
+                pages: 88
+                current_page: 1
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /admin/audit-logs/{log_id}:
     parameters:
@@ -1693,6 +4283,7 @@ paths:
     get:
       summary: Get a single audit log entry
       tags: [Admin, Audit]
+      operationId: getAuditLog
       responses:
         '200':
           description: Audit log details
@@ -1700,11 +4291,77 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuditLogResponse'
+              example:
+                log:
+                  id: 5512
+                  actor_user_id: 12
+                  actor_name: Marcus Cole
+                  actor_role: team_lead
+                  action: task.update
+                  resource_type: task
+                  resource_id: '412'
+                  ip: 10.4.19.87
+                  user_agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15
+                  metadata:
+                    changed_fields:
+                    - status
+                    - priority
+                    previous_status: todo
+                  created_at: '2026-09-14T09:31:04Z'
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /admin/audit-logs/cleanup:
     post:
       summary: Purge expired audit logs
       tags: [Admin, Audit]
+      operationId: cleanupAuditLogs
       responses:
         '200':
           description: Audit log cleanup result
@@ -1717,11 +4374,53 @@ paths:
                     type: string
                   deleted:
                     type: integer
+              example:
+                message: string
+                deleted: 1
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /admin/settings/retention/run:
     post:
       summary: Run retention cleanup immediately
       tags: [Admin]
+      operationId: runRetentionCleanup
       responses:
         '200':
           description: Retention cleanup result
@@ -1729,11 +4428,58 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RetentionCleanupResponse'
+              example:
+                message: Retention cleanup finished
+                result:
+                  audit_logs_deleted: 3120
+                  completed_projects_archived: 4
+                  notifications_purged: 1875
+                  duration_seconds: 12.7
+                error: ''
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /reports:
     post:
       summary: Save a generated report
       tags: [Reports]
+      operationId: createReport
       requestBody:
         required: true
         content:
@@ -1756,6 +4502,10 @@ paths:
                   items:
                     type: object
                     additionalProperties: true
+            example:
+              title: Sprint 14 task report
+              report_type: tasks
+              project_id: 1
       responses:
         '201':
           description: Report saved successfully
@@ -1763,9 +4513,74 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReportResponse'
+              example:
+                message: Report generated
+                report:
+                  id: 76
+                  user_id: 1
+                  type: tasks
+                  dateRange: month
+                  summary:
+                    total_tasks: 128
+                    completed_tasks: 94
+                    overdue_tasks: 6
+                    avg_completion_hours: 31.4
+                  details:
+                  - bucket: '2026-09-01'
+                    created: 22
+                    completed: 18
+                  generatedAt: '2026-09-14T06:00:00Z'
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     get:
       summary: Get saved reports
       tags: [Reports]
+      operationId: listReports
       parameters:
         - name: type
           in: query
@@ -1792,6 +4607,66 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginationReportResponse'
+              example:
+                message: Reports retrieved
+                reports:
+                - id: 76
+                  user_id: 1
+                  type: tasks
+                  dateRange: month
+                  summary:
+                    total_tasks: 128
+                    completed_tasks: 94
+                    overdue_tasks: 6
+                    avg_completion_hours: 31.4
+                  details:
+                  - bucket: '2026-09-01'
+                    created: 22
+                    completed: 18
+                  generatedAt: '2026-09-14T06:00:00Z'
+                pagination:
+                  page: 1
+                  per_page: 20
+                  total: 42
+                  pages: 3
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /reports/{report_id}:
     parameters:
@@ -1803,6 +4678,7 @@ paths:
     get:
       summary: Get a report by ID
       tags: [Reports]
+      operationId: getReport
       responses:
         '200':
           description: Report details
@@ -1810,9 +4686,75 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReportResponse'
+              example:
+                message: Report generated
+                report:
+                  id: 76
+                  user_id: 1
+                  type: tasks
+                  dateRange: month
+                  summary:
+                    total_tasks: 128
+                    completed_tasks: 94
+                    overdue_tasks: 6
+                    avg_completion_hours: 31.4
+                  details:
+                  - bucket: '2026-09-01'
+                    created: 22
+                    completed: 18
+                  generatedAt: '2026-09-14T06:00:00Z'
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     delete:
       summary: Delete a report
       tags: [Reports]
+      operationId: deleteReport
       responses:
         '200':
           description: Report deleted successfully
@@ -1823,11 +4765,62 @@ paths:
                 properties:
                   message:
                     type: string
+              example:
+                message: string
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /github/config-check:
     get:
       summary: Check GitHub OAuth configuration
       tags: [GitHub Integration]
+      operationId: checkGitHubConfig
       security: []
       responses:
         '200':
@@ -1836,11 +4829,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GitHubConfigCheckResponse'
+              example:
+                config_status:
+                  client_id_set: true
+                  client_secret_set: true
+                  redirect_uri_set: true
+                client_id: Ov23liQ8d7RtZ1mY
+                redirect_uri: https://app.devsyncapp.me/api/github/callback
+                frontend_url: https://app.devsyncapp.me
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /github/auth:
     get:
       summary: Start the GitHub OAuth flow
       tags: [GitHub Integration]
+      operationId: getGitHubAuthUrl
       responses:
         '200':
           description: GitHub OAuth authorization URL
@@ -1848,11 +4870,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GitHubOAuthResponse'
+              example:
+                authorization_url: https://github.com/login/oauth/authorize?client_id=Ov23liQ8d7RtZ1mY&redirect_uri=https%3A%2F%2Fapp.devsyncapp.me%2Fapi%2Fgithub%2Fcallback&scope=read%3Auser%20repo&state=6f1c2ad94be74f0e8c3a5b27d9146fe0
+                state: 6f1c2ad94be74f0e8c3a5b27d9146fe0
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /github/callback:
     get:
       summary: Handle GitHub OAuth callback
       tags: [GitHub Integration]
+      operationId: getGitHubOAuthCallback
       security: []
       parameters:
         - name: code
@@ -1870,11 +4926,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GitHubCallbackResponse'
-        '302':
-          description: Redirect to the frontend after successful connection
+              example:
+                success: true
+                message: GitHub account connected
+                github_username: ahmedikram
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     post:
       summary: Handle GitHub OAuth callback using a JSON payload
       tags: [GitHub Integration]
+      operationId: postGitHubOAuthCallback
       security: []
       requestBody:
         required: true
@@ -1888,6 +4986,9 @@ paths:
                   type: string
                 state:
                   type: string
+            example:
+              code: v1.abc123def456
+              state: eyJ1c2VyX2lkIjoxfQ.c2lnbmF0dXJl
       responses:
         '200':
           description: GitHub account connected successfully
@@ -1895,11 +4996,55 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GitHubCallbackResponse'
+              example:
+                success: true
+                message: GitHub account connected
+                github_username: ahmedikram
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /github/exchange:
     get:
       summary: Exchange a GitHub OAuth code for a token
       tags: [GitHub Integration]
+      operationId: exchangeGitHubCode
       security: []
       parameters:
         - name: code
@@ -1917,11 +5062,55 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GitHubCallbackResponse'
+              example:
+                success: true
+                message: GitHub account connected
+                github_username: ahmedikram
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /github/status:
     get:
       summary: Get the current user's GitHub connection status
       tags: [GitHub Integration]
+      operationId: getGitHubStatus
       responses:
         '200':
           description: GitHub connection status
@@ -1929,11 +5118,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GitHubStatusResponse'
+              example:
+                connected: true
+                username: ahmedikram
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /github/disconnect:
     post:
       summary: Disconnect the current user's GitHub account
       tags: [GitHub Integration]
+      operationId: disconnectGitHub
       responses:
         '200':
           description: GitHub account disconnected successfully
@@ -1944,11 +5167,44 @@ paths:
                 properties:
                   message:
                     type: string
+              example:
+                message: string
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /github/repositories:
     get:
       summary: Fetch GitHub repositories for the current user
       tags: [GitHub Integration]
+      operationId: listGitHubRepositories
       parameters:
         - name: page
           in: query
@@ -1977,9 +5233,63 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GitHubRepositoryListResponse'
+              example:
+                repositories:
+                - id: 3
+                  github_id: 812004417
+                  name: devsync-web
+                  full_name: devsync-team/devsync-web
+                  owner: devsync-team
+                  html_url: https://github.com/devsync-team/devsync-web
+                  description: DevSync dashboard and task management web client.
+                  private: true
+                  fork: false
+                  created_at: '2026-03-18T11:38:00Z'
+                  updated_at: '2026-09-14T09:28:00Z'
+                  pushed_at: '2026-09-14T08:47:00Z'
+                  language: TypeScript
+                  default_branch: main
+                  open_issues_count: 12
+                  open_issues: 12
+                  total_prs: 214
+                  recent_commits: 37
+                  last_updated: '2026-09-14T08:47:00Z'
+                  stargazers_count: 24
+                  forks_count: 5
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     post:
       summary: Add a GitHub repository to track
       tags: [GitHub Integration]
+      operationId: linkGitHubRepository
       requestBody:
         required: true
         content:
@@ -1994,6 +5304,10 @@ paths:
                   type: string
                 webhook_secret:
                   type: string
+            example:
+              owner: devsync-team
+              repo_name: devsync-web
+              activity_window_days: 30
       responses:
         '201':
           description: Repository added successfully
@@ -2001,6 +5315,59 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GitHubRepositoryResponse'
+              example:
+                message: Repository linked to project
+                repository:
+                  id: 3
+                  name: devsync-web
+                  url: https://github.com/devsync-team/devsync-web
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '403':
+          description: Authenticated, but the role or permission is insufficient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenError'
+              example:
+                message: Insufficient permissions
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /github/repositories/{repo_id}/issues:
     parameters:
@@ -2012,6 +5379,7 @@ paths:
     get:
       summary: Get issues for a tracked repository
       tags: [GitHub Integration]
+      operationId: listRepositoryIssues
       parameters:
         - name: state
           in: query
@@ -2037,6 +5405,62 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/GitHubIssue'
+              example:
+                issues:
+                - id: 1984502317
+                  number: 1842
+                  title: Burndown chart renders empty when a sprint has no completed tasks
+                  state: open
+                  created_at: '2026-09-11T13:20:00Z'
+                  updated_at: '2026-09-13T15:02:00Z'
+                  html_url: https://github.com/devsync-team/devsync-web/issues/1842
+                  body: When every task in a sprint is still in `todo`, the burndown widget renders with no axes. Expected a zeroed line down to the sprint length.
+                  user:
+                    login: ahmedikram
+                    avatar_url: https://avatars.githubusercontent.com/u/58231047?v=4
+                  labels:
+                  - name: bug
+                    color: d73a4a
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /github/repositories/{repo_id}/pulls:
     parameters:
@@ -2048,6 +5472,7 @@ paths:
     get:
       summary: Get pull requests for a tracked repository
       tags: [GitHub Integration]
+      operationId: listRepositoryPullRequests
       parameters:
         - name: state
           in: query
@@ -2073,6 +5498,65 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/GitHubPullRequest'
+              example:
+                pull_requests:
+                - id: 1984610442
+                  number: 1847
+                  title: 'feat: sprint burndown chart on the project overview tab'
+                  state: open
+                  created_at: '2026-09-13T09:14:00Z'
+                  updated_at: '2026-09-14T08:47:00Z'
+                  html_url: https://github.com/devsync-team/devsync-web/pull/1847
+                  body: 'Adds the burndown chart fed by the task history endpoint, plus the zero-state fix from #1842.'
+                  user:
+                    login: lfischer
+                    avatar_url: https://avatars.githubusercontent.com/u/77412003?v=4
+                  labels:
+                  - name: enhancement
+                    color: a2eeef
+                  merged: false
+                  mergeable: true
+                  draft: false
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /tasks/{task_id}/github:
     parameters:
@@ -2084,6 +5568,7 @@ paths:
     post:
       summary: Link a task with a GitHub issue or pull request
       tags: [GitHub Integration]
+      operationId: linkGitHubToTask
       requestBody:
         required: true
         content:
@@ -2098,6 +5583,10 @@ paths:
                   type: integer
                 pull_request_number:
                   type: integer
+            example:
+              repo_owner: devsync-team
+              repo_name: devsync-web
+              issue_number: 412
       responses:
         '200':
           description: GitHub link created or updated
@@ -2105,9 +5594,70 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GitHubLinkResponse'
+              example:
+                message: GitHub link created
+                link:
+                  id: 55
+                  task_id: 412
+                  repo_id: 3
+                  repo_name: devsync-team/devsync-web
+                  repo_url: https://github.com/devsync-team/devsync-web
+                  issue_number: 1842
+                  pull_request_number: 1847
+                  created_at: '2026-09-13T16:10:00Z'
+        '400':
+          description: Request body was missing, not JSON, or failed validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+              example:
+                status: error
+                message: Missing JSON in request body
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
     get:
       summary: Get GitHub links for a task
       tags: [GitHub Integration]
+      operationId: listTaskGitHubLinks
       responses:
         '200':
           description: Task GitHub links
@@ -2115,6 +5665,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GitHubLinkListResponse'
+              example:
+                links:
+                - id: 55
+                  task_id: 412
+                  repo_id: 3
+                  repo_name: devsync-team/devsync-web
+                  repo_url: https://github.com/devsync-team/devsync-web
+                  issue_number: 1842
+                  pull_request_number: 1847
+                  created_at: '2026-09-13T16:10:00Z'
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
 
   /tasks/{task_id}/github/{link_id}:
     parameters:
@@ -2131,6 +5731,7 @@ paths:
     delete:
       summary: Remove a GitHub link from a task
       tags: [GitHub Integration]
+      operationId: unlinkGitHubFromTask
       responses:
         '200':
           description: GitHub link removed
@@ -2141,3 +5742,191 @@ paths:
                 properties:
                   message:
                     type: string
+              example:
+                message: string
+        '401':
+          description: Access token missing, malformed or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnauthorizedError'
+              example:
+                status: error
+                message: Missing or invalid access token
+                error: token_expired
+        '404':
+          description: The addressed resource does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFoundError'
+              example:
+                status: error
+                message: Resource not found
+                error: Task not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: Unhandled server-side failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+              example:
+                status: error
+                message: Internal server error
+                error: An unexpected error occurred
+                traceback: null
+
+
+  /github/connect:
+    get:
+      summary: Get a GitHub OAuth authorization URL for a user
+      operationId: getGitHubConnectUrl
+      tags: [GitHub Integration]
+      security: []
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          description: Numeric id of the user to connect GitHub for.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Authorization URL and freshly signed OAuth state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorization_url:
+                    type: string
+                  state:
+                    type: string
+              example: &connect_example
+                authorization_url: https://github.com/login/oauth/authorize?client_id=Iv1.4a1b2c3d4e5&scope=repo%2Cuser%3Aemail&state=eyJ1c2VyX2lkIjoxfQ.c2lnbmF0dXJl
+                state: eyJ1c2VyX2lkIjoxfQ.c2lnbmF0dXJl
+        '400':
+          description: >
+            User ID missing or not an integer. This endpoint answers with a bare
+            `{"error": "..."}` body, not the usual `status`/`message` pair.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+              example:
+                error: User ID is required
+        '404':
+          description: No user with that id
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+              example:
+                error: User not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: GitHub OAuth is not configured on this deployment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+              example:
+                error: GitHub OAuth configuration is incomplete
+    post:
+      summary: Get a GitHub OAuth authorization URL for a user (JSON body)
+      operationId: postGitHubConnectUrl
+      tags: [GitHub Integration]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId:
+                  type: integer
+            example:
+              userId: 1
+      responses:
+        '200':
+          description: Authorization URL and freshly signed OAuth state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authorization_url:
+                    type: string
+                  state:
+                    type: string
+              example: *connect_example
+        '400':
+          description: User ID missing or not an integer
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+              example:
+                error: User ID is invalid
+        '404':
+          description: No user with that id
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+              example:
+                error: User not found
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimitError'
+              example:
+                status: error
+                message: Global rate limit exceeded. Please try again later.
+        '500':
+          description: GitHub OAuth is not configured on this deployment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+              example:
+                error: GitHub OAuth configuration is incomplete

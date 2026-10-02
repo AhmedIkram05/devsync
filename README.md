@@ -286,6 +286,7 @@ npx cypress run --project frontend
 | [docs/planning/k8s-prod-platform.md](docs/planning/k8s-prod-platform.md) | Prod platform plan with A11/A12/A13 live receipts |
 | [docs/planning/k8s-phase2-scaling.md](docs/planning/k8s-phase2-scaling.md) | Permanent hardening: MQ line, presence, limiter, managed DB |
 | [docs/backend/swagger.yaml](docs/backend/swagger.yaml) | Complete API reference for all `/api/v1/*` routes |
+| [docs/backend/api-conventions.md](docs/backend/api-conventions.md) | Error and response contract: status codes, body shapes, rate limits |
 | [docs/backend/rbac.md](docs/backend/rbac.md) | Role-permission matrix for Developer, Team Lead, and Admin |
 | [docs/backend/models.md](docs/backend/models.md) | Entity descriptions for all 12 tables |
 | [docs/backend/load-testing.md](docs/backend/load-testing.md) | k6 gate, thresholds, baseline, and local runbook |
