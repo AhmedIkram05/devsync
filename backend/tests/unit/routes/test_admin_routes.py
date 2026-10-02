@@ -92,3 +92,34 @@ def test_update_user_role_route_calls_controller(monkeypatch, client):
     assert response.status_code == 200
     assert response.get_json()["message"] == "User role updated successfully"
     handler.assert_called_once_with(1)
+
+
+def test_run_retention_cleanup_returns_200_on_success(monkeypatch, client):
+    monkeypatch.setattr(
+        admin_routes.settings_service,
+        "run_retention_cleanup",
+        MagicMock(return_value={"audit_logs_deleted": 3, "projects_deleted": 1}),
+    )
+
+    response = client.post("/api/v1/admin/settings/retention/run")
+
+    assert response.status_code == 200
+    assert response.get_json()["message"] == "Retention cleanup completed"
+
+
+def test_run_retention_cleanup_reports_failure_as_500(monkeypatch, client):
+    """A failed cleanup must not be reported as a success."""
+    monkeypatch.setattr(
+        admin_routes.settings_service,
+        "run_retention_cleanup",
+        MagicMock(side_effect=RuntimeError("database is down")),
+    )
+
+    response = client.post("/api/v1/admin/settings/retention/run")
+
+    assert response.status_code == 500
+    payload = response.get_json()
+    assert payload["status"] == "error"
+    assert payload["message"] == "Retention cleanup failed"
+    assert payload["error"] == "database is down"
+    assert payload["result"] is None

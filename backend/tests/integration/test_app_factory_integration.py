@@ -119,12 +119,12 @@ def test_protected_route_requires_token_with_expected_contract(client):
     assert payload["message"] == "Authentication token is missing"
 
 
-def test_public_github_connect_route_does_not_require_token(client):
+def test_github_connect_route_requires_token(client):
     response = client.get("/api/v1/github/connect")
 
-    assert response.status_code == 400
+    assert response.status_code == 401
     payload = response.get_json()
-    assert payload["error"] == "User ID is required"
+    assert payload["error"] == "authorization_required"
 
 
 def test_socket_register_accepts_valid_bearer_token(app_and_socket):

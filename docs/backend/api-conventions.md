@@ -41,9 +41,9 @@ HTTP status code. `GET /users/{user_id}` adds a fourth body,
 `{ "message": "You can only view your own profile" }`, from a hand-rolled check
 in `users_routes.py` with no decorator behind it.
 
-**2. `/github/connect` uses a bare `{ "error": "..." }`.** It is the only route
-that skips the shared error helpers, so its 400/404/500 responses have neither
-`status` nor `message`.
+**2. The GitHub OAuth routes use a bare `{ "error": "..." }`.**
+`/github/connect`, `/github/callback` and `/github/exchange` skip the shared
+error helpers, so their 404/500 responses have neither `status` nor `message`.
 
 **3. `401` uses a machine-readable `error` code.** `app.py` builds these by
 hand for the three JWT failure modes rather than going through `APIError`:
@@ -109,12 +109,12 @@ is per-pod, so a Redis outage makes the effective limit `300 x pod_count`.
 
 ## Public endpoints
 
-These nine operations need no JWT and carry `security: []` in the spec:
+These seven operations need no JWT and carry `security: []` in the spec:
 
 ```
 POST /auth/login          POST /auth/register       POST /auth/token
 GET  /github/config-check  GET  /github/callback     POST /github/callback
-GET  /github/exchange      GET  /github/connect      POST /github/connect
+GET  /github/exchange
 ```
 
 Everything else is `@jwt_required()`. `POST /auth/refresh` is the exception
@@ -125,6 +125,18 @@ Tokens are accepted from either an `Authorization: Bearer` header or a cookie
 (`JWT_TOKEN_LOCATION = ["cookies", "headers"]`), which is what `CookieAuth` in
 the spec describes.
 
+## Deliberate design, not drift
+
+Two behaviours look like inconsistencies and are not:
+
+- **`GET /dashboard/client` excludes Admin.** `MEMBER_DASHBOARD_ROLES` is
+  `[DEVELOPER, TEAM_LEAD]`. Admins have their own view at
+  `GET /dashboard/admin`, so an admin token getting `403` here is the intended
+  split, not a missing role in the list.
+- **`POST /tasks` and `DELETE /tasks/{task_id}` accept developers.** See
+  [rbac.md](rbac.md#task-authority) for the enforced rule and why
+  `can_create_tasks` exists but is not checked on the route.
+
 ## Known behaviour that looks like a bug
 
 These are real and current; they are recorded so nobody re-derives them.
@@ -134,29 +146,16 @@ These are real and current; they are recorded so nobody re-derives them.
   resolves to `"None"` (`Lax` otherwise). A cookie-authenticated mutating
   request from another origin is not blocked. `CookieAuth` documents no CSRF
   token because none is checked.
-- **`/github/connect` mints an OAuth state for any `userId`.** It is public and
-  signs a state parameter for a caller-supplied user id, so a third party can
-  start an account-link flow for an arbitrary account. The state is HMAC-signed,
-  so the callback will not accept a forged one — but the initiation is unguarded.
-- **`GET /dashboard/client` excludes Admin.** `MEMBER_DASHBOARD_ROLES` is
-  `[DEVELOPER, TEAM_LEAD]`, so an admin token gets `403` on the client dashboard.
-- **`POST /tasks` and `DELETE /tasks/{task_id}` accept developers.** Both are
-  gated `role_required([DEVELOPER, TEAM_LEAD, ADMIN])` only, so
-  `can_create_tasks` from `rbac.py` is never enforced on the create path.
-- **`POST /admin/settings/retention/run` never 500s.** It catches every
-  exception and returns `200` with a failure payload, so the status code alone
-  cannot tell you whether retention ran. Inspect the body.
-- **`GET /users/{user_id}` is not decorator-gated.** It allows self-access or
-  `role_at_least(TEAM_LEAD)` through an inline check, which is why it needs no
-  `ForbiddenError` entry beyond the generic one.
+- **`/github/connect` and the other GitHub OAuth routes use a bare
+  `{ "error": "..." }`.** They skip the shared error helpers, so their 404/500
+  responses have neither `status` nor `message`.
 
 ## Client checklist
 
 1. Branch on the HTTP status, never on a `status` field — `403` has none.
 2. Read `error` for `401` codes and `errors` for `400` schema failures; treat
    `message` as display-only.
-3. Treat `403` from `/github/connect` as `{error: string}` rather than the shared
-   shape.
+3. Treat the `404`/`500` from `/github/connect` as `{error: string}` rather
+   than the shared shape.
 4. Back off on `429` without expecting `Retry-After`, and expect the message to
    differ between the per-route and global limiters.
-5. Check `POST /admin/settings/retention/run`'s body, not its `200`.
