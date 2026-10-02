@@ -11,10 +11,23 @@ const API_BASE_URL = (() => {
 
 const API_URL = `${API_BASE_URL}/auth`;
 
+const readCookie = (name) => {
+  const match = document.cookie.split('; ').find((c) => c.startsWith(`${name}=`));
+  return match ? decodeURIComponent(match.slice(name.length + 1)) : '';
+};
+
+// The API accepts the JWT from a cookie, so every mutating request needs the
+// matching double-submit token echoed back in a header. Access and refresh
+// tokens carry different csrf claims, hence the argument.
+export const csrfHeaders = (token = 'access') => ({
+  'X-CSRF-TOKEN': readCookie(`csrf_${token}_token`),
+});
+
 // Helper function to handle fetch with proper error handling
-const fetchWrapper = async (url, options = {}) => {
+const fetchWrapper = async (url, { csrf, ...options } = {}) => {
   const response = await fetch(url, {
     ...options,
+    headers: { ...csrfHeaders(csrf), ...options.headers },
     credentials: 'include', // Always include cookies
   });
   
@@ -132,6 +145,7 @@ export const authApi = {
     try {
       const data = await fetchWrapper(`${API_URL}/refresh`, {
         method: 'POST',
+        csrf: 'refresh',
       });
       
       const refreshedToken = data.token || data.access_token;

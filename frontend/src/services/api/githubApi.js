@@ -1,4 +1,4 @@
-import { authApi } from '../utils/auth';
+import { authApi, csrfHeaders } from '../utils/auth';
 
 const API_BASE_URL = (() => {
   const configuredBaseUrl = process.env.REACT_APP_API_URL;
@@ -18,6 +18,7 @@ const fetchWithAuth = async (url, options = {}) => {
   const user = authApi.getCurrentUser();
   const headers = {
     'Content-Type': 'application/json',
+    ...csrfHeaders(),
     ...options.headers
   };
 

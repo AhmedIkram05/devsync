@@ -63,6 +63,16 @@ def refresh_headers(app, role="developer", user_id=1):
     return {"Authorization": f"Bearer {token}"}
 
 
+def stub_tokens(app, role="developer", user_id=1):
+    """With cookie CSRF protection on, set_access_cookies decodes the token to
+    derive the double-submit cookie, so a placeholder string no longer works."""
+    with app.app_context():
+        return {
+            "access_token": create_access_token(identity={"user_id": user_id}, additional_claims={"role": role}),
+            "refresh_token": create_refresh_token(identity={"user_id": user_id}, additional_claims={"role": role}),
+        }
+
+
 def test_auth_register_success_contract(client, monkeypatch):
     class StubUser:
         query = MagicMock()
@@ -79,12 +89,7 @@ def test_auth_register_success_contract(client, monkeypatch):
 
     session = MagicMock()
     hash_password = MagicMock(return_value="hashed-password")
-    generate_tokens = MagicMock(
-        return_value={
-            "access_token": "access-token",
-            "refresh_token": "refresh-token",
-        }
-    )
+    generate_tokens = MagicMock(return_value=stub_tokens(client.application))
 
     monkeypatch.setattr(auth_module, "User", StubUser)
     monkeypatch.setattr(auth_module.settings_service, "get_default_role", MagicMock(return_value="developer"))
@@ -135,12 +140,7 @@ def test_auth_login_success_returns_token_and_github_flags(client, monkeypatch):
     StubGitHubToken.query.filter_by.return_value.first.return_value = None
 
     verify_password = MagicMock(return_value=True)
-    generate_tokens = MagicMock(
-        return_value={
-            "access_token": "login-access-token",
-            "refresh_token": "login-refresh-token",
-        }
-    )
+    generate_tokens = MagicMock(return_value=stub_tokens(client.application))
 
     monkeypatch.setattr(auth_module, "User", StubUser)
     monkeypatch.setattr(auth_module, "verify_password", verify_password)
@@ -156,7 +156,7 @@ def test_auth_login_success_returns_token_and_github_flags(client, monkeypatch):
     payload = response.get_json()
     assert payload["message"] == "Login successful"
     assert payload["user"]["id"] == 7
-    assert payload["user"]["token"] == "login-access-token"
+    assert payload["user"]["token"] == generate_tokens.return_value["access_token"]
     assert payload["user"]["github_connected"] is False
 
     verify_password.assert_called_once_with("password123", "stored-hash")
@@ -179,12 +179,22 @@ def test_auth_token_route_rejects_unknown_user(client, monkeypatch):
     assert response.get_json()["message"] == "Invalid email or password"
 
 
+def csrf_header(client):
+    """Echo the double-submit cookie back the way the SPA does. Needed once the
+    client is carrying a JWT cookie, since the cookie wins over the bearer
+    header and therefore subjects POST/PUT/PATCH/DELETE to the CSRF check."""
+    return {"X-CSRF-TOKEN": client.get_cookie("csrf_access_token").value}
+
+
 def test_auth_refresh_and_logout_routes_with_jwt(client, app):
     refresh_response = client.post("/api/v1/auth/refresh", headers=refresh_headers(app, user_id=42))
     assert refresh_response.status_code == 200
     assert "token" in refresh_response.get_json()
 
-    logout_response = client.post("/api/v1/auth/logout", headers=auth_headers(app, user_id=42))
+    logout_response = client.post(
+        "/api/v1/auth/logout",
+        headers={**auth_headers(app, user_id=42), **csrf_header(client)},
+    )
     assert logout_response.status_code == 200
     assert logout_response.get_json()["message"] == "Logout successful"
 

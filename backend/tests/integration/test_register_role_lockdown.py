@@ -5,10 +5,21 @@ import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
+from flask_jwt_extended import create_access_token, create_refresh_token
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from src.app import create_app
+
+
+def stub_tokens(app, identity="1"):
+    """With cookie CSRF protection on, set_access_cookies decodes the token to
+    derive the double-submit cookie, so a placeholder string no longer works."""
+    with app.app_context():
+        return {
+            "access_token": create_access_token(identity=identity),
+            "refresh_token": create_refresh_token(identity=identity),
+        }
 
 
 @pytest.fixture
@@ -53,7 +64,7 @@ def test_register_ignores_admin_role(client, monkeypatch):
         patch("src.auth.auth.User") as MockUser,
         patch("src.auth.auth.db"),
         patch("src.auth.auth.hash_password", return_value="hashed"),
-        patch("src.auth.auth.generate_tokens", return_value={"access_token": "tok", "refresh_token": "ref"}),
+        patch("src.auth.auth.generate_tokens", return_value=stub_tokens(client.application)),
         patch("src.services.settings_service.get_default_role", return_value="developer"),
         patch("src.services.audit_service.record"),
     ):
@@ -96,7 +107,7 @@ def test_register_ignores_team_lead_role(client, monkeypatch):
         patch("src.auth.auth.User") as MockUser,
         patch("src.auth.auth.db"),
         patch("src.auth.auth.hash_password", return_value="hashed"),
-        patch("src.auth.auth.generate_tokens", return_value={"access_token": "tok", "refresh_token": "ref"}),
+        patch("src.auth.auth.generate_tokens", return_value=stub_tokens(client.application)),
         patch("src.services.settings_service.get_default_role", return_value="developer"),
         patch("src.services.audit_service.record"),
     ):
@@ -129,7 +140,7 @@ def test_first_user_is_admin(client, monkeypatch):
         patch("src.auth.auth.User") as MockUser,
         patch("src.auth.auth.db"),
         patch("src.auth.auth.hash_password", return_value="hashed"),
-        patch("src.auth.auth.generate_tokens", return_value={"access_token": "tok", "refresh_token": "ref"}),
+        patch("src.auth.auth.generate_tokens", return_value=stub_tokens(client.application)),
         patch("src.services.settings_service.get_default_role", return_value="developer"),
         patch("src.services.audit_service.record"),
     ):

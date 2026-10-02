@@ -1,3 +1,5 @@
+import { csrfHeaders } from './auth';
+
 const API_URL = (() => {
   const configuredBaseUrl = process.env.REACT_APP_API_URL;
   if (configuredBaseUrl) {
@@ -37,6 +39,7 @@ const fetchWithAuth = async (endpoint, options = {}) => {
     const headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
+      ...csrfHeaders(),
       ...(options.headers || {})
     };
     

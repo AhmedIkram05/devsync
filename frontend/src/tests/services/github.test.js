@@ -1,7 +1,8 @@
 import { githubService } from '../../services/github';
 import { authApi } from '../../services/utils/auth';
 
-jest.mock('../../services/utils/auth', () => ({
+  jest.mock('../../services/utils/auth', () => ({
+  csrfHeaders: () => ({}),
   authApi: {
     getCurrentUser: jest.fn(),
     isTokenExpired: jest.fn(),
