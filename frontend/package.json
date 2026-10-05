@@ -62,7 +62,7 @@
     "websocket-driver": "0.7.5"
   },
   "devDependencies": {
-    "@cypress/code-coverage": "^3.14.7",
+    "@cypress/code-coverage": "^4.0.3",
     "@cypress/instrument-cra": "^1.4.0",
     "@istanbuljs/nyc-config-babel": "^3.0.0",
     "autoprefixer": "^10.6.1",
