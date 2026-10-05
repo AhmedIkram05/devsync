@@ -12,7 +12,7 @@ flask-socketio==5.6.1
 Flask-SQLAlchemy==3.1.1
 SQLAlchemy>=2.0.30,<2.1  # 2.1 defaults plain postgresql:// to psycopg v3; we install psycopg2 only
 Flask-Migrate==4.1.0
-flask-cors==5.0.1
+flask-cors==6.0.5
 
 # Authentication
 cryptography==50.0.2  # Fernet encryption-at-rest for stored OAuth tokens
