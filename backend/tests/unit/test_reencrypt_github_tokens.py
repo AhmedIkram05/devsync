@@ -8,9 +8,8 @@ Postgres or app context required.
 from contextlib import nullcontext
 from types import SimpleNamespace
 
-from cryptography.fernet import Fernet
-
 import src.db.scripts.reencrypt_github_tokens as mod
+from cryptography.fernet import Fernet
 
 
 class FakeApp:

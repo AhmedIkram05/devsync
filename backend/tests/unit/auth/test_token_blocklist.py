@@ -7,7 +7,6 @@ Redis hit, Redis failure) is exercised without a live server.
 import time
 
 import pytest
-
 from src.auth import token_blocklist as tb
 
 
