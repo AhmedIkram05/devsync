@@ -338,6 +338,69 @@ def resolve_oauth_state_secret(explicit_value=None, jwt_secret=None):
     return derive_oauth_state_secret(base)
 
 
+def is_valid_cors_origin(value):
+    """True when value is an explicit http(s) origin with no wildcards."""
+    if not isinstance(value, str):
+        return False
+    token = value.strip()
+    if not token or token in {"*", "null"} or "*" in token:
+        return False
+    parsed = urlparse(token)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def normalize_origin(value):
+    """Normalize to scheme://netloc (drops path/query/fragment)."""
+    parsed = urlparse(value.strip())
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def resolve_frontend_url(env=None):
+    """Return normalized FRONTEND_URL or ''. Fail-closed on bad values.
+
+    Raises ValueError when FRONTEND_URL is set but not a valid http(s)
+    origin, or when production uses non-https (credentials require TLS).
+    Loopback hosts (localhost/127.0.0.1/::1) stay http-capable so local
+    prod-parity runs don't fail closed.
+    """
+    raw = os.getenv("FRONTEND_URL", "") or ""
+    raw = raw.strip()
+    if not raw:
+        return ""
+    if not is_valid_cors_origin(raw):
+        raise ValueError(f"Invalid FRONTEND_URL: {raw!r}. Must be like https://example.com")
+    effective_env = (env if env is not None else os.getenv("FLASK_ENV", "development")).lower()
+    parsed = urlparse(raw)
+    if (
+        effective_env == "production"
+        and parsed.scheme != "https"
+        and (parsed.hostname or "").lower() not in {"localhost", "127.0.0.1", "::1"}
+    ):
+        raise ValueError("FRONTEND_URL must use https in production")
+    return normalize_origin(raw)
+
+
+def resolve_cors_allowed_origins():
+    """Parse CORS_ALLOWED_ORIGINS (comma-separated) into normalized origins.
+
+    Invalid entries (wildcards, missing scheme/host) are skipped — never
+    allow '*' together with credentials.
+    """
+    raw_list = os.getenv("CORS_ALLOWED_ORIGINS", "") or ""
+    origins = []
+    for entry in raw_list.split(","):
+        token = entry.strip()
+        if not token:
+            continue
+        if not is_valid_cors_origin(token):
+            logger.warning("Skipping invalid CORS_ALLOWED_ORIGINS entry: %r", token)
+            continue
+        normalized = normalize_origin(token)
+        if normalized not in origins:
+            origins.append(normalized)
+    return origins
+
+
 class Config:
     """Base configuration class for the application."""
 
@@ -376,8 +439,8 @@ class Config:
     GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
     GITHUB_REDIRECT_URI = os.getenv("GITHUB_REDIRECT_URI", "")
 
-    # Frontend URL (used for redirects and config checks)
-    FRONTEND_URL = os.getenv("FRONTEND_URL", "")
+    # Frontend URL (used for redirects and CORS allowlist; https enforced in prod)
+    FRONTEND_URL = resolve_frontend_url()
 
 
 class DevelopmentConfig(Config):

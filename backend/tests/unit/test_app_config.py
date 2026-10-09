@@ -194,3 +194,73 @@ def test_hkdf_domain_separation_and_oauth_state_derived(monkeypatch):
     assert fernet_key != oauth_key
     assert resolve_oauth_state_secret(jwt_secret=TEST_JWT) == oauth_key
     assert resolve_oauth_state_secret(jwt_secret=TEST_JWT) != TEST_JWT
+
+
+def test_is_valid_cors_origin_rejects_wildcards_and_bad_scheme():
+    from backend.src.config.config import is_valid_cors_origin
+
+    assert is_valid_cors_origin("http://localhost:3000")
+    assert is_valid_cors_origin("https://devsyncapp.me")
+    assert not is_valid_cors_origin("*")
+    assert not is_valid_cors_origin("http://*.example.com")
+    assert not is_valid_cors_origin("null")
+    assert not is_valid_cors_origin("ftp://example.com")
+    assert not is_valid_cors_origin("not-a-url")
+    assert not is_valid_cors_origin("")
+
+
+def test_resolve_frontend_url_enforces_https_in_prod(monkeypatch):
+    from backend.src.config.config import resolve_frontend_url
+
+    monkeypatch.setenv("FRONTEND_URL", "https://app.example.com")
+    assert resolve_frontend_url(env="production") == "https://app.example.com"
+
+    monkeypatch.setenv("FRONTEND_URL", "http://localhost:3000")
+    assert resolve_frontend_url(env="development") == "http://localhost:3000"
+    # Loopback stays http-capable even in prod (local prod-parity runs).
+    assert resolve_frontend_url(env="production") == "http://localhost:3000"
+
+    monkeypatch.setenv("FRONTEND_URL", "http://app.example.com")
+    try:
+        with pytest.raises(ValueError, match="https in production"):
+            resolve_frontend_url(env="production")
+    finally:
+        monkeypatch.delenv("FRONTEND_URL", raising=False)
+
+    monkeypatch.setenv("FRONTEND_URL", "*")
+    try:
+        with pytest.raises(ValueError, match="Invalid FRONTEND_URL"):
+            resolve_frontend_url(env="development")
+    finally:
+        monkeypatch.delenv("FRONTEND_URL", raising=False)
+
+
+def test_resolve_cors_allowed_origins_skips_invalid(monkeypatch):
+    from backend.src.config.config import resolve_cors_allowed_origins
+
+    monkeypatch.setenv(
+        "CORS_ALLOWED_ORIGINS",
+        "https://app.example.com, *, null, not-a-url, http://localhost:3000",
+    )
+    origins = resolve_cors_allowed_origins()
+    assert "https://app.example.com" in origins
+    assert "http://localhost:3000" in origins
+    assert "*" not in origins
+    assert "null" not in origins
+    assert len(origins) == 2
+
+
+def test_is_public_route_exact_or_subpath_only():
+    from backend.src.app import PUBLIC_ROUTES, is_public_route
+
+    assert "/" not in PUBLIC_ROUTES
+    assert is_public_route("/health")
+    assert is_public_route("/health/check")
+    assert not is_public_route("/healthcheck")
+    assert is_public_route("/api/docs")
+    assert is_public_route("/api/docs/extra")
+    assert not is_public_route("/api/docs-evil")
+    assert is_public_route("/api/v1/auth/login")
+    assert not is_public_route("/api/v1/tasks")
+    assert not is_public_route("/api/v1/admin/stats")
+    assert not is_public_route("/")

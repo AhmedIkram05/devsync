@@ -1,7 +1,7 @@
 # This file is the entry point for the Flask application.
 
 import os
-import re
+from datetime import timedelta
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -11,8 +11,12 @@ from src.api import init_app as init_api
 from src.api.middlewares import setup_middlewares
 from src.config.config import (
     get_config,
+    is_valid_cors_origin,
+    normalize_origin,
+    resolve_cors_allowed_origins,
     resolve_fernet_keys,
     resolve_flask_secret,
+    resolve_frontend_url,
     resolve_jwt_secret,
     resolve_oauth_state_secret,
 )
@@ -27,12 +31,28 @@ load_dotenv(override=False)
 # Add the backend directory to the Python path
 backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
 
-from datetime import timedelta
-
-from flask import Flask, abort, jsonify, make_response, request, send_file
+from flask import Flask, jsonify, make_response, request, send_file
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
+
+PUBLIC_ROUTES = [
+    "/api/v1/auth/register",
+    "/api/v1/auth/login",
+    "/api/v1/github/callback",
+    "/api/v1/github/exchange",
+    "/api/v1/github/connect",
+    "/health",
+    "/api/docs",
+    "/api/swagger.yaml",
+]
+
+
+def is_public_route(path):
+    """Exact match or sub-path (route + '/'); naive startswith would leak."""
+    if not path:
+        return False
+    return any(path == route or path.startswith(route + "/") for route in PUBLIC_ROUTES)
 
 
 def create_app(config_class=None):
@@ -87,9 +107,7 @@ def create_app(config_class=None):
     fernet_keys = resolve_fernet_keys(explicit_value=explicit_fernet, jwt_secret=jwt_secret)
     app.config["FERNET_KEYS"] = fernet_keys
     app.config["FERNET_KEY"] = fernet_keys[0]
-    app.config["OAUTH_STATE_SECRET"] = resolve_oauth_state_secret(
-        explicit_value=explicit_oauth, jwt_secret=jwt_secret
-    )
+    app.config["OAUTH_STATE_SECRET"] = resolve_oauth_state_secret(explicit_value=explicit_oauth, jwt_secret=jwt_secret)
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")))
     app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
     app.config["JWT_TOKEN_LOCATION"] = ["cookies"]
@@ -162,62 +180,47 @@ def create_app(config_class=None):
 
     frontend_url = app.config.get("FRONTEND_URL") or os.getenv("FRONTEND_URL")
     if frontend_url:
-        parsed_frontend_url = urlparse(frontend_url)
-        if parsed_frontend_url.scheme and parsed_frontend_url.netloc:
-            explicit_allowed_origins.add(f"{parsed_frontend_url.scheme}://{parsed_frontend_url.netloc}")
+        token = frontend_url.strip()
+        if not is_valid_cors_origin(token):
+            raise ValueError(f"Invalid FRONTEND_URL: {frontend_url!r}. Must be like https://example.com")
+        parsed_frontend_url = urlparse(token)
+        if (
+            app_env == "production"
+            and parsed_frontend_url.scheme != "https"
+            and (parsed_frontend_url.hostname or "").lower() not in {"localhost", "127.0.0.1", "::1"}
+        ):
+            raise ValueError("FRONTEND_URL must use https in production")
+        explicit_allowed_origins.add(normalize_origin(token))
+    # Re-validate resolved value so a dict override cannot inject '*'/bad origin.
+    resolved_frontend = resolve_frontend_url(env=app_env)
+    if resolved_frontend:
+        explicit_allowed_origins.add(resolved_frontend)
 
-    extra_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
-    if extra_origins:
-        explicit_allowed_origins.update(origin.strip() for origin in extra_origins.split(",") if origin.strip())
-
-    allowed_origin_patterns = (
-        r"^https?://192\.168\.\d+\.\d+(:\d+)?$",
-        r"^https?://10\.\d+\.\d+\.\d+(:\d+)?$",
-        r"^https?://172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+(:\d+)?$",
-    )
-
-    def is_allowed_origin(origin):
-        return origin in explicit_allowed_origins or any(
-            re.match(pattern, origin) for pattern in allowed_origin_patterns
-        )
+    for extra in resolve_cors_allowed_origins():
+        explicit_allowed_origins.add(extra)
 
     CORS(
         app,
         supports_credentials=True,
         allow_headers=["Content-Type", "X-CSRF-TOKEN", "X-Requested-With"],
         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        origins=list(explicit_allowed_origins) + list(allowed_origin_patterns),
+        origins=sorted(explicit_allowed_origins),
         expose_headers=["Content-Type", "X-CSRF-TOKEN"],
         max_age=600,
     )
 
     @app.after_request
-    def add_cors_headers(response):
-        # Only add headers if they don't already exist
-        origin = request.headers.get("Origin")
-        if origin and is_allowed_origin(origin):
-            # Check if header already exists (added by Flask-CORS)
-            if "Access-Control-Allow-Origin" not in response.headers:
-                response.headers.add("Access-Control-Allow-Origin", origin)
-            if "Access-Control-Allow-Headers" not in response.headers:
-                response.headers.add("Access-Control-Allow-Headers", "Content-Type,X-CSRF-TOKEN")
-            if "Access-Control-Allow-Methods" not in response.headers:
-                response.headers.add("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS,PATCH")
-            if "Access-Control-Allow-Credentials" not in response.headers:
-                response.headers.add("Access-Control-Allow-Credentials", "true")
-            if "Access-Control-Max-Age" not in response.headers:
-                response.headers.add("Access-Control-Max-Age", "600")
+    def ensure_vary_origin(response):
+        if request.headers.get("Origin"):
+            vary = response.headers.get("Vary", "")
+            if "Origin" not in vary:
+                response.headers["Vary"] = f"{vary}, Origin" if vary else "Origin"
         return response
 
-    # Simplify options handler to prevent duplicate headers
     @app.route("/", methods=["OPTIONS"])
-    @app.route("/<path:path>", methods=["OPTIONS", "GET"])
+    @app.route("/<path:path>", methods=["OPTIONS"])
     def options_handler(path=None):
-        if request.method == "GET":
-            abort(404)
-        response = make_response()
-        # We don't add CORS headers here, the after_request will handle it
-        return response
+        return make_response()
 
     # JWT error handlers
     @jwt.expired_token_loader
@@ -272,26 +275,9 @@ def create_app(config_class=None):
             app.logger.warning("blocklist check failed (fail-open): %s", exc)
             return False
 
-    # Define public routes that don't need authentication
-    public_routes = [
-        "/",
-        "/api/v1/auth/register",
-        "/api/v1/auth/login",
-        "/api/v1/github/callback",
-        "/api/v1/github/exchange",
-        "/api/v1/github/connect",
-        "/health",
-        "/api/docs",
-        "/api/swagger.yaml",
-    ]
-
-    # Middleware to remove Flask-JWT auth requirements for public routes
     @app.before_request
     def handle_auth_exemptions():
-        path = request.path
-
-        # Skip JWT verification for OPTIONS requests and public routes
-        if request.method == "OPTIONS" or any(path.startswith(route) for route in public_routes):
+        if request.method == "OPTIONS" or is_public_route(request.path):
             return None
 
     # Initialize API routes (including auth routes)

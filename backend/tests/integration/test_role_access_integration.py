@@ -3,7 +3,7 @@ import sys
 from unittest.mock import MagicMock
 
 import pytest
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import create_access_token, get_csrf_token
 
 # Add backend directory to import src.* modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -48,10 +48,13 @@ def client(app):
     return app.test_client()
 
 
-def auth_headers(app, role, user_id=1):
+def auth_headers(client, app, role, user_id=1):
     with app.app_context():
         token = create_access_token(identity={"user_id": user_id}, additional_claims={"role": role})
-    return {"Authorization": f"Bearer {token}"}
+        csrf = get_csrf_token(token)
+    client.set_cookie("access_token_cookie", token)
+    client.set_cookie("csrf_access_token", csrf)
+    return {"X-CSRF-TOKEN": csrf}
 
 
 def test_users_route_allows_developers(client, app, monkeypatch):
@@ -63,18 +66,18 @@ def test_users_route_allows_developers(client, app, monkeypatch):
     assert handler.call_count == 0
 
     # Developer should be allowed
-    dev_response = client.get("/api/v1/users", headers=auth_headers(app, "developer"))
+    dev_response = client.get("/api/v1/users", headers=auth_headers(client, app, "developer"))
     assert dev_response.status_code == 200
     assert dev_response.get_json() == {"users": []}
     assert handler.call_count == 1
 
     # Team Lead should be allowed
-    team_lead_response = client.get("/api/v1/users", headers=auth_headers(app, "team_lead"))
+    team_lead_response = client.get("/api/v1/users", headers=auth_headers(client, app, "team_lead"))
     assert team_lead_response.status_code == 200
     assert team_lead_response.get_json() == {"users": []}
 
     # Admin should also be allowed (hierarchy)
-    allowed_response = client.get("/api/v1/users", headers=auth_headers(app, "admin"))
+    allowed_response = client.get("/api/v1/users", headers=auth_headers(client, app, "admin"))
     assert allowed_response.status_code == 200
     assert allowed_response.get_json() == {"users": []}
     assert handler.call_count == 3
@@ -88,17 +91,17 @@ def test_admin_stats_route_requires_admin_role(client, app, monkeypatch):
     assert unauthorized_response.status_code == 401
     assert handler.call_count == 0
 
-    forbidden_response = client.get("/api/v1/admin/stats", headers=auth_headers(app, "developer"))
+    forbidden_response = client.get("/api/v1/admin/stats", headers=auth_headers(client, app, "developer"))
     assert forbidden_response.status_code == 403
     assert forbidden_response.get_json()["message"] == "Insufficient permissions"
     assert handler.call_count == 0
 
     # Team Lead should be allowed
-    team_lead_response = client.get("/api/v1/admin/stats", headers=auth_headers(app, "team_lead"))
+    team_lead_response = client.get("/api/v1/admin/stats", headers=auth_headers(client, app, "team_lead"))
     assert team_lead_response.status_code == 200
     assert team_lead_response.get_json()["users"]["total"] == 5
 
-    allowed_response = client.get("/api/v1/admin/stats", headers=auth_headers(app, "admin"))
+    allowed_response = client.get("/api/v1/admin/stats", headers=auth_headers(client, app, "admin"))
     assert allowed_response.status_code == 200
     assert allowed_response.get_json()["users"]["total"] == 5
     assert handler.call_count == 2
@@ -112,12 +115,12 @@ def test_member_dashboard_route_requires_member_role(client, app, monkeypatch):
     assert unauthorized_response.status_code == 401
     assert handler.call_count == 0
 
-    forbidden_response = client.get("/api/v1/dashboard/client", headers=auth_headers(app, "admin"))
+    forbidden_response = client.get("/api/v1/dashboard/client", headers=auth_headers(client, app, "admin"))
     assert forbidden_response.status_code == 403
     assert forbidden_response.get_json()["message"] == "Insufficient permissions"
     assert handler.call_count == 0
 
-    allowed_response = client.get("/api/v1/dashboard/client", headers=auth_headers(app, "developer"))
+    allowed_response = client.get("/api/v1/dashboard/client", headers=auth_headers(client, app, "developer"))
     assert allowed_response.status_code == 200
     assert allowed_response.get_json() == {"projects": []}
     handler.assert_called_once_with()
@@ -133,7 +136,7 @@ def test_task_create_route_allows_developer_role(client, app, monkeypatch):
 
     allowed_response = client.post(
         "/api/v1/tasks",
-        headers=auth_headers(app, "developer"),
+        headers=auth_headers(client, app, "developer"),
         json={"title": "New"},
     )
     assert allowed_response.status_code == 201
@@ -142,7 +145,7 @@ def test_task_create_route_allows_developer_role(client, app, monkeypatch):
 
     allowed_response = client.post(
         "/api/v1/tasks",
-        headers=auth_headers(app, "team_lead"),
+        headers=auth_headers(client, app, "team_lead"),
         json={"title": "New"},
     )
     assert allowed_response.status_code == 201
@@ -158,11 +161,11 @@ def test_task_delete_route_allows_developer_role(client, app, monkeypatch):
     assert unauthorized_response.status_code == 401
     assert handler.call_count == 0
 
-    allowed_response = client.delete("/api/v1/tasks/1", headers=auth_headers(app, "developer"))
+    allowed_response = client.delete("/api/v1/tasks/1", headers=auth_headers(client, app, "developer"))
     assert allowed_response.status_code == 204
     handler.assert_called_once_with(1)
 
-    allowed_response = client.delete("/api/v1/tasks/1", headers=auth_headers(app, "admin"))
+    allowed_response = client.delete("/api/v1/tasks/1", headers=auth_headers(client, app, "admin"))
     assert allowed_response.status_code == 204
     assert handler.call_count == 2
 
@@ -177,7 +180,7 @@ def test_project_create_route_requires_admin_role(client, app, monkeypatch):
 
     forbidden_response = client.post(
         "/api/v1/projects",
-        headers=auth_headers(app, "developer"),
+        headers=auth_headers(client, app, "developer"),
         json={"name": "New", "description": "Desc"},
     )
     assert forbidden_response.status_code == 403
@@ -186,7 +189,7 @@ def test_project_create_route_requires_admin_role(client, app, monkeypatch):
 
     allowed_response = client.post(
         "/api/v1/projects",
-        headers=auth_headers(app, "admin"),
+        headers=auth_headers(client, app, "admin"),
         json={"name": "New", "description": "Desc"},
     )
     assert allowed_response.status_code == 201
@@ -204,7 +207,7 @@ def test_project_update_route_requires_admin_role(client, app, monkeypatch):
 
     forbidden_response = client.put(
         "/api/v1/projects/5",
-        headers=auth_headers(app, "developer"),
+        headers=auth_headers(client, app, "developer"),
         json={"name": "Update"},
     )
     assert forbidden_response.status_code == 403
@@ -213,7 +216,7 @@ def test_project_update_route_requires_admin_role(client, app, monkeypatch):
 
     allowed_response = client.put(
         "/api/v1/projects/5",
-        headers=auth_headers(app, "admin"),
+        headers=auth_headers(client, app, "admin"),
         json={"name": "Update"},
     )
     assert allowed_response.status_code == 200
@@ -229,12 +232,12 @@ def test_project_delete_route_requires_admin_role(client, app, monkeypatch):
     assert unauthorized_response.status_code == 401
     assert handler.call_count == 0
 
-    forbidden_response = client.delete("/api/v1/projects/5", headers=auth_headers(app, "developer"))
+    forbidden_response = client.delete("/api/v1/projects/5", headers=auth_headers(client, app, "developer"))
     assert forbidden_response.status_code == 403
     assert forbidden_response.get_json()["message"] == "Insufficient permissions"
     assert handler.call_count == 0
 
-    allowed_response = client.delete("/api/v1/projects/5", headers=auth_headers(app, "admin"))
+    allowed_response = client.delete("/api/v1/projects/5", headers=auth_headers(client, app, "admin"))
     assert allowed_response.status_code == 204
     handler.assert_called_once_with(5)
 
@@ -247,12 +250,12 @@ def test_admin_dashboard_route_requires_admin_role(client, app, monkeypatch):
     assert unauthorized_response.status_code == 401
     assert handler.call_count == 0
 
-    forbidden_response = client.get("/api/v1/dashboard/admin", headers=auth_headers(app, "developer"))
+    forbidden_response = client.get("/api/v1/dashboard/admin", headers=auth_headers(client, app, "developer"))
     assert forbidden_response.status_code == 403
     assert forbidden_response.get_json()["message"] == "Insufficient permissions"
     assert handler.call_count == 0
 
-    allowed_response = client.get("/api/v1/dashboard/admin", headers=auth_headers(app, "admin"))
+    allowed_response = client.get("/api/v1/dashboard/admin", headers=auth_headers(client, app, "admin"))
     assert allowed_response.status_code == 200
     assert allowed_response.get_json()["stats"]["total_users"] == 3
     handler.assert_called_once_with()
@@ -266,7 +269,7 @@ def test_project_tasks_route_requires_auth_and_passes_project_id(client, app, mo
     assert unauthorized_response.status_code == 401
     assert handler.call_count == 0
 
-    allowed_response = client.get("/api/v1/projects/42/tasks", headers=auth_headers(app, "developer"))
+    allowed_response = client.get("/api/v1/projects/42/tasks", headers=auth_headers(client, app, "developer"))
     assert allowed_response.status_code == 200
     assert allowed_response.get_json() == {"tasks": []}
     handler.assert_called_once_with(42)
@@ -282,19 +285,19 @@ def test_comments_routes_enforce_auth_and_json_contract(client, app, monkeypatch
     assert unauthorized_get_response.status_code == 401
     assert get_comments_handler.call_count == 0
 
-    allowed_get_response = client.get("/api/v1/tasks/7/comments", headers=auth_headers(app, "developer"))
+    allowed_get_response = client.get("/api/v1/tasks/7/comments", headers=auth_headers(client, app, "developer"))
     assert allowed_get_response.status_code == 200
     assert allowed_get_response.get_json() == {"comments": []}
     get_comments_handler.assert_called_once_with(7)
 
-    missing_json_response = client.post("/api/v1/tasks/7/comments", headers=auth_headers(app, "developer"))
+    missing_json_response = client.post("/api/v1/tasks/7/comments", headers=auth_headers(client, app, "developer"))
     assert missing_json_response.status_code == 400
     assert missing_json_response.get_json()["message"] == "Missing JSON in request body"
     assert create_comment_handler.call_count == 0
 
     allowed_create_response = client.post(
         "/api/v1/tasks/7/comments",
-        headers=auth_headers(app, "developer"),
+        headers=auth_headers(client, app, "developer"),
         json={"content": "hello"},
     )
     assert allowed_create_response.status_code == 201
@@ -336,3 +339,31 @@ def test_github_callback_post_rejects_invalid_request_and_failed_exchange(client
     assert failed_exchange_response.get_json()["error"] == "Failed to obtain access token"
     parse_state.assert_called_once_with("state-without-token")
     exchange_code.assert_called_once_with("test-code")
+
+
+def test_unauthenticated_protected_routes_require_auth(client):
+    # P0-6 regression: "/" must not act as a public wildcard.
+    assert client.get("/api/v1/tasks").status_code == 401
+    assert client.get("/api/v1/tasks/1").status_code == 401
+    assert client.get("/api/v1/admin/stats").status_code == 401
+    assert client.get("/api/v1/admin/settings").status_code == 401
+
+
+def test_cors_rfc1918_origin_gets_no_credentials(client):
+    resp = client.get("/health", headers={"Origin": "http://192.168.1.5:3000"})
+    assert resp.headers.get("Access-Control-Allow-Origin") in (None, "")
+    assert resp.headers.get("Access-Control-Allow-Credentials") in (None, "")
+    assert "10.0.0.5" not in str(resp.headers.get("Access-Control-Allow-Origin"))
+
+
+def test_cors_allowed_origin_works_with_vary(client):
+    resp = client.get("/health", headers={"Origin": "http://localhost:3000"})
+    assert resp.headers.get("Access-Control-Allow-Origin") == "http://localhost:3000"
+    assert resp.headers.get("Access-Control-Allow-Credentials") == "true"
+    assert "Origin" in resp.headers.get("Vary", "")
+
+
+def test_options_handler_does_not_swallow_gets(client):
+    assert client.options("/api/v1/tasks").status_code in (200, 204)
+    # Legit protected GET must 401 (auth), never 404 from a catch-all GET handler.
+    assert client.get("/api/v1/tasks").status_code == 401
