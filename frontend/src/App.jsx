@@ -52,15 +52,11 @@ const ProtectedRoute = ({ children, allowedRoles = [], requiredPermission = null
     );
   }
 
-  // Check if user is authenticated
+  // Check if user is authenticated. Sessions are cookie-based (HttpOnly):
+  // a populated profile (from login or /auth/me) is the authentication proof,
+  // there is no client-held token.
   if (!currentUser) {
     console.log("Protected route: No user found, redirecting to login");
-    return <Navigate to="/login" replace />;
-  }
-
-  // Check if the token exists
-  if (!currentUser.token) {
-    console.log("Protected route: User has no token, redirecting to login");
     return <Navigate to="/login" replace />;
   }
 

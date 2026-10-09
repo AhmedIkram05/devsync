@@ -11,7 +11,6 @@ describe('Notification Flows', () => {
       email: 'dev@example.com',
       role: 'developer',
       github_connected: true,
-      token: 'dev-token',
       permissions: ['view_tasks', 'view_projects']
     };
     localStorage.setItem('user', JSON.stringify(user));
