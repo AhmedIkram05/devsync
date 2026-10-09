@@ -3,7 +3,7 @@ import sys
 from unittest.mock import MagicMock
 
 import pytest
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import create_access_token, get_csrf_token
 
 # Add backend directory to import src.* modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -39,11 +39,14 @@ def client(app):
 
 
 @pytest.fixture
-def auth_headers(app):
+def auth_headers(client, app):
     def _auth_headers(role, user_id=1):
         with app.app_context():
             token = create_access_token(identity={"user_id": user_id}, additional_claims={"role": role})
-        return {"Authorization": f"Bearer {token}"}
+            csrf = get_csrf_token(token)
+        client.set_cookie("access_token_cookie", token)
+        client.set_cookie("csrf_access_token", csrf)
+        return {"X-CSRF-TOKEN": csrf}
 
     return _auth_headers
 

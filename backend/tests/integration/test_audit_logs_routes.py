@@ -5,7 +5,7 @@ import sys
 from unittest.mock import MagicMock
 
 import pytest
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import create_access_token, get_csrf_token
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
@@ -39,10 +39,13 @@ def client(app):
     return app.test_client()
 
 
-def auth_headers(app, role, user_id=1):
+def auth_headers(client, app, role, user_id=1):
     with app.app_context():
         token = create_access_token(identity={"user_id": user_id}, additional_claims={"role": role})
-    return {"Authorization": f"Bearer {token}"}
+        csrf = get_csrf_token(token)
+    client.set_cookie("access_token_cookie", token)
+    client.set_cookie("csrf_access_token", csrf)
+    return {"X-CSRF-TOKEN": csrf}
 
 
 def test_audit_logs_requires_auth(client):
@@ -54,7 +57,7 @@ def test_audit_logs_requires_auth(client):
 def test_audit_logs_requires_admin(client, app):
     """Developer and Team Lead must be denied."""
     for role in ("developer", "team_lead"):
-        resp = client.get("/api/v1/admin/audit-logs", headers=auth_headers(app, role))
+        resp = client.get("/api/v1/admin/audit-logs", headers=auth_headers(client, app, role))
         assert resp.status_code == 403, f"{role} should be denied"
 
 
@@ -63,7 +66,7 @@ def test_audit_logs_admin_allowed(client, app, monkeypatch):
     handler = MagicMock(return_value=({"logs": [], "total": 0, "pages": 0, "current_page": 1}, 200))
     monkeypatch.setattr(audit_routes, "get_audit_logs", handler)
 
-    resp = client.get("/api/v1/admin/audit-logs", headers=auth_headers(app, "admin"))
+    resp = client.get("/api/v1/admin/audit-logs", headers=auth_headers(client, app, "admin"))
     assert resp.status_code == 200
     data = resp.get_json()
     assert "logs" in data
@@ -72,7 +75,7 @@ def test_audit_logs_admin_allowed(client, app, monkeypatch):
 
 def test_audit_log_detail_requires_admin(client, app):
     """GET /admin/audit-logs/<id> must require admin."""
-    resp = client.get("/api/v1/admin/audit-logs/1", headers=auth_headers(app, "developer"))
+    resp = client.get("/api/v1/admin/audit-logs/1", headers=auth_headers(client, app, "developer"))
     assert resp.status_code == 403
 
 
@@ -81,6 +84,6 @@ def test_audit_log_detail_admin_allowed(client, app, monkeypatch):
     handler = MagicMock(return_value=({"log": {"id": 1, "action": "user_login"}}, 200))
     monkeypatch.setattr(audit_routes, "get_audit_log_by_id", handler)
 
-    resp = client.get("/api/v1/admin/audit-logs/1", headers=auth_headers(app, "admin"))
+    resp = client.get("/api/v1/admin/audit-logs/1", headers=auth_headers(client, app, "admin"))
     assert resp.status_code == 200
     handler.assert_called_once_with(1)

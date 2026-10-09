@@ -5,7 +5,7 @@ import sys
 from unittest.mock import MagicMock
 
 import pytest
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import create_access_token, get_csrf_token
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
@@ -39,10 +39,13 @@ def client(app):
     return app.test_client()
 
 
-def auth_headers(app, role, user_id=1):
+def auth_headers(client, app, role, user_id=1):
     with app.app_context():
         token = create_access_token(identity={"user_id": user_id}, additional_claims={"role": role})
-    return {"Authorization": f"Bearer {token}"}
+        csrf = get_csrf_token(token)
+    client.set_cookie("access_token_cookie", token)
+    client.set_cookie("csrf_access_token", csrf)
+    return {"X-CSRF-TOKEN": csrf}
 
 
 def test_get_user_self_developer(client, app, monkeypatch):
@@ -50,7 +53,7 @@ def test_get_user_self_developer(client, app, monkeypatch):
     handler = MagicMock(return_value=({"user": {"id": 5, "name": "Dev"}}, 200))
     monkeypatch.setattr(users_routes, "get_user_by_id", handler)
 
-    resp = client.get("/api/v1/users/5", headers=auth_headers(app, "developer", user_id=5))
+    resp = client.get("/api/v1/users/5", headers=auth_headers(client, app, "developer", user_id=5))
     assert resp.status_code == 200
     handler.assert_called_once_with(5)
 
@@ -60,7 +63,7 @@ def test_get_user_other_developer_denied(client, app, monkeypatch):
     handler = MagicMock(return_value=({"user": {"id": 6}}, 200))
     monkeypatch.setattr(users_routes, "get_user_by_id", handler)
 
-    resp = client.get("/api/v1/users/6", headers=auth_headers(app, "developer", user_id=5))
+    resp = client.get("/api/v1/users/6", headers=auth_headers(client, app, "developer", user_id=5))
     # The route guard should block before reaching the handler
     assert resp.status_code == 403
 
@@ -70,7 +73,7 @@ def test_get_user_team_lead_can_view_others(client, app, monkeypatch):
     handler = MagicMock(return_value=({"user": {"id": 6}}, 200))
     monkeypatch.setattr(users_routes, "get_user_by_id", handler)
 
-    resp = client.get("/api/v1/users/6", headers=auth_headers(app, "team_lead", user_id=5))
+    resp = client.get("/api/v1/users/6", headers=auth_headers(client, app, "team_lead", user_id=5))
     assert resp.status_code == 200
     handler.assert_called_once_with(6)
 
@@ -80,7 +83,7 @@ def test_get_user_admin_can_view_others(client, app, monkeypatch):
     handler = MagicMock(return_value=({"user": {"id": 6}}, 200))
     monkeypatch.setattr(users_routes, "get_user_by_id", handler)
 
-    resp = client.get("/api/v1/users/6", headers=auth_headers(app, "admin", user_id=5))
+    resp = client.get("/api/v1/users/6", headers=auth_headers(client, app, "admin", user_id=5))
     assert resp.status_code == 200
     handler.assert_called_once_with(6)
 
