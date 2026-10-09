@@ -550,6 +550,62 @@ def test_dashboard_project_route_returns_project_metrics(client, app, monkeypatc
     assert payload["team_members"][0]["name"] == "Developer One"
 
 
+def test_logout_revokes_access_token(app):
+    from src.auth.token_blocklist import reset_for_tests
+
+    reset_for_tests()
+    client = app.test_client()
+    headers = auth_headers(app, user_id=501)
+    logout_response = client.post("/api/v1/auth/logout", headers=headers)
+    assert logout_response.status_code == 200
+
+    # Revoked access token is now rejected (fresh client: header-only).
+    verifier = app.test_client()
+    me_response = verifier.get("/api/v1/auth/me", headers=headers)
+    assert me_response.status_code == 401
+
+
+def test_refresh_rotates_and_old_refresh_rejected(app):
+    from src.auth.token_blocklist import reset_for_tests
+
+    reset_for_tests()
+    client = app.test_client()
+    old_headers = refresh_headers(app, user_id=502)
+    first = client.post("/api/v1/auth/refresh", headers=old_headers)
+    assert first.status_code == 200
+    assert "token" in first.get_json()
+
+    # Rotation sets a fresh refresh cookie for the next cycle.
+    set_cookies = first.headers.getlist("Set-Cookie")
+    assert any("refresh_token_cookie" in c for c in set_cookies)
+
+    # Old refresh jti is single-use: reuse is rejected (fresh client: header-only).
+    reuser = app.test_client()
+    reuse = reuser.post("/api/v1/auth/refresh", headers=old_headers)
+    assert reuse.status_code == 401
+
+
+def test_refresh_reuse_revokes_user_tokens(app):
+    from src.auth.token_blocklist import reset_for_tests
+
+    reset_for_tests()
+    client = app.test_client()
+    old_headers = refresh_headers(app, user_id=503)
+    rotated = client.post("/api/v1/auth/refresh", headers=old_headers)
+    assert rotated.status_code == 200
+    rotated_access = rotated.get_json()["token"]
+
+    # Reusing the old refresh triggers user-wide revocation (fresh client).
+    reuser = app.test_client()
+    reuse = reuser.post("/api/v1/auth/refresh", headers=old_headers)
+    assert reuse.status_code == 401
+
+    # The rotated access token (issued before the reuse epoch) is now dead.
+    verifier = app.test_client()
+    stale_response = verifier.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {rotated_access}"})
+    assert stale_response.status_code == 401
+
+
 def test_dashboard_project_route_returns_404_for_missing_project(client, app, monkeypatch):
     class StubProject:
         query = MagicMock()

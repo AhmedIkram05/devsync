@@ -254,12 +254,18 @@ def test_get_token_success_returns_minimal_token_contract(monkeypatch):
 def test_refresh_token_keeps_role_from_claims(monkeypatch):
     app = build_test_app()
     set_access_cookies = MagicMock()
+    set_refresh_cookies = MagicMock()
     create_access_token = MagicMock(return_value="refreshed-access")
+    create_refresh_token = MagicMock(return_value="refreshed-refresh")
 
     monkeypatch.setattr(auth_module, "get_jwt_identity", MagicMock(return_value={"user_id": 21}))
-    monkeypatch.setattr(auth_module, "get_jwt", MagicMock(return_value={"role": "team_lead"}))
+    monkeypatch.setattr(auth_module, "get_jwt", MagicMock(return_value={"role": "team_lead", "jti": "jti-1"}))
+    monkeypatch.setattr(auth_module, "is_token_revoked", MagicMock(return_value=False))
+    monkeypatch.setattr(auth_module, "revoke_jwt_payload", MagicMock())
     monkeypatch.setattr(auth_module, "create_access_token", create_access_token)
+    monkeypatch.setattr(auth_module, "create_refresh_token", create_refresh_token)
     monkeypatch.setattr(auth_module, "set_access_cookies", set_access_cookies)
+    monkeypatch.setattr(auth_module, "set_refresh_cookies", set_refresh_cookies)
 
     with app.test_request_context():
         response = auth_module.refresh_token()
@@ -268,23 +274,31 @@ def test_refresh_token_keeps_role_from_claims(monkeypatch):
     assert payload["message"] == "Token refreshed successfully"
     assert payload["token"] == "refreshed-access"
     create_access_token.assert_called_once_with(identity={"user_id": 21}, additional_claims={"role": "team_lead"})
+    create_refresh_token.assert_called_once_with(identity={"user_id": 21}, additional_claims={"role": "team_lead"})
     set_access_cookies.assert_called_once_with(response, "refreshed-access")
+    set_refresh_cookies.assert_called_once_with(response, "refreshed-refresh")
 
 
 def test_refresh_token_backfills_missing_role_from_db_user(monkeypatch):
     app = build_test_app()
     set_access_cookies = MagicMock()
+    set_refresh_cookies = MagicMock()
     create_access_token = MagicMock(return_value="refreshed-access")
+    create_refresh_token = MagicMock(return_value="refreshed-refresh")
     stub_user = SimpleNamespace(role="developer")
     stub_query = MagicMock()
     stub_query.get.return_value = stub_user
     stub_user_model = SimpleNamespace(query=stub_query)
 
     monkeypatch.setattr(auth_module, "get_jwt_identity", MagicMock(return_value={"user_id": 34}))
-    monkeypatch.setattr(auth_module, "get_jwt", MagicMock(return_value={}))
+    monkeypatch.setattr(auth_module, "get_jwt", MagicMock(return_value={"jti": "jti-2"}))
+    monkeypatch.setattr(auth_module, "is_token_revoked", MagicMock(return_value=False))
+    monkeypatch.setattr(auth_module, "revoke_jwt_payload", MagicMock())
     monkeypatch.setattr(auth_module, "User", stub_user_model)
     monkeypatch.setattr(auth_module, "create_access_token", create_access_token)
+    monkeypatch.setattr(auth_module, "create_refresh_token", create_refresh_token)
     monkeypatch.setattr(auth_module, "set_access_cookies", set_access_cookies)
+    monkeypatch.setattr(auth_module, "set_refresh_cookies", set_refresh_cookies)
 
     with app.test_request_context():
         response = auth_module.refresh_token()
@@ -294,3 +308,50 @@ def test_refresh_token_backfills_missing_role_from_db_user(monkeypatch):
     create_access_token.assert_called_once_with(identity={"user_id": 34}, additional_claims={"role": "developer"})
     stub_query.get.assert_called_once_with(34)
     set_access_cookies.assert_called_once_with(response, "refreshed-access")
+    set_refresh_cookies.assert_called_once_with(response, "refreshed-refresh")
+
+
+def test_refresh_reuse_detected_revokes_all_and_returns_401(monkeypatch):
+    app = build_test_app()
+    revoke_all = MagicMock()
+    audit_record = MagicMock()
+
+    monkeypatch.setattr(auth_module, "get_jwt_identity", MagicMock(return_value={"user_id": 99}))
+    monkeypatch.setattr(auth_module, "get_jwt", MagicMock(return_value={"jti": "reused-jti", "role": "developer"}))
+    monkeypatch.setattr(auth_module, "is_token_revoked", MagicMock(return_value=True))
+    monkeypatch.setattr(auth_module, "revoke_all_user_tokens", revoke_all)
+    monkeypatch.setattr(auth_module.audit_service, "record", audit_record)
+
+    with app.test_request_context():
+        response, status = auth_module.refresh_token()
+
+    assert status == 401
+    assert response.get_json()["message"] == "Refresh token has been revoked"
+    revoke_all.assert_called_once_with(99)
+    audit_record.assert_called_once()
+    assert audit_record.call_args.kwargs.get("action") == "refresh_reuse_detected"
+
+
+def test_logout_revokes_token_and_clears_cookies(monkeypatch):
+    app = build_test_app()
+    revoke_payload = MagicMock()
+    revoke_all = MagicMock()
+    unset_cookies = MagicMock()
+    audit_record = MagicMock()
+
+    monkeypatch.setattr(auth_module, "get_jwt", MagicMock(return_value={"jti": "logout-jti", "role": "developer"}))
+    monkeypatch.setattr(auth_module, "get_jwt_identity", MagicMock(return_value={"user_id": 7}))
+    monkeypatch.setattr(auth_module, "revoke_jwt_payload", revoke_payload)
+    monkeypatch.setattr(auth_module, "revoke_all_user_tokens", revoke_all)
+    monkeypatch.setattr(auth_module, "unset_jwt_cookies", unset_cookies)
+    monkeypatch.setattr(auth_module.audit_service, "record", audit_record)
+
+    with app.test_request_context():
+        response = auth_module.logout_user()
+
+    assert response.get_json()["message"] == "Logout successful"
+    revoke_payload.assert_called_once_with({"jti": "logout-jti", "role": "developer"})
+    revoke_all.assert_called_once_with(7)
+    unset_cookies.assert_called_once_with(response)
+    audit_record.assert_called_once()
+    assert audit_record.call_args.kwargs.get("action") == "user_logout"

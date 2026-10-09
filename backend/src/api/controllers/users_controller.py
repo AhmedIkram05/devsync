@@ -181,6 +181,12 @@ def update_user(user_id):
 
     db.session.commit()
 
+    # Password or role change invalidates existing tokens.
+    if "password" in changed_fields or "role" in changed_fields:
+        from ...auth.token_blocklist import revoke_all_user_tokens
+
+        revoke_all_user_tokens(user.id)
+
     audit_service.record(action="user_updated", resource_type="user", resource_id=user.id, metadata={"role": user.role})
     emit_dashboard_refresh("user_updated", resource_type="user", resource_id=user.id, payload={"role": user.role})
 
@@ -292,8 +298,18 @@ def update_current_user_profile():
         if not verify_password(data["current_password"], user.password):
             return jsonify({"message": "Current password is incorrect"}), 400
         user.password = hash_password(data["new_password"])
+        password_changed = True
+    else:
+        password_changed = False
 
     db.session.commit()
+
+    # Password change invalidates existing tokens so stolen sessions die.
+    if password_changed:
+        from ...auth.token_blocklist import revoke_all_user_tokens
+
+        revoke_all_user_tokens(user.id)
+        audit_service.record(action="password_changed", resource_type="user", resource_id=user.id)
 
     return jsonify(
         {"message": "Profile updated successfully", "user": {"id": user.id, "name": user.name, "email": user.email}}

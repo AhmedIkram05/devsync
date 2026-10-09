@@ -232,10 +232,45 @@ def create_app(config_class=None):
     def missing_token_callback(error):
         return {"status": 401, "message": "Authentication token is missing", "error": "authorization_required"}, 401
 
+    @jwt.revoked_token_loader
+    def revoked_token_callback(jwt_header, jwt_payload):
+        # Refresh reuse detection (fail-closed): a revoked refresh jti
+        # presented again revokes every user token + audits, then 401s.
+        if jwt_payload.get("type") == "refresh":
+            try:
+                from src.auth.token_blocklist import revoke_all_user_tokens
+
+                identity = jwt_payload.get("identity", jwt_payload.get("sub"))
+                user_id = identity.get("user_id") if isinstance(identity, dict) else identity
+                if user_id is not None:
+                    revoke_all_user_tokens(user_id)
+                try:
+                    from src.services import audit_service
+
+                    audit_service.record(
+                        action="refresh_reuse_detected",
+                        actor={"user_id": user_id, "role": jwt_payload.get("role")},
+                        resource_type="user",
+                        resource_id=user_id,
+                    )
+                except Exception:
+                    app.logger.warning("refresh reuse audit failed", exc_info=True)
+            except Exception as exc:
+                app.logger.warning("refresh reuse revocation failed: %s", exc)
+        return {"status": 401, "message": "The authentication token has been revoked", "error": "token_revoked"}, 401
+
     # Modified exempt function to correctly bypass JWT and auth checks for public routes
     @jwt.token_in_blocklist_loader
     def check_if_token_is_revoked(jwt_header, jwt_payload):
-        return False
+        # Fail-open for availability: backend errors log + metric and allow
+        # the request; refresh rotation itself is fail-closed on reuse.
+        try:
+            from src.auth.token_blocklist import is_token_revoked
+
+            return is_token_revoked(jwt_payload)
+        except Exception as exc:
+            app.logger.warning("blocklist check failed (fail-open): %s", exc)
+            return False
 
     # Define public routes that don't need authentication
     public_routes = [
