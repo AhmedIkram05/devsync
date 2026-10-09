@@ -8,12 +8,31 @@
 
 import base64
 import hashlib
+import logging
 import os
 
 from cryptography.fernet import Fernet, InvalidToken
 from flask import current_app
 
+logger = logging.getLogger(__name__)
+
+try:
+    from src.config.config import INSECURE_JWT_DEFAULTS, is_testing_environment
+except ImportError:  # Fallback for backend.src.* import path.
+    try:
+        from backend.src.config.config import INSECURE_JWT_DEFAULTS, is_testing_environment
+    except ImportError:
+        INSECURE_JWT_DEFAULTS = frozenset({"", "dev-secret-key"})
+
+        def is_testing_environment(env=None):
+            env = env if env is not None else os.getenv("FLASK_ENV", "development")
+            if str(env).lower() == "testing":
+                return True
+            return bool(os.getenv("PYTEST_CURRENT_TEST"))
+
+
 FERNET_ENV_KEY = "FERNET_KEY"
+# Retained for backward compatibility; never used silently outside testing.
 LEGACY_SECRET_FALLBACK = "dev-secret-key"
 
 
@@ -35,7 +54,19 @@ def _resolve_key():
     if fernet_key:
         return fernet_key.encode("utf-8")
 
-    secret = secret_key or os.getenv("JWT_SECRET_KEY", LEGACY_SECRET_FALLBACK)
+    secret = secret_key or os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY")
+    if isinstance(secret, str):
+        secret = secret.strip()
+    if not secret or secret in INSECURE_JWT_DEFAULTS:
+        if is_testing_environment():
+            secret = secret or LEGACY_SECRET_FALLBACK
+        else:
+            logger.error("JWT/SECRET_KEY missing or insecure for encryption key derivation")
+            raise RuntimeError(
+                "JWT_SECRET_KEY is required and must not be a default/placeholder. "
+                "Set JWT_SECRET_KEY to a strong random value. "
+                'Generate with: python3 -c "import secrets; print(secrets.token_hex(32))"'
+            )
     return _derive_key_from_secret(secret)
 
 
@@ -53,6 +84,6 @@ def decrypt_token(stored):
     try:
         return Fernet(_resolve_key()).decrypt(stored.encode("utf-8")).decode("utf-8")
     except (InvalidToken, ValueError):
-        # ponytail: legacy plaintext rows written before encryption-at-rest
+        # Legacy plaintext rows written before encryption-at-rest
         # remain readable; the next OAuth re-link rewrites them as ciphertext.
         return stored

@@ -1,5 +1,6 @@
 """Application configuration for DevSync."""
 
+import logging
 import os
 import re
 from ipaddress import ip_address
@@ -9,8 +10,21 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 POSTGRES_URL_EXAMPLE = "postgresql://<db_user>:<db_password>@localhost:5432/devsync"
 LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "db", "postgres"}
+
+# Known insecure placeholders that must never be used outside tests.
+# Fail-closed: missing or matching values raise RuntimeError unless testing.
+INSECURE_JWT_DEFAULTS = frozenset(
+    {
+        "",
+        "dev-secret-key",
+        "your-super-secret-key-for-development-only",
+        "change-me-in-local-env",
+    }
+)
 
 
 def _normalize_postgres_scheme(database_url):
@@ -104,6 +118,41 @@ def _resolve_database_uri(env):
     return final_url
 
 
+def is_testing_environment(env=None):
+    """True only for unit-test runs: FLASK_ENV==testing or pytest active."""
+    if env is None:
+        env = os.getenv("FLASK_ENV", "development")
+    if str(env).lower() == "testing":
+        return True
+    return bool(os.getenv("PYTEST_CURRENT_TEST"))
+
+
+def resolve_jwt_secret(explicit_value=None):
+    """Return validated JWT secret, fail-closed outside testing.
+
+    Checks explicit_value, then JWT_SECRET_KEY, then SECRET_KEY env vars.
+    Raises RuntimeError if missing or a known default and not testing.
+    Testing fallback (FLASK_ENV==testing or PYTEST_CURRENT_TEST) returns
+    the provided value or a test-only fallback without raising.
+    """
+    env = os.getenv("FLASK_ENV", "development")
+    testing = is_testing_environment(env)
+    raw = explicit_value
+    if raw is None:
+        raw = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY")
+    secret = str(raw).strip() if isinstance(raw, str) else raw
+    if not secret or secret in INSECURE_JWT_DEFAULTS:
+        if testing:
+            return secret or "test-secret-key-for-unit-tests"
+        logger.error("JWT_SECRET_KEY missing or insecure in FLASK_ENV=%s", env)
+        raise RuntimeError(
+            "JWT_SECRET_KEY is required and must not be a default/placeholder. "
+            "Set JWT_SECRET_KEY to a strong random value. "
+            'Generate with: python3 -c "import secrets; print(secrets.token_hex(32))"'
+        )
+    return secret
+
+
 class Config:
     """Base configuration class for the application."""
 
@@ -119,10 +168,10 @@ class Config:
         "pool_timeout": int(os.getenv("DB_POOL_TIMEOUT", "30")),
         "pool_recycle": int(os.getenv("DB_POOL_RECYCLE", "1800")),
     }
-    SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key")
+    SECRET_KEY = resolve_jwt_secret()
 
     # JWT Configuration
-    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key")
+    JWT_SECRET_KEY = SECRET_KEY
     JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
 

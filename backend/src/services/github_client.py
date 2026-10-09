@@ -18,6 +18,20 @@ from itsdangerous import BadData, SignatureExpired, URLSafeTimedSerializer
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+try:
+    from src.config.config import INSECURE_JWT_DEFAULTS, is_testing_environment
+except ImportError:  # Fallback for backend.src.* import path.
+    try:
+        from backend.src.config.config import INSECURE_JWT_DEFAULTS, is_testing_environment
+    except ImportError:
+        INSECURE_JWT_DEFAULTS = frozenset({"", "dev-secret-key"})
+
+        def is_testing_environment(env=None):
+            env = env if env is not None else os.getenv("FLASK_ENV", "development")
+            if str(env).lower() == "testing":
+                return True
+            return bool(os.getenv("PYTEST_CURRENT_TEST"))
+
 
 class GitHubRateLimitError(Exception):
     """Raised when GitHub rate limits block further requests."""
@@ -50,7 +64,19 @@ class GitHubClient:
             secret_key = current_app.config.get("SECRET_KEY")
         except RuntimeError:
             secret_key = None
-        secret = secret_key or os.getenv("JWT_SECRET_KEY", "dev-secret-key")
+        secret = secret_key or os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY")
+        if isinstance(secret, str):
+            secret = secret.strip()
+        if not secret or secret in INSECURE_JWT_DEFAULTS:
+            if is_testing_environment():
+                secret = secret or "test-secret-key-for-unit-tests"
+            else:
+                logger.error("JWT/SECRET_KEY missing or insecure for GitHub OAuth state signing")
+                raise RuntimeError(
+                    "JWT_SECRET_KEY is required and must not be a default/placeholder. "
+                    "Set JWT_SECRET_KEY to a strong random value. "
+                    'Generate with: python3 -c "import secrets; print(secrets.token_hex(32))"'
+                )
         return URLSafeTimedSerializer(secret, salt="github-oauth-state")
 
     @staticmethod

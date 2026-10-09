@@ -9,7 +9,7 @@ from flask_swagger_ui import get_swaggerui_blueprint
 
 from src.api import init_app as init_api
 from src.api.middlewares import setup_middlewares
-from src.config.config import get_config
+from src.config.config import get_config, resolve_jwt_secret
 
 # Import before config-dependent modules to allow env vars to be read.
 from src.db.models import db
@@ -62,8 +62,14 @@ def create_app(config_class=None):
     # Configure database using the selected config class/environment.
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-    # Configure JWT
-    app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "your-super-secret-key-for-development-only")
+    # Configure JWT — fail-closed: no hardcoded fallback outside testing.
+    if isinstance(config_class, dict):
+        explicit_secret = config_class.get("JWT_SECRET_KEY") or config_class.get("SECRET_KEY")
+    else:
+        explicit_secret = app.config.get("JWT_SECRET_KEY") or app.config.get("SECRET_KEY")
+    jwt_secret = resolve_jwt_secret(explicit_value=explicit_secret)
+    app.config["SECRET_KEY"] = jwt_secret
+    app.config["JWT_SECRET_KEY"] = jwt_secret
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")))
     app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
     app.config["JWT_TOKEN_LOCATION"] = ["cookies", "headers"]
@@ -106,6 +112,11 @@ def create_app(config_class=None):
     # Apply any override configurations
     if config_class:
         app.config.update(config_class)
+
+    # Re-validate after overrides so a dict cannot inject a default/empty secret.
+    jwt_secret = resolve_jwt_secret(explicit_value=app.config.get("JWT_SECRET_KEY") or app.config.get("SECRET_KEY"))
+    app.config["SECRET_KEY"] = jwt_secret
+    app.config["JWT_SECRET_KEY"] = jwt_secret
 
     # Initialize extensions
     db.init_app(app)
