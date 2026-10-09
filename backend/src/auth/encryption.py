@@ -5,6 +5,7 @@
 # HKDF-derived fallback requires ALLOW_DERIVED_FERNET=true. Decryption
 # tries each key in FERNET_KEYS order so rotation keeps old rows readable.
 
+import hashlib
 import logging
 import os
 
@@ -77,6 +78,27 @@ def get_fernet_keys():
     raise RuntimeError("FERNET_KEY is required (config module unavailable).")
 
 
+def _hash_user_id(user_id):
+    """Log-safe short hash of a user id (never logs raw ids/secrets)."""
+    if user_id is None:
+        return "unknown"
+    return hashlib.sha256(str(user_id).encode("utf-8")).hexdigest()[:12]
+
+
+def _emit_decrypt_failure_metric():
+    """Hook for decrypt-failure metrics: log + optional statsd stub."""
+    logger.warning("metric=github_token_decrypt_failed total=1")
+    try:
+        import statsd  # type: ignore # optional, no hard dependency
+
+        host = os.getenv("STATSD_HOST")
+        if host:
+            client = statsd.StatsClient(host, 8125)
+            client.incr("github.token.decrypt_failed")
+    except Exception:
+        pass
+
+
 def _primary_key():
     return get_fernet_keys()[0]
 
@@ -93,8 +115,14 @@ def encrypt_token(plaintext):
     return Fernet(_resolve_key()).encrypt(plaintext.encode("utf-8")).decode("utf-8")
 
 
-def decrypt_token(stored):
-    """Decrypt a token read from storage; tries each rotation key in order."""
+def decrypt_token(stored, user_id=None):
+    """Decrypt a token read from storage; tries each rotation key in order.
+
+    Fail-closed: when no key decrypts the value (legacy plaintext rows,
+    corrupted ciphertext, or wrong rotation set) return None. Never
+    return the stored value as plaintext. Logs a warning with a hashed
+    user id only (no secret/token material) and emits a metric hook.
+    """
     if not stored:
         return None
     for key in get_fernet_keys():
@@ -102,6 +130,15 @@ def decrypt_token(stored):
             return Fernet(key.encode("utf-8")).decrypt(stored.encode("utf-8")).decode("utf-8")
         except (InvalidToken, ValueError):
             continue
-    # Legacy plaintext rows written before encryption-at-rest
-    # remain readable; the next OAuth re-link rewrites them as ciphertext.
-    return stored
+    user_hash = _hash_user_id(user_id)
+    try:
+        stored_len = len(stored) if isinstance(stored, str) else -1
+    except Exception:
+        stored_len = -1
+    logger.warning(
+        "GitHub token decrypt failed user_hash=%s stored_len=%d; needs re-link",
+        user_hash,
+        stored_len,
+    )
+    _emit_decrypt_failure_metric()
+    return None

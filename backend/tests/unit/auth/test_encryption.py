@@ -49,10 +49,21 @@ def test_encrypt_decrypt_none_values(app):
         assert decrypt_token("") is None
 
 
-def test_legacy_plaintext_rows_still_read(app):
-    # Rows written before encryption-at-rest are passed through unchanged.
+def test_invalid_token_returns_none(app):
+    # Fail-closed: undecryptable values never return plaintext.
     with app.app_context():
-        assert decrypt_token(RAW_ACCESS_TOKEN) == RAW_ACCESS_TOKEN
+        assert decrypt_token(RAW_ACCESS_TOKEN) is None
+        assert decrypt_token("not-a-fernet-token") is None
+        assert decrypt_token("gho_plaintext-legacy-row") is None
+
+
+def test_decrypt_failure_logs_without_secret(app, caplog):
+    with app.app_context():
+        with caplog.at_level("WARNING"):
+            assert decrypt_token("corrupted-ciphertext", user_id=42) is None
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    assert "corrupted-ciphertext" not in logged
+    assert "gho_" not in logged
 
 
 def test_token_column_holds_ciphertext_not_raw_token(app):
