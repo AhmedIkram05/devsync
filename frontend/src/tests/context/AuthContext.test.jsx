@@ -10,6 +10,7 @@ import { githubService } from '../../services/github';
 jest.mock('../../services/utils/auth', () => ({
   authApi: {
     getCurrentUser: jest.fn(),
+    verifySession: jest.fn(),
     login: jest.fn(),
     register: jest.fn(),
     logout: jest.fn(),
@@ -45,6 +46,7 @@ function AuthHarness() {
     connectGitHub,
     handleGithubPromptResponse,
     setCurrentUser,
+    verifyToken,
   } = useAuth();
 
   return (
@@ -84,7 +86,8 @@ function AuthHarness() {
         Logout
       </button>
       <button onClick={() => handleGithubPromptResponse(false)}>Skip Prompt</button>
-      <button onClick={() => setCurrentUser({ name: 'Updated User', token: '' })}>Update User</button>
+      <button onClick={() => setCurrentUser({ name: 'Updated User' })}>Update User</button>
+      <button onClick={() => { verifyToken().catch(() => {}); }}>Verify Session</button>
     </div>
   );
 }
@@ -99,6 +102,13 @@ const renderWithProvider = (initialEntries = ['/']) => {
   );
 };
 
+const storedProfile = (id, overrides = {}) => ({
+  id,
+  email: 'user@example.com',
+  role: 'developer',
+  ...overrides,
+});
+
 describe('AuthContext', () => {
   beforeEach(() => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -108,6 +118,17 @@ describe('AuthContext', () => {
     authApi.getCurrentUser.mockImplementation(() => {
       const rawUser = localStorage.getItem('user');
       return rawUser ? JSON.parse(rawUser) : null;
+    });
+    authApi.verifySession.mockImplementation(async () => {
+      const rawUser = localStorage.getItem('user');
+      if (!rawUser) {
+        throw new Error('No session');
+      }
+      const user = JSON.parse(rawUser);
+      if (!user.id || !user.email) {
+        throw new Error('No session');
+      }
+      return { user, exp: user.exp ?? null };
     });
 
     authApi.login.mockReset();
@@ -126,41 +147,40 @@ describe('AuthContext', () => {
     localStorage.clear();
   });
 
-  test('hydrates authenticated user from localStorage without loading flicker', () => {
-    localStorage.setItem(
-      'user',
-      JSON.stringify({ id: 1, email: 'user@example.com', token: 'token-1', role: 'developer' })
-    );
+  test('hydrates cached profile and validates session via /me without tokens', async () => {
+    localStorage.setItem('user', JSON.stringify(storedProfile(1)));
 
     renderWithProvider();
 
-    expect(screen.getByTestId('loading')).toHaveTextContent('false');
     expect(screen.getByTestId('user-id')).toHaveTextContent('1');
+    await waitFor(() => {
+      expect(authApi.verifySession).toHaveBeenCalled();
+    });
+    const stored = JSON.parse(localStorage.getItem('user'));
+    expect(stored.token).toBeUndefined();
   });
 
-  test('ignores stored users with legacy client role', () => {
+  test('ignores stored users with legacy client role', async () => {
     localStorage.setItem(
       'user',
-      JSON.stringify({ id: 1, email: 'user@example.com', token: 'token-1', role: 'client' })
+      JSON.stringify(storedProfile(1, { role: 'client' }))
     );
+    authApi.verifySession.mockRejectedValue(new Error('No session'));
 
     renderWithProvider();
 
-    expect(screen.getByTestId('user-id')).toHaveTextContent('none');
+    await waitFor(() => {
+      expect(screen.getByTestId('user-id')).toHaveTextContent('none');
+    });
     expect(localStorage.getItem('user')).toBeNull();
   });
 
-  test('login stores token, enables GitHub prompt, and keeps existing token on partial user update', async () => {
+  test('login stores sanitized profile, enables GitHub prompt, and merges updates without tokens', async () => {
     authApi.login.mockResolvedValue({
-      user: {
-        id: 7,
-        name: 'Dev User',
-        email: 'dev@example.com',
-        role: 'developer',
-        github_connected: false,
-      },
-      token: 'token-7',
+      user: storedProfile(7, { name: 'Dev User', github_connected: false }),
     });
+    // No valid cookie session at mount — user 7 must come from login, not cache.
+    authApi.verifySession.mockRejectedValue(new Error('No session'));
 
     renderWithProvider();
 
@@ -182,15 +202,29 @@ describe('AuthContext', () => {
     });
 
     const storedAfterLogin = JSON.parse(localStorage.getItem('user'));
-    expect(storedAfterLogin.token).toBe('token-7');
+    expect(storedAfterLogin.token).toBeUndefined();
+    expect(storedAfterLogin.id).toBe(7);
 
     fireEvent.click(screen.getByRole('button', { name: 'Update User' }));
     const storedAfterUpdate = JSON.parse(localStorage.getItem('user'));
     expect(storedAfterUpdate.name).toBe('Updated User');
-    expect(storedAfterUpdate.token).toBe('token-7');
+    expect(storedAfterUpdate.token).toBeUndefined();
 
     fireEvent.click(screen.getByRole('button', { name: 'Skip Prompt' }));
     expect(screen.getByTestId('show-prompt')).toHaveTextContent('false');
+  });
+
+  test('verifyToken validates the cookie session via /me', async () => {
+    localStorage.setItem('user', JSON.stringify(storedProfile(3)));
+    authApi.verifySession.mockResolvedValue({ user: storedProfile(3), exp: 123 });
+
+    renderWithProvider();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Verify Session' }));
+
+    await waitFor(() => {
+      expect(authApi.verifySession).toHaveBeenCalled();
+    });
   });
 
   test('connectGitHub shows auth-required error when no stored user exists', async () => {
@@ -208,10 +242,7 @@ describe('AuthContext', () => {
   });
 
   test('supports register and logout flows', async () => {
-    localStorage.setItem(
-      'user',
-      JSON.stringify({ id: 7, email: 'dev@example.com', token: 'token-7', role: 'developer' })
-    );
+    localStorage.setItem('user', JSON.stringify(storedProfile(7)));
     authApi.register.mockResolvedValue({ success: true });
     authApi.logout.mockResolvedValue({ success: true });
 
@@ -238,13 +269,11 @@ describe('AuthContext', () => {
   });
 
   test('handles explicit GitHub success callback query parameters', async () => {
-    // Server verification must agree with the callback, or its stale-state check
-    // races (and under Router 7's transition flushing, loses) the URL-param flow.
     githubService.checkConnection.mockResolvedValue({ connected: true, username: 'octocat' });
 
     localStorage.setItem(
       'user',
-      JSON.stringify({ id: 9, email: 'dev@example.com', token: 'token-9', role: 'developer', github_connected: false })
+      JSON.stringify(storedProfile(9, { github_connected: false }))
     );
 
     renderWithProvider(['/github/callback?github_success=true&github_username=octocat&user_id=9']);
@@ -262,7 +291,7 @@ describe('AuthContext', () => {
   test('handles OAuth code callback and updates connected user state', async () => {
     localStorage.setItem(
       'user',
-      JSON.stringify({ id: 11, email: 'dev@example.com', token: 'token-11', role: 'developer', github_connected: false })
+      JSON.stringify(storedProfile(11, { github_connected: false }))
     );
     githubService.completeOAuthFlow.mockResolvedValue({ success: true, github_username: 'octo' });
 
@@ -284,7 +313,7 @@ describe('AuthContext', () => {
 
     expect(screen.getByTestId('error-text')).toHaveTextContent('GitHub connection error: access_denied');
 
-    authApi.login.mockResolvedValue({ token: 'token-only' });
+    authApi.login.mockResolvedValue({ message: 'no user' });
     fireEvent.click(screen.getByRole('button', { name: 'Login' }));
 
     await waitFor(() => {
@@ -295,7 +324,7 @@ describe('AuthContext', () => {
   test('reconciles stale github_connected state when backend check reports disconnected', async () => {
     localStorage.setItem(
       'user',
-      JSON.stringify({ id: 15, email: 'dev@example.com', token: 'token-15', role: 'developer', github_connected: true, github_username: 'old' })
+      JSON.stringify(storedProfile(15, { github_connected: true, github_username: 'old' }))
     );
     githubService.checkConnection.mockResolvedValue({ connected: false });
 
@@ -308,33 +337,33 @@ describe('AuthContext', () => {
     });
   });
 
-  test('initialUser: stored user without token is ignored (falls through to null)', () => {
-    // user data with no token should be excluded from initialUser
-    localStorage.setItem('user', JSON.stringify({ id: 99, email: 'x@example.com' }));
+  test('cached profile without email is ignored', async () => {
+    localStorage.setItem('user', JSON.stringify({ id: 99 }));
+    authApi.verifySession.mockRejectedValue(new Error('No session'));
 
     renderWithProvider();
 
-    // loading remains false but user is null because token check fails
-    expect(screen.getByTestId('user-id')).toHaveTextContent('none');
+    await waitFor(() => {
+      expect(screen.getByTestId('user-id')).toHaveTextContent('none');
+    });
   });
 
-  test('loadUser: user with no token clears localStorage and navigates to /login', async () => {
-    // no initialUser – so the effect loadUser runs
-    authApi.getCurrentUser.mockReturnValue({ id: 5, email: 'a@example.com' }); // no token
+  test('failed session validation falls back to cached profile', async () => {
+    authApi.getCurrentUser.mockReturnValue(storedProfile(5));
+    authApi.verifySession.mockRejectedValue(new Error('expired'));
     githubService.checkConnection.mockResolvedValue({ connected: false });
 
     renderWithProvider();
 
     await waitFor(() => {
-      expect(localStorage.getItem('user')).toBeNull();
+      expect(screen.getByTestId('user-id')).toHaveTextContent('5');
     });
   });
 
-  test('loadUser: user with github_connected=true does NOT show prompt', async () => {
-    authApi.getCurrentUser.mockReturnValue({
-      id: 20, email: 'dev@example.com', token: 'tok-20', role: 'developer',
-      github_connected: true, github_username: 'octo'
-    });
+  test('loadUser with github_connected=true does NOT show prompt', async () => {
+    const profile = storedProfile(20, { github_connected: true, github_username: 'octo' });
+    authApi.getCurrentUser.mockReturnValue(profile);
+    authApi.verifySession.mockResolvedValue({ user: profile, exp: null });
     githubService.checkConnection.mockResolvedValue({ connected: true });
 
     renderWithProvider();
@@ -342,34 +371,6 @@ describe('AuthContext', () => {
     await waitFor(() => {
       expect(screen.getByTestId('user-id')).toHaveTextContent('20');
     });
-    expect(screen.getByTestId('show-prompt')).toHaveTextContent('false');
-  });
-
-  test('handleGithubPromptResponse(true) triggers connectGitHub', async () => {
-    authApi.login.mockResolvedValue({
-      user: { id: 7, name: 'Dev', email: 'dev@example.com', role: 'developer', github_connected: false },
-      token: 'token-7',
-    });
-    authApi.getCurrentUser.mockReturnValue({ id: 7, email: 'dev@example.com', token: 'token-7', role: 'developer' });
-    githubService.initiateOAuthFlow.mockResolvedValue('https://github.com/oauth');
-    // Prevent actual window.location redirect
-    delete window.location;
-    window.location = { href: '' };
-
-    renderWithProvider();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Login' }));
-    await waitFor(() => {
-      expect(screen.getByTestId('show-prompt')).toHaveTextContent('true');
-    });
-
-    // Clicking prompt with connect=true should call connectGitHub
-    const acceptBtn = screen.queryByRole('button', { name: /Skip Prompt/i });
-    // Use the harness to invoke handleGithubPromptResponse(true) via a custom button
-    // The harness only has 'Skip Prompt' (false). Verify the connectGitHub path by
-    // directly asserting initiateOAuthFlow is called after we accept the prompt.
-    // (Skip Prompt passes false — to get true path we re-render with a true handler)
-    fireEvent.click(acceptBtn); // passes false — prompt hides
     expect(screen.getByTestId('show-prompt')).toHaveTextContent('false');
   });
 
@@ -386,10 +387,7 @@ describe('AuthContext', () => {
   });
 
   test('logout failure still clears user state and localStorage', async () => {
-    localStorage.setItem(
-      'user',
-      JSON.stringify({ id: 7, email: 'dev@example.com', token: 'token-7', role: 'developer' })
-    );
+    localStorage.setItem('user', JSON.stringify(storedProfile(7)));
     authApi.logout.mockRejectedValue(new Error('server gone'));
 
     renderWithProvider();
@@ -402,29 +400,23 @@ describe('AuthContext', () => {
     expect(localStorage.getItem('user')).toBeNull();
   });
 
-  test('updateUser(null) is a no-op and logs warning', async () => {
-    localStorage.setItem(
-      'user',
-      JSON.stringify({ id: 7, email: 'dev@example.com', token: 'token-7', role: 'developer' })
-    );
+  test('updateUser merges profile fields without tokens', async () => {
+    localStorage.setItem('user', JSON.stringify(storedProfile(7)));
     jest.spyOn(console, 'warn').mockImplementation(() => {});
 
     renderWithProvider();
 
-    // Update User button in harness passes { name: 'Updated User', token: '' }
-    // which is a valid call — test the null update via a separate approach:
-    // The setCurrentUser exposed is updateUser, so call via button which has empty token
     fireEvent.click(screen.getByRole('button', { name: 'Update User' }));
-    // Verify state still has user (updateUser with empty token preserves stored token)
     expect(screen.getByTestId('user-id')).toHaveTextContent('7');
     const stored = JSON.parse(localStorage.getItem('user'));
-    expect(stored.token).toBe('token-7'); // preserved
+    expect(stored.name).toBe('Updated User');
+    expect(stored.token).toBeUndefined();
   });
 
   test('OAuth code callback returns success=false — no github state update', async () => {
     localStorage.setItem(
       'user',
-      JSON.stringify({ id: 11, email: 'dev@example.com', token: 'token-11', role: 'developer', github_connected: false })
+      JSON.stringify(storedProfile(11, { github_connected: false }))
     );
     githubService.completeOAuthFlow.mockResolvedValue({ success: false });
 
@@ -434,18 +426,14 @@ describe('AuthContext', () => {
       expect(githubService.completeOAuthFlow).toHaveBeenCalledWith('oauth-code');
     });
 
-    // github_connected should remain false
     await waitFor(() => {
       expect(screen.getByTestId('github-connected')).toHaveTextContent('false');
     });
   });
 
   test('connectGitHub catches error and sets error message', async () => {
-    localStorage.setItem(
-      'user',
-      JSON.stringify({ id: 7, email: 'dev@example.com', token: 'token-7', role: 'developer' })
-    );
-    authApi.getCurrentUser.mockReturnValue({ id: 7, email: 'dev@example.com', token: 'token-7', role: 'developer' });
+    localStorage.setItem('user', JSON.stringify(storedProfile(7)));
+    authApi.getCurrentUser.mockReturnValue(storedProfile(7));
     githubService.initiateOAuthFlow.mockRejectedValue(new Error('oauth failed'));
 
     renderWithProvider();
@@ -459,18 +447,18 @@ describe('AuthContext', () => {
     });
   });
 
-  test('fetches permissions for users missing them and warms GitHub reports for connected admins', async () => {
+  test('fetches permissions via cookie session and warms GitHub reports for connected admins', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       json: jest.fn().mockResolvedValue({ permissions: ['can_view_all_users'] }),
     });
 
-    authApi.getCurrentUser.mockReturnValue({
-      id: 31,
+    const adminProfile = storedProfile(31, {
       email: 'admin@example.com',
-      token: 'token-31',
       role: 'admin',
       github_connected: true,
     });
+    authApi.getCurrentUser.mockReturnValue(adminProfile);
+    authApi.verifySession.mockResolvedValue({ user: adminProfile, exp: null });
     githubService.checkConnection.mockResolvedValue({ connected: true });
 
     const originalRequestIdleCallback = window.requestIdleCallback;
@@ -481,16 +469,18 @@ describe('AuthContext', () => {
     };
     window.cancelIdleCallback = jest.fn();
 
+    localStorage.setItem('user', JSON.stringify(adminProfile));
     renderWithProvider();
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining('/auth/permissions'),
         expect.objectContaining({
-          headers: { Authorization: 'Bearer token-31' },
+          credentials: 'include',
         })
       );
     });
+    expect(global.fetch.mock.calls[0][1].headers).toBeUndefined();
 
     await waitFor(() => {
       expect(dashboardService.prefetchReportData).toHaveBeenCalledWith('github', 'week');

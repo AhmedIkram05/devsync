@@ -123,20 +123,20 @@ The RBAC system is implemented in `backend/src/auth/rbac.py` using:
 ```python
 from src.auth.rbac import role_required, role_at_least, require_permission, Role
 
+
 # Only admins
 @role_required([Role.ADMIN])
-def admin_only_route():
-    ...
+def admin_only_route(): ...
+
 
 # Team Lead or higher
 @role_at_least(Role.TEAM_LEAD)
-def team_lead_plus_route():
-    ...
+def team_lead_plus_route(): ...
+
 
 # Anyone with the specific permission
-@require_permission('can_assign_tasks')
-def assign_task():
-    ...
+@require_permission("can_assign_tasks")
+def assign_task(): ...
 ```
 
 ### Audit Service
@@ -147,10 +147,10 @@ All sensitive actions are logged via `audit_service.record(...)`:
 from src.services import audit_service
 
 audit_service.record(
-    action='user_role_changed',
-    resource_type='user',
+    action="user_role_changed",
+    resource_type="user",
     resource_id=user.id,
-    metadata={'old_role': 'developer', 'new_role': 'admin'}
+    metadata={"old_role": "developer", "new_role": "admin"},
 )
 ```
 
@@ -167,7 +167,7 @@ from src.services import settings_service
 
 all_settings = settings_service.get_settings()
 default_role = settings_service.get_default_role()
-settings_service.update_settings({'allow_registration': False}, actor_id=1)
+settings_service.update_settings({"allow_registration": False}, actor_id=1)
 ```
 
 ### Registration Security

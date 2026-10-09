@@ -29,7 +29,7 @@ describe('githubApi service', () => {
     authApi.getCurrentUser.mockReset();
     authApi.getCurrentUser.mockReturnValue({
       id: 10,
-      token: 'token-10',
+      email: 'dev@example.com',
     });
 
     global.fetch = jest.fn();
@@ -39,7 +39,7 @@ describe('githubApi service', () => {
     jest.restoreAllMocks();
   });
 
-  test('initiates auth flow with authorization header', async () => {
+  test('initiates auth flow with cookies and CSRF, no bearer header', async () => {
     global.fetch.mockResolvedValue(buildResponse({ authorization_url: 'https://github.com/oauth' }));
 
     const response = await githubApi.initiateAuth();
@@ -48,7 +48,7 @@ describe('githubApi service', () => {
 
     const [url, options] = global.fetch.mock.calls[0];
     expect(url).toContain('/api/v1/github/auth');
-    expect(options.headers.Authorization).toBe('Bearer token-10');
+    expect(options.headers.Authorization).toBeUndefined();
     expect(options.credentials).toBe('include');
   });
 
@@ -109,7 +109,7 @@ describe('githubApi service', () => {
     });
   });
 
-  test('omits authorization header when no user token exists', async () => {
+  test('omits authorization header for cookie sessions', async () => {
     authApi.getCurrentUser.mockReturnValue(null);
     global.fetch.mockResolvedValue(buildResponse({ repositories: [] }));
 
@@ -117,6 +117,7 @@ describe('githubApi service', () => {
 
     const [, options] = global.fetch.mock.calls[0];
     expect(options.headers.Authorization).toBeUndefined();
+    expect(options.credentials).toBe('include');
   });
 
   describe('catch block error propagation', () => {

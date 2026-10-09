@@ -108,6 +108,11 @@ def update_user_role(user_id):
     user.role = data["role"]
     db.session.commit()
 
+    # Role change invalidates existing tokens so stale claims cannot persist.
+    from ...auth.token_blocklist import revoke_all_user_tokens
+
+    revoke_all_user_tokens(user.id)
+
     audit_service.record(
         action="user_role_changed",
         resource_type="user",

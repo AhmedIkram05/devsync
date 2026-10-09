@@ -40,6 +40,9 @@ describe('AuthContext branch coverage', () => {
     jest.clearAllMocks();
     authApi.authApi = {
       getCurrentUser: jest.fn(() => null),
+      verifySession: jest.fn(async () => {
+        throw new Error('No session');
+      }),
       login: jest.fn(),
       logout: jest.fn(),
       register: jest.fn()
@@ -51,11 +54,12 @@ describe('AuthContext branch coverage', () => {
   });
 
   describe('Initialization branches', () => {
-    test('loads user from localStorage with valid token and role', async () => {
-      const validUser = { id: 1, email: 'test@test.com', token: 'abc', role: 'developer' };
+    test('loads user from cached profile with valid role', async () => {
+      const validUser = { id: 1, email: 'test@test.com', role: 'developer' };
       localStorage.setItem('user', JSON.stringify(validUser));
-      
+
       authApi.authApi.getCurrentUser.mockReturnValue(validUser);
+      authApi.authApi.verifySession.mockResolvedValue({ user: validUser, exp: null });
 
       render(
         <Router>
@@ -87,8 +91,8 @@ describe('AuthContext branch coverage', () => {
       });
     });
 
-    test('clears localStorage on invalid token during init', async () => {
-      const invalidUser = { id: 1, email: 'test@test.com', role: 'developer' }; // no token
+    test('clears localStorage on invalid profile during init', async () => {
+      const invalidUser = { id: 1, role: 'developer' }; // no email
       localStorage.setItem('user', JSON.stringify(invalidUser));
       
       authApi.authApi.getCurrentUser.mockReturnValue(null);
@@ -107,7 +111,7 @@ describe('AuthContext branch coverage', () => {
     });
 
     test('clears localStorage on invalid role during init', async () => {
-      const invalidRoleUser = { id: 1, email: 'test@test.com', token: 'abc', role: 'superuser' };
+      const invalidRoleUser = { id: 1, email: 'test@test.com', role: 'superuser' };
       localStorage.setItem('user', JSON.stringify(invalidRoleUser));
       
       authApi.authApi.getCurrentUser.mockReturnValue(null);
@@ -129,7 +133,7 @@ describe('AuthContext branch coverage', () => {
       const user = { 
         id: 1, 
         email: 'test@test.com', 
-        token: 'abc', 
+         
         role: 'developer',
         github_connected: true
       };
@@ -173,7 +177,7 @@ describe('AuthContext branch coverage', () => {
       const teamLeadUser = { 
         id: 2, 
         email: 'lead@test.com', 
-        token: 'def', 
+         
         role: 'team_lead'
       };
       localStorage.setItem('user', JSON.stringify(teamLeadUser));
@@ -197,7 +201,7 @@ describe('AuthContext branch coverage', () => {
       const adminUser = { 
         id: 3, 
         email: 'admin@test.com', 
-        token: 'ghi', 
+         
         role: 'admin'
       };
       localStorage.setItem('user', JSON.stringify(adminUser));
@@ -235,9 +239,9 @@ describe('AuthContext branch coverage', () => {
       });
     });
 
-    test('verifyToken returns false when user has no token', async () => {
-      const userNoToken = { id: 1, email: 'test@test.com', role: 'developer' };
-      localStorage.setItem('user', JSON.stringify(userNoToken));
+    test('verifyToken falls back to no-user when session is invalid', async () => {
+      const userNoSession = { id: 1, role: 'developer' };
+      localStorage.setItem('user', JSON.stringify(userNoSession));
       
       authApi.authApi.getCurrentUser.mockReturnValue(null);
 
@@ -254,8 +258,8 @@ describe('AuthContext branch coverage', () => {
       });
     });
 
-    test('verifyToken returns true for user with valid token', async () => {
-      const validUser = { id: 1, email: 'test@test.com', token: 'xyz', role: 'developer' };
+    test('verifyToken validates session via /me for a cached profile', async () => {
+      const validUser = { id: 1, email: 'test@test.com',  role: 'developer' };
       localStorage.setItem('user', JSON.stringify(validUser));
       
       authApi.authApi.getCurrentUser.mockReturnValue(validUser);
@@ -279,7 +283,7 @@ describe('AuthContext branch coverage', () => {
       const user = { 
         id: 1, 
         email: 'test@test.com', 
-        token: 'abc', 
+         
         role: 'developer',
         github_connected: false
       };
@@ -304,7 +308,7 @@ describe('AuthContext branch coverage', () => {
       const user = { 
         id: 1, 
         email: 'test@test.com', 
-        token: 'abc', 
+         
         role: 'developer',
         github_connected: true
       };
@@ -329,7 +333,7 @@ describe('AuthContext branch coverage', () => {
       const user = { 
         id: 1, 
         email: 'test@test.com', 
-        token: 'abc', 
+         
         role: 'developer'
       };
       localStorage.setItem('user', JSON.stringify(user));
@@ -353,7 +357,7 @@ describe('AuthContext branch coverage', () => {
       const user = { 
         id: 1, 
         email: 'test@test.com', 
-        token: 'abc', 
+         
         role: 'developer',
         github_connected: true
       };
@@ -380,7 +384,7 @@ describe('AuthContext branch coverage', () => {
       const user = { 
         id: 1, 
         email: 'test@test.com', 
-        token: 'abc', 
+         
         role: 'developer',
         permissions: ['can_create_projects', 'can_view_reports']
       };

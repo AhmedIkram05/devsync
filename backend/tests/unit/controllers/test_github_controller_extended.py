@@ -2,7 +2,19 @@ from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from backend.src.auth.encryption import encrypt_token
 from backend.src.services.github_client import GitHubClient as RealGitHubClient
+
+
+@pytest.fixture(autouse=True)
+def _mock_decrypt_success():
+    with patch(
+        "backend.src.api.controllers.github_controller.decrypt_token",
+        return_value="mocked-valid-token",
+    ):
+        yield
 
 
 def _issue_payload(number=1):
@@ -186,7 +198,7 @@ def test_add_github_repository_requires_token(mock_token, mock_validate, mock_id
 @patch("backend.src.api.controllers.github_controller.GitHubToken")
 @patch("backend.src.api.controllers.github_controller.GitHubClient")
 def test_add_github_repository_invalid_name_format(mock_client, mock_token, mock_validate, mock_identity, app):
-    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token="token")
+    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token=encrypt_token("token"))
 
     payload = {"repository_name": "bad-name", "repository_url": "https://github.com/org/repo"}
     with app.test_request_context("/github/repositories", method="POST", json=payload):
@@ -204,7 +216,7 @@ def test_add_github_repository_invalid_name_format(mock_client, mock_token, mock
 @patch("backend.src.api.controllers.github_controller.GitHubToken")
 @patch("backend.src.api.controllers.github_controller.GitHubClient")
 def test_add_github_repository_success(mock_client, mock_token, mock_validate, mock_identity, mock_repo, mock_db, app):
-    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token="token")
+    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token=encrypt_token("token"))
     mock_client.return_value.get_repository.return_value = {"id": 77}
     mock_repo.query.filter_by.return_value.first.return_value = None
 
@@ -242,7 +254,7 @@ def test_get_repository_issues_requires_token(mock_token, mock_repo, mock_identi
 @patch("backend.src.api.controllers.github_controller.GitHubToken")
 def test_get_repository_issues_success(mock_token, mock_repo, mock_client, mock_identity, app):
     mock_repo.query.get_or_404.return_value = SimpleNamespace(repo_name="org/repo")
-    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token="token")
+    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token=encrypt_token("token"))
     mock_client.return_value.get_repository_issues.return_value = [_issue_payload(5)]
 
     with app.test_request_context("/github/repos/1/issues?state=open&page=1&per_page=10"):
@@ -259,7 +271,7 @@ def test_get_repository_issues_success(mock_token, mock_repo, mock_client, mock_
 @patch("backend.src.api.controllers.github_controller.GitHubToken")
 def test_get_repository_pulls_success(mock_token, mock_repo, mock_client, mock_identity, app):
     mock_repo.query.get_or_404.return_value = SimpleNamespace(repo_name="org/repo")
-    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token="token")
+    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token=encrypt_token("token"))
     mock_client.return_value.get_repository_pulls.return_value = [_pr_payload(8)]
 
     with app.test_request_context("/github/repos/1/pulls?state=open&page=1&per_page=10"):
@@ -358,7 +370,7 @@ def test_initiate_github_auth_requires_credentials(mock_identity, app):
 def test_get_github_repositories_fetch_all_and_update_existing_repo(
     mock_identity, mock_github_client, mock_token_class, mock_repo_class, mock_db, app
 ):
-    mock_token = SimpleNamespace(access_token="test-access-token")
+    mock_token = SimpleNamespace(access_token=encrypt_token("test-access-token"))
     mock_token_class.query.filter_by.return_value.first.return_value = mock_token
 
     existing_repo = SimpleNamespace(
@@ -414,7 +426,7 @@ def test_get_github_repositories_fetch_all_and_update_existing_repo(
 @patch("backend.src.api.controllers.github_controller.GitHubToken")
 def test_get_repository_issues_invalid_repo_name_format(mock_token, mock_repo, mock_identity, app):
     mock_repo.query.get_or_404.return_value = SimpleNamespace(repo_name="bad-format")
-    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token="token")
+    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token=encrypt_token("token"))
 
     with app.test_request_context("/github/repos/1/issues"):
         from backend.src.api.controllers.github_controller import get_repository_issues
@@ -429,7 +441,7 @@ def test_get_repository_issues_invalid_repo_name_format(mock_token, mock_repo, m
 @patch("backend.src.api.controllers.github_controller.GitHubToken")
 def test_get_repository_pulls_invalid_repo_name_format(mock_token, mock_repo, mock_identity, app):
     mock_repo.query.get_or_404.return_value = SimpleNamespace(repo_name="bad-format")
-    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token="token")
+    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token=encrypt_token("token"))
 
     with app.test_request_context("/github/repos/1/pulls"):
         from backend.src.api.controllers.github_controller import get_repository_pulls
@@ -467,7 +479,7 @@ def test_link_task_with_github_updates_existing_link(
     )
     mock_link_class.query.filter_by.return_value.first.return_value = existing_link
 
-    mock_token = SimpleNamespace(access_token="test-access-token")
+    mock_token = SimpleNamespace(access_token=encrypt_token("test-access-token"))
     mock_token_class.query.filter_by.return_value.first.return_value = mock_token
 
     mock_client_instance = MagicMock()
@@ -557,7 +569,7 @@ def test_github_callback_state_processing_error(app):
 def test_add_github_repository_existing_repo_conflict(
     mock_repo, mock_client, mock_token, mock_validate, mock_identity, app
 ):
-    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token="token")
+    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token=encrypt_token("token"))
     mock_client.return_value.get_repository.return_value = {"id": 77}
     mock_repo.query.filter_by.return_value.first.return_value = SimpleNamespace(
         id=5, repo_name="org/repo", repo_url="https://github.com/org/repo"
@@ -570,3 +582,76 @@ def test_add_github_repository_existing_repo_conflict(
         response, status = add_github_repository()
 
     assert status == 409
+
+
+@patch("backend.src.api.controllers.github_controller.decrypt_token", return_value=None)
+@patch("backend.src.api.controllers.github_controller.get_jwt_identity", return_value={"user_id": 1})
+@patch("backend.src.api.controllers.github_controller.GitHubToken")
+def test_get_github_repositories_invalid_token_returns_relink(mock_token, mock_identity, mock_decrypt, app):
+    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(
+        access_token="not-a-valid-fernet-token"
+    )
+
+    with app.test_request_context("/github/repositories"):
+        from backend.src.api.controllers.github_controller import get_github_repositories
+
+        response, status = get_github_repositories()
+
+    assert status == 401
+    assert response.get_json()["message"] == "GitHub token invalid, please reconnect"
+
+
+@patch("backend.src.api.controllers.github_controller.decrypt_token", return_value=None)
+@patch("backend.src.api.controllers.github_controller.get_jwt_identity", return_value={"user_id": 1})
+@patch("backend.src.api.controllers.github_controller.validate_github_repo_data", return_value=None)
+@patch("backend.src.api.controllers.github_controller.GitHubToken")
+def test_add_github_repository_invalid_token_returns_relink(
+    mock_token, mock_validate, mock_identity, mock_decrypt, app
+):
+    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token="plaintext-legacy-row")
+
+    payload = {"repository_name": "org/repo", "repository_url": "https://github.com/org/repo"}
+    with app.test_request_context("/github/repositories", method="POST", json=payload):
+        from backend.src.api.controllers.github_controller import add_github_repository
+
+        response, status = add_github_repository()
+
+    assert status == 401
+    assert response.get_json()["message"] == "GitHub token invalid, please reconnect"
+
+
+@patch("backend.src.api.controllers.github_controller.decrypt_token", return_value=None)
+@patch("backend.src.api.controllers.github_controller.get_jwt_identity", return_value={"user_id": 1})
+@patch("backend.src.api.controllers.github_controller.GitHubRepository")
+@patch("backend.src.api.controllers.github_controller.GitHubToken")
+def test_get_repository_issues_invalid_token_returns_relink(mock_token, mock_repo, mock_identity, mock_decrypt, app):
+    mock_repo.query.get_or_404.return_value = SimpleNamespace(repo_name="org/repo")
+    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token="corrupted-ciphertext")
+
+    with app.test_request_context("/github/repos/1/issues"):
+        from backend.src.api.controllers.github_controller import get_repository_issues
+
+        response, status = get_repository_issues(1)
+
+    assert status == 401
+    assert response.get_json()["message"] == "GitHub token invalid, please reconnect"
+
+
+def test_backfill_dry_run_counts_correctly():
+    from cryptography.fernet import Fernet
+
+    from backend.src.db.scripts.reencrypt_github_tokens import classify_stored_token, count_tokens
+
+    primary = Fernet.generate_key().decode()
+    old = Fernet.generate_key().decode()
+    keys = [primary, old]
+    healthy = Fernet(primary.encode()).encrypt(b"gho_valid").decode()
+    rotated = Fernet(old.encode()).encrypt(b"gho_old").decode()
+
+    assert classify_stored_token(healthy, keys) == "healthy"
+    assert classify_stored_token(rotated, keys) == "needs_rotation"
+    assert classify_stored_token("plaintext-legacy", keys) == "needs_relink"
+    assert classify_stored_token("", keys) == "empty"
+
+    counts = count_tokens([healthy, rotated, "plaintext-legacy", ""], keys)
+    assert counts == {"total": 4, "healthy": 1, "needs_rotation": 1, "needs_relink": 1, "empty": 1}

@@ -30,9 +30,9 @@ describe('githubService', () => {
     authApi.refreshToken.mockReset();
     authApi.updateGitHubStatus.mockReset();
 
-    authApi.getCurrentUser.mockReturnValue({ id: 7, email: 'dev@example.com', token: 'token-1' });
+    authApi.getCurrentUser.mockReturnValue({ id: 7, email: 'dev@example.com' });
     authApi.isTokenExpired.mockReturnValue(false);
-    authApi.refreshToken.mockResolvedValue({ id: 7, email: 'dev@example.com', token: 'token-2' });
+    authApi.refreshToken.mockResolvedValue({ id: 7, email: 'dev@example.com' });
     authApi.updateGitHubStatus.mockImplementation((connected, username) => ({
       connected,
       username,
@@ -61,7 +61,7 @@ describe('githubService', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url, options] = global.fetch.mock.calls[0];
     expect(url).toContain('/api/v1/github/status');
-    expect(options.headers.Authorization).toBe('Bearer token-1');
+    expect(options.headers.Authorization).toBeUndefined();
     expect(options.credentials).toBe('include');
   });
 
@@ -123,7 +123,7 @@ describe('githubService', () => {
     expect(localStorage.getItem('github_oauth_state')).toBeNull();
   });
 
-  test('fetchWithAuth retries once after 401 with refreshed token', async () => {
+  test('fetchWithAuth retries once after 401 with cookie refresh', async () => {
     global.fetch
       .mockResolvedValueOnce(jsonResponse({ message: 'unauthorized' }, 401))
       .mockResolvedValueOnce(jsonResponse({ connected: true }, 200));
@@ -217,9 +217,9 @@ describe('githubService', () => {
     expect(githubService.handleServerError({ status: 404 })).toBeNull();
   });
 
-  test('fetchWithAuth refreshes token proactively when isTokenExpired is true', async () => {
+  test('fetchWithAuth refreshes cookie session proactively when isTokenExpired is true', async () => {
     authApi.isTokenExpired.mockReturnValue(true);
-    authApi.refreshToken.mockResolvedValue({ id: 7, token: 'refreshed-token' });
+    authApi.refreshToken.mockResolvedValue({ id: 7, email: 'dev@example.com' });
     global.fetch.mockResolvedValue(jsonResponse({ connected: true }));
 
     const result = await githubService.checkConnectionStatus();
@@ -227,18 +227,19 @@ describe('githubService', () => {
     expect(authApi.refreshToken).toHaveBeenCalled();
     expect(result).toEqual({ connected: true });
     const [, options] = global.fetch.mock.calls[0];
-    expect(options.headers.Authorization).toBe('Bearer refreshed-token');
+    expect(options.headers.Authorization).toBeUndefined();
+    expect(options.credentials).toBe('include');
   });
 
-  test('fetchWithAuth logs warning when user has no token', async () => {
-    authApi.getCurrentUser.mockReturnValue({ id: 7 }); // no token
+  test('fetchWithAuth sends no bearer header for cookie sessions', async () => {
+    authApi.getCurrentUser.mockReturnValue({ id: 7, email: 'dev@example.com' });
     global.fetch.mockResolvedValue(jsonResponse({ connected: false }));
 
     await githubService.checkConnectionStatus();
 
-    expect(console.warn).toHaveBeenCalledWith(
-      expect.stringContaining('No authentication token available')
-    );
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options.headers.Authorization).toBeUndefined();
+    expect(options.credentials).toBe('include');
   });
 
   test('fetchWithAuth handles 401 when token refresh also fails and method re-throws', async () => {

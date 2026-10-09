@@ -40,9 +40,9 @@ def register_routes(bp):
         return refresh_token()
 
     @bp.route("/auth/logout", methods=["POST"])
-    @jwt_required()
+    @jwt_required(verify_type=False)
     def logout():
-        """Route for user logout"""
+        """Route for user logout (accepts access or refresh token)."""
         return logout_user()
 
     @bp.route("/auth/me", methods=["GET"])

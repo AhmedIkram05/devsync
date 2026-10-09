@@ -1,5 +1,6 @@
 import os
 import sys
+from datetime import timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -61,6 +62,53 @@ def test_create_app_with_malformed_config(monkeypatch):
     assert app is not None
     # the config should either convert it or keep it as is
     assert app.config["TESTING"] is True
+
+
+def _minimal_config(**extra):
+    config = {
+        "TESTING": True,
+        "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
+        "JWT_SECRET_KEY": "test-secret-key-for-integration-suite-32",
+        "JWT_COOKIE_SECURE": False,
+    }
+    config.update(extra)
+    return config
+
+
+def test_app_jwt_expiries_single_sourced_from_config(monkeypatch):
+    monkeypatch.setenv("FLASK_ENV", "testing")
+    monkeypatch.delenv("JWT_ACCESS_EXPIRE_MINUTES", raising=False)
+    monkeypatch.delenv("JWT_REFRESH_EXPIRE_DAYS", raising=False)
+    from src.config.config import Config
+
+    app, _ = create_app(_minimal_config())
+
+    # app derives its timedeltas from the single Config source, not a literal.
+    assert Config.ACCESS_TOKEN_EXPIRE_MINUTES == 15
+    assert Config.REFRESH_TOKEN_EXPIRE_DAYS == 7
+    assert app.config["JWT_ACCESS_TOKEN_EXPIRES"] == timedelta(minutes=Config.ACCESS_TOKEN_EXPIRE_MINUTES)
+    assert app.config["JWT_REFRESH_TOKEN_EXPIRES"] == timedelta(days=Config.REFRESH_TOKEN_EXPIRE_DAYS)
+
+
+def test_app_jwt_expiries_env_override_flows_through(monkeypatch):
+    monkeypatch.setenv("FLASK_ENV", "testing")
+    monkeypatch.setenv("JWT_ACCESS_EXPIRE_MINUTES", "20")
+    monkeypatch.setenv("JWT_REFRESH_EXPIRE_DAYS", "5")
+
+    app, _ = create_app(_minimal_config())
+
+    assert app.config["JWT_ACCESS_TOKEN_EXPIRES"] == timedelta(minutes=20)
+    assert app.config["JWT_REFRESH_TOKEN_EXPIRES"] == timedelta(days=5)
+
+
+def test_app_jwt_expiries_explicit_config_wins_over_env(monkeypatch):
+    monkeypatch.setenv("FLASK_ENV", "testing")
+    monkeypatch.setenv("JWT_ACCESS_EXPIRE_MINUTES", "20")
+
+    app, _ = create_app(_minimal_config(ACCESS_TOKEN_EXPIRE_MINUTES=35, REFRESH_TOKEN_EXPIRE_DAYS=2))
+
+    assert app.config["JWT_ACCESS_TOKEN_EXPIRES"] == timedelta(minutes=35)
+    assert app.config["JWT_REFRESH_TOKEN_EXPIRES"] == timedelta(days=2)
 
 
 def test_root_health_endpoint(client):

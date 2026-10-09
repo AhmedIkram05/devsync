@@ -127,16 +127,18 @@ describe('api service branches', () => {
     global.fetch = originalFetch;
   });
 
-  test('fetchWithAuth removes corrupted user data and still performs the request', async () => {
-    const removeItemSpy = jest.spyOn(Storage.prototype, 'removeItem');
-    const getItemSpy = jest.spyOn(Storage.prototype, 'getItem').mockReturnValue('not-json');
+  test('fetchWithAuth uses cookies/CSRF and never sends bearer headers', async () => {
+    const getItemSpy = jest.spyOn(Storage.prototype, 'getItem');
     global.fetch.mockResolvedValue(makeResponse({ body: { ok: true } }));
 
     const result = await fetchWithAuth('tasks');
 
     expect(result).toEqual({ ok: true });
-    expect(getItemSpy).toHaveBeenCalledWith('user');
-    expect(removeItemSpy).toHaveBeenCalledWith('user');
+    expect(getItemSpy).not.toHaveBeenCalledWith('user');
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options.credentials).toBe('include');
+    expect(options.headers.Authorization).toBeUndefined();
+    expect(options.headers).toHaveProperty('X-CSRF-TOKEN');
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 

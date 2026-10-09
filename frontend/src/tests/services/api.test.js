@@ -40,8 +40,8 @@ describe('api utilities', () => {
     localStorage.clear();
   });
 
-  test('fetchWithAuth includes localStorage bearer token by default', async () => {
-    localStorage.setItem('user', JSON.stringify({ id: 1, token: 'token-123' }));
+  test('fetchWithAuth uses cookies and CSRF header instead of bearer tokens', async () => {
+    localStorage.setItem('user', JSON.stringify({ id: 1, email: 'a@example.com' }));
     global.fetch.mockResolvedValue(buildResponse({ success: true }));
 
     const response = await fetchWithAuth('tasks');
@@ -49,11 +49,13 @@ describe('api utilities', () => {
     expect(response).toEqual({ success: true });
     const [url, options] = global.fetch.mock.calls[0];
     expect(url).toContain('/api/v1/tasks');
-    expect(options.headers.Authorization).toBe('Bearer token-123');
+    expect(options.headers.Authorization).toBeUndefined();
+    expect(options.credentials).toBe('include');
+    expect(options.headers).toHaveProperty('X-CSRF-TOKEN');
   });
 
-  test('fetchWithAuth keeps explicit Authorization header from options', async () => {
-    localStorage.setItem('user', JSON.stringify({ id: 1, token: 'token-local' }));
+  test('fetchWithAuth strips Authorization header even when passed explicitly', async () => {
+    localStorage.setItem('user', JSON.stringify({ id: 1, email: 'a@example.com' }));
     global.fetch.mockResolvedValue(buildResponse({ ok: true }));
 
     await fetchWithAuth('/github/status', {
@@ -62,16 +64,8 @@ describe('api utilities', () => {
 
     const [url, options] = global.fetch.mock.calls[0];
     expect(url).toContain('/api/v1/github/status');
-    expect(options.headers.Authorization).toBe('Bearer explicit-token');
-  });
-
-  test('fetchWithAuth clears corrupted localStorage user data', async () => {
-    localStorage.setItem('user', '{bad-json');
-    global.fetch.mockResolvedValue(buildResponse({ success: true }));
-
-    await fetchWithAuth('tasks');
-
-    expect(localStorage.getItem('user')).toBeNull();
+    expect(options.headers.Authorization).toBeUndefined();
+    expect(options.credentials).toBe('include');
   });
 
   test('fetchWithAuth returns empty object for 204 responses', async () => {
@@ -496,7 +490,7 @@ describe('api utilities', () => {
   });
 
   test('prefetchReportData warms the GitHub report cache', async () => {
-    localStorage.setItem('user', JSON.stringify({ id: 77, token: 'token-77' }));
+    localStorage.setItem('user', JSON.stringify({ id: 77, email: 'a@example.com' }));
     global.fetch
       .mockResolvedValueOnce(buildResponse({ connected: true }))
       .mockResolvedValueOnce(

@@ -24,7 +24,7 @@ from backend.src.api.controllers.github_controller import (
     initiate_github_auth,
     link_task_with_github,
 )
-from backend.src.auth.encryption import decrypt_token
+from backend.src.auth.encryption import decrypt_token, encrypt_token
 from backend.src.services.github_client import GitHubClient as RealGitHubClient
 
 
@@ -44,6 +44,10 @@ class TestGitHubController(unittest.TestCase):
             patch("backend.src.api.controllers.github_controller.jsonify", mock_jsonify),
             patch("backend.src.api.controllers.github_controller.get_jwt_identity", mock_jwt),
             patch("backend.src.api.controllers.github_controller.redirect", mock_redirect),
+            patch(
+                "backend.src.api.controllers.github_controller.decrypt_token",
+                return_value="mocked-valid-token",
+            ),
         ]
         for patcher in self.controller_patchers:
             patcher.start()
@@ -121,7 +125,7 @@ class TestGitHubController(unittest.TestCase):
     def test_get_github_repositories(self, mock_github_client, mock_token_class, mock_repo_class, mock_db):
         # Setup mocks
         mock_token = MagicMock()
-        mock_token.access_token = "test-access-token"
+        mock_token.access_token = encrypt_token("test-access-token")
         mock_token_class.query.filter_by.return_value.first.return_value = mock_token
 
         mock_repo_class.query.filter.return_value.all.return_value = []
@@ -203,7 +207,7 @@ class TestGitHubController(unittest.TestCase):
         mock_db,
     ):
         mock_token = MagicMock()
-        mock_token.access_token = "test-access-token"
+        mock_token.access_token = encrypt_token("test-access-token")
         mock_token_class.query.filter_by.return_value.first.return_value = mock_token
 
         mock_repo_class.query.filter.return_value.all.return_value = []
@@ -284,7 +288,7 @@ class TestGitHubController(unittest.TestCase):
         mock_link_class.query.filter_by.return_value.first.return_value = None
 
         mock_token = MagicMock()
-        mock_token.access_token = "test-access-token"
+        mock_token.access_token = encrypt_token("test-access-token")
         mock_token_class.query.filter_by.return_value.first.return_value = mock_token
 
         mock_client_instance = MagicMock()

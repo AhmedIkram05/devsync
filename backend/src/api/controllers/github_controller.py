@@ -26,6 +26,24 @@ logger = logging.getLogger(__name__)
 # In-memory store for OAuth state parameters (in a production app, use Redis or similar)
 oauth_states = {}
 
+RELINK_MESSAGE = "GitHub token invalid, please reconnect"
+
+
+def _resolve_access_token(token_row, user_id):
+    """Decrypt a stored GitHub token; None when missing/undecryptable.
+
+    Fail-closed: never falls back to plaintext. Callers treat None as
+    needs-relink.
+    """
+    if not token_row or not getattr(token_row, "access_token", None):
+        return None
+    return decrypt_token(token_row.access_token, user_id=user_id)
+
+
+def _relink_response(user_id):
+    logger.warning("GitHub token needs re-link user_id=%s", user_id)
+    return jsonify({"message": RELINK_MESSAGE}), 401
+
 
 def check_github_config():
     """Check GitHub OAuth configuration"""
@@ -167,7 +185,10 @@ def get_github_repositories():
         return jsonify({"message": "GitHub account not connected"}), 401
 
     # Create GitHub client
-    github_client = GitHubClient(decrypt_token(token.access_token))
+    access_token = _resolve_access_token(token, user_id)
+    if not access_token:
+        return _relink_response(user_id)
+    github_client = GitHubClient(access_token)
 
     # Fetch repositories (with pagination support)
     page = request.args.get("page", 1, type=int)
@@ -403,7 +424,10 @@ def add_github_repository():
         return jsonify({"message": "GitHub account not connected"}), 401
 
     # Create GitHub client
-    github_client = GitHubClient(decrypt_token(token.access_token))
+    access_token = _resolve_access_token(token, user_id)
+    if not access_token:
+        return _relink_response(user_id)
+    github_client = GitHubClient(access_token)
 
     # Parse repository name (owner/repo)
     repo_parts = data["repository_name"].split("/")
@@ -460,7 +484,10 @@ def get_repository_issues(repo_id):
         return jsonify({"message": "GitHub account not connected"}), 401
 
     # Create GitHub client
-    github_client = GitHubClient(decrypt_token(token.access_token))
+    access_token = _resolve_access_token(token, user_id)
+    if not access_token:
+        return _relink_response(user_id)
+    github_client = GitHubClient(access_token)
 
     # Parse repository name to get owner and repo
     repo_parts = repo.repo_name.split("/")
@@ -513,7 +540,10 @@ def get_repository_pulls(repo_id):
         return jsonify({"message": "GitHub account not connected"}), 401
 
     # Create GitHub client
-    github_client = GitHubClient(decrypt_token(token.access_token))
+    access_token = _resolve_access_token(token, user_id)
+    if not access_token:
+        return _relink_response(user_id)
+    github_client = GitHubClient(access_token)
 
     # Parse repository name to get owner and repo
     repo_parts = repo.repo_name.split("/")
@@ -604,23 +634,27 @@ def link_task_with_github(task_id):
     # If we have a GitHub token, add a comment to the issue/PR referencing this task
     token = GitHubToken.query.filter_by(user_id=user_id).first()
     if token and (data.get("issue_number") or data.get("pull_request_number")):
-        github_client = GitHubClient(decrypt_token(token.access_token))
+        access_token = _resolve_access_token(token, user_id)
+        if not access_token:
+            logger.warning("Skipping GitHub comment: token invalid, needs re-link user_id=%s", user_id)
+        else:
+            github_client = GitHubClient(access_token)
 
-        # Parse repository name
-        repo_parts = repo.repo_name.split("/")
-        if len(repo_parts) == 2:
-            owner, repo_name = repo_parts
+            # Parse repository name
+            repo_parts = repo.repo_name.split("/")
+            if len(repo_parts) == 2:
+                owner, repo_name = repo_parts
 
-            # Construct comment with link to DevSync task
-            frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
-            comment = f"This issue is linked to DevSync task #{task.id}: {task.title}\n\n"
-            comment += f"[View in DevSync]({frontend_url}/tasks/{task.id})"
+                # Construct comment with link to DevSync task
+                frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
+                comment = f"This issue is linked to DevSync task #{task.id}: {task.title}\n\n"
+                comment += f"[View in DevSync]({frontend_url}/tasks/{task.id})"
 
-            # Add comment to issue or PR
-            if data.get("issue_number"):
-                github_client.create_issue_comment(owner, repo_name, data["issue_number"], comment)
-            elif data.get("pull_request_number"):
-                github_client.create_issue_comment(owner, repo_name, data["pull_request_number"], comment)
+                # Add comment to issue or PR
+                if data.get("issue_number"):
+                    github_client.create_issue_comment(owner, repo_name, data["issue_number"], comment)
+                elif data.get("pull_request_number"):
+                    github_client.create_issue_comment(owner, repo_name, data["pull_request_number"], comment)
 
     return jsonify(
         {

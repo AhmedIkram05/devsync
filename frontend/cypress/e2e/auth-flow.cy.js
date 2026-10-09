@@ -51,15 +51,31 @@ describe('Auth flow pages', () => {
     cy.contains('Registration successful! Redirecting to login...').should('be.visible');
   });
 
-  it('completes the full login cycle, validates token persistence, and logs out', () => {
-    // 1. Setup mock for login success
+  it('completes the full login cycle, validates cookie session via /me, and logs out', () => {
+    // 1. Setup mock for cookie-session login (no tokens in body)
     cy.intercept('POST', '**/api/v1/auth/login', {
       statusCode: 200,
+      headers: {
+        // HttpOnly session cookies set by the server
+        'set-cookie': [
+          'access_token_cookie=cookie-access-123; Path=/; HttpOnly; SameSite=Lax',
+          'refresh_token_cookie=cookie-refresh-123; Path=/; HttpOnly; SameSite=Lax',
+        ].join(', '),
+      },
       body: {
-        token: 'fake-jwt-token-777',
+        message: 'Login successful',
         user: { id: 7, name: 'Login User', email: 'login@example.com', role: 'developer', github_connected: false }
       }
     }).as('loginReq');
+
+    // Session validation endpoint used by verifyToken
+    cy.intercept('GET', '**/api/v1/auth/me', {
+      statusCode: 200,
+      body: {
+        user: { id: 7, name: 'Login User', email: 'login@example.com', role: 'developer', github_connected: false },
+        exp: 9999999999,
+      },
+    }).as('meReq');
 
     // Mocks for dashboard entry
     cy.intercept('GET', '**/api/v1/dashboard/client', { statusCode: 200, body: { tasks: { total: 0 }, repositories: [] } });
@@ -75,10 +91,13 @@ describe('Auth flow pages', () => {
     cy.wait('@loginReq');
     cy.url().should('include', 'BasicDashboard');
 
-    // 4. Verify LocalStorage Token Persistence
+    // 4. Verify cached profile holds NO raw tokens (HttpOnly cookies only)
     cy.window().then((win) => {
       const user = JSON.parse(win.localStorage.getItem('user'));
-      expect(user).to.have.property('token', 'fake-jwt-token-777');
+      expect(user.id).to.equal(7);
+      expect(user).to.not.have.property('token');
+      expect(user).to.not.have.property('access_token');
+      expect(user).to.not.have.property('refresh_token');
     });
 
     // Handle initial github prompt modal if it appears

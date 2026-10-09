@@ -181,6 +181,12 @@ def update_user(user_id):
 
     db.session.commit()
 
+    # Password or role change invalidates existing tokens.
+    if "password" in changed_fields or "role" in changed_fields:
+        from ...auth.token_blocklist import revoke_all_user_tokens
+
+        revoke_all_user_tokens(user.id)
+
     audit_service.record(action="user_updated", resource_type="user", resource_id=user.id, metadata={"role": user.role})
     emit_dashboard_refresh("user_updated", resource_type="user", resource_id=user.id, payload={"role": user.role})
 
@@ -246,20 +252,32 @@ def delete_user(user_id):
 
 def get_current_user_profile():
     """Controller function to get the current user's profile"""
+    from flask_jwt_extended import get_jwt
+
     user_id = get_jwt_identity()["user_id"]
     user = User.query.get_or_404(user_id)
+
+    try:
+        github_connected = GitHubToken.query.filter_by(user_id=user.id).first() is not None
+    except Exception:
+        github_connected = False
+    try:
+        claims = get_jwt()
+    except Exception:
+        claims = {}
 
     user_data = {
         "id": user.id,
         "name": user.name,
         "email": user.email,
         "role": user.role,
+        "github_connected": github_connected,
         "github_username": user.github_username,
         "avatar": getattr(user, "avatar", None),
         "created_at": user.created_at.isoformat() if user.created_at else None,
     }
 
-    return jsonify({"user": user_data})
+    return jsonify({"user": user_data, "exp": claims.get("exp") if isinstance(claims, dict) else None})
 
 
 def update_current_user_profile():
@@ -292,8 +310,18 @@ def update_current_user_profile():
         if not verify_password(data["current_password"], user.password):
             return jsonify({"message": "Current password is incorrect"}), 400
         user.password = hash_password(data["new_password"])
+        password_changed = True
+    else:
+        password_changed = False
 
     db.session.commit()
+
+    # Password change invalidates existing tokens so stolen sessions die.
+    if password_changed:
+        from ...auth.token_blocklist import revoke_all_user_tokens
+
+        revoke_all_user_tokens(user.id)
+        audit_service.record(action="password_changed", resource_type="user", resource_id=user.id)
 
     return jsonify(
         {"message": "Profile updated successfully", "user": {"id": user.id, "name": user.name, "email": user.email}}

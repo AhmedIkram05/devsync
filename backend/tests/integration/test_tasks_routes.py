@@ -5,7 +5,7 @@ import sys
 from unittest.mock import MagicMock
 
 import pytest
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import create_access_token, get_csrf_token
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
@@ -39,10 +39,13 @@ def client(app):
     return app.test_client()
 
 
-def auth_headers(app, role, user_id=1):
+def auth_headers(client, app, role, user_id=1):
     with app.app_context():
         token = create_access_token(identity={"user_id": user_id}, additional_claims={"role": role})
-    return {"Authorization": f"Bearer {token}"}
+        csrf = get_csrf_token(token)
+    client.set_cookie("access_token_cookie", token)
+    client.set_cookie("csrf_access_token", csrf)
+    return {"X-CSRF-TOKEN": csrf}
 
 
 def test_team_lead_can_update_task(client, app, monkeypatch):
@@ -51,7 +54,9 @@ def test_team_lead_can_update_task(client, app, monkeypatch):
     monkeypatch.setattr(tasks_routes, "update_task_by_id", handler)
 
     resp = client.put(
-        "/api/v1/tasks/1", headers=auth_headers(app, "team_lead"), json={"title": "Updated Title", "priority": "high"}
+        "/api/v1/tasks/1",
+        headers=auth_headers(client, app, "team_lead"),
+        json={"title": "Updated Title", "priority": "high"},
     )
     assert resp.status_code == 200
     handler.assert_called_once_with(1)
@@ -62,7 +67,7 @@ def test_admin_can_update_task(client, app, monkeypatch):
     handler = MagicMock(return_value=({"message": "Task updated"}, 200))
     monkeypatch.setattr(tasks_routes, "update_task_by_id", handler)
 
-    resp = client.put("/api/v1/tasks/1", headers=auth_headers(app, "admin"), json={"title": "Updated by Admin"})
+    resp = client.put("/api/v1/tasks/1", headers=auth_headers(client, app, "admin"), json={"title": "Updated by Admin"})
     assert resp.status_code == 200
     handler.assert_called_once_with(1)
 
@@ -72,7 +77,7 @@ def test_developer_can_update_own_assigned_task(client, app, monkeypatch):
     handler = MagicMock(return_value=({"message": "Task updated"}, 200))
     monkeypatch.setattr(tasks_routes, "update_task_by_id", handler)
 
-    resp = client.put("/api/v1/tasks/1", headers=auth_headers(app, "developer"), json={"status": "in_progress"})
+    resp = client.put("/api/v1/tasks/1", headers=auth_headers(client, app, "developer"), json={"status": "in_progress"})
     assert resp.status_code == 200
     handler.assert_called_once_with(1)
 
@@ -83,7 +88,7 @@ def test_developer_can_create_task(client, app, monkeypatch):
 
     resp = client.post(
         "/api/v1/tasks",
-        headers=auth_headers(app, "developer"),
+        headers=auth_headers(client, app, "developer"),
         json={"title": "New Task", "description": "Desc", "status": "todo"},
     )
 
@@ -95,7 +100,7 @@ def test_developer_can_delete_task_route(client, app, monkeypatch):
     handler = MagicMock(return_value=({"message": "Task deleted"}, 200))
     monkeypatch.setattr(tasks_routes, "delete_task_by_id", handler)
 
-    resp = client.delete("/api/v1/tasks/1", headers=auth_headers(app, "developer"))
+    resp = client.delete("/api/v1/tasks/1", headers=auth_headers(client, app, "developer"))
 
     assert resp.status_code == 200
     handler.assert_called_once_with(1)

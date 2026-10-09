@@ -21,7 +21,7 @@ describe('tasksApi service', () => {
     authApi.getCurrentUser.mockReset();
     authApi.getCurrentUser.mockReturnValue({
       id: 14,
-      token: 'token-14',
+      email: 'dev@example.com',
     });
 
     global.fetch = jest.fn();
@@ -31,7 +31,7 @@ describe('tasksApi service', () => {
     jest.restoreAllMocks();
   });
 
-  test('fetches all tasks and single task by id using bearer token', async () => {
+  test('fetches all tasks and single task by id with cookies, no bearer', async () => {
     global.fetch
       .mockResolvedValueOnce(buildResponse([{ id: 1, title: 'Task One' }]))
       .mockResolvedValueOnce(buildResponse({ id: 2, title: 'Task Two' }));
@@ -44,7 +44,8 @@ describe('tasksApi service', () => {
 
     const [allTasksUrl, allTasksOptions] = global.fetch.mock.calls[0];
     expect(allTasksUrl).toContain('/api/v1/tasks');
-    expect(allTasksOptions.headers.Authorization).toBe('Bearer token-14');
+    expect(allTasksOptions.headers.Authorization).toBeUndefined();
+    expect(allTasksOptions.credentials).toBe('include');
 
     expect(global.fetch.mock.calls[1][0]).toContain('/api/v1/tasks/2');
   });

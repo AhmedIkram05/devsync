@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from flask_jwt_extended import create_access_token, create_refresh_token
+from flask_jwt_extended import create_access_token, create_refresh_token, get_csrf_token
 
 # Add backend directory to import src.* modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -46,6 +46,8 @@ def client(app):
 
 
 def auth_headers(app, role="developer", user_id=1):
+    """Bearer header for Socket.IO handshakes, which authenticate via the
+    handshake Authorization header rather than HTTP cookies."""
     with app.app_context():
         token = create_access_token(
             identity={"user_id": user_id},
@@ -54,13 +56,26 @@ def auth_headers(app, role="developer", user_id=1):
     return {"Authorization": f"Bearer {token}"}
 
 
-def refresh_headers(app, role="developer", user_id=1):
+def set_access_cookie(client, app, role="developer", user_id=1):
+    """Install an access-token cookie (cookie-only JWT auth) and return the raw
+    token so it can be replayed on a separate client."""
     with app.app_context():
-        token = create_refresh_token(
-            identity={"user_id": user_id},
-            additional_claims={"role": role},
-        )
-    return {"Authorization": f"Bearer {token}"}
+        token = create_access_token(identity={"user_id": user_id}, additional_claims={"role": role})
+        csrf = get_csrf_token(token)
+    client.set_cookie("access_token_cookie", token)
+    client.set_cookie("csrf_access_token", csrf)
+    return token
+
+
+def set_refresh_cookie(client, app, role="developer", user_id=1):
+    """Install a refresh-token cookie and return the raw token + its CSRF value
+    (the CSRF pair is captured before rotation replaces the cookies)."""
+    with app.app_context():
+        token = create_refresh_token(identity={"user_id": user_id}, additional_claims={"role": role})
+        csrf = get_csrf_token(token)
+    client.set_cookie("refresh_token_cookie", token)
+    client.set_cookie("csrf_refresh_token", csrf)
+    return token, csrf
 
 
 def stub_tokens(app, role="developer", user_id=1):
@@ -156,7 +171,7 @@ def test_auth_login_success_returns_token_and_github_flags(client, monkeypatch):
     payload = response.get_json()
     assert payload["message"] == "Login successful"
     assert payload["user"]["id"] == 7
-    assert payload["user"]["token"] == generate_tokens.return_value["access_token"]
+    assert client.get_cookie("access_token_cookie").value == generate_tokens.return_value["access_token"]
     assert payload["user"]["github_connected"] is False
 
     verify_password.assert_called_once_with("password123", "stored-hash")
@@ -179,22 +194,23 @@ def test_auth_token_route_rejects_unknown_user(client, monkeypatch):
     assert response.get_json()["message"] == "Invalid email or password"
 
 
-def csrf_header(client):
+def csrf_header(client, refresh=False):
     """Echo the double-submit cookie back the way the SPA does. Needed once the
     client is carrying a JWT cookie, since the cookie wins over the bearer
     header and therefore subjects POST/PUT/PATCH/DELETE to the CSRF check."""
-    return {"X-CSRF-TOKEN": client.get_cookie("csrf_access_token").value}
+    cookie_name = "csrf_refresh_token" if refresh else "csrf_access_token"
+    return {"X-CSRF-TOKEN": client.get_cookie(cookie_name).value}
 
 
 def test_auth_refresh_and_logout_routes_with_jwt(client, app):
-    refresh_response = client.post("/api/v1/auth/refresh", headers=refresh_headers(app, user_id=42))
+    _, old_csrf = set_refresh_cookie(client, app, user_id=42)
+    refresh_response = client.post("/api/v1/auth/refresh", headers={"X-CSRF-TOKEN": old_csrf})
     assert refresh_response.status_code == 200
-    assert "token" in refresh_response.get_json()
+    set_cookies = refresh_response.headers.getlist("Set-Cookie")
+    assert any("access_token_cookie" in c for c in set_cookies)
 
-    logout_response = client.post(
-        "/api/v1/auth/logout",
-        headers={**auth_headers(app, user_id=42), **csrf_header(client)},
-    )
+    set_access_cookie(client, app, user_id=42)
+    logout_response = client.post("/api/v1/auth/logout", headers=csrf_header(client))
     assert logout_response.status_code == 200
     assert logout_response.get_json()["message"] == "Logout successful"
 
@@ -360,7 +376,8 @@ def test_dashboard_client_route_returns_computed_task_stats(client, app, monkeyp
     monkeypatch.setattr(dashboard_controller, "User", StubUser)
     monkeypatch.setattr(dashboard_controller, "get_tasks_due_soon", MagicMock(return_value=[due_task]))
 
-    response = client.get("/api/v1/dashboard/client", headers=auth_headers(app, role="developer", user_id=21))
+    set_access_cookie(client, app, role="developer", user_id=21)
+    response = client.get("/api/v1/dashboard/client")
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -436,7 +453,8 @@ def test_dashboard_client_route_scopes_team_leads_to_their_projects(client, app,
     monkeypatch.setattr(dashboard_controller, "Project", StubProject)
     monkeypatch.setattr(dashboard_controller, "get_tasks_due_soon", MagicMock(return_value=due_tasks))
 
-    response = client.get("/api/v1/dashboard/client", headers=auth_headers(app, role="team_lead", user_id=21))
+    set_access_cookie(client, app, role="team_lead", user_id=21)
+    response = client.get("/api/v1/dashboard/client")
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -485,7 +503,8 @@ def test_dashboard_admin_route_returns_user_and_task_totals(client, app, monkeyp
     monkeypatch.setattr(dashboard_controller, "User", StubUser)
     monkeypatch.setattr(dashboard_controller, "Project", StubProject)
 
-    response = client.get("/api/v1/dashboard/admin", headers=auth_headers(app, role="admin", user_id=1))
+    set_access_cookie(client, app, role="admin", user_id=1)
+    response = client.get("/api/v1/dashboard/admin")
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -539,7 +558,8 @@ def test_dashboard_project_route_returns_project_metrics(client, app, monkeypatc
         dashboard_controller, "get_recent_updated_project_tasks", MagicMock(return_value=project_tasks[:1])
     )
 
-    response = client.get("/api/v1/dashboard/projects/11", headers=auth_headers(app, role="developer", user_id=1))
+    set_access_cookie(client, app, role="developer", user_id=1)
+    response = client.get("/api/v1/dashboard/projects/11")
 
     assert response.status_code == 200
     payload = response.get_json()
@@ -550,6 +570,66 @@ def test_dashboard_project_route_returns_project_metrics(client, app, monkeypatc
     assert payload["team_members"][0]["name"] == "Developer One"
 
 
+def test_logout_revokes_access_token(app):
+    from src.auth.token_blocklist import reset_for_tests
+
+    reset_for_tests()
+    client = app.test_client()
+    token = set_access_cookie(client, app, user_id=501)
+    logout_response = client.post("/api/v1/auth/logout", headers=csrf_header(client))
+    assert logout_response.status_code == 200
+
+    # Revoked access token is now rejected (fresh client: cookie-only).
+    verifier = app.test_client()
+    verifier.set_cookie("access_token_cookie", token)
+    me_response = verifier.get("/api/v1/auth/me")
+    assert me_response.status_code == 401
+
+
+def test_refresh_rotates_and_old_refresh_rejected(app):
+    from src.auth.token_blocklist import reset_for_tests
+
+    reset_for_tests()
+    client = app.test_client()
+    old_refresh, old_csrf = set_refresh_cookie(client, app, user_id=502)
+    first = client.post("/api/v1/auth/refresh", headers={"X-CSRF-TOKEN": old_csrf})
+    assert first.status_code == 200
+
+    # Rotation sets a fresh access + refresh cookie pair for the next cycle.
+    set_cookies = first.headers.getlist("Set-Cookie")
+    assert any("access_token_cookie" in c for c in set_cookies)
+    assert any("refresh_token_cookie" in c for c in set_cookies)
+
+    # Old refresh jti is single-use: reuse is rejected (fresh client: cookie-only).
+    reuser = app.test_client()
+    reuser.set_cookie("refresh_token_cookie", old_refresh)
+    reuse = reuser.post("/api/v1/auth/refresh", headers={"X-CSRF-TOKEN": old_csrf})
+    assert reuse.status_code == 401
+
+
+def test_refresh_reuse_revokes_user_tokens(app):
+    from src.auth.token_blocklist import reset_for_tests
+
+    reset_for_tests()
+    client = app.test_client()
+    old_refresh, old_csrf = set_refresh_cookie(client, app, user_id=503)
+    rotated = client.post("/api/v1/auth/refresh", headers={"X-CSRF-TOKEN": old_csrf})
+    assert rotated.status_code == 200
+    rotated_access = client.get_cookie("access_token_cookie").value
+
+    # Reusing the old refresh triggers user-wide revocation (fresh client).
+    reuser = app.test_client()
+    reuser.set_cookie("refresh_token_cookie", old_refresh)
+    reuse = reuser.post("/api/v1/auth/refresh", headers={"X-CSRF-TOKEN": old_csrf})
+    assert reuse.status_code == 401
+
+    # The rotated access token (issued before the reuse epoch) is now dead.
+    verifier = app.test_client()
+    verifier.set_cookie("access_token_cookie", rotated_access)
+    stale_response = verifier.get("/api/v1/auth/me")
+    assert stale_response.status_code == 401
+
+
 def test_dashboard_project_route_returns_404_for_missing_project(client, app, monkeypatch):
     class StubProject:
         query = MagicMock()
@@ -557,7 +637,8 @@ def test_dashboard_project_route_returns_404_for_missing_project(client, app, mo
     StubProject.query.get.return_value = None
     monkeypatch.setattr(dashboard_controller, "Project", StubProject)
 
-    response = client.get("/api/v1/dashboard/projects/999", headers=auth_headers(app, role="developer", user_id=1))
+    set_access_cookie(client, app, role="developer", user_id=1)
+    response = client.get("/api/v1/dashboard/projects/999")
 
     assert response.status_code == 404
     assert response.get_json()["message"] == "Project not found"

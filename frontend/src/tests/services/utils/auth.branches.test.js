@@ -138,24 +138,24 @@ describe('auth.js utility functions', () => {
   });
 
   describe('login branch coverage', () => {
-    test('login stores user with token from data.token', async () => {
+    test('login stores sanitized profile and strips leaked tokens', async () => {
       global.fetch = jest.fn(() =>
         Promise.resolve({
           ok: true,
           json: () => Promise.resolve({
-            user: { id: 1, email: 'user@test.com' },
-            token: 'token-abc'
+            user: { id: 1, email: 'user@test.com', token: 'token-abc', refresh_token: 'refresh-abc' },
           })
         })
       );
 
       await authApi.authApi.login({ email: 'user@test.com', password: 'pass' });
       const stored = JSON.parse(localStorage.getItem('user'));
-      expect(stored.token).toBe('token-abc');
+      expect(stored.token).toBeUndefined();
+      expect(stored.refresh_token).toBeUndefined();
       expect(stored.github_connected).toBe(false);
     });
 
-    test('login stores user with token from data.user.token', async () => {
+    test('login strips nested token material from profile', async () => {
       global.fetch = jest.fn(() =>
         Promise.resolve({
           ok: true,
@@ -167,7 +167,8 @@ describe('auth.js utility functions', () => {
 
       await authApi.authApi.login({ email: 'user@test.com', password: 'pass' });
       const stored = JSON.parse(localStorage.getItem('user'));
-      expect(stored.token).toBe('nested-token');
+      expect(stored.token).toBeUndefined();
+      expect(stored.id).toBe(1);
     });
 
     test('login includes github_connected and github_username in stored user', async () => {
@@ -292,64 +293,64 @@ describe('auth.js utility functions', () => {
   });
 
   describe('refreshToken branch coverage', () => {
-    test('refreshToken updates user token on success', async () => {
-      const currentUser = { id: 1, email: 'test@test.com', token: 'old-token' };
+    test('refreshToken rotates cookies then reloads profile via /me', async () => {
+      const currentUser = { id: 1, email: 'test@test.com' };
       localStorage.setItem('user', JSON.stringify(currentUser));
 
-      global.fetch = jest.fn(() =>
-        Promise.resolve({
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce({
           ok: true,
-          json: () => Promise.resolve({ token: 'new-token' })
+          status: 200,
+          json: () => Promise.resolve({ message: 'Token refreshed successfully' }),
         })
-      );
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            user: { id: 1, email: 'test@test.com', role: 'developer' },
+            exp: 9999999999,
+          }),
+        });
 
       const result = await authApi.authApi.refreshToken();
-      expect(result.token).toBe('new-token');
-      expect(JSON.parse(localStorage.getItem('user')).token).toBe('new-token');
+      expect(result.id).toBe(1);
+      expect(result.token).toBeUndefined();
+      expect(JSON.parse(localStorage.getItem('user')).token).toBeUndefined();
     });
 
-    test('refreshToken uses access_token if token not present', async () => {
-      const currentUser = { id: 1, email: 'test@test.com', token: 'old-token' };
+    test('verifySession persists server profile with exp', async () => {
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            user: { id: 1, email: 'test@test.com', role: 'developer' },
+            exp: 9999999999,
+          }),
+        })
+      );
+
+      const result = await authApi.authApi.verifySession();
+      expect(result.user.id).toBe(1);
+      expect(result.exp).toBe(9999999999);
+    });
+
+    test('refreshToken throws when /me validation fails after rotation', async () => {
+      const currentUser = { id: 1, email: 'test@test.com' };
       localStorage.setItem('user', JSON.stringify(currentUser));
 
-      global.fetch = jest.fn(() =>
-        Promise.resolve({
+      global.fetch = jest.fn()
+        .mockResolvedValueOnce({
           ok: true,
-          json: () => Promise.resolve({ access_token: 'new-access-token' })
+          status: 200,
+          json: () => Promise.resolve({ message: 'Token refreshed successfully' }),
         })
-      );
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          json: () => Promise.resolve({ message: 'Unauthorized' }),
+        });
 
-      const result = await authApi.authApi.refreshToken();
-      expect(result.token).toBe('new-access-token');
-    });
-
-    test('refreshToken throws when no current user', async () => {
-      global.fetch = jest.fn(() =>
-        Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ token: 'new-token' })
-        })
-      );
-
-      await expect(authApi.authApi.refreshToken()).rejects.toThrow(
-        'Failed to refresh token - no authenticated user'
-      );
-    });
-
-    test('refreshToken throws when no token in response', async () => {
-      const currentUser = { id: 1, email: 'test@test.com', token: 'old' };
-      localStorage.setItem('user', JSON.stringify(currentUser));
-
-      global.fetch = jest.fn(() =>
-        Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({})
-        })
-      );
-
-      await expect(authApi.authApi.refreshToken()).rejects.toThrow(
-        'Failed to refresh token - no token in response'
-      );
+      await expect(authApi.authApi.refreshToken()).rejects.toThrow();
       expect(localStorage.getItem('user')).toBeNull();
     });
 
@@ -392,18 +393,17 @@ describe('auth.js utility functions', () => {
       expect(isExpired).toBe(true);
     });
 
-    test('isTokenExpired returns true when no token', () => {
+    test('isTokenExpired returns false for profile without exp', () => {
       localStorage.setItem('user', JSON.stringify({ id: 1, email: 'test@test.com' }));
       const isExpired = authApi.authApi.isTokenExpired();
-      expect(isExpired).toBe(true);
+      expect(isExpired).toBe(false);
     });
 
-    test('isTokenExpired returns false when token not expired', () => {
+    test('isTokenExpired returns false when profile has unexpired exp', () => {
       const futureTime = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
       localStorage.setItem('user', JSON.stringify({
         id: 1,
         email: 'test@test.com',
-        token: 'abc',
         exp: futureTime
       }));
 
@@ -411,12 +411,11 @@ describe('auth.js utility functions', () => {
       expect(isExpired).toBe(false);
     });
 
-    test('isTokenExpired returns true when token expired', () => {
+    test('isTokenExpired returns true when exp is past', () => {
       const pastTime = Math.floor(Date.now() / 1000) - 600; // 10 min ago
       localStorage.setItem('user', JSON.stringify({
         id: 1,
         email: 'test@test.com',
-        token: 'abc',
         exp: pastTime
       }));
 
@@ -424,12 +423,11 @@ describe('auth.js utility functions', () => {
       expect(isExpired).toBe(true);
     });
 
-    test('isTokenExpired returns true when token expires in < 5 min', () => {
+    test('isTokenExpired returns true when exp is within 5 min window', () => {
       const soonExpireTime = Math.floor(Date.now() / 1000) + 200; // 3.3 min
       localStorage.setItem('user', JSON.stringify({
         id: 1,
         email: 'test@test.com',
-        token: 'abc',
         exp: soonExpireTime
       }));
 
@@ -441,7 +439,6 @@ describe('auth.js utility functions', () => {
       localStorage.setItem('user', JSON.stringify({
         id: 1,
         email: 'test@test.com',
-        token: 'abc'
       }));
 
       const isExpired = authApi.authApi.isTokenExpired();
