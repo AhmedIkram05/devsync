@@ -61,13 +61,13 @@ export function setup() {
     lastLogin = login.status;
     check(login, { 'login succeeds': (r) => r.status === 200 });
 
-    const token = login.json('user.token');
-    if (token) {
-      return { token };
+    const cookie = login.cookies['access_token_cookie'] && login.cookies['access_token_cookie'][0].value;
+    if (cookie) {
+      return { accessCookie: cookie };
     }
     sleep(1); // back off between attempts
   }
-  throw new Error(`setup() could not obtain a JWT after 3 attempts (register HTTP ${lastRegister}, login HTTP ${lastLogin})`);
+  throw new Error(`setup() could not obtain a session cookie after 3 attempts (register HTTP ${lastRegister}, login HTTP ${lastLogin})`);
 }
 
 // Endpoint mix: the two reads every developer session hits. /reports is
@@ -78,9 +78,12 @@ const TARGETS = [
 ];
 
 export default function (data) {
+  // Sessions are cookie-based (HttpOnly): seed the VU's cookie jar with the
+  // access cookie captured in setup(). GETs need no CSRF double-submit.
+  http.cookieJar().set(BASE_URL, 'access_token_cookie', data.accessCookie);
+
   const target = TARGETS[Math.floor(Math.random() * TARGETS.length)];
   const res = http.get(`${BASE_URL}${target.path}`, {
-    headers: { Authorization: `Bearer ${data.token}` },
     tags: { name: target.name },
   });
 
