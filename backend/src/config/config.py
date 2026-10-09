@@ -1,5 +1,8 @@
 """Application configuration for DevSync."""
 
+import base64
+import hashlib
+import hmac
 import logging
 import os
 import re
@@ -25,6 +28,61 @@ INSECURE_JWT_DEFAULTS = frozenset(
         "change-me-in-local-env",
     }
 )
+
+# Domain separation for HKDF-derived keys. Changing these invalidates
+# previously derived keys — rotate explicit keys via FERNET_KEYS instead.
+FERNET_INFO = b"devsync-fernet-v1"
+OAUTH_STATE_INFO = b"devsync-oauth-state-v1"
+# Fixed HKDF salt keeps derivation deterministic across restarts without
+# storing per-deploy state. Info strings provide domain separation.
+HKDF_SALT = b"devsync-hkdf-salt-v1"
+
+
+def hkdf_sha256(ikm: bytes, salt=None, info=b"", length=32):
+    """Minimal HKDF-SHA256 (RFC 5869) via stdlib hmac/hashlib."""
+    if not salt:
+        salt = b"\x00" * hashlib.sha256().digest_size
+    prk = hmac.new(salt, ikm, hashlib.sha256).digest()
+    okm = b""
+    block = b""
+    counter = 1
+    while len(okm) < length:
+        block = hmac.new(prk, block + info + bytes([counter]), hashlib.sha256).digest()
+        okm += block
+        counter += 1
+    return okm[:length]
+
+
+def _is_truthy(value):
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def is_valid_fernet_key(value):
+    """True when value is a 32-byte urlsafe-b64 string Fernet accepts."""
+    if not isinstance(value, str):
+        return False
+    token = value.strip()
+    if not token:
+        return False
+    try:
+        decoded = base64.urlsafe_b64decode(token.encode("utf-8"))
+    except Exception:
+        return False
+    return len(decoded) == 32
+
+
+def derive_fernet_key(jwt_secret: str) -> str:
+    """Derive a Fernet-compatible key from the JWT secret via HKDF."""
+    raw = jwt_secret.encode("utf-8") if isinstance(jwt_secret, str) else bytes(jwt_secret)
+    okm = hkdf_sha256(raw, salt=HKDF_SALT, info=FERNET_INFO, length=32)
+    return base64.urlsafe_b64encode(okm).decode("utf-8")
+
+
+def derive_oauth_state_secret(jwt_secret: str) -> str:
+    """Derive a dedicated OAuth-state signing key via HKDF (never raw JWT)."""
+    raw = jwt_secret.encode("utf-8") if isinstance(jwt_secret, str) else bytes(jwt_secret)
+    okm = hkdf_sha256(raw, salt=HKDF_SALT, info=OAUTH_STATE_INFO, length=32)
+    return base64.urlsafe_b64encode(okm).decode("utf-8")
 
 
 def _normalize_postgres_scheme(database_url):
@@ -130,7 +188,8 @@ def is_testing_environment(env=None):
 def resolve_jwt_secret(explicit_value=None):
     """Return validated JWT secret, fail-closed outside testing.
 
-    Checks explicit_value, then JWT_SECRET_KEY, then SECRET_KEY env vars.
+    Checks explicit_value, then JWT_SECRET_KEY env var only. No fallback
+    to SECRET_KEY — Flask sessions and JWT signing must use distinct keys.
     Raises RuntimeError if missing or a known default and not testing.
     Testing fallback (FLASK_ENV==testing or PYTEST_CURRENT_TEST) returns
     the provided value or a test-only fallback without raising.
@@ -139,7 +198,7 @@ def resolve_jwt_secret(explicit_value=None):
     testing = is_testing_environment(env)
     raw = explicit_value
     if raw is None:
-        raw = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY")
+        raw = os.getenv("JWT_SECRET_KEY")
     secret = str(raw).strip() if isinstance(raw, str) else raw
     if not secret or secret in INSECURE_JWT_DEFAULTS:
         if testing:
@@ -151,6 +210,132 @@ def resolve_jwt_secret(explicit_value=None):
             'Generate with: python3 -c "import secrets; print(secrets.token_hex(32))"'
         )
     return secret
+
+
+def resolve_flask_secret(explicit_value=None):
+    """Return validated Flask SECRET_KEY (sessions), fail-closed outside testing.
+
+    Checks explicit_value, then SECRET_KEY env var only. No fallback to
+    JWT_SECRET_KEY — the two must be set independently.
+    """
+    env = os.getenv("FLASK_ENV", "development")
+    testing = is_testing_environment(env)
+    raw = explicit_value
+    if raw is None:
+        raw = os.getenv("SECRET_KEY")
+    secret = str(raw).strip() if isinstance(raw, str) else raw
+    if not secret or secret in INSECURE_JWT_DEFAULTS:
+        if testing:
+            return secret or "test-secret-key-for-unit-tests"
+        logger.error("SECRET_KEY missing or insecure in FLASK_ENV=%s", env)
+        raise RuntimeError(
+            "SECRET_KEY is required and must not be a default/placeholder. "
+            "Set SECRET_KEY to a strong random value distinct from JWT_SECRET_KEY. "
+            'Generate with: python3 -c "import secrets; print(secrets.token_hex(32))"'
+        )
+    return secret
+
+
+def _collect_fernet_candidates(explicit_value=None):
+    candidates = []
+    if explicit_value is not None:
+        if isinstance(explicit_value, (list, tuple)):
+            for entry in explicit_value:
+                if entry:
+                    candidates.extend(str(entry).split(","))
+        elif isinstance(explicit_value, str):
+            candidates.extend(explicit_value.split(","))
+    env_list = os.getenv("FERNET_KEYS", "")
+    if env_list:
+        candidates.extend(env_list.split(","))
+    env_single = os.getenv("FERNET_KEY", "")
+    if env_single and (
+        not candidates or env_single.strip() not in [c.strip() for c in candidates if isinstance(c, str)]
+    ):
+        candidates.append(env_single)
+    cleaned = []
+    for raw in candidates:
+        token = raw.strip() if isinstance(raw, str) else raw
+        if not token:
+            continue
+        if token not in cleaned:
+            cleaned.append(token)
+    return cleaned
+
+
+def resolve_fernet_keys(explicit_value=None, jwt_secret=None):
+    """Return validated Fernet key list, primary first. Fail-closed in prod.
+
+    Sources (in order): explicit_value, FERNET_KEYS env (comma-separated),
+    FERNET_KEY env (single). When empty: testing returns an HKDF-derived
+    test key; non-testing requires FERNET_KEY unless ALLOW_DERIVED_FERNET
+    is explicitly truthy, in which case an HKDF-derived key is returned
+    with a warning log.
+    """
+    cleaned = _collect_fernet_candidates(explicit_value)
+    if cleaned:
+        for token in cleaned:
+            if not is_valid_fernet_key(token):
+                raise RuntimeError(
+                    "FERNET_KEY entries must be 32-byte urlsafe-b64 strings. "
+                    'Generate with: python3 -c "from cryptography.fernet import '
+                    'Fernet; print(Fernet.generate_key().decode())"'
+                )
+        return cleaned
+    env = os.getenv("FLASK_ENV", "development")
+    if is_testing_environment(env):
+        base = jwt_secret
+        if base is None:
+            base = os.getenv("JWT_SECRET_KEY") or "test-secret-key-for-unit-tests"
+        base = str(base).strip() or "test-secret-key-for-unit-tests"
+        return [derive_fernet_key(base)]
+    if _is_truthy(os.getenv("ALLOW_DERIVED_FERNET", "")):
+        base = jwt_secret if jwt_secret is not None else resolve_jwt_secret()
+        logger.warning(
+            "Using HKDF-derived FERNET_KEY (ALLOW_DERIVED_FERNET=true). "
+            "Set an explicit FERNET_KEY in production for rotation support."
+        )
+        return [derive_fernet_key(base)]
+    logger.error("FERNET_KEY missing in FLASK_ENV=%s", env)
+    raise RuntimeError(
+        "FERNET_KEY is required in non-testing environments. "
+        'Generate with: python3 -c "from cryptography.fernet import '
+        'Fernet; print(Fernet.generate_key().decode())" '
+        "Or set ALLOW_DERIVED_FERNET=true to allow an HKDF-derived key."
+    )
+
+
+def resolve_fernet_key(explicit_value=None, jwt_secret=None):
+    """Return the primary Fernet key (first of resolve_fernet_keys)."""
+    return resolve_fernet_keys(explicit_value=explicit_value, jwt_secret=jwt_secret)[0]
+
+
+def resolve_oauth_state_secret(explicit_value=None, jwt_secret=None):
+    """Return dedicated OAuth-state signing key via HKDF, never raw JWT.
+
+    Prefers explicit_value / OAUTH_STATE_SECRET env when set and not a
+    known placeholder; otherwise derives from the validated JWT secret.
+    """
+    raw = explicit_value
+    if raw is None:
+        raw = os.getenv("OAUTH_STATE_SECRET")
+    if isinstance(raw, str):
+        token = raw.strip()
+        if token and token not in INSECURE_JWT_DEFAULTS:
+            return token
+        if token and not is_testing_environment():
+            logger.error("OAUTH_STATE_SECRET is a known placeholder")
+            raise RuntimeError(
+                "OAUTH_STATE_SECRET must not be a default/placeholder. "
+                "Unset it to use the HKDF-derived default, or set a strong value."
+            )
+    base = jwt_secret if jwt_secret is not None else resolve_jwt_secret()
+    if isinstance(base, str):
+        base = base.strip()
+    if not base or base in INSECURE_JWT_DEFAULTS:
+        # Reuse JWT fail-closed validation for consistent errors.
+        base = resolve_jwt_secret(explicit_value=base)
+    return derive_oauth_state_secret(base)
 
 
 class Config:
@@ -168,16 +353,23 @@ class Config:
         "pool_timeout": int(os.getenv("DB_POOL_TIMEOUT", "30")),
         "pool_recycle": int(os.getenv("DB_POOL_RECYCLE", "1800")),
     }
-    SECRET_KEY = resolve_jwt_secret()
+    # Three independent keys — no silent fallback between them.
+    # SECRET_KEY: Flask sessions. JWT_SECRET_KEY: JWT signing.
+    SECRET_KEY = resolve_flask_secret()
 
     # JWT Configuration
-    JWT_SECRET_KEY = SECRET_KEY
+    JWT_SECRET_KEY = resolve_jwt_secret()
     JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
 
-    # At-rest encryption key for tokens stored in the DB (e.g. GitHub OAuth).
-    # Optional: when unset, a Fernet key is derived deterministically from SECRET_KEY.
-    FERNET_KEY = os.getenv("FERNET_KEY", "")
+    # At-rest encryption for tokens in the DB (e.g. GitHub OAuth).
+    # Required in prod; HKDF-derived only when ALLOW_DERIVED_FERNET=true.
+    # FERNET_KEYS is the rotation list (primary first); FERNET_KEY is primary.
+    FERNET_KEYS = resolve_fernet_keys(jwt_secret=JWT_SECRET_KEY)
+    FERNET_KEY = FERNET_KEYS[0]
+
+    # Dedicated OAuth-state signing key, HKDF-derived from the JWT secret.
+    OAUTH_STATE_SECRET = resolve_oauth_state_secret(jwt_secret=JWT_SECRET_KEY)
 
     # GitHub OAuth Configuration
     GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")

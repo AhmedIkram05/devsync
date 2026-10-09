@@ -1,13 +1,10 @@
 # Encryption helpers for values stored at rest (GitHub OAuth tokens).
 #
-# Key policy (lazy + safe): encrypt with the FERNET_KEY env var when set,
-# otherwise derive a deterministic Fernet key from the app SECRET_KEY so
-# existing installs keep working without a new secret. Rotating either key
-# invalidates previously stored ciphertext - users must re-link their GitHub
-# account (which rewrites the tokens).
+# Key policy: FERNET_KEY / FERNET_KEYS env vars hold explicit 32-byte
+# urlsafe-b64 keys (primary first). Missing keys fail closed in prod;
+# HKDF-derived fallback requires ALLOW_DERIVED_FERNET=true. Decryption
+# tries each key in FERNET_KEYS order so rotation keeps old rows readable.
 
-import base64
-import hashlib
 import logging
 import os
 
@@ -17,57 +14,76 @@ from flask import current_app
 logger = logging.getLogger(__name__)
 
 try:
-    from src.config.config import INSECURE_JWT_DEFAULTS, is_testing_environment
+    from src.config.config import resolve_fernet_keys
 except ImportError:  # Fallback for backend.src.* import path.
     try:
-        from backend.src.config.config import INSECURE_JWT_DEFAULTS, is_testing_environment
+        from backend.src.config.config import resolve_fernet_keys
     except ImportError:
-        INSECURE_JWT_DEFAULTS = frozenset({"", "dev-secret-key"})
-
-        def is_testing_environment(env=None):
-            env = env if env is not None else os.getenv("FLASK_ENV", "development")
-            if str(env).lower() == "testing":
-                return True
-            return bool(os.getenv("PYTEST_CURRENT_TEST"))
+        resolve_fernet_keys = None
 
 
 FERNET_ENV_KEY = "FERNET_KEY"
-# Retained for backward compatibility; never used silently outside testing.
-LEGACY_SECRET_FALLBACK = "dev-secret-key"
+FERNET_KEYS_ENV_KEY = "FERNET_KEYS"
 
 
-def _derive_key_from_secret(secret):
-    """Derive a stable Fernet key from an arbitrary app secret string."""
-    digest = hashlib.sha256(secret.encode("utf-8")).digest()
-    return base64.urlsafe_b64encode(digest)
+def _explicit_candidates():
+    """Ordered explicit keys from app config then env (no derivation)."""
+    candidates = []
+    try:
+        cfg_keys = current_app.config.get(FERNET_KEYS_ENV_KEY)
+        cfg_single = current_app.config.get(FERNET_ENV_KEY)
+    except RuntimeError:  # Outside an app context (unit tests, scripts).
+        cfg_keys = None
+        cfg_single = None
+    if isinstance(cfg_keys, (list, tuple)):
+        for entry in cfg_keys:
+            if entry:
+                candidates.extend(str(entry).split(","))
+    elif isinstance(cfg_keys, str) and cfg_keys.strip():
+        candidates.extend(cfg_keys.split(","))
+    if isinstance(cfg_single, str) and cfg_single.strip():
+        candidates.append(cfg_single.strip())
+    env_list = os.getenv(FERNET_KEYS_ENV_KEY, "")
+    if env_list:
+        candidates.extend(env_list.split(","))
+    env_single = os.getenv(FERNET_ENV_KEY, "")
+    if env_single:
+        candidates.append(env_single)
+    cleaned = []
+    for raw in candidates:
+        token = raw.strip() if isinstance(raw, str) else raw
+        if token and token not in cleaned:
+            cleaned.append(token)
+    return cleaned
+
+
+def get_fernet_keys():
+    """Return validated Fernet key list, primary first."""
+    explicit = _explicit_candidates()
+    if explicit:
+        if resolve_fernet_keys is not None:
+            return resolve_fernet_keys(explicit_value=explicit)
+        from cryptography.fernet import Fernet as _Fernet
+
+        for token in explicit:
+            _Fernet(token.encode("utf-8"))
+        return explicit
+    if resolve_fernet_keys is not None:
+        try:
+            jwt_secret = current_app.config.get("JWT_SECRET_KEY")
+        except RuntimeError:
+            jwt_secret = None
+        return resolve_fernet_keys(jwt_secret=jwt_secret)
+    raise RuntimeError("FERNET_KEY is required (config module unavailable).")
+
+
+def _primary_key():
+    return get_fernet_keys()[0]
 
 
 def _resolve_key():
-    """Prefer FERNET_KEY; otherwise derive deterministically from SECRET_KEY."""
-    try:
-        fernet_key = current_app.config.get(FERNET_ENV_KEY) or os.getenv(FERNET_ENV_KEY)
-        secret_key = current_app.config.get("SECRET_KEY")
-    except RuntimeError:  # Outside an app context (unit tests, scripts).
-        fernet_key = os.getenv(FERNET_ENV_KEY)
-        secret_key = None
-
-    if fernet_key:
-        return fernet_key.encode("utf-8")
-
-    secret = secret_key or os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY")
-    if isinstance(secret, str):
-        secret = secret.strip()
-    if not secret or secret in INSECURE_JWT_DEFAULTS:
-        if is_testing_environment():
-            secret = secret or LEGACY_SECRET_FALLBACK
-        else:
-            logger.error("JWT/SECRET_KEY missing or insecure for encryption key derivation")
-            raise RuntimeError(
-                "JWT_SECRET_KEY is required and must not be a default/placeholder. "
-                "Set JWT_SECRET_KEY to a strong random value. "
-                'Generate with: python3 -c "import secrets; print(secrets.token_hex(32))"'
-            )
-    return _derive_key_from_secret(secret)
+    """Backward-compatible primary-key accessor for encrypt path."""
+    return _primary_key().encode("utf-8")
 
 
 def encrypt_token(plaintext):
@@ -78,12 +94,14 @@ def encrypt_token(plaintext):
 
 
 def decrypt_token(stored):
-    """Decrypt a token read from storage."""
+    """Decrypt a token read from storage; tries each rotation key in order."""
     if not stored:
         return None
-    try:
-        return Fernet(_resolve_key()).decrypt(stored.encode("utf-8")).decode("utf-8")
-    except (InvalidToken, ValueError):
-        # Legacy plaintext rows written before encryption-at-rest
-        # remain readable; the next OAuth re-link rewrites them as ciphertext.
-        return stored
+    for key in get_fernet_keys():
+        try:
+            return Fernet(key.encode("utf-8")).decrypt(stored.encode("utf-8")).decode("utf-8")
+        except (InvalidToken, ValueError):
+            continue
+    # Legacy plaintext rows written before encryption-at-rest
+    # remain readable; the next OAuth re-link rewrites them as ciphertext.
+    return stored

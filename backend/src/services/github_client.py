@@ -19,12 +19,21 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 try:
-    from src.config.config import INSECURE_JWT_DEFAULTS, is_testing_environment
+    from src.config.config import (
+        INSECURE_JWT_DEFAULTS,
+        is_testing_environment,
+        resolve_oauth_state_secret,
+    )
 except ImportError:  # Fallback for backend.src.* import path.
     try:
-        from backend.src.config.config import INSECURE_JWT_DEFAULTS, is_testing_environment
+        from backend.src.config.config import (
+            INSECURE_JWT_DEFAULTS,
+            is_testing_environment,
+            resolve_oauth_state_secret,
+        )
     except ImportError:
         INSECURE_JWT_DEFAULTS = frozenset({"", "dev-secret-key"})
+        resolve_oauth_state_secret = None
 
         def is_testing_environment(env=None):
             env = env if env is not None else os.getenv("FLASK_ENV", "development")
@@ -59,12 +68,26 @@ class GitHubClient:
 
     @staticmethod
     def _state_serializer():
-        """Signed state serializer keyed off the app SECRET_KEY."""
+        """Signed state serializer keyed off a dedicated HKDF-derived key."""
         try:
-            secret_key = current_app.config.get("SECRET_KEY")
+            cfg_state = current_app.config.get("OAUTH_STATE_SECRET")
+            cfg_jwt = current_app.config.get("JWT_SECRET_KEY")
         except RuntimeError:
-            secret_key = None
-        secret = secret_key or os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY")
+            cfg_state = None
+            cfg_jwt = None
+        explicit = cfg_state or os.getenv("OAUTH_STATE_SECRET")
+        jwt_for_derive = cfg_jwt or os.getenv("JWT_SECRET_KEY")
+        if resolve_oauth_state_secret is not None:
+            try:
+                secret = resolve_oauth_state_secret(
+                    explicit_value=explicit, jwt_secret=jwt_for_derive
+                )
+            except RuntimeError:
+                # Surface fail-closed errors with OAuth context.
+                logger.error("OAUTH state key missing or insecure; JWT_SECRET_KEY required")
+                raise
+            return URLSafeTimedSerializer(secret, salt="github-oauth-state")
+        secret = explicit or jwt_for_derive
         if isinstance(secret, str):
             secret = secret.strip()
         if not secret or secret in INSECURE_JWT_DEFAULTS:

@@ -191,6 +191,8 @@ jobs:
         env:
           DATABASE_URL: postgresql://devsync:devsync@localhost:5432/devsync-test
           JWT_SECRET_KEY: ci-jwt-secret-key
+          SECRET_KEY: ci-flask-secret-key
+          FERNET_KEY: sm5vOEqUQQFVC22GLxVo84a7e68CM11U9bZ_IELijC4=
         run: |
           pytest backend/tests/integration \
             --ignore=backend/tests/integration/test_socket_cross_pod_receipt.py \
@@ -204,6 +206,8 @@ jobs:
         env:
           DATABASE_URL: postgresql://devsync:devsync@localhost:5432/devsync-test
           JWT_SECRET_KEY: ci-jwt-secret-key
+          SECRET_KEY: ci-flask-secret-key
+          FERNET_KEY: sm5vOEqUQQFVC22GLxVo84a7e68CM11U9bZ_IELijC4=
         run: pytest backend/tests/integration/test_socket_cross_pod_receipt.py -q
 
       - name: Upload backend coverage artifact
@@ -348,6 +352,8 @@ jobs:
           DATABASE_URL: postgresql://devsync:devsync@localhost:5432/devsync-test
           FLASK_ENV: testing
           JWT_SECRET_KEY: ci-jwt-secret-key
+          SECRET_KEY: ci-flask-secret-key
+          FERNET_KEY: sm5vOEqUQQFVC22GLxVo84a7e68CM11U9bZ_IELijC4=
           GITHUB_CLIENT_ID: ci-dummy-client-id
           GITHUB_CLIENT_SECRET: ci-dummy-client-secret
         run: |
@@ -438,6 +444,8 @@ jobs:
           # would silently drop the schema in a separate gunicorn process.
           FLASK_ENV: development
           JWT_SECRET_KEY: ci-jwt-secret-key
+          SECRET_KEY: ci-flask-secret-key
+          FERNET_KEY: sm5vOEqUQQFVC22GLxVo84a7e68CM11U9bZ_IELijC4=
         run: |
           python -c "from src.app import create_app; from src.db.models import db; app, _ = create_app(); ctx = app.app_context(); ctx.push(); db.create_all(); ctx.pop()"
 
@@ -449,6 +457,8 @@ jobs:
           # schema created above, not a per-process empty in-memory SQLite DB.
           FLASK_ENV: development
           JWT_SECRET_KEY: ci-jwt-secret-key
+          SECRET_KEY: ci-flask-secret-key
+          FERNET_KEY: sm5vOEqUQQFVC22GLxVo84a7e68CM11U9bZ_IELijC4=
           # Disable the global rate limiter: the load test must saturate the
           # app, not its throttle. Never set this outside a load-test env.
           RATE_LIMIT_REQUESTS_PER_WINDOW: "0"

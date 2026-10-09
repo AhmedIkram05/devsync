@@ -9,7 +9,13 @@ from flask_swagger_ui import get_swaggerui_blueprint
 
 from src.api import init_app as init_api
 from src.api.middlewares import setup_middlewares
-from src.config.config import get_config, resolve_jwt_secret
+from src.config.config import (
+    get_config,
+    resolve_fernet_keys,
+    resolve_flask_secret,
+    resolve_jwt_secret,
+    resolve_oauth_state_secret,
+)
 
 # Import before config-dependent modules to allow env vars to be read.
 from src.db.models import db
@@ -62,14 +68,28 @@ def create_app(config_class=None):
     # Configure database using the selected config class/environment.
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-    # Configure JWT — fail-closed: no hardcoded fallback outside testing.
+    # Configure JWT + sessions — fail-closed, distinct keys, no silent fallback.
     if isinstance(config_class, dict):
-        explicit_secret = config_class.get("JWT_SECRET_KEY") or config_class.get("SECRET_KEY")
+        explicit_flask = config_class.get("SECRET_KEY")
+        explicit_jwt = config_class.get("JWT_SECRET_KEY")
+        explicit_fernet = config_class.get("FERNET_KEYS") or config_class.get("FERNET_KEY")
+        explicit_oauth = config_class.get("OAUTH_STATE_SECRET")
     else:
-        explicit_secret = app.config.get("JWT_SECRET_KEY") or app.config.get("SECRET_KEY")
-    jwt_secret = resolve_jwt_secret(explicit_value=explicit_secret)
-    app.config["SECRET_KEY"] = jwt_secret
+        explicit_flask = app.config.get("SECRET_KEY")
+        explicit_jwt = app.config.get("JWT_SECRET_KEY")
+        explicit_fernet = app.config.get("FERNET_KEYS") or app.config.get("FERNET_KEY")
+        explicit_oauth = app.config.get("OAUTH_STATE_SECRET")
+    flask_secret = resolve_flask_secret(explicit_value=explicit_flask)
+    jwt_secret = resolve_jwt_secret(explicit_value=explicit_jwt)
+    app.config["SECRET_KEY"] = flask_secret
     app.config["JWT_SECRET_KEY"] = jwt_secret
+    # Fail fast in prod when FERNET_KEY is missing/invalid; testing derives.
+    fernet_keys = resolve_fernet_keys(explicit_value=explicit_fernet, jwt_secret=jwt_secret)
+    app.config["FERNET_KEYS"] = fernet_keys
+    app.config["FERNET_KEY"] = fernet_keys[0]
+    app.config["OAUTH_STATE_SECRET"] = resolve_oauth_state_secret(
+        explicit_value=explicit_oauth, jwt_secret=jwt_secret
+    )
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")))
     app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
     app.config["JWT_TOKEN_LOCATION"] = ["cookies", "headers"]
@@ -114,9 +134,19 @@ def create_app(config_class=None):
         app.config.update(config_class)
 
     # Re-validate after overrides so a dict cannot inject a default/empty secret.
-    jwt_secret = resolve_jwt_secret(explicit_value=app.config.get("JWT_SECRET_KEY") or app.config.get("SECRET_KEY"))
-    app.config["SECRET_KEY"] = jwt_secret
+    flask_secret = resolve_flask_secret(explicit_value=app.config.get("SECRET_KEY"))
+    jwt_secret = resolve_jwt_secret(explicit_value=app.config.get("JWT_SECRET_KEY"))
+    app.config["SECRET_KEY"] = flask_secret
     app.config["JWT_SECRET_KEY"] = jwt_secret
+    fernet_keys = resolve_fernet_keys(
+        explicit_value=app.config.get("FERNET_KEYS") or app.config.get("FERNET_KEY"),
+        jwt_secret=jwt_secret,
+    )
+    app.config["FERNET_KEYS"] = fernet_keys
+    app.config["FERNET_KEY"] = fernet_keys[0]
+    app.config["OAUTH_STATE_SECRET"] = resolve_oauth_state_secret(
+        explicit_value=app.config.get("OAUTH_STATE_SECRET"), jwt_secret=jwt_secret
+    )
 
     # Initialize extensions
     db.init_app(app)
