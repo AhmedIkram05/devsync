@@ -2,7 +2,7 @@ import functools
 import logging
 import os
 
-from flask import request
+from flask import has_request_context, request
 from flask_jwt_extended import decode_token
 from flask_socketio import SocketIO, disconnect, emit, join_room, leave_room
 from jwt.exceptions import InvalidTokenError
@@ -120,8 +120,11 @@ def _extract_token(auth_payload=None):
     elif isinstance(auth_payload, str):
         token = auth_payload
 
-    if not token:
+    if not token and has_request_context():
         token = request.headers.get("Authorization")
+
+    if not token and has_request_context():
+        token = request.cookies.get("access_token_cookie")
 
     if isinstance(token, str) and token.startswith("Bearer "):
         token = token.split(" ", 1)[1]

@@ -311,6 +311,31 @@ def test_socket_room_flow_and_broadcast_events(app_and_socket, app):
     assert 2 not in socket_module.connected_users
 
 
+def test_socket_authenticates_from_access_token_cookie(app_and_socket, app):
+    """Cookie-only JWT (P0-5): a same-origin handshake carries the HttpOnly
+    access_token_cookie instead of a bearer header, and the socket layer must
+    fall back to it during the handshake and on protected events."""
+    _, socketio = app_and_socket
+
+    socket_module.connected_users.clear()
+    socket_module.sid_users.clear()
+
+    with app.app_context():
+        token = create_access_token(identity={"user_id": 77}, additional_claims={"role": "developer"})
+
+    ws_client = socketio.test_client(
+        app,
+        headers={"Cookie": f"access_token_cookie={token}"},
+    )
+    assert ws_client.is_connected()
+
+    ack = ws_client.emit("register", {}, callback=True)
+    assert ack["status"] == "success"
+    assert 77 in socket_module.connected_users
+
+    ws_client.disconnect()
+
+
 def test_socket_handlers_validate_required_payload_fields(app_and_socket, app):
     _, socketio = app_and_socket
 

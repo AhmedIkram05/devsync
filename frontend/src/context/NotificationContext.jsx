@@ -37,7 +37,7 @@ export const NotificationProvider = ({ children }) => {
   // Debounced refresh notifications function with rate limiting
   const refreshNotifications = useCallback(async (force = false) => {
     if (!isMountedRef.current) return;
-    if (!currentUser || !currentUser.token) {
+    if (!currentUser) {
       return;
     }
     
@@ -165,8 +165,8 @@ export const NotificationProvider = ({ children }) => {
     let socketConnection = null;
     
     const connectSocket = () => {
-      if (!currentUser || !currentUser.token) {
-        console.log('No user token available for socket connection');
+      if (!currentUser) {
+        console.log('No user available for socket connection');
         return;
       }
       
@@ -204,9 +204,7 @@ export const NotificationProvider = ({ children }) => {
         };
         const socketTransports = transportMap[configuredTransport] || transportMap.polling;
         socketConnection = io(socketUrl, {
-          auth: {
-            token: currentUser.token
-          },
+          withCredentials: true,
           transports: socketTransports,
           upgrade: socketTransports.length > 1,
           reconnection: true,
@@ -354,7 +352,7 @@ export const NotificationProvider = ({ children }) => {
     };
     
     // Only try to connect if we have a user and the server is not known to be down
-    if (currentUser && currentUser.token && !serverDown) {
+    if (currentUser && !serverDown) {
       connectSocket();
       refreshNotifications(true); // Initial fetch with force=true
     }
