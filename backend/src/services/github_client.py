@@ -79,9 +79,7 @@ class GitHubClient:
         jwt_for_derive = cfg_jwt or os.getenv("JWT_SECRET_KEY")
         if resolve_oauth_state_secret is not None:
             try:
-                secret = resolve_oauth_state_secret(
-                    explicit_value=explicit, jwt_secret=jwt_for_derive
-                )
+                secret = resolve_oauth_state_secret(explicit_value=explicit, jwt_secret=jwt_for_derive)
             except RuntimeError:
                 # Surface fail-closed errors with OAuth context.
                 logger.error("OAUTH state key missing or insecure; JWT_SECRET_KEY required")

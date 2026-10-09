@@ -13,12 +13,14 @@ from src.config.config import (
     get_config,
     is_valid_cors_origin,
     normalize_origin,
+    resolve_access_expire_minutes,
     resolve_cors_allowed_origins,
     resolve_fernet_keys,
     resolve_flask_secret,
     resolve_frontend_url,
     resolve_jwt_secret,
     resolve_oauth_state_secret,
+    resolve_refresh_expire_days,
 )
 
 # Import before config-dependent modules to allow env vars to be read.
@@ -31,7 +33,7 @@ load_dotenv(override=False)
 # Add the backend directory to the Python path
 backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
 
-from flask import Flask, jsonify, make_response, request, send_file
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
@@ -53,6 +55,16 @@ def is_public_route(path):
     if not path:
         return False
     return any(path == route or path.startswith(route + "/") for route in PUBLIC_ROUTES)
+
+
+def _apply_jwt_expiry(app):
+    """Derive Flask-JWT-Extended timedeltas from the single Config source."""
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(
+        minutes=resolve_access_expire_minutes(explicit_value=app.config.get("ACCESS_TOKEN_EXPIRE_MINUTES"))
+    )
+    app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(
+        days=resolve_refresh_expire_days(explicit_value=app.config.get("REFRESH_TOKEN_EXPIRE_DAYS"))
+    )
 
 
 def create_app(config_class=None):
@@ -108,8 +120,7 @@ def create_app(config_class=None):
     app.config["FERNET_KEYS"] = fernet_keys
     app.config["FERNET_KEY"] = fernet_keys[0]
     app.config["OAUTH_STATE_SECRET"] = resolve_oauth_state_secret(explicit_value=explicit_oauth, jwt_secret=jwt_secret)
-    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")))
-    app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
+    _apply_jwt_expiry(app)
     app.config["JWT_TOKEN_LOCATION"] = ["cookies"]
     app.config["JWT_IDENTITY_CLAIM"] = "identity"
     configured_secure = app.config.get("JWT_COOKIE_SECURE")
@@ -165,6 +176,8 @@ def create_app(config_class=None):
     app.config["OAUTH_STATE_SECRET"] = resolve_oauth_state_secret(
         explicit_value=app.config.get("OAUTH_STATE_SECRET"), jwt_secret=jwt_secret
     )
+    # Re-derive expiries after dict overrides so minutes/days stay single-sourced.
+    _apply_jwt_expiry(app)
 
     # Initialize extensions
     db.init_app(app)
@@ -217,10 +230,9 @@ def create_app(config_class=None):
                 response.headers["Vary"] = f"{vary}, Origin" if vary else "Origin"
         return response
 
-    @app.route("/", methods=["OPTIONS"])
-    @app.route("/<path:path>", methods=["OPTIONS"])
-    def options_handler(path=None):
-        return make_response()
+    # Preflight OPTIONS is handled by Flask-CORS on registered routes; a
+    # catch-all OPTIONS rule would turn GETs to unknown paths into 405 (then
+    # 500), so it is deliberately omitted here.
 
     # JWT error handlers
     @jwt.expired_token_loader

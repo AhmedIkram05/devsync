@@ -608,9 +608,7 @@ def test_get_github_repositories_invalid_token_returns_relink(mock_token, mock_i
 def test_add_github_repository_invalid_token_returns_relink(
     mock_token, mock_validate, mock_identity, mock_decrypt, app
 ):
-    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(
-        access_token="plaintext-legacy-row"
-    )
+    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token="plaintext-legacy-row")
 
     payload = {"repository_name": "org/repo", "repository_url": "https://github.com/org/repo"}
     with app.test_request_context("/github/repositories", method="POST", json=payload):
@@ -626,13 +624,9 @@ def test_add_github_repository_invalid_token_returns_relink(
 @patch("backend.src.api.controllers.github_controller.get_jwt_identity", return_value={"user_id": 1})
 @patch("backend.src.api.controllers.github_controller.GitHubRepository")
 @patch("backend.src.api.controllers.github_controller.GitHubToken")
-def test_get_repository_issues_invalid_token_returns_relink(
-    mock_token, mock_repo, mock_identity, mock_decrypt, app
-):
+def test_get_repository_issues_invalid_token_returns_relink(mock_token, mock_repo, mock_identity, mock_decrypt, app):
     mock_repo.query.get_or_404.return_value = SimpleNamespace(repo_name="org/repo")
-    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(
-        access_token="corrupted-ciphertext"
-    )
+    mock_token.query.filter_by.return_value.first.return_value = SimpleNamespace(access_token="corrupted-ciphertext")
 
     with app.test_request_context("/github/repos/1/issues"):
         from backend.src.api.controllers.github_controller import get_repository_issues

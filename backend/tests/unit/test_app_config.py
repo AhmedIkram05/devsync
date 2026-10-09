@@ -250,6 +250,64 @@ def test_resolve_cors_allowed_origins_skips_invalid(monkeypatch):
     assert len(origins) == 2
 
 
+def test_resolve_token_lifetimes_default_to_15_min_7_days(monkeypatch):
+    from backend.src.config.config import (
+        resolve_access_expire_minutes,
+        resolve_refresh_expire_days,
+    )
+
+    monkeypatch.delenv("JWT_ACCESS_EXPIRE_MINUTES", raising=False)
+    monkeypatch.delenv("JWT_REFRESH_EXPIRE_DAYS", raising=False)
+    assert resolve_access_expire_minutes() == 15
+    assert resolve_refresh_expire_days() == 7
+
+
+def test_resolve_token_lifetimes_env_override(monkeypatch):
+    from backend.src.config.config import (
+        resolve_access_expire_minutes,
+        resolve_refresh_expire_days,
+    )
+
+    monkeypatch.setenv("JWT_ACCESS_EXPIRE_MINUTES", "45")
+    monkeypatch.setenv("JWT_REFRESH_EXPIRE_DAYS", "10")
+    assert resolve_access_expire_minutes() == 45
+    assert resolve_refresh_expire_days() == 10
+
+
+def test_resolve_token_lifetimes_explicit_beats_env(monkeypatch):
+    from backend.src.config.config import (
+        resolve_access_expire_minutes,
+        resolve_refresh_expire_days,
+    )
+
+    monkeypatch.setenv("JWT_ACCESS_EXPIRE_MINUTES", "45")
+    monkeypatch.setenv("JWT_REFRESH_EXPIRE_DAYS", "10")
+    assert resolve_access_expire_minutes(explicit_value=25) == 25
+    assert resolve_refresh_expire_days(explicit_value=3) == 3
+
+
+@pytest.mark.parametrize("bad", ["0", "-5", "abc", ""])
+def test_resolve_token_lifetimes_reject_non_positive(monkeypatch, bad):
+    from backend.src.config.config import resolve_access_expire_minutes
+
+    monkeypatch.setenv("JWT_ACCESS_EXPIRE_MINUTES", bad)
+    if bad == "":
+        # Blank is treated as unset and falls back to the default.
+        assert resolve_access_expire_minutes() == 15
+    else:
+        with pytest.raises(ValueError, match="positive integer"):
+            resolve_access_expire_minutes()
+
+
+def test_config_class_exposes_token_lifetimes(monkeypatch):
+    class_check = _reload_config(monkeypatch, JWT_ACCESS_EXPIRE_MINUTES=None, JWT_REFRESH_EXPIRE_DAYS=None)
+    try:
+        assert class_check.Config.ACCESS_TOKEN_EXPIRE_MINUTES == 15
+        assert class_check.Config.REFRESH_TOKEN_EXPIRE_DAYS == 7
+    finally:
+        _restore_config(monkeypatch)
+
+
 def test_is_public_route_exact_or_subpath_only():
     from backend.src.app import PUBLIC_ROUTES, is_public_route
 

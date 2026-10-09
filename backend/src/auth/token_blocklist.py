@@ -19,8 +19,8 @@ Storage:
   expired anyway.
 - Per-user epoch for "log out everywhere" (logout, password change, role
   change, refresh reuse): key ``jwt_user_revoked:<user_id>`` = revoke epoch
-  (unix seconds) with TTL = refresh lifetime (30d). Any token with
-  iat < epoch is treated as revoked.
+  (unix seconds) with TTL = refresh lifetime (REFRESH_TOKEN_EXPIRE_DAYS,
+  default 7d). Any token with iat < epoch is treated as revoked.
 """
 
 import logging
@@ -30,8 +30,21 @@ logger = logging.getLogger(__name__)
 
 DENYLIST_PREFIX = "jwt_denylist:"
 USER_REVOKE_PREFIX = "jwt_user_revoked:"
-REFRESH_TTL_SECONDS = 30 * 24 * 3600
-DEFAULT_ACCESS_TTL_SECONDS = 3600
+
+
+def access_ttl_seconds() -> int:
+    """Access-token denylist TTL, derived from the single Config source."""
+    from ..config.config import resolve_access_expire_minutes
+
+    return resolve_access_expire_minutes() * 60
+
+
+def refresh_ttl_seconds() -> int:
+    """User-epoch denylist TTL, derived from the single Config source."""
+    from ..config.config import resolve_refresh_expire_days
+
+    return resolve_refresh_expire_days() * 24 * 3600
+
 
 _memory_denylist: dict = {}
 _memory_user_revoke: dict = {}
@@ -95,16 +108,18 @@ def revoke_jwt_payload(jwt_payload: dict) -> None:
         try:
             ttl = int(float(exp) - _now())
         except (TypeError, ValueError):
-            ttl = DEFAULT_ACCESS_TTL_SECONDS
+            ttl = access_ttl_seconds()
     else:
-        ttl = REFRESH_TTL_SECONDS if jwt_payload.get("type") == "refresh" else DEFAULT_ACCESS_TTL_SECONDS
+        ttl = refresh_ttl_seconds() if jwt_payload.get("type") == "refresh" else access_ttl_seconds()
     revoke_token(str(jti), max(1, ttl))
 
 
-def revoke_all_user_tokens(user_id, ttl_seconds: int = REFRESH_TTL_SECONDS) -> None:
+def revoke_all_user_tokens(user_id, ttl_seconds: int | None = None) -> None:
     """Epoch-revoke every token for a user issued before now (logout everywhere)."""
     if user_id is None:
         return
+    if ttl_seconds is None:
+        ttl_seconds = refresh_ttl_seconds()
     key = str(user_id)
     epoch = _now()
     _memory_user_revoke[key] = epoch
@@ -147,7 +162,7 @@ def is_token_revoked(jwt_payload: dict) -> bool:
         return False
     try:
         if jti is not None and client.exists(f"{DENYLIST_PREFIX}{jti}"):
-            _memory_denylist[str(jti)] = _now() + DEFAULT_ACCESS_TTL_SECONDS
+            _memory_denylist[str(jti)] = _now() + access_ttl_seconds()
             return True
         if user_id is not None:
             raw = client.get(f"{USER_REVOKE_PREFIX}{user_id}")

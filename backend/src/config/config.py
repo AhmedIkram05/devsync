@@ -401,6 +401,41 @@ def resolve_cors_allowed_origins():
     return origins
 
 
+def _parse_positive_int(raw, name, default):
+    """Parse a positive-int setting; unset/blank falls back to default."""
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return default
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a positive integer, got {raw!r}") from None
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer, got {raw!r}")
+    return value
+
+
+def resolve_access_expire_minutes(explicit_value=None):
+    """Single source for access-token lifetime (minutes, default 15).
+
+    Precedence: explicit_value, JWT_ACCESS_EXPIRE_MINUTES env, default.
+    """
+    raw = explicit_value
+    if raw is None:
+        raw = os.getenv("JWT_ACCESS_EXPIRE_MINUTES")
+    return _parse_positive_int(raw, "JWT_ACCESS_EXPIRE_MINUTES", 15)
+
+
+def resolve_refresh_expire_days(explicit_value=None):
+    """Single source for refresh-token lifetime (days, default 7).
+
+    Precedence: explicit_value, JWT_REFRESH_EXPIRE_DAYS env, default.
+    """
+    raw = explicit_value
+    if raw is None:
+        raw = os.getenv("JWT_REFRESH_EXPIRE_DAYS")
+    return _parse_positive_int(raw, "JWT_REFRESH_EXPIRE_DAYS", 7)
+
+
 class Config:
     """Base configuration class for the application."""
 
@@ -423,7 +458,8 @@ class Config:
     # JWT Configuration
     JWT_SECRET_KEY = resolve_jwt_secret()
     JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-    ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+    ACCESS_TOKEN_EXPIRE_MINUTES = resolve_access_expire_minutes()
+    REFRESH_TOKEN_EXPIRE_DAYS = resolve_refresh_expire_days()
 
     # At-rest encryption for tokens in the DB (e.g. GitHub OAuth).
     # Required in prod; HKDF-derived only when ALLOW_DERIVED_FERNET=true.
