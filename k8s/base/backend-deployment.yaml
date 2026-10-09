@@ -93,6 +93,14 @@ spec:
             secretKeyRef:
               name: devsync-app-secrets
               key: JWT_SECRET_KEY
+        # Optional: app derives a distinct Flask key from JWT when unset, so a
+        # missing SECRET_KEY can never block boot (rollout-safe).
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: devsync-app-secrets
+              key: SECRET_KEY
+              optional: true
         - name: GITHUB_CLIENT_ID
           valueFrom:
             secretKeyRef:
