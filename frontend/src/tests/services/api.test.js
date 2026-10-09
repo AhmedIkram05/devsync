@@ -94,6 +94,83 @@ describe('api utilities', () => {
     });
   });
 
+  test('fetchWithAuth refreshes then retries the original request on 401', async () => {
+    global.fetch
+      .mockResolvedValueOnce(buildResponse({ message: 'token expired' }, 401))
+      .mockResolvedValueOnce(buildResponse({ message: 'refreshed' }, 200))
+      .mockResolvedValueOnce(buildResponse({ data: 'recovered' }, 200));
+
+    const response = await fetchWithAuth('tasks', { method: 'POST', body: JSON.stringify({ a: 1 }) });
+
+    expect(response).toEqual({ data: 'recovered' });
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+    const [refreshUrl, refreshOptions] = global.fetch.mock.calls[1];
+    expect(refreshUrl).toContain('/api/v1/auth/refresh');
+    expect(refreshOptions.method).toBe('POST');
+    expect(refreshOptions.credentials).toBe('include');
+    expect(refreshOptions.headers).toHaveProperty('X-CSRF-TOKEN');
+    const [retryUrl, retryOptions] = global.fetch.mock.calls[2];
+    expect(retryUrl).toContain('/api/v1/tasks');
+    expect(retryOptions.method).toBe('POST');
+    expect(retryOptions.body).toBe(JSON.stringify({ a: 1 }));
+    expect(retryOptions.headers.Authorization).toBeUndefined();
+  });
+
+  test('fetchWithAuth throws auth error when the refresh itself fails (no retry)', async () => {
+    global.fetch
+      .mockResolvedValueOnce(buildResponse({ message: 'token expired' }, 401))
+      .mockResolvedValueOnce(buildResponse({ message: 'refresh rejected' }, 401));
+
+    await expect(fetchWithAuth('tasks')).rejects.toMatchObject({
+      status: 401,
+      isAuthError: true,
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  test('fetchWithAuth does not loop when the retried request also 401s', async () => {
+    global.fetch
+      .mockResolvedValueOnce(buildResponse({ message: 'expired' }, 401))
+      .mockResolvedValueOnce(buildResponse({}, 200))
+      .mockResolvedValueOnce(buildResponse({ message: 'still expired' }, 401));
+
+    await expect(fetchWithAuth('tasks')).rejects.toMatchObject({
+      status: 401,
+      isAuthError: true,
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  test('fetchWithAuth never attempts refresh for login, register, or refresh URLs', async () => {
+    global.fetch.mockResolvedValue(buildResponse({ message: 'bad credentials' }, 401));
+
+    for (const endpoint of ['auth/login', 'auth/register', 'auth/refresh']) {
+      global.fetch.mockClear();
+      await expect(fetchWithAuth(endpoint)).rejects.toMatchObject({ status: 401 });
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  test('concurrent 401s share a single in-flight refresh', async () => {
+    global.fetch
+      .mockResolvedValueOnce(buildResponse({ message: 'expired' }, 401)) // tasks original
+      .mockResolvedValueOnce(buildResponse({ message: 'expired' }, 401)) // projects original
+      .mockResolvedValueOnce(buildResponse({}, 200))                     // shared refresh
+      .mockResolvedValueOnce(buildResponse({ retried: true }, 200))      // first retry
+      .mockResolvedValueOnce(buildResponse({ retried: true }, 200));     // second retry
+
+    const [tasks, projects] = await Promise.all([
+      fetchWithAuth('tasks'),
+      fetchWithAuth('projects'),
+    ]);
+
+    expect(tasks).toEqual({ retried: true });
+    expect(projects).toEqual({ retried: true });
+    const refreshCalls = global.fetch.mock.calls.filter(([url]) => url.includes('/auth/refresh'));
+    expect(refreshCalls).toHaveLength(1);
+    expect(global.fetch).toHaveBeenCalledTimes(5);
+  });
+
   test('fetchWithAuth throws structured error for GitHub 400 endpoints', async () => {
     global.fetch.mockResolvedValue(buildResponse({ message: 'Invalid state parameter' }, 400));
 
