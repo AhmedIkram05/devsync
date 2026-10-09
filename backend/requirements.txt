@@ -16,8 +16,6 @@ flask-cors==6.0.5
 
 # Authentication
 cryptography==50.0.2  # Fernet encryption-at-rest for stored OAuth tokens
-python-jose[cryptography]==3.5.0
-pyasn1>=0.6.4  # transitive via python-jose/rsa — fixes PYSEC-2026-3455/3456/3457 (needs python-jose>=3.5.0 which relaxes its pyasn1<0.5 pin)
 passlib==1.7.4
 bcrypt==4.1.2
 python-multipart==0.0.32
