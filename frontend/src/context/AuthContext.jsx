@@ -16,14 +16,24 @@ const GITHUB_REPORT_DATE_RANGES = ['week', 'month', 'quarter', 'year'];
 
 const hasValidRole = (user) => user?.role && VALID_ROLES.has(user.role);
 
+const sanitizeProfile = (user) => {
+  if (!user || typeof user !== 'object') return user;
+  const { token, access_token, accessToken, refresh_token, refreshToken, ...clean } = user;
+  return clean;
+};
+
 export const AuthProvider = ({ children }) => {
-  // Try to load user immediately during component initialization to prevent flicker
+  // Try to load cached profile immediately to prevent flicker.
+  // No tokens are stored — HttpOnly cookies carry the session.
   const initialUser = (() => {
     try {
       const userJson = localStorage.getItem('user');
       if (userJson) {
-        const userData = JSON.parse(userJson);
-        if (userData && userData.id && userData.token && hasValidRole(userData)) {
+        const userData = sanitizeProfile(JSON.parse(userJson));
+        if (userData && userData.id && userData.email && hasValidRole(userData)) {
+          if (JSON.stringify(userData) !== userJson) {
+            localStorage.setItem('user', JSON.stringify(userData));
+          }
           return userData;
         }
         localStorage.removeItem('user');
@@ -50,45 +60,42 @@ export const AuthProvider = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Function to verify token
-  const verifyToken = (user) => {
-    if (!user) {
+  // Verify the cookie session against the server — never trust localStorage alone.
+  const verifyToken = async () => {
+    try {
+      const session = await authApi.verifySession();
+      return Boolean(session && session.user && session.user.id);
+    } catch {
       return false;
     }
-    if (!user.token) {
-      return false; 
-    }
-    return true;
   };
 
-  // Load the user from localStorage on component mount
+  // Load the user from the server session on component mount
   useEffect(() => {
-    // Skip if we already have a user from initialization
-    if (initialUser || isInitialized.current) {
-      isInitialized.current = true;
+    if (isInitialized.current) {
       return;
     }
+    isInitialized.current = true;
 
-    const loadUser = () => {
+    const loadUser = async () => {
       try {
-        // Get user from localStorage
-        const user = authApi.getCurrentUser();
-        if (user) {
-          // User exists in localStorage
-          if (verifyToken(user) && hasValidRole(user)) {
-            // Update the state with the user
-            setCurrentUser(user);
-            if (user.permissions) {
-              setPermissions(user.permissions);
-            } else {
-              // Fetch permissions if not in localStorage
-              fetch(`${process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000/api/v1' : '')}/auth/permissions`, {
-                headers: { 'Authorization': `Bearer ${user.token}` }
-              })
+        // Validate the cookie session with the backend
+        const session = await authApi.verifySession();
+        const user = sanitizeProfile(session.user);
+        if (user && hasValidRole(user)) {
+          // Update the state with the server-validated user
+          setCurrentUser(user);
+          if (user.permissions) {
+            setPermissions(user.permissions);
+          } else {
+            // Fetch permissions via cookie session
+            fetch(`${process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000/api/v1' : '')}/auth/permissions`, {
+              credentials: 'include',
+            })
                 .then(res => res.json())
                 .then(data => {
                   setPermissions(data.permissions || []);
-                  const updatedUser = { ...user, permissions: data.permissions || [] };
+                  const updatedUser = sanitizeProfile({ ...user, permissions: data.permissions || [] });
                   localStorage.setItem('user', JSON.stringify(updatedUser));
                   setCurrentUser(updatedUser);
                 })
@@ -107,17 +114,22 @@ export const AuthProvider = ({ children }) => {
             localStorage.removeItem("user");
             navigate("/login", { replace: true });
           }
-        }
       } catch (err) {
-        console.error("Error loading user from localStorage:", err);
-        localStorage.removeItem("user");
+        // No valid cookie session — fall back to cached profile if present,
+        // otherwise clear and stay on public routes.
+        const cached = authApi.getCurrentUser();
+        if (cached && hasValidRole(cached)) {
+          setCurrentUser(sanitizeProfile(cached));
+        } else {
+          console.error("Error validating session:", err);
+          localStorage.removeItem("user");
+        }
       } finally {
         setLoading(false);
-        isInitialized.current = true;
       }
     };
     loadUser();
-  }, [initialUser, navigate]);
+  }, [navigate]);
 
   // Function to connect GitHub account
   const connectGitHub = async () => {
@@ -149,52 +161,43 @@ export const AuthProvider = ({ children }) => {
       setError(null);
       setLoading(true);
       setAuthInProgress(true);
-      
-      // Call login API
+
+      // Call login API — session lands in HttpOnly cookies, profile in body.
       const data = await authApi.login(credentials);
-      
-      // Extract token with fallbacks
-      let token = null;
-      if (data.user && data.user.token) {
-        token = data.user.token;
-      } else if (data.token) {
-        token = data.token;
-      }
-      
+
       if (data.user) {
-        // Store the user with the token in state and localStorage
-        const userWithToken = {
+        // Store the sanitized profile in state and localStorage (no tokens).
+        const profile = sanitizeProfile({
           ...data.user,
-          token: token || "", 
           github_connected: data.user.github_connected || false,
           github_username: data.user.github_username || "",
           role: data.user.role || (data.user.is_admin ? "admin" : DEFAULT_ROLE),
-        };
+        });
 
-        if (!hasValidRole(userWithToken)) {
+        if (!hasValidRole(profile)) {
           throw new Error("This account role is no longer supported. Please contact an administrator.");
         }
-        
-        // Fetch permissions
+
+        // Fetch permissions via cookie session
         try {
           const permRes = await fetch(`${process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000/api/v1' : '')}/auth/permissions`, {
-            headers: { 'Authorization': `Bearer ${userWithToken.token}` }
+            credentials: 'include',
           });
           const permData = await permRes.json();
-          userWithToken.permissions = permData.permissions || [];
+          profile.permissions = permData.permissions || [];
           setPermissions(permData.permissions || []);
         } catch (err) {
           console.error("Failed to fetch permissions during login:", err);
-          userWithToken.permissions = [];
+          profile.permissions = [];
         }
 
         // Save to localStorage first to ensure persistence
-        localStorage.setItem("user", JSON.stringify(userWithToken));
-        
+        localStorage.setItem("user", JSON.stringify(profile));
+
         // Update state
-        setCurrentUser(userWithToken);
+        setCurrentUser(profile);
         // Set GitHub connection status
-        const isGithubConnected = userWithToken.github_connected || false;
+        const isGithubConnected = profile.github_connected || false;
         setGithubConnected(isGithubConnected);
         
         // If user is not connected to GitHub, show the prompt after redirection
@@ -210,11 +213,11 @@ export const AuthProvider = ({ children }) => {
           // Navigate to the appropriate dashboard with state to prevent loops
           const redirectPath =
             location.state?.from ||
-            (userWithToken.role === "admin" ? "/admin" : "/BasicDashboard");
+            (profile.role === "admin" ? "/admin" : "/BasicDashboard");
           navigate(redirectPath, { replace: true });
         }, 100);
-        
-        return data;
+
+        return { ...data, user: profile };
       } else {
         // No user data found - this is an error
         throw new Error("No user data received. Please try again.");
@@ -278,23 +281,20 @@ export const AuthProvider = ({ children }) => {
       console.warn("Attempted to update user with null/undefined data");
       return;
     }
-    
-    // Update local state
+
+    // Update local state — profiles only, tokens never enter state/storage.
     setCurrentUser((prevUser) => {
-      if (!prevUser) return userData;
-      
-      // Ensure token is preserved when updating user data
-      const updated = {
+      if (!prevUser) return sanitizeProfile(userData);
+
+      const updated = sanitizeProfile({
         ...prevUser,
         ...userData,
-        // Only use userData.token if it exists and is not empty
-        token: userData.token && userData.token.trim() ? userData.token : prevUser.token,
         github_username:
           userData.github_connected === false
             ? ''
             : (userData.github_username ?? prevUser.github_username ?? ''),
-      };
-      
+      });
+
       // Also update localStorage
       localStorage.setItem("user", JSON.stringify(updated));
       return updated;
@@ -490,6 +490,7 @@ export const AuthProvider = ({ children }) => {
     login,
     register,
     logout,
+    verifyToken,
     loading,
     error,
     setError,

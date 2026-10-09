@@ -19,10 +19,10 @@ describe('authApi', () => {
     localStorage.clear();
   });
 
-  test('register persists user from response', async () => {
+  test('register persists sanitized profile without tokens', async () => {
     global.fetch.mockResolvedValue(
       buildResponse({
-        user: { id: 1, email: 'new@example.com', token: 'token-1' },
+        user: { id: 1, email: 'new@example.com', role: 'developer', token: 'should-be-stripped' },
       })
     );
 
@@ -34,49 +34,38 @@ describe('authApi', () => {
     });
 
     expect(response.user.id).toBe(1);
-    expect(JSON.parse(localStorage.getItem('user')).email).toBe('new@example.com');
+    const stored = JSON.parse(localStorage.getItem('user'));
+    expect(stored.email).toBe('new@example.com');
+    expect(stored.token).toBeUndefined();
+    expect(stored.access_token).toBeUndefined();
   });
 
-  test('login stores merged token from top-level token field', async () => {
+  test('login stores profile only and strips tokens from response', async () => {
     global.fetch.mockResolvedValue(
       buildResponse({
-        token: 'access-123',
         user: {
           id: 7,
           email: 'dev@example.com',
           role: 'developer',
           github_connected: false,
+          token: 'leaked-access',
+          refresh_token: 'leaked-refresh',
         },
       })
     );
 
     const response = await authApi.login({ email: 'dev@example.com', password: 'password123' });
 
-    expect(response.user.token).toBe('access-123');
-    expect(JSON.parse(localStorage.getItem('user')).token).toBe('access-123');
-  });
-
-  test('login falls back to token nested inside user', async () => {
-    global.fetch.mockResolvedValue(
-      buildResponse({
-        user: {
-          id: 7,
-          email: 'dev@example.com',
-          role: 'developer',
-          token: 'nested-token',
-          github_username: 'octocat',
-        },
-      })
-    );
-
-    const response = await authApi.login({ email: 'dev@example.com', password: 'password123' });
-
-    expect(response.user.token).toBe('nested-token');
-    expect(response.user.github_username).toBe('octocat');
+    expect(response.user.id).toBe(7);
+    expect(response.user.token).toBeUndefined();
+    const stored = JSON.parse(localStorage.getItem('user'));
+    expect(stored.token).toBeUndefined();
+    expect(stored.refresh_token).toBeUndefined();
+    expect(stored.github_connected).toBe(false);
   });
 
   test('logout clears user storage even when API call fails', async () => {
-    localStorage.setItem('user', JSON.stringify({ id: 1, email: 'a@example.com', token: 'token' }));
+    localStorage.setItem('user', JSON.stringify({ id: 1, email: 'a@example.com' }));
     global.fetch.mockResolvedValue(buildResponse({ message: 'boom' }, 500));
 
     await expect(authApi.logout()).rejects.toThrow('boom');
@@ -100,37 +89,80 @@ describe('authApi', () => {
     expect(user).toBeNull();
   });
 
-  test('refreshToken updates stored token and returns updated user', async () => {
-    localStorage.setItem('user', JSON.stringify({ id: 4, email: 'refresh@example.com', token: 'old' }));
-    global.fetch.mockResolvedValue(buildResponse({ token: 'new-token' }));
+  test('getCurrentUser strips legacy tokens on read', () => {
+    localStorage.setItem(
+      'user',
+      JSON.stringify({ id: 2, email: 'legacy@example.com', role: 'developer', token: 'old-jwt' })
+    );
+
+    const user = authApi.getCurrentUser();
+
+    expect(user.token).toBeUndefined();
+    expect(JSON.parse(localStorage.getItem('user')).token).toBeUndefined();
+  });
+
+  test('verifySession persists server profile and returns user plus exp', async () => {
+    global.fetch.mockResolvedValue(
+      buildResponse({
+        user: { id: 4, email: 'me@example.com', role: 'developer', github_connected: true },
+        exp: 9999999999,
+      })
+    );
+
+    const session = await authApi.verifySession();
+
+    expect(session.user.id).toBe(4);
+    expect(session.exp).toBe(9999999999);
+    const stored = JSON.parse(localStorage.getItem('user'));
+    expect(stored.id).toBe(4);
+    expect(stored.exp).toBe(9999999999);
+    expect(global.fetch.mock.calls[0][0]).toContain('/auth/me');
+    expect(global.fetch.mock.calls[0][1].credentials).toBe('include');
+  });
+
+  test('refreshToken rotates cookies then reloads profile via /me', async () => {
+    localStorage.setItem('user', JSON.stringify({ id: 4, email: 'refresh@example.com' }));
+    global.fetch
+      .mockResolvedValueOnce(buildResponse({ message: 'Token refreshed successfully' }))
+      .mockResolvedValueOnce(
+        buildResponse({
+          user: { id: 4, email: 'refresh@example.com', role: 'developer' },
+          exp: 9999999999,
+        })
+      );
 
     const user = await authApi.refreshToken();
 
-    expect(user.token).toBe('new-token');
-    expect(JSON.parse(localStorage.getItem('user')).token).toBe('new-token');
+    expect(user.id).toBe(4);
+    expect(user.token).toBeUndefined();
+    expect(global.fetch.mock.calls[0][0]).toContain('/auth/refresh');
+    expect(global.fetch.mock.calls[1][0]).toContain('/auth/me');
   });
 
   test('refreshToken clears localStorage on unauthorized failures', async () => {
-    localStorage.setItem('user', JSON.stringify({ id: 4, email: 'refresh@example.com', token: 'old' }));
+    localStorage.setItem('user', JSON.stringify({ id: 4, email: 'refresh@example.com' }));
     global.fetch.mockResolvedValue(buildResponse({ message: 'expired' }, 401));
 
     await expect(authApi.refreshToken()).rejects.toThrow('expired');
     expect(localStorage.getItem('user')).toBeNull();
   });
 
-  test('isTokenExpired handles missing token and expiration windows', () => {
+  test('isTokenExpired uses profile exp when present, false otherwise', () => {
     expect(authApi.isTokenExpired()).toBe(true);
 
-    localStorage.setItem('user', JSON.stringify({ id: 2, email: 'x@example.com', token: 'token', exp: 50 }));
+    localStorage.setItem('user', JSON.stringify({ id: 2, email: 'x@example.com', exp: 50 }));
     jest.spyOn(Date, 'now').mockReturnValue(60 * 1000);
     expect(authApi.isTokenExpired()).toBe(true);
 
-    localStorage.setItem('user', JSON.stringify({ id: 2, email: 'x@example.com', token: 'token', exp: 10000 }));
+    localStorage.setItem('user', JSON.stringify({ id: 2, email: 'x@example.com', exp: 10000 }));
+    expect(authApi.isTokenExpired()).toBe(false);
+
+    localStorage.setItem('user', JSON.stringify({ id: 2, email: 'x@example.com' }));
     expect(authApi.isTokenExpired()).toBe(false);
   });
 
   test('updateGitHubStatus updates current user and handles missing user state', () => {
-    localStorage.setItem('user', JSON.stringify({ id: 8, email: 'gh@example.com', token: 'token' }));
+    localStorage.setItem('user', JSON.stringify({ id: 8, email: 'gh@example.com' }));
 
     const updated = authApi.updateGitHubStatus(true, 'octocat');
     const stored = JSON.parse(localStorage.getItem('user'));

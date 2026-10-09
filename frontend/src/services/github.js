@@ -15,36 +15,37 @@ const API_BASE_URL = (() => {
 
 const BASE_URL = `${API_BASE_URL}/github`;
 
-// Helper function for making fetch requests with auth token and token refresh
+// Helper for cookie-authenticated requests: HttpOnly cookies carry the JWT,
+// the double-submit CSRF header proves origin. No Bearer headers.
+const stripAuthHeader = (headers = {}) => {
+  const clean = { ...headers };
+  Object.keys(clean).forEach((key) => {
+    if (key.toLowerCase() === 'authorization') {
+      delete clean[key];
+    }
+  });
+  return clean;
+};
+
 const fetchWithAuth = async (url, options = {}) => {
   try {
-    // Get the current user from localStorage
-    let user = authApi.getCurrentUser();
-    
-    // Check if token needs refresh
-    if (user && authApi.isTokenExpired()) {
-      try {
-        user = await authApi.refreshToken();
-      } catch (refreshError) {
-        console.error('Failed to refresh token:', refreshError);
-        // Continue with the current token - the request will likely fail with 401
-        // but we'll let the error handler below deal with that
+    // Proactively rotate when the cached profile exp says the session is stale.
+    try {
+      if (authApi.isTokenExpired()) {
+        await authApi.refreshToken().catch((refreshError) => {
+          console.error('Failed to refresh token:', refreshError);
+        });
       }
+    } catch {
+      // Best-effort only — the request below will 401 and retry if needed.
     }
-    
-    // Set up headers
-    const headers = {
+
+    // Set up headers — session comes from cookies, never localStorage tokens.
+    const headers = stripAuthHeader({
       'Content-Type': 'application/json',
       ...csrfHeaders(),
-      ...options.headers
-    };
-
-    // Add token if available
-    if (user && user.token) {
-      headers['Authorization'] = `Bearer ${user.token}`;
-    } else {
-      console.warn('No authentication token available for GitHub request');
-    }
+      ...stripAuthHeader(options.headers)
+    });
 
     // Configure fetch options
     const fetchOptions = {
@@ -56,23 +57,22 @@ const fetchWithAuth = async (url, options = {}) => {
     // Make the request
     const response = await fetch(url, fetchOptions);
     
-    // Handle 401 Unauthorized - could be expired token
+    // Handle 401 Unauthorized - session cookie may have expired, try rotation once.
     if (response.status === 401) {
-      
-      // Try to refresh the token if not already attempted
+
+      // Try to refresh the cookie session if not already attempted
       if (!options.__tokenRefreshAttempted) {
         try {
           const refreshedUser = await authApi.refreshToken();
-          
-          if (refreshedUser && refreshedUser.token) {
-            
-            // Retry the original request with new token
+
+          if (refreshedUser && refreshedUser.id) {
+
+            // Retry the original request — refreshed cookies attach automatically.
             return fetchWithAuth(url, {
               ...options,
               __tokenRefreshAttempted: true, // Mark that we already tried refresh
               headers: {
-                ...options.headers,
-                'Authorization': `Bearer ${refreshedUser.token}`
+                ...stripAuthHeader(options.headers),
               }
             });
           }

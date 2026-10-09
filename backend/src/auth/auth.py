@@ -81,7 +81,7 @@ def register_user():
         # Generate tokens for the new user
         tokens = generate_tokens(new_user.id, {"role": new_user.role})
 
-        # Create response with tokens
+        # Create response with profile only — JWTs travel via HttpOnly cookies.
         resp = jsonify(
             {
                 "message": "User registered successfully",
@@ -90,7 +90,6 @@ def register_user():
                     "name": new_user.name,
                     "email": new_user.email,
                     "role": new_user.role,
-                    "token": tokens["access_token"],
                 },
             }
         )
@@ -144,7 +143,7 @@ def login():
         action="user_login", actor={"user_id": user.id, "role": user.role}, resource_type="user", resource_id=user.id
     )
 
-    # Create response
+    # Create response with profile only — JWTs travel via HttpOnly cookies.
     resp = jsonify(
         {
             "message": "Login successful",
@@ -153,7 +152,6 @@ def login():
                 "name": user.name,
                 "email": user.email,
                 "role": user.role,
-                "token": tokens["access_token"],  # Include token in response
                 "github_connected": github_connected,
                 "github_username": github_username,
             },
@@ -207,10 +205,8 @@ def refresh_token():
     access_token = create_access_token(identity=current_user, additional_claims=additional_claims)
     new_refresh_token = create_refresh_token(identity=current_user, additional_claims=additional_claims)
 
-    # Create response
-    resp = jsonify(
-        {"message": "Token refreshed successfully", "token": access_token, "refresh_token": new_refresh_token}
-    )
+    # Create response without raw tokens — rotated pair travels via HttpOnly cookies.
+    resp = jsonify({"message": "Token refreshed successfully"})
 
     # Set new cookies
     set_access_cookies(resp, access_token)
@@ -272,8 +268,8 @@ def get_token():
     # Generate tokens
     tokens = generate_tokens(user.id, {"role": user.role})
 
-    # Create response with just the token
-    response = jsonify({"token": tokens["access_token"], "user_id": user.id, "role": user.role})
+    # Create response with profile only — token travels via HttpOnly cookies.
+    response = jsonify({"message": "Token issued", "user_id": user.id, "role": user.role})
 
     # Set cookies
     set_access_cookies(response, tokens["access_token"])

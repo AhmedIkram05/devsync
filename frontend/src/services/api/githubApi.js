@@ -1,4 +1,4 @@
-import { authApi, csrfHeaders } from '../utils/auth';
+import { csrfHeaders } from '../utils/auth';
 
 const API_BASE_URL = (() => {
   const configuredBaseUrl = process.env.REACT_APP_API_URL;
@@ -13,18 +13,19 @@ const API_BASE_URL = (() => {
 
 const BASE_URL = `${API_BASE_URL}/github`;
 
-// Helper function for making authenticated fetch requests
+// Helper function for making cookie-authenticated fetch requests
 const fetchWithAuth = async (url, options = {}) => {
-  const user = authApi.getCurrentUser();
+  const sanitizedOptionHeaders = { ...(options.headers || {}) };
+  Object.keys(sanitizedOptionHeaders).forEach((key) => {
+    if (key.toLowerCase() === 'authorization') {
+      delete sanitizedOptionHeaders[key];
+    }
+  });
   const headers = {
     'Content-Type': 'application/json',
     ...csrfHeaders(),
-    ...options.headers
+    ...sanitizedOptionHeaders
   };
-
-  if (user && user.token) {
-    headers['Authorization'] = `Bearer ${user.token}`;
-  }
 
   const fetchOptions = {
     ...options,

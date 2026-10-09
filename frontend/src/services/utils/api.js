@@ -12,56 +12,43 @@ const API_URL = (() => {
 })();
 
 /**
- * Enhanced fetch utility that handles authentication and error handling
+ * Cookie-auth fetch utility. JWTs travel in HttpOnly cookies; the browser
+ * attaches them via credentials:include and we echo the double-submit CSRF
+ * token. No Bearer headers — raw tokens must never touch JS/localStorage.
  */
+const stripAuthHeader = (headers = {}) => {
+  const clean = { ...headers };
+  Object.keys(clean).forEach((key) => {
+    if (key.toLowerCase() === 'authorization') {
+      delete clean[key];
+    }
+  });
+  return clean;
+};
+
 const fetchWithAuth = async (endpoint, options = {}) => {
   try {
-    // Get auth token from localStorage with improved error handling
-    let user = null;
-    let token = null;
-    
-    try {
-      const userStr = localStorage.getItem('user');
-      if (userStr) {
-        user = JSON.parse(userStr);
-        token = user?.token;
-        
-        if (!token) {
-          console.warn(`No token found for authenticated request to ${endpoint}`);
-        }
-      }
-    } catch (e) {
-      console.error("Error parsing user from localStorage:", e);
-      localStorage.removeItem('user'); // Clear corrupted data
-    }
-    
-    // Set up default headers
-    const headers = {
+    // Set up default headers — cookies carry auth, CSRF header proves origin.
+    const headers = stripAuthHeader({
       'Content-Type': 'application/json',
       'Accept': 'application/json',
       ...csrfHeaders(),
       ...(options.headers || {})
-    };
-    
-    // Add auth token if available - use token from options first, then fallback to localStorage
-    if (options.headers?.Authorization) {
-      // Use the token provided in options (used in github.js)
-    } else if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
+    });
+    const sanitizedHeaders = stripAuthHeader(headers);
     
     // Configure fetch options
     const fetchOptions = {
       ...options,
-      headers,
+      headers: sanitizedHeaders,
       credentials: 'include', // Important for cookies/auth
     };
-    
+
     // Make sure we don't override the headers with empty ones
     if (options.headers) {
       fetchOptions.headers = {
-        ...headers,
-        ...options.headers
+        ...sanitizedHeaders,
+        ...stripAuthHeader(options.headers)
       };
     }
     

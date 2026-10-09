@@ -92,7 +92,7 @@ def create_app(config_class=None):
     )
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(minutes=int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")))
     app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
-    app.config["JWT_TOKEN_LOCATION"] = ["cookies", "headers"]
+    app.config["JWT_TOKEN_LOCATION"] = ["cookies"]
     app.config["JWT_IDENTITY_CLAIM"] = "identity"
     configured_secure = app.config.get("JWT_COOKIE_SECURE")
     if configured_secure is None:
@@ -184,10 +184,10 @@ def create_app(config_class=None):
     CORS(
         app,
         supports_credentials=True,
-        allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+        allow_headers=["Content-Type", "X-CSRF-TOKEN", "X-Requested-With"],
         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         origins=list(explicit_allowed_origins) + list(allowed_origin_patterns),
-        expose_headers=["Content-Type", "Authorization"],
+        expose_headers=["Content-Type", "X-CSRF-TOKEN"],
         max_age=600,
     )
 
@@ -200,7 +200,7 @@ def create_app(config_class=None):
             if "Access-Control-Allow-Origin" not in response.headers:
                 response.headers.add("Access-Control-Allow-Origin", origin)
             if "Access-Control-Allow-Headers" not in response.headers:
-                response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
+                response.headers.add("Access-Control-Allow-Headers", "Content-Type,X-CSRF-TOKEN")
             if "Access-Control-Allow-Methods" not in response.headers:
                 response.headers.add("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE,OPTIONS,PATCH")
             if "Access-Control-Allow-Credentials" not in response.headers:

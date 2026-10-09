@@ -101,6 +101,9 @@ def test_register_success_sets_cookies_and_returns_contract(monkeypatch):
     assert payload["message"] == "User registered successfully"
     assert payload["user"]["email"] == "new@example.com"
     assert payload["user"]["role"] == "admin"
+    assert "token" not in payload["user"]
+    assert "access_token" not in payload
+    assert "refresh_token" not in payload
 
     hash_password.assert_called_once_with("password123")
     generate_tokens.assert_called_once_with(55, {"role": "admin"})
@@ -202,7 +205,10 @@ def test_login_success_includes_github_connection_flags(monkeypatch):
     payload = response.get_json()
     assert payload["message"] == "Login successful"
     assert payload["user"]["id"] == 7
-    assert payload["user"]["token"] == "access-2"
+    assert "token" not in payload["user"]
+    assert "token" not in payload
+    assert "access_token" not in payload
+    assert "refresh_token" not in payload
     assert payload["user"]["github_connected"] is True
     assert payload["user"]["github_username"] == "octocat"
 
@@ -246,7 +252,7 @@ def test_get_token_success_returns_minimal_token_contract(monkeypatch):
         response = auth_module.get_token()
 
     payload = response.get_json()
-    assert payload == {"token": "access-3", "user_id": 11, "role": "admin"}
+    assert payload == {"message": "Token issued", "user_id": 11, "role": "admin"}
     set_access_cookies.assert_called_once_with(response, "access-3")
     set_refresh_cookies.assert_called_once_with(response, "refresh-3")
 
@@ -272,7 +278,9 @@ def test_refresh_token_keeps_role_from_claims(monkeypatch):
 
     payload = response.get_json()
     assert payload["message"] == "Token refreshed successfully"
-    assert payload["token"] == "refreshed-access"
+    assert "token" not in payload
+    assert "refresh_token" not in payload
+    assert "access_token" not in payload
     create_access_token.assert_called_once_with(identity={"user_id": 21}, additional_claims={"role": "team_lead"})
     create_refresh_token.assert_called_once_with(identity={"user_id": 21}, additional_claims={"role": "team_lead"})
     set_access_cookies.assert_called_once_with(response, "refreshed-access")
@@ -304,7 +312,9 @@ def test_refresh_token_backfills_missing_role_from_db_user(monkeypatch):
         response = auth_module.refresh_token()
 
     payload = response.get_json()
-    assert payload["token"] == "refreshed-access"
+    assert payload["message"] == "Token refreshed successfully"
+    assert "token" not in payload
+    assert "refresh_token" not in payload
     create_access_token.assert_called_once_with(identity={"user_id": 34}, additional_claims={"role": "developer"})
     stub_query.get.assert_called_once_with(34)
     set_access_cookies.assert_called_once_with(response, "refreshed-access")
