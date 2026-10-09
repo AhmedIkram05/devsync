@@ -33,6 +33,7 @@ INSECURE_JWT_DEFAULTS = frozenset(
 # previously derived keys — rotate explicit keys via FERNET_KEYS instead.
 FERNET_INFO = b"devsync-fernet-v1"
 OAUTH_STATE_INFO = b"devsync-oauth-state-v1"
+FLASK_SECRET_INFO = b"devsync-flask-secret-v1"
 # Fixed HKDF salt keeps derivation deterministic across restarts without
 # storing per-deploy state. Info strings provide domain separation.
 HKDF_SALT = b"devsync-hkdf-salt-v1"
@@ -212,11 +213,15 @@ def resolve_jwt_secret(explicit_value=None):
     return secret
 
 
-def resolve_flask_secret(explicit_value=None):
-    """Return validated Flask SECRET_KEY (sessions), fail-closed outside testing.
+def resolve_flask_secret(explicit_value=None, jwt_secret=None):
+    """Return validated Flask SECRET_KEY (sessions).
 
-    Checks explicit_value, then SECRET_KEY env var only. No fallback to
-    JWT_SECRET_KEY — the two must be set independently.
+    Checks explicit_value, then SECRET_KEY env var. When neither is set
+    outside testing, derives a DISTINCT key from the validated JWT secret
+    via HKDF (info b"devsync-flask-secret-v1") so boot never hard-fails
+    while keys stay separated. Never returns the raw JWT secret. Resolving
+    the JWT secret still fail-closes on a missing/insecure value, so the
+    primary secret stays protected.
     """
     env = os.getenv("FLASK_ENV", "development")
     testing = is_testing_environment(env)
@@ -227,12 +232,15 @@ def resolve_flask_secret(explicit_value=None):
     if not secret or secret in INSECURE_JWT_DEFAULTS:
         if testing:
             return secret or "test-secret-key-for-unit-tests"
-        logger.error("SECRET_KEY missing or insecure in FLASK_ENV=%s", env)
-        raise RuntimeError(
-            "SECRET_KEY is required and must not be a default/placeholder. "
-            "Set SECRET_KEY to a strong random value distinct from JWT_SECRET_KEY. "
-            'Generate with: python3 -c "import secrets; print(secrets.token_hex(32))"'
+        base = jwt_secret if jwt_secret is not None else resolve_jwt_secret()
+        logger.warning(
+            "SECRET_KEY not set in FLASK_ENV=%s; using a distinct HKDF-derived "
+            "Flask session key derived from JWT_SECRET_KEY. Set SECRET_KEY for "
+            "full key separation.",
+            env,
         )
+        okm = hkdf_sha256(str(base).encode("utf-8"), info=FLASK_SECRET_INFO)
+        return base64.urlsafe_b64encode(okm).decode("utf-8")
     return secret
 
 
@@ -268,9 +276,10 @@ def resolve_fernet_keys(explicit_value=None, jwt_secret=None):
 
     Sources (in order): explicit_value, FERNET_KEYS env (comma-separated),
     FERNET_KEY env (single). When empty: testing returns an HKDF-derived
-    test key; non-testing requires FERNET_KEY unless ALLOW_DERIVED_FERNET
-    is explicitly truthy, in which case an HKDF-derived key is returned
-    with a warning log.
+    test key; non-production environments derive one with a warning so
+    local dev boots without FERNET_KEY; production requires FERNET_KEY
+    unless ALLOW_DERIVED_FERNET is explicitly truthy, in which case an
+    HKDF-derived key is returned with a warning log.
     """
     cleaned = _collect_fernet_candidates(explicit_value)
     if cleaned:
@@ -289,11 +298,12 @@ def resolve_fernet_keys(explicit_value=None, jwt_secret=None):
             base = os.getenv("JWT_SECRET_KEY") or "test-secret-key-for-unit-tests"
         base = str(base).strip() or "test-secret-key-for-unit-tests"
         return [derive_fernet_key(base)]
-    if _is_truthy(os.getenv("ALLOW_DERIVED_FERNET", "")):
+    if str(env).lower() != "production" or _is_truthy(os.getenv("ALLOW_DERIVED_FERNET", "")):
         base = jwt_secret if jwt_secret is not None else resolve_jwt_secret()
         logger.warning(
-            "Using HKDF-derived FERNET_KEY (ALLOW_DERIVED_FERNET=true). "
-            "Set an explicit FERNET_KEY in production for rotation support."
+            "Using HKDF-derived FERNET_KEY (FLASK_ENV=%s). "
+            "Set an explicit FERNET_KEY in production for rotation support.",
+            env,
         )
         return [derive_fernet_key(base)]
     logger.error("FERNET_KEY missing in FLASK_ENV=%s", env)

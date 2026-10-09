@@ -111,8 +111,8 @@ def create_app(config_class=None):
         explicit_jwt = app.config.get("JWT_SECRET_KEY")
         explicit_fernet = app.config.get("FERNET_KEYS") or app.config.get("FERNET_KEY")
         explicit_oauth = app.config.get("OAUTH_STATE_SECRET")
-    flask_secret = resolve_flask_secret(explicit_value=explicit_flask)
     jwt_secret = resolve_jwt_secret(explicit_value=explicit_jwt)
+    flask_secret = resolve_flask_secret(explicit_value=explicit_flask, jwt_secret=jwt_secret)
     app.config["SECRET_KEY"] = flask_secret
     app.config["JWT_SECRET_KEY"] = jwt_secret
     # Fail fast in prod when FERNET_KEY is missing/invalid; testing derives.
@@ -163,8 +163,8 @@ def create_app(config_class=None):
         app.config.update(config_class)
 
     # Re-validate after overrides so a dict cannot inject a default/empty secret.
-    flask_secret = resolve_flask_secret(explicit_value=app.config.get("SECRET_KEY"))
     jwt_secret = resolve_jwt_secret(explicit_value=app.config.get("JWT_SECRET_KEY"))
+    flask_secret = resolve_flask_secret(explicit_value=app.config.get("SECRET_KEY"), jwt_secret=jwt_secret)
     app.config["SECRET_KEY"] = flask_secret
     app.config["JWT_SECRET_KEY"] = jwt_secret
     fernet_keys = resolve_fernet_keys(

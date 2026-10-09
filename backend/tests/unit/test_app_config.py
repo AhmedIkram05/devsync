@@ -118,25 +118,95 @@ def test_jwt_secret_fallback_allowed_in_testing(monkeypatch):
         _restore_config(monkeypatch)
 
 
-def test_secret_and_jwt_must_be_distinct_no_silent_fallback(monkeypatch):
-    from backend.src.config.config import resolve_flask_secret, resolve_jwt_secret
+def test_jwt_never_falls_back_to_secret_key(monkeypatch):
+    from backend.src.config.config import resolve_jwt_secret
+
+    # JWT must not fall back to SECRET_KEY: with JWT missing but SECRET set
+    # outside testing, resolving the JWT secret still fail-closes.
+    monkeypatch.setenv("FLASK_ENV", "production")
+    monkeypatch.setenv("JWT_SECRET_KEY", "")
+    monkeypatch.setenv("SECRET_KEY", TEST_FLASK)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    with pytest.raises(RuntimeError, match="JWT_SECRET_KEY is required"):
+        resolve_jwt_secret()
+    monkeypatch.setenv("JWT_SECRET_KEY", TEST_JWT)
+    assert resolve_jwt_secret() == TEST_JWT
+
+
+def test_flask_secret_derives_distinct_key_when_unset(monkeypatch):
+    from backend.src.config.config import (
+        derive_fernet_key,
+        derive_oauth_state_secret,
+        resolve_flask_secret,
+    )
 
     monkeypatch.setenv("FLASK_ENV", "production")
     monkeypatch.setenv("JWT_SECRET_KEY", TEST_JWT)
     monkeypatch.setenv("SECRET_KEY", "")
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
-    with pytest.raises(RuntimeError, match="SECRET_KEY is required"):
-        resolve_flask_secret()
-    # JWT must not fall back to SECRET_KEY.
-    monkeypatch.setenv("JWT_SECRET_KEY", "")
-    monkeypatch.setenv("SECRET_KEY", TEST_FLASK)
-    with pytest.raises(RuntimeError, match="JWT_SECRET_KEY is required"):
-        resolve_jwt_secret()
+
+    derived = resolve_flask_secret()
+    # (a) deterministic, (b) never the raw JWT secret, (c) domain-separated
+    # from the Fernet- and OAuth-state-derived keys.
+    assert derived == resolve_flask_secret(jwt_secret=TEST_JWT)
+    assert derived != TEST_JWT
+    assert derived != derive_fernet_key(TEST_JWT)
+    assert derived != derive_oauth_state_secret(TEST_JWT)
+
+
+def test_flask_secret_explicit_value_wins(monkeypatch):
+    from backend.src.config.config import resolve_flask_secret
+
+    monkeypatch.setenv("FLASK_ENV", "production")
     monkeypatch.setenv("JWT_SECRET_KEY", TEST_JWT)
     monkeypatch.setenv("SECRET_KEY", TEST_FLASK)
-    assert resolve_jwt_secret() == TEST_JWT
-    assert resolve_flask_secret() == TEST_FLASK
-    assert resolve_jwt_secret() != resolve_flask_secret()
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    assert resolve_flask_secret(jwt_secret=TEST_JWT) == TEST_FLASK
+    assert resolve_flask_secret(explicit_value=TEST_FLASK, jwt_secret=TEST_JWT) == TEST_FLASK
+
+
+def test_production_boot_resolves_with_only_jwt_and_fernet(monkeypatch):
+    """Prod supplies JWT_SECRET_KEY + FERNET_KEY but no SECRET_KEY.
+
+    Secret resolution must not raise (that was the CrashLoop regression) and
+    must yield a Flask key distinct from the JWT secret. Exercised at the
+    resolver layer, not via create_app: building an app binds the process-wide
+    SocketIO MQ and would leak into other tests.
+    """
+    from cryptography.fernet import Fernet
+
+    from backend.src.config.config import (
+        resolve_fernet_keys,
+        resolve_flask_secret,
+        resolve_jwt_secret,
+    )
+
+    monkeypatch.setenv("FLASK_ENV", "production")
+    monkeypatch.setenv("JWT_SECRET_KEY", TEST_JWT)
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    fernet_key = Fernet.generate_key().decode()
+
+    jwt_secret = resolve_jwt_secret()
+    flask_secret = resolve_flask_secret(jwt_secret=jwt_secret)
+    fernet_keys = resolve_fernet_keys(explicit_value=fernet_key, jwt_secret=jwt_secret)
+
+    assert flask_secret and flask_secret != jwt_secret
+    assert fernet_keys == [fernet_key]
+
+
+def test_fernet_derived_in_development(monkeypatch):
+    from backend.src.config.config import is_valid_fernet_key, resolve_fernet_keys
+
+    monkeypatch.setenv("FLASK_ENV", "development")
+    monkeypatch.setenv("JWT_SECRET_KEY", TEST_JWT)
+    monkeypatch.delenv("FERNET_KEY", raising=False)
+    monkeypatch.delenv("FERNET_KEYS", raising=False)
+    monkeypatch.delenv("ALLOW_DERIVED_FERNET", raising=False)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    keys = resolve_fernet_keys()
+    assert len(keys) == 1
+    assert is_valid_fernet_key(keys[0])
 
 
 def test_fernet_required_in_prod_unless_derived_allowed(monkeypatch):
