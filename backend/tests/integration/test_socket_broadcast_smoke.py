@@ -275,6 +275,35 @@ def test_emit_degrades_when_mq_down(app_and_socket, app, monkeypatch):
     one.disconnect()
 
 
+def test_dashboard_refresh_is_room_scoped(app_and_socket, app, fake_redis):
+    """dashboard_updated with a project_id reaches room members only — a
+    connected non-member must not learn about other projects' activity."""
+    _, socketio = app_and_socket
+
+    socket_module.connected_users.clear()
+    socket_module.project_rooms.clear()
+    _seed_project_89(app)
+
+    member = _connect(app_and_socket, app, 1)
+    outsider = socketio.test_client(app, headers=auth_headers(app, user_id=3))
+    assert outsider.emit("register", {}, callback=True)["status"] == "success"
+    # Outsider never joins project 89 (join would be denied anyway).
+
+    socket_module.emit_dashboard_refresh(
+        "task_updated", resource_type="task", resource_id=9, payload={"project_id": 89}, project_id=89
+    )
+
+    assert "dashboard_updated" in [e["name"] for e in member.get_received()]
+    assert "dashboard_updated" not in [e["name"] for e in outsider.get_received()]
+
+    # Events with no project (user_*, settings_*, reports) stay global.
+    socket_module.emit_dashboard_refresh("user_updated", resource_type="user", resource_id=3)
+    assert "dashboard_updated" in [e["name"] for e in outsider.get_received()]
+
+    member.disconnect()
+    outsider.disconnect()
+
+
 def test_cors_and_mq_env_matrix(monkeypatch):
     """D2/D4 conditional behaviour: prod pins origins; dev/CI keeps wildcard."""
     # Testing/dev keep the wildcard and no queue unless REDIS_URL is set.

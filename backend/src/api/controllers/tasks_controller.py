@@ -257,6 +257,7 @@ def create_new_task():
         resource_type="task",
         resource_id=new_task.id,
         payload={"project_id": new_task.project_id, "assigned_to": new_task.assigned_to},
+        project_id=new_task.project_id,
     )
 
     _run_notification(
@@ -353,6 +354,7 @@ def update_task_by_id(task_id):
         resource_type="task",
         resource_id=task.id,
         payload={"project_id": task.project_id, "assigned_to": task.assigned_to},
+        project_id=task.project_id,
     )
 
     _run_notification(
@@ -410,6 +412,7 @@ def delete_task_by_id(task_id):
         resource_type="task",
         resource_id=task_id,
         payload={"project_id": task.project_id, "assigned_to": task.assigned_to},
+        project_id=task.project_id,
     )
 
     return jsonify({"message": "Task deleted successfully"})

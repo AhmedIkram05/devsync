@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import io from 'socket.io-client';
-import { notificationService } from '../services/utils/api';
+import { notificationService, projectService } from '../services/utils/api';
 import { useAuth } from './AuthContext';
 
 const NotificationContext = createContext();
@@ -245,6 +245,26 @@ export const NotificationProvider = ({ children }) => {
                 console.warn('Socket.IO registration did not succeed:', ack);
               }
             });
+
+            // Join rooms for every project this user can see so room-scoped
+            // dashboard pings reach them (and only them). The server re-checks
+            // membership on join, so a forged project_id is denied. Best
+            // effort: missing the ping only delays a refresh, REST stays
+            // authoritative. Re-runs on every reconnect since rooms are
+            // per-connection server-side.
+            Promise.resolve()
+              .then(() => projectService.getAllProjects())
+              .then((projects) => {
+                (Array.isArray(projects) ? projects : []).forEach((p) => {
+                  const pid = p?.id ?? p?.project_id;
+                  if (pid !== undefined && pid !== null) {
+                    socketConnection.emit('join_project', { project_id: pid });
+                  }
+                });
+              })
+              .catch((e) => {
+                console.warn('Socket project-room join failed:', e?.message || e);
+              });
           }
         });
         

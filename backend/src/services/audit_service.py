@@ -72,6 +72,9 @@ def record(action, *, actor=None, resource_type=None, resource_id=None, metadata
                 "action": action,
                 "metadata": metadata or {},
             },
+            # Room-scope when the audited action carries a project (task_* do);
+            # system-wide actions (user_*, settings_*) stay global.
+            project_id=(metadata or {}).get("project_id"),
         )
     except Exception as e:
         logger.error(f"Failed to record audit log '{action}': {str(e)}")
