@@ -5,8 +5,9 @@ from flask import jsonify
 
 def validate_notification_data(data):
     """Validate notification data from requests"""
-    # Check for required fields
-    if not data or "user_id" not in data or not (data.get("content") or data.get("message")):
+    # Check for required fields (user_id is optional: it defaults to the
+    # authenticated user, and only TL/ADMIN may target someone else)
+    if not data or not (data.get("content") or data.get("message")):
         return jsonify({"message": "Missing required fields"}), 400
 
     # Validate message/content
@@ -21,8 +22,8 @@ def validate_notification_data(data):
     if notification_type is not None and (not isinstance(notification_type, str) or len(notification_type) > 50):
         return jsonify({"message": "Notification type must be a string up to 50 characters"}), 400
 
-    # Validate user_id
-    if not isinstance(data["user_id"], int):
+    # Validate user_id when explicitly provided
+    if "user_id" in data and data["user_id"] is not None and not isinstance(data["user_id"], int):
         return jsonify({"message": "User ID must be an integer"}), 400
 
     # Validate task_id if provided

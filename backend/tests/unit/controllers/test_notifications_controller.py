@@ -97,13 +97,18 @@ def test_create_notification(mock_db_session, app_context):
     from flask import request
 
     # Override get_json directly so it returns a normal dict (not a coroutine)
-    request.get_json = lambda: {"content": "Test notification", "user_id": 1, "task_id": 2}
+    # NOTE: payload targets another user — a developer is forced back to self.
+    request.get_json = lambda: {"content": "Test notification", "user_id": 99, "task_id": 2}
     with (
         patch("src.api.controllers.notifications_controller.validate_notification_data") as mock_validate,
         patch("src.api.controllers.notifications_controller.NotificationService.send_to_user") as mock_send_to_user,
+        patch("src.api.controllers.notifications_controller.get_jwt_identity") as mock_identity,
+        patch("src.api.controllers.notifications_controller.get_jwt") as mock_claims,
     ):
         # Setup mocks
         mock_validate.return_value = None  # No validation errors
+        mock_identity.return_value = {"user_id": 1}
+        mock_claims.return_value = {"role": "developer"}
 
         new_notification = MagicMock()
         new_notification.id = 1
@@ -126,6 +131,7 @@ def test_create_notification(mock_db_session, app_context):
         assert data["message"] == "Notification created successfully"
         assert data["notification"]["id"] == 1
 
+        # Forgery guard: developer payload user_id=99 is forced to self (1).
         mock_send_to_user.assert_called_once_with(
             user_id=1,
             notification_type="general",
@@ -134,6 +140,32 @@ def test_create_notification(mock_db_session, app_context):
             reference_id=2,
             task_id=2,
         )
+
+
+def test_create_notification_team_lead_may_target_other_user(mock_db_session, app_context):
+    from flask import request
+
+    request.get_json = lambda: {"content": "Test notification", "user_id": 99}
+    with (
+        patch("src.api.controllers.notifications_controller.validate_notification_data") as mock_validate,
+        patch("src.api.controllers.notifications_controller.NotificationService.send_to_user") as mock_send_to_user,
+        patch("src.api.controllers.notifications_controller.get_jwt_identity") as mock_identity,
+        patch("src.api.controllers.notifications_controller.get_jwt") as mock_claims,
+    ):
+        mock_validate.return_value = None
+        mock_identity.return_value = {"user_id": 1}
+        mock_claims.return_value = {"role": "team_lead"}
+
+        new_notification = MagicMock()
+        new_notification.to_dict.return_value = {"id": 2}
+        mock_send_to_user.return_value = new_notification
+
+        from src.api.controllers.notifications_controller import create_notification
+
+        response, status_code = create_notification()
+
+        assert status_code == 201
+        assert mock_send_to_user.call_args.kwargs["user_id"] == 99
 
 
 def test_mark_notification_read(mock_get_jwt_identity, mock_db_session, mock_notification, app_context):
