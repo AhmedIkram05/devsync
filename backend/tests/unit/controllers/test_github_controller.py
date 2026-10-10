@@ -83,7 +83,7 @@ class TestGitHubController(unittest.TestCase):
         mock_github_client.get_auth_url.assert_called_with("test-uuid")
 
     @patch("backend.src.api.controllers.github_controller.GitHubClient")
-    @patch("backend.src.api.controllers.github_controller.oauth_states")
+    @patch("backend.src.api.controllers.github_controller.consume_oauth_state")
     @patch("backend.src.api.controllers.github_controller.db")
     @patch("backend.src.api.controllers.github_controller.GitHubToken")
     @patch("backend.src.api.controllers.github_controller.User")
@@ -93,8 +93,7 @@ class TestGitHubController(unittest.TestCase):
         # Setup mocks
         mock_request.args = ImmutableMultiDict([("code", "test-code"), ("state", "test-state")])
 
-        mock_oauth_states.__contains__.return_value = True
-        mock_oauth_states.__getitem__.return_value = {"user_id": 1}
+        mock_oauth_states.return_value = 1
 
         mock_github_client.exchange_code_for_token.return_value = {"access_token": "test-access-token"}
 
@@ -306,7 +305,7 @@ class TestGitHubController(unittest.TestCase):
         mock_client_instance.create_issue_comment.assert_called_once()
 
     @patch("backend.src.api.controllers.github_controller.GitHubClient")
-    @patch("backend.src.api.controllers.github_controller.oauth_states")
+    @patch("backend.src.api.controllers.github_controller.consume_oauth_state")
     @patch("backend.src.api.controllers.github_controller.db")
     @patch("backend.src.api.controllers.github_controller.GitHubToken")
     @patch("backend.src.api.controllers.github_controller.User")
@@ -335,7 +334,7 @@ class TestGitHubController(unittest.TestCase):
         self.assertEqual(result[0]["message"], "Missing code or state parameter")
 
     @patch("backend.src.api.controllers.github_controller.GitHubClient")
-    @patch("backend.src.api.controllers.github_controller.oauth_states")
+    @patch("backend.src.api.controllers.github_controller.consume_oauth_state")
     @patch("backend.src.api.controllers.github_controller.db")
     @patch("backend.src.api.controllers.github_controller.GitHubToken")
     @patch("backend.src.api.controllers.github_controller.User")
@@ -353,7 +352,7 @@ class TestGitHubController(unittest.TestCase):
         mock_request.args = ImmutableMultiDict([("code", "test-code"), ("state", signed_state)])
 
         # Mock oauth_states to not contain this state
-        mock_oauth_states.__contains__.return_value = False
+        mock_oauth_states.return_value = None
 
         # Setup token exchange mock
         mock_github_client.exchange_code_for_token.return_value = {"access_token": "test-access-token"}
@@ -381,7 +380,7 @@ class TestGitHubController(unittest.TestCase):
         self.assertEqual(mock_user.github_connected, True)
 
     @patch("backend.src.api.controllers.github_controller.GitHubClient")
-    @patch("backend.src.api.controllers.github_controller.oauth_states")
+    @patch("backend.src.api.controllers.github_controller.consume_oauth_state")
     @patch("backend.src.api.controllers.github_controller.db")
     @patch("backend.src.api.controllers.github_controller.GitHubToken")
     @patch("backend.src.api.controllers.github_controller.User")
@@ -392,8 +391,7 @@ class TestGitHubController(unittest.TestCase):
         # Setup mocks
         mock_request.args = ImmutableMultiDict([("code", "test-code"), ("state", "test-state")])
 
-        mock_oauth_states.__contains__.return_value = True
-        mock_oauth_states.__getitem__.return_value = {"user_id": 1}
+        mock_oauth_states.return_value = 1
 
         # Setup token exchange mock
         mock_github_client.exchange_code_for_token.return_value = {
@@ -432,15 +430,14 @@ class TestGitHubController(unittest.TestCase):
         mock_db.session.commit.assert_called_once()
 
     @patch("backend.src.api.controllers.github_controller.GitHubClient")
-    @patch("backend.src.api.controllers.github_controller.oauth_states")
+    @patch("backend.src.api.controllers.github_controller.consume_oauth_state")
     @patch("backend.src.api.controllers.github_controller.db")
     def test_github_callback_token_exchange_failure(self, mock_db, mock_oauth_states, mock_github_client):
         """Test github_callback when token exchange fails"""
         # Setup mocks
         mock_request.args = ImmutableMultiDict([("code", "invalid-code"), ("state", "test-state")])
 
-        mock_oauth_states.__contains__.return_value = True
-        mock_oauth_states.__getitem__.return_value = {"user_id": 1}
+        mock_oauth_states.return_value = 1
 
         # Mock token exchange failure
         mock_github_client.exchange_code_for_token.return_value = None
@@ -464,7 +461,7 @@ class TestGitHubController(unittest.TestCase):
         self.assertEqual(result[0]["message"], "Failed to obtain access token")
 
     @patch("backend.src.api.controllers.github_controller.GitHubClient")
-    @patch("backend.src.api.controllers.github_controller.oauth_states")
+    @patch("backend.src.api.controllers.github_controller.consume_oauth_state")
     @patch("backend.src.api.controllers.github_controller.db")
     @patch("backend.src.api.controllers.github_controller.GitHubToken")
     def test_github_callback_profile_fetch_failure(
@@ -474,8 +471,7 @@ class TestGitHubController(unittest.TestCase):
         # Setup mocks
         mock_request.args = ImmutableMultiDict([("code", "test-code"), ("state", "test-state")])
 
-        mock_oauth_states.__contains__.return_value = True
-        mock_oauth_states.__getitem__.return_value = {"user_id": 1}
+        mock_oauth_states.return_value = 1
 
         # Setup token exchange mock
         mock_github_client.exchange_code_for_token.return_value = {"access_token": "test-access-token"}
@@ -494,14 +490,14 @@ class TestGitHubController(unittest.TestCase):
         mock_db.session.commit.assert_not_called()
 
     @patch("backend.src.api.controllers.github_controller.logger")
-    @patch("backend.src.api.controllers.github_controller.oauth_states")
+    @patch("backend.src.api.controllers.github_controller.consume_oauth_state")
     def test_github_callback_invalid_state_parameter(self, mock_oauth_states, mock_logger):
         """Test github_callback with invalid state parameter"""
         # Setup mocks for invalid state parameter
         mock_request.args = ImmutableMultiDict([("code", "test-code"), ("state", "invalid-state")])
 
         # Mock oauth_states to not contain this state and to cause an exception when processing the state
-        mock_oauth_states.__contains__.return_value = False
+        mock_oauth_states.return_value = None
 
         # Call the function
         result = github_callback()
@@ -512,7 +508,7 @@ class TestGitHubController(unittest.TestCase):
         mock_logger.error.assert_called()
 
     @patch("backend.src.api.controllers.github_controller.GitHubClient")
-    @patch("backend.src.api.controllers.github_controller.oauth_states")
+    @patch("backend.src.api.controllers.github_controller.consume_oauth_state")
     @patch("backend.src.api.controllers.github_controller.db")
     @patch("backend.src.api.controllers.github_controller.GitHubToken")
     @patch("backend.src.api.controllers.github_controller.User")
@@ -524,8 +520,7 @@ class TestGitHubController(unittest.TestCase):
         # Setup mocks
         mock_request.args = ImmutableMultiDict([("code", "test-code"), ("state", "test-state")])
 
-        mock_oauth_states.__contains__.return_value = True
-        mock_oauth_states.__getitem__.return_value = {"user_id": 1}
+        mock_oauth_states.return_value = 1
 
         # Setup token exchange mock
         mock_github_client.exchange_code_for_token.return_value = {"access_token": "test-access-token"}
@@ -557,7 +552,7 @@ class TestGitHubController(unittest.TestCase):
         mock_redirect.assert_called_with(expected_redirect_url)
 
     @patch("backend.src.api.controllers.github_controller.GitHubClient")
-    @patch("backend.src.api.controllers.github_controller.oauth_states")
+    @patch("backend.src.api.controllers.github_controller.consume_oauth_state")
     @patch("backend.src.api.controllers.github_controller.db")
     @patch("backend.src.api.controllers.github_controller.GitHubToken")
     @patch("backend.src.api.controllers.github_controller.User")
@@ -568,8 +563,7 @@ class TestGitHubController(unittest.TestCase):
         # Setup mocks
         mock_request.args = ImmutableMultiDict([("code", "test-code"), ("state", "test-state")])
 
-        mock_oauth_states.__contains__.return_value = True
-        mock_oauth_states.__getitem__.return_value = {"user_id": 999}  # Non-existent user ID
+        mock_oauth_states.return_value = 999  # Non-existent user ID
 
         # Setup token exchange mock
         mock_github_client.exchange_code_for_token.return_value = {"access_token": "test-access-token"}

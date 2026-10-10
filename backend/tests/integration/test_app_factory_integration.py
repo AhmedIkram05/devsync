@@ -9,6 +9,7 @@ from flask_jwt_extended import create_access_token
 # Add backend directory to import src.* modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
+from src.api.controllers import github_controller
 from src.api.routes import github_routes
 from src.app import create_app
 from src.socketio_server import connected_users, project_rooms
@@ -195,7 +196,17 @@ def test_socket_register_accepts_valid_bearer_token(app_and_socket):
     assert 88 not in connected_users
 
 
-def test_github_callback_post_success_updates_user_and_returns_contract(client, monkeypatch):
+def test_github_callback_post_success_updates_user_and_returns_contract(app_and_socket, monkeypatch):
+    from flask_jwt_extended import get_csrf_token
+
+    app, _ = app_and_socket
+    client = app.test_client()
+    with app.app_context():
+        token = create_access_token(identity={"user_id": 1}, additional_claims={"role": "developer"})
+        csrf = get_csrf_token(token)
+    client.set_cookie("access_token_cookie", token)
+    client.set_cookie("csrf_access_token", csrf)
+
     parse_state = MagicMock(return_value="1")
     exchange_code = MagicMock(return_value={"access_token": "token-abc"})
     get_profile = MagicMock(return_value={"login": "octocat"})
@@ -229,10 +240,11 @@ def test_github_callback_post_success_updates_user_and_returns_contract(client, 
     monkeypatch.setattr(github_routes, "User", StubUserModel)
     monkeypatch.setattr(github_routes, "GitHubToken", StubGitHubToken)
     monkeypatch.setattr(github_routes.db, "session", session, raising=False)
-    github_routes.oauth_states.clear()
+    github_controller.oauth_states.clear()
 
     response = client.post(
         "/api/v1/github/callback",
+        headers={"X-CSRF-TOKEN": csrf},
         json={"code": "valid-code", "state": "valid-state"},
     )
 
