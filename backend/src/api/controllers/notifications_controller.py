@@ -3,8 +3,9 @@
 from datetime import UTC, datetime
 
 from flask import jsonify, request
-from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import get_jwt, get_jwt_identity
 
+from ...auth.rbac import Role
 from ...db.models import Notification, db  # Changed to relative import
 from ...services.notification_service import NotificationService
 from ..validators.notification_validator import validate_notification_data  # Changed to relative import
@@ -33,6 +34,23 @@ def create_notification():
     if validation_result:
         return validation_result
 
+    identity = get_jwt_identity()
+    jwt_user_id = identity.get("user_id") if isinstance(identity, dict) else identity
+    try:
+        jwt_user_id = int(jwt_user_id)
+    except (TypeError, ValueError):
+        return jsonify({"message": "Invalid user identity"}), 401
+
+    # Forgery guard: only team leads and admins may target another user;
+    # everyone else notifies themselves regardless of the payload.
+    target_user_id = data.get("user_id", jwt_user_id)
+    try:
+        target_user_id = int(target_user_id)
+    except (TypeError, ValueError):
+        return jsonify({"message": "User ID must be an integer"}), 400
+    if get_jwt().get("role") not in (Role.TEAM_LEAD.value, Role.ADMIN.value):
+        target_user_id = jwt_user_id
+
     message = data.get("message") or data.get("content")
     title = data.get("title") or message[:80]
     notification_type = data.get("notification_type") or data.get("type") or "general"
@@ -41,7 +59,7 @@ def create_notification():
 
     # Create new notification and emit it when the target user is connected.
     new_notification = NotificationService.send_to_user(
-        user_id=data["user_id"],
+        user_id=target_user_id,
         notification_type=notification_type,
         title=title,
         message=message,

@@ -8,6 +8,7 @@ from flask_jwt_extended import create_access_token, get_csrf_token
 # Add backend directory to import src.* modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
+from src.api.controllers import github_controller
 from src.api.routes import (
     admin_routes,
     comments_routes,
@@ -305,27 +306,34 @@ def test_comments_routes_enforce_auth_and_json_contract(client, app, monkeypatch
     create_comment_handler.assert_called_once_with(7)
 
 
-def test_github_exchange_rejects_missing_or_invalid_state(client, monkeypatch):
-    missing_code_response = client.get("/api/v1/github/exchange")
+def test_github_exchange_rejects_missing_or_invalid_state(client, app, monkeypatch):
+    # Unauthenticated callers are rejected before any state handling.
+    unauth_response = client.get("/api/v1/github/exchange?code=test-code&state=invalid-state")
+    assert unauth_response.status_code == 401
+
+    authed = auth_headers(client, app, "developer")
+    missing_code_response = client.get("/api/v1/github/exchange", headers=authed)
     assert missing_code_response.status_code == 400
     assert missing_code_response.get_json()["message"] == "No code provided"
 
-    github_routes.oauth_states.clear()
+    github_controller.oauth_states.clear()
     parse_state = MagicMock(return_value=None)
     monkeypatch.setattr(github_routes.GitHubClient, "parse_state_param", parse_state)
 
-    invalid_state_response = client.get("/api/v1/github/exchange?code=test-code&state=invalid-state")
+    invalid_state_response = client.get(
+        "/api/v1/github/exchange?code=test-code&state=invalid-state", headers=authed
+    )
     assert invalid_state_response.status_code == 400
     assert invalid_state_response.get_json()["message"] == "Invalid state parameter"
     parse_state.assert_called_once_with("invalid-state")
 
 
-def test_github_callback_post_rejects_invalid_request_and_failed_exchange(client, monkeypatch):
+def test_github_callback_post_rejects_invalid_request_and_failed_exchange(client, app, monkeypatch):
     missing_params_response = client.post("/api/v1/github/callback", json={"state": "only-state"})
     assert missing_params_response.status_code == 400
     assert missing_params_response.get_json()["error"] == "Missing required parameters"
 
-    github_routes.oauth_states.clear()
+    github_controller.oauth_states.clear()
     parse_state = MagicMock(return_value="1")
     exchange_code = MagicMock(return_value=None)
     monkeypatch.setattr(github_routes.GitHubClient, "parse_state_param", parse_state)
@@ -333,6 +341,7 @@ def test_github_callback_post_rejects_invalid_request_and_failed_exchange(client
 
     failed_exchange_response = client.post(
         "/api/v1/github/callback",
+        headers=auth_headers(client, app, "developer"),
         json={"code": "test-code", "state": "state-without-token"},
     )
     assert failed_exchange_response.status_code == 400

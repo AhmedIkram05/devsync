@@ -25,10 +25,10 @@ def test_validate_notification_data_missing_fields():
         result = validate_notification_data(data)
         assert result == ("Error message", 400)
 
-        # Missing user_id
+        # Missing user_id is fine: it defaults to the authenticated user
         data = {"content": "Test notification"}
         result = validate_notification_data(data)
-        assert result == ("Error message", 400)
+        assert result is None
 
 
 def test_validate_notification_data_invalid_content_length():

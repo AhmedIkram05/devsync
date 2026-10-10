@@ -27,6 +27,7 @@ def app(monkeypatch):
 
     monkeypatch.setattr(dashboard_routes, "jwt_required", passthrough_decorator)
     monkeypatch.setattr(dashboard_routes, "role_required", passthrough_decorator)
+    monkeypatch.setattr(dashboard_routes, "require_project_membership", lambda fn: fn)
 
     bp = Blueprint("api", __name__, url_prefix="/api/v1")
     dashboard_routes.register_routes(bp)

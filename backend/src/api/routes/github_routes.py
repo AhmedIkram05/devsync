@@ -3,15 +3,16 @@
 from urllib.parse import urlencode
 
 from flask import current_app, jsonify, request
-from flask_jwt_extended import get_jwt_identity, jwt_required
+from flask_jwt_extended import get_jwt_identity, jwt_required, verify_jwt_in_request
 
 from ...auth.encryption import encrypt_token
-from ...auth.rbac import Role, require_permission
+from ...auth.rbac import Role, require_permission, require_project_membership
 from ...db.models import GitHubToken, User, db
 from ...services.github_client import GitHubClient
 from ..controllers.github_controller import (
     add_github_repository,
     check_github_config,
+    consume_oauth_state,
     delete_task_github_link,
     disconnect_github_account,
     get_github_repositories,
@@ -21,9 +22,8 @@ from ..controllers.github_controller import (
     github_callback,
     initiate_github_auth,
     link_task_with_github,
-    oauth_states,
 )
-from ..middlewares import role_required
+from ..middlewares import rate_limit, role_required
 from ..middlewares.validation_middleware import validate_json
 
 
@@ -59,10 +59,19 @@ def register_routes(bp):
             return jsonify({"error": "Missing required parameters"}), 400
 
         try:
-            user_id = GitHubClient.parse_state_param(state)
-            if not user_id and state in oauth_states:
-                user_id = oauth_states[state]["user_id"]
-                del oauth_states[state]
+            # The SPA posts with auth; bind the exchange to the caller's own
+            # account so a leaked code/state pair cannot link someone else's GitHub.
+            verify_jwt_in_request()
+            jwt_user_id = _extract_user_id()
+            try:
+                jwt_user_id = int(jwt_user_id)
+            except (TypeError, ValueError):
+                return jsonify({"error": "Invalid user identity"}), 401
+
+            # Single-use server-issued state first, then the signed state token.
+            user_id = consume_oauth_state(state)
+            if not user_id:
+                user_id = GitHubClient.parse_state_param(state)
 
             try:
                 user_id = int(user_id)
@@ -71,6 +80,9 @@ def register_routes(bp):
 
             if not user_id:
                 return jsonify({"error": "Invalid state parameter - missing user ID"}), 400
+
+            if user_id != jwt_user_id:
+                return jsonify({"error": "State does not belong to the authenticated user"}), 403
 
             # Exchange the code for an access token
             token_data = GitHubClient.exchange_code_for_token(code)
@@ -145,18 +157,21 @@ def register_routes(bp):
 
     @bp.route("/github/repositories/<int:repo_id>/issues", methods=["GET"])
     @jwt_required()
+    @require_project_membership
     def repository_issues(repo_id):
         """Route to get issues for a repository"""
         return get_repository_issues(repo_id)
 
     @bp.route("/github/repositories/<int:repo_id>/pulls", methods=["GET"])
     @jwt_required()
+    @require_project_membership
     def repository_pulls(repo_id):
         """Route to get pull requests for a repository"""
         return get_repository_pulls(repo_id)
 
     @bp.route("/tasks/<int:task_id>/github", methods=["POST"])
     @jwt_required()
+    @require_project_membership
     @validate_json()
     def link_github(task_id):
         """Route to link a task with GitHub issue or PR"""
@@ -164,31 +179,40 @@ def register_routes(bp):
 
     @bp.route("/tasks/<int:task_id>/github", methods=["GET"])
     @jwt_required()
+    @require_project_membership
     def get_github_links(task_id):
         """Route to get GitHub links for a task"""
         return get_task_github_links(task_id)
 
     @bp.route("/tasks/<int:task_id>/github/<int:link_id>", methods=["DELETE"])
     @jwt_required()
+    @require_project_membership
     def delete_github_link(task_id, link_id):
         """Route to delete a GitHub link from a task"""
         return delete_task_github_link(task_id, link_id)
 
     @bp.route("/github/exchange", methods=["GET"])
+    @jwt_required()
+    @rate_limit(requests_per_window=5, window_seconds=60)
     def exchange_github_code():
-        """Route to exchange GitHub OAuth code for token without authentication"""
+        """Exchange a GitHub OAuth code for a token for the authenticated user only."""
         code = request.args.get("code")
         state = request.args.get("state")
 
         if not code:
             return jsonify({"success": False, "message": "No code provided"}), 400
 
+        jwt_user_id = _extract_user_id()
         try:
-            # Parse state to get user_id
-            user_id = GitHubClient.parse_state_param(state)
-            if not user_id and state in oauth_states:
-                user_id = oauth_states[state]["user_id"]
-                del oauth_states[state]
+            jwt_user_id = int(jwt_user_id)
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "message": "Invalid user identity"}), 401
+
+        try:
+            # Single-use server-issued state first, then the signed state token.
+            user_id = consume_oauth_state(state)
+            if not user_id:
+                user_id = GitHubClient.parse_state_param(state)
 
             try:
                 user_id = int(user_id)
@@ -197,6 +221,9 @@ def register_routes(bp):
 
             if not user_id:
                 return jsonify({"success": False, "message": "Invalid state parameter"}), 400
+
+            if user_id != jwt_user_id:
+                return jsonify({"success": False, "message": "State does not belong to the authenticated user"}), 403
 
             # Exchange the code for an access token
             token_data = GitHubClient.exchange_code_for_token(code)

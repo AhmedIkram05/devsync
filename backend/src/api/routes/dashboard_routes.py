@@ -2,7 +2,7 @@
 
 from flask_jwt_extended import jwt_required
 
-from ...auth.rbac import Role
+from ...auth.rbac import Role, require_project_membership
 from ..controllers.dashboard_controller import (
     get_admin_dashboard,
     get_client_dashboard,
@@ -39,6 +39,7 @@ def register_routes(bp):
 
     @bp.route("/dashboard/projects/<int:project_id>", methods=["GET"])
     @jwt_required()
+    @require_project_membership
     def project_dashboard(project_id):
         """Route to get dashboard data for a specific project"""
         return get_project_dashboard(project_id)

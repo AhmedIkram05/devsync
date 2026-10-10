@@ -19,12 +19,57 @@ from ...db.models import (
     db,
 )
 from ...services.github_client import GitHubClient
+from ...services.redis_client import get_redis
 from ..validators.github_validator import validate_github_repo_data, validate_task_github_link
 
 logger = logging.getLogger(__name__)
 
-# In-memory store for OAuth state parameters (in a production app, use Redis or similar)
+# In-memory fallback for OAuth state parameters when Redis is unset/down.
+# The bucket of record is Redis (SETEX 600, single-use); this dict only backs
+# dev/CI without REDIS_URL and transient Redis outages.
 oauth_states = {}
+
+OAUTH_STATE_PREFIX = "github_oauth_state:"
+OAUTH_STATE_TTL_SECONDS = 600
+
+
+def store_oauth_state(state, user_id):
+    """Persist a single-use OAuth state with a 10-minute TTL (Redis, memory fallback)."""
+    client = get_redis()
+    if client is not None:
+        try:
+            client.setex(f"{OAUTH_STATE_PREFIX}{state}", OAUTH_STATE_TTL_SECONDS, str(user_id))
+            return
+        except Exception:
+            logger.warning("OAuth state Redis write failed; using in-memory fallback", exc_info=True)
+    oauth_states[state] = {"user_id": user_id, "created_at": datetime.now()}
+
+
+def consume_oauth_state(state):
+    """Return the user_id for *state* and delete it (single-use). None when unknown/expired."""
+    if not state:
+        return None
+    client = get_redis()
+    if client is not None:
+        try:
+            key = f"{OAUTH_STATE_PREFIX}{state}"
+            user_id = client.get(key)
+            if user_id is not None:
+                try:
+                    client.delete(key)
+                except Exception:
+                    pass
+                return int(user_id) if str(user_id).isdigit() else user_id
+        except Exception:
+            logger.warning("OAuth state Redis read failed; checking in-memory fallback", exc_info=True)
+    try:
+        record = oauth_states.pop(state, None)
+    except Exception:
+        logger.warning("OAuth state lookup failed", exc_info=True)
+        raise
+    if record is None:
+        return None
+    return record.get("user_id")
 
 RELINK_MESSAGE = "GitHub token invalid, please reconnect"
 
@@ -71,8 +116,8 @@ def initiate_github_auth():
     state = str(uuid.uuid4())
     user_id = get_jwt_identity()["user_id"]
 
-    # Store state with user_id (with 10 minute expiry in a real app)
-    oauth_states[state] = {"user_id": user_id, "created_at": datetime.now()}
+    # Store state with user_id (single-use, 10 minute TTL in Redis)
+    store_oauth_state(state, user_id)
 
     # Check if GitHub OAuth credentials are configured
     if not current_app.config.get("GITHUB_CLIENT_ID") or not current_app.config.get("GITHUB_CLIENT_SECRET"):
@@ -100,14 +145,10 @@ def github_callback():
         return jsonify({"message": "Missing code or state parameter"}), 400
 
     try:
-        # First try to find the state in our oauth_states dictionary
-        if state in oauth_states:
-            # This is our internally generated state
-            user_id = oauth_states[state]["user_id"]
-            # Clean up used state
-            del oauth_states[state]
-        else:
-            # Otherwise it must be an HMAC-signed state token issued by this
+        # Single-use server-issued state first (Redis SETEX 600, memory fallback)...
+        user_id = consume_oauth_state(state)
+        if user_id is None:
+            # ...otherwise it must be an HMAC-signed state token issued by this
             # server; a forged or expired state is rejected here.
             user_id = GitHubClient.parse_state_param(state)
 

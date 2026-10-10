@@ -544,6 +544,17 @@ def test_dashboard_admin_route_returns_user_and_task_totals(client, app, monkeyp
 
 
 def test_dashboard_project_route_returns_project_metrics(client, app, monkeypatch):
+    from src.db.models import Project, db, project_members
+
+    # The project dashboard now requires membership: seed a real project row
+    # plus a membership row (the controller itself stays stubbed below).
+    with app.app_context():
+        db.create_all()
+        db.session.add(Project(id=11, name="Project Delta", description="Important project", status="active", created_by=1))
+        db.session.flush()
+        db.session.execute(project_members.insert(), [{"project_id": 11, "user_id": 1}])
+        db.session.commit()
+
     project = SimpleNamespace(
         id=11,
         name="Project Delta",

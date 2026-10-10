@@ -2,7 +2,7 @@
 
 from flask_jwt_extended import jwt_required
 
-from ...auth.rbac import Role
+from ...auth.rbac import Role, require_project_membership
 from ..controllers.tasks_controller import (
     create_new_task,
     delete_task_by_id,
@@ -37,6 +37,7 @@ def register_routes(bp):
     @bp.route("/tasks/<int:task_id>", methods=["GET"])
     @jwt_required()
     @role_required(AUTHENTICATED_ROLES)
+    @require_project_membership
     def get_task(task_id):
         """Route to get a specific task"""
         return get_task_by_id(task_id)
