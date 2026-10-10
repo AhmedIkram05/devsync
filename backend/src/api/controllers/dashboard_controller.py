@@ -606,8 +606,11 @@ def get_project_dashboard(project_id):
         # Get recently updated tasks
         recently_updated = get_recent_updated_project_tasks(project_id)
 
-        # Get team members
-        team_members = project.team_members.all()
+        # Get team members (backref is a list when loaded from the DB,
+        # a query when stubbed — handle both like the admin dashboard does).
+        team_members = getattr(project, "team_members", []) or []
+        if hasattr(team_members, "all"):
+            team_members = team_members.all()
 
         dashboard_data = {
             "project": {

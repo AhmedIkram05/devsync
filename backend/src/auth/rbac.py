@@ -4,7 +4,7 @@ from enum import Enum
 from functools import wraps
 
 from flask import jsonify
-from flask_jwt_extended import get_jwt
+from flask_jwt_extended import get_jwt, get_jwt_identity
 
 
 class Role(Enum):
@@ -143,3 +143,145 @@ def role_at_least(min_role):
         return wrapper
 
     return decorator
+
+
+def _to_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def get_user_project_ids(user_id):
+    """Project IDs *user_id* belongs to (team member or creator). Empty set on bad input/DB error."""
+    user_id = _to_int(user_id)
+    if user_id is None:
+        return set()
+
+    from ..db.models import Project, db, project_members
+
+    ids = set()
+    try:
+        rows = db.session.query(project_members.c.project_id).filter(project_members.c.user_id == user_id).all()
+        ids.update(row[0] for row in rows)
+        created = Project.query.filter_by(created_by=user_id).with_entities(Project.id).all()
+        ids.update(row[0] for row in created)
+    except Exception:
+        pass
+    ids.discard(None)
+    return ids
+
+
+def _is_project_member_or_creator(user_id, project_id):
+    """True when *user_id* is a team member or the creator of *project_id*."""
+    project_id = _to_int(project_id)
+    if project_id is None:
+        return False
+
+    from ..db.models import Project, db, project_members
+
+    try:
+        if (
+            db.session.query(project_members)
+            .filter_by(project_id=project_id, user_id=user_id)
+            .first()
+            is not None
+        ):
+            return True
+    except Exception:
+        pass
+    try:
+        project = db.session.get(Project, project_id)
+    except Exception:
+        project = None
+    return project is not None and _to_int(getattr(project, "created_by", None)) == user_id
+
+
+def _task_visible_to(task, user_id):
+    """A task is visible to project members/creators, plus its assignee and creator."""
+    if task is None:
+        return False
+    if _to_int(getattr(task, "assigned_to", None)) == user_id:
+        return True
+    if _to_int(getattr(task, "created_by", None)) == user_id:
+        return True
+    return _is_project_member_or_creator(user_id, getattr(task, "project_id", None))
+
+
+def require_project_membership(fn):
+    """Central gate against cross-project disclosure.
+
+    Resolves the project in scope from the view kwargs — ``project_id``
+    directly, ``task_id`` via the task's project (assignee/creator also pass),
+    or ``repo_id`` via projects with tasks linked to that repo (unlinked repos
+    expose only the caller's own GitHub data, so they pass). Admins bypass.
+    Missing objects yield 404 (no existence oracle); denial yields 403.
+    Assumes ``@jwt_required`` ran first.
+    """
+
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        identity = get_jwt_identity()
+        user_id = identity.get("user_id") if isinstance(identity, dict) else identity
+        user_id = _to_int(user_id)
+        if user_id is None:
+            return jsonify({"message": "Invalid user identity"}), 401
+        claims = get_jwt()
+        if claims.get("role") == Role.ADMIN.value:
+            return fn(*args, **kwargs)
+
+        from ..db.models import GitHubRepository, Project, Task, TaskGitHubLink, db
+
+        if "task_id" in kwargs:
+            task_id = _to_int(kwargs.get("task_id"))
+            try:
+                task = db.session.get(Task, task_id) if task_id is not None else None
+            except Exception:
+                task = None
+            if task is None:
+                return jsonify({"message": "Task not found"}), 404
+            if not _task_visible_to(task, user_id):
+                return jsonify({"message": "Task not found"}), 404
+            return fn(*args, **kwargs)
+
+        if "project_id" in kwargs:
+            project_id = _to_int(kwargs.get("project_id"))
+            try:
+                project = db.session.get(Project, project_id) if project_id is not None else None
+            except Exception:
+                project = None
+            if project is None:
+                return jsonify({"message": "Project not found"}), 404
+            if not _is_project_member_or_creator(user_id, project_id):
+                return jsonify({"message": "You are not a member of this project"}), 403
+            return fn(*args, **kwargs)
+
+        if "repo_id" in kwargs:
+            repo_id = _to_int(kwargs.get("repo_id"))
+            try:
+                repo = db.session.get(GitHubRepository, repo_id) if repo_id is not None else None
+            except Exception:
+                repo = None
+            if repo is None:
+                return jsonify({"message": "Repository not found"}), 404
+            try:
+                links = TaskGitHubLink.query.filter_by(repo_id=repo_id).all()
+            except Exception:
+                links = []
+            linked_project_ids = set()
+            for link in links:
+                try:
+                    task = db.session.get(Task, link.task_id)
+                except Exception:
+                    task = None
+                if task is not None and _to_int(getattr(task, "project_id", None)) is not None:
+                    linked_project_ids.add(_to_int(task.project_id))
+            if linked_project_ids and not any(
+                _is_project_member_or_creator(user_id, pid) for pid in linked_project_ids
+            ):
+                return jsonify({"message": "You are not a member of this project"}), 403
+            return fn(*args, **kwargs)
+
+        return fn(*args, **kwargs)
+
+    return wrapper

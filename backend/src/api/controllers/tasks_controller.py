@@ -5,10 +5,11 @@ from unittest.mock import Mock
 
 from flask import jsonify, request
 from flask_jwt_extended import get_jwt, get_jwt_identity
+from sqlalchemy import or_
 
 from src.socketio_server import emit_dashboard_refresh
 
-from ...auth.rbac import Role  # Changed to relative import
+from ...auth.rbac import Role, get_user_project_ids  # Changed to relative import
 from ...db.models import Project, Task, User, db  # Changed to relative import
 from ...services import audit_service, settings_service
 from ...services.notification_service import NotificationService
@@ -105,7 +106,15 @@ def get_all_tasks():
     if created_by:
         query = query.filter(Task.created_by == created_by)
 
-    # Apply role-based filtering - Developers can now see all tasks as well
+    # Apply role-based filtering: non-admins only see tasks in their own
+    # projects, plus tasks assigned to or created by them.
+    if user_role != Role.ADMIN.value:
+        scope_ids = get_user_project_ids(user_id)
+        scope_criteria = [(Task.assigned_to == user_id), (Task.created_by == user_id)]
+        if scope_ids:
+            scope_criteria.append(Task.project_id.in_(scope_ids))
+        query = query.filter(or_(*scope_criteria))
+
     tasks = query.all()
 
     # Convert tasks to JSON response

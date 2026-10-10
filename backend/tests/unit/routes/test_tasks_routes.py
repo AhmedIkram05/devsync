@@ -28,6 +28,7 @@ def app(monkeypatch):
     monkeypatch.setattr(tasks_routes, "jwt_required", passthrough_decorator)
     monkeypatch.setattr(tasks_routes, "validate_json", passthrough_decorator)
     monkeypatch.setattr(tasks_routes, "role_required", passthrough_decorator)
+    monkeypatch.setattr(tasks_routes, "require_project_membership", lambda fn: fn)
 
     bp = Blueprint("api", __name__, url_prefix="/api/v1")
     tasks_routes.register_routes(bp)

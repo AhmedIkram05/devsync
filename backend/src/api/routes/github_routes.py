@@ -6,7 +6,7 @@ from flask import current_app, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required, verify_jwt_in_request
 
 from ...auth.encryption import encrypt_token
-from ...auth.rbac import Role, require_permission
+from ...auth.rbac import Role, require_permission, require_project_membership
 from ...db.models import GitHubToken, User, db
 from ...services.github_client import GitHubClient
 from ..controllers.github_controller import (
@@ -157,18 +157,21 @@ def register_routes(bp):
 
     @bp.route("/github/repositories/<int:repo_id>/issues", methods=["GET"])
     @jwt_required()
+    @require_project_membership
     def repository_issues(repo_id):
         """Route to get issues for a repository"""
         return get_repository_issues(repo_id)
 
     @bp.route("/github/repositories/<int:repo_id>/pulls", methods=["GET"])
     @jwt_required()
+    @require_project_membership
     def repository_pulls(repo_id):
         """Route to get pull requests for a repository"""
         return get_repository_pulls(repo_id)
 
     @bp.route("/tasks/<int:task_id>/github", methods=["POST"])
     @jwt_required()
+    @require_project_membership
     @validate_json()
     def link_github(task_id):
         """Route to link a task with GitHub issue or PR"""
@@ -176,12 +179,14 @@ def register_routes(bp):
 
     @bp.route("/tasks/<int:task_id>/github", methods=["GET"])
     @jwt_required()
+    @require_project_membership
     def get_github_links(task_id):
         """Route to get GitHub links for a task"""
         return get_task_github_links(task_id)
 
     @bp.route("/tasks/<int:task_id>/github/<int:link_id>", methods=["DELETE"])
     @jwt_required()
+    @require_project_membership
     def delete_github_link(task_id, link_id):
         """Route to delete a GitHub link from a task"""
         return delete_task_github_link(task_id, link_id)

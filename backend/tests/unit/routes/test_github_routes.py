@@ -25,6 +25,8 @@ def app(monkeypatch):
     monkeypatch.setattr(github_routes, "admin_required", passthrough_decorator, raising=False)
     monkeypatch.setattr(github_routes, "role_required", passthrough_decorator, raising=False)
     monkeypatch.setattr(github_routes, "require_permission", passthrough_decorator, raising=False)
+    monkeypatch.setattr(github_routes, "require_project_membership", lambda fn: fn)
+    monkeypatch.setattr(github_routes, "rate_limit", passthrough_decorator, raising=False)
 
     bp = Blueprint("api", __name__, url_prefix="/api/v1")
     github_routes.register_routes(bp)
