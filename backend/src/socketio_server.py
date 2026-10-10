@@ -32,9 +32,12 @@ def _message_queue():
     )
 
 
-# Initialize SocketIO
-_mq_kwargs = {"message_queue": _message_queue()} if _message_queue() else {}
-socketio = SocketIO(cors_allowed_origins=_cors_allowed_origins(), **_mq_kwargs)
+# Initialize SocketIO. The message queue is attached ONLY in init_socketio():
+# passing it here would init an early server at import whenever a queue URL is
+# set (prod always sets one), stranding every @socketio.on handler on that
+# dead server while init_app() builds a handler-less one to serve (P0 2026-10-10:
+# prod accepted all unauth socket connects). Deferring keeps one server.
+socketio = SocketIO(cors_allowed_origins=_cors_allowed_origins())
 logger = logging.getLogger(__name__)
 
 # Store for connected users and project rooms
