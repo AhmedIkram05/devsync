@@ -155,6 +155,7 @@ jobs:
           kubectl create secret generic devsync-app-secrets -n "$PR_NS" \
             --from-literal=DATABASE_URL="${{ secrets.PR_DATABASE_URL }}" \
             --from-literal=JWT_SECRET_KEY="${{ secrets.PR_JWT_SECRET_KEY }}" \
+            --from-literal=SECRET_KEY="${{ secrets.PR_SECRET_KEY }}" \
             --from-literal=GITHUB_CLIENT_ID="${{ secrets.PR_GITHUB_CLIENT_ID }}" \
             --from-literal=GITHUB_CLIENT_SECRET="${{ secrets.PR_GITHUB_CLIENT_SECRET }}" \
             --from-literal=FERNET_KEY="${{ secrets.PR_FERNET_KEY }}" \

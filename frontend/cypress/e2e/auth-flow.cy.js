@@ -52,29 +52,42 @@ describe('Auth flow pages', () => {
   });
 
   it('completes the full login cycle, validates cookie session via /me, and logs out', () => {
-    // 1. Setup mock for cookie-session login (no tokens in body)
-    cy.intercept('POST', '**/api/v1/auth/login', {
-      statusCode: 200,
-      headers: {
-        // HttpOnly session cookies set by the server
-        'set-cookie': [
-          'access_token_cookie=cookie-access-123; Path=/; HttpOnly; SameSite=Lax',
-          'refresh_token_cookie=cookie-refresh-123; Path=/; HttpOnly; SameSite=Lax',
-        ].join(', '),
-      },
-      body: {
-        message: 'Login successful',
-        user: { id: 7, name: 'Login User', email: 'login@example.com', role: 'developer', github_connected: false }
-      }
+    // 1. Setup mock for cookie-session login (no tokens in body).
+    // /me stays 401 until login succeeds so /login renders the form first
+    // (an already-authenticated session redirects away from /login).
+    let authed = false;
+
+    cy.intercept('POST', '**/api/v1/auth/login', (req) => {
+      authed = true;
+      req.reply({
+        statusCode: 200,
+        headers: {
+          // HttpOnly session cookies set by the server
+          'set-cookie': [
+            'access_token_cookie=cookie-access-123; Path=/; HttpOnly; SameSite=Lax',
+            'refresh_token_cookie=cookie-refresh-123; Path=/; HttpOnly; SameSite=Lax',
+          ].join(', '),
+        },
+        body: {
+          message: 'Login successful',
+          user: { id: 7, name: 'Login User', email: 'login@example.com', role: 'developer', github_connected: false }
+        }
+      });
     }).as('loginReq');
 
     // Session validation endpoint used by verifyToken
-    cy.intercept('GET', '**/api/v1/auth/me', {
-      statusCode: 200,
-      body: {
-        user: { id: 7, name: 'Login User', email: 'login@example.com', role: 'developer', github_connected: false },
-        exp: 9999999999,
-      },
+    cy.intercept('GET', '**/api/v1/auth/me', (req) => {
+      if (authed) {
+        req.reply({
+          statusCode: 200,
+          body: {
+            user: { id: 7, name: 'Login User', email: 'login@example.com', role: 'developer', github_connected: false },
+            exp: 9999999999,
+          },
+        });
+      } else {
+        req.reply({ statusCode: 401, body: { message: 'Unauthorized' } });
+      }
     }).as('meReq');
 
     // Mocks for dashboard entry

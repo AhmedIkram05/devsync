@@ -26,6 +26,41 @@ const stripAuthHeader = (headers = {}) => {
   return clean;
 };
 
+// Auth endpoints must never trigger the 401 refresh-and-retry path: a 401 on
+// these is a real credential failure, and recursion on /auth/refresh would loop.
+const isExcludedFromRefresh = (endpoint = '') =>
+  endpoint.includes('auth/refresh') ||
+  endpoint.includes('auth/login') ||
+  endpoint.includes('auth/register');
+
+// Cookie session access tokens are short-lived; when one expires mid-session
+// every request 401s at once. A single in-flight refresh is shared by all
+// concurrent callers so the rotation happens once, not once per request.
+let inFlightRefresh = null;
+
+const refreshAccessToken = () => {
+  if (!inFlightRefresh) {
+    inFlightRefresh = fetch(`${API_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: stripAuthHeader({
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        ...csrfHeaders('refresh'),
+      }),
+      credentials: 'include',
+    }).then((response) => {
+      if (!response.ok) {
+        throw new Error('Token refresh failed.');
+      }
+      return true;
+    }).finally(() => {
+      inFlightRefresh = null;
+    });
+  }
+
+  return inFlightRefresh;
+};
+
 const fetchWithAuth = async (endpoint, options = {}) => {
   try {
     // Set up default headers — cookies carry auth, CSRF header proves origin.
@@ -90,6 +125,18 @@ const fetchWithAuth = async (endpoint, options = {}) => {
     }
     
     if (response.status === 401) {
+      // Expired access token: rotate the cookie session once, then retry the
+      // original request. Guarded so auth endpoints and an already-retried
+      // request fall straight through to the error below (no loop).
+      if (!options.__authRetried && !isExcludedFromRefresh(endpoint)) {
+        try {
+          await refreshAccessToken();
+          return await fetchWithAuth(endpoint, { ...options, __authRetried: true });
+        } catch (refreshError) {
+          // Refresh failed — surface the original auth error below.
+        }
+      }
+
       const error = new Error('Authentication failed. Token may be expired or invalid.');
       error.status = 401;
       error.isAuthError = true;

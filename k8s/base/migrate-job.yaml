@@ -100,6 +100,13 @@ spec:
             secretKeyRef:
               name: devsync-app-secrets
               key: JWT_SECRET_KEY
+        # Optional: mirrors backend-deployment; app derives from JWT if absent.
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: devsync-app-secrets
+              key: SECRET_KEY
+              optional: true
         - name: GITHUB_CLIENT_ID
           valueFrom:
             secretKeyRef:

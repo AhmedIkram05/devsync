@@ -108,8 +108,9 @@ describe('NotificationContext', () => {
     });
 
     expect(io).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
-      auth: { token: 'token-1' },
+      withCredentials: true,
     }));
+    expect(io.mock.calls[0][1].auth).toBeUndefined();
 
     await waitFor(() => {
       expect(screen.getByTestId('total-count')).toHaveTextContent('2');
@@ -290,7 +291,8 @@ describe('NotificationContext', () => {
     });
   });
 
-  test('does not initialize with missing user token', async () => {
+  test('initializes with a user even when no token is present', async () => {
+    notificationService.getNotifications.mockResolvedValue([]);
     useAuth.mockReturnValue({ currentUser: { id: 1 } }); // No token
 
     render(
@@ -299,10 +301,29 @@ describe('NotificationContext', () => {
       </NotificationProvider>
     );
 
-    // Give it a moment to possibly call the service (it shouldn't)
+    await waitFor(() => {
+      expect(notificationService.getNotifications).toHaveBeenCalled();
+    });
+
+    expect(io).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      withCredentials: true,
+    }));
+    expect(io.mock.calls[0][1].auth).toBeUndefined();
+  });
+
+  test('does not initialize without a current user', async () => {
+    useAuth.mockReturnValue({ currentUser: null });
+
+    render(
+      <NotificationProvider>
+        <NotificationHarness />
+      </NotificationProvider>
+    );
+
     await waitFor(() => {
       expect(notificationService.getNotifications).not.toHaveBeenCalled();
     });
+    expect(io).not.toHaveBeenCalled();
   });
 
   test('debounces frequent manual refresh calls', async () => {

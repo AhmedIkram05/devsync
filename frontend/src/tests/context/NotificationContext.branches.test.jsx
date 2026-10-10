@@ -79,7 +79,7 @@ describe('NotificationContext branch coverage', () => {
       });
     });
 
-    test('skips refresh when currentUser has no token', async () => {
+    test('refreshes when currentUser has no token (cookie auth)', async () => {
       useAuth.mockReturnValue({ currentUser: { id: 1, token: null } });
       api.notificationService.getNotifications.mockResolvedValue([]);
 
@@ -90,7 +90,7 @@ describe('NotificationContext branch coverage', () => {
       );
 
       await waitFor(() => {
-        expect(api.notificationService.getNotifications).not.toHaveBeenCalled();
+        expect(api.notificationService.getNotifications).toHaveBeenCalled();
       });
     });
   });

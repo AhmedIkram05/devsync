@@ -73,24 +73,21 @@ const GitHubCallback = () => {
         }
         
         setStatus('Exchanging code for access token...');
-        
-        // Get current user for authentication
-        if (!currentUser || !currentUser.token) {
+
+        // Sessions are cookie-based (HttpOnly); authentication is proven by a
+        // populated profile (state or cached), never by a client-held token.
+        const activeUser = currentUser || authApi.getCurrentUser();
+        if (!activeUser) {
           setStatus('Checking authentication status...');
-          
-          // Try to get user from localStorage
-          const user = authApi.getCurrentUser();
-          if (!user || !user.token) {
-            setError('Authentication required. Please log in again.');
-            setTimeout(() => {
-              navigate('/login', { 
-                replace: true,
-                state: { from: '/github' } 
-              });
-            }, 2000);
-            setProcessingComplete(true);
-            return;
-          }
+          setError('Authentication required. Please log in again.');
+          setTimeout(() => {
+            navigate('/login', {
+              replace: true,
+              state: { from: '/github' }
+            });
+          }, 2000);
+          setProcessingComplete(true);
+          return;
         }
         
         // Exchange the code for an access token via our backend

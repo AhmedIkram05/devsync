@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Populate the 6 Secret Manager containers that infra/terraform owns, so a
+# Populate the 7 Secret Manager containers that infra/terraform owns, so a
 # destroy+recreate (or brand-new project) works end to end.
 # Idempotent: skips any secret that already has a version. Never prints secret values.
 # Usage: PROJECT_ID=<id> bash scripts/bootstrap-secrets.sh [--force]   (--force overwrites)
 #
 #   GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET   sourced from .env (reuse OAuth app)
-#   JWT_SECRET_KEY / FERNET_KEY / POSTGRES_PASSWORD   generated via python secrets
+#   JWT_SECRET_KEY / SECRET_KEY / FERNET_KEY / POSTGRES_PASSWORD   generated via python secrets
 #   DATABASE_URL   localhost placeholder (the standing env runs in-cluster postgres
 #                  via the prod overlay patch; this value is only the SM fill)
 set -euo pipefail
@@ -41,18 +41,21 @@ fi
 GEN="$(python3 - <<'PY'
 import secrets, base64
 print(secrets.token_urlsafe(48))          # JWT_SECRET_KEY
+print(secrets.token_urlsafe(48))          # SECRET_KEY (Flask session; distinct from JWT)
 print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())  # FERNET_KEY
 print(secrets.token_urlsafe(24))          # POSTGRES_PASSWORD
 PY
 )"
 JWT_KEY="$(sed -n 1p <<<"$GEN")"
-FERNET="$(sed -n 2p <<<"$GEN")"
-PGPASS="$(sed -n 3p <<<"$GEN")"
+FLASK_KEY="$(sed -n 2p <<<"$GEN")"
+FERNET="$(sed -n 3p <<<"$GEN")"
+PGPASS="$(sed -n 4p <<<"$GEN")"
 
 DATABASE_VAL="postgresql://devsync:${PGPASS}@localhost:5432/devsync?sslmode=disable"
 
-echo "Bootstrapping 6 secrets in project ${PROJECT_ID} (idempotent):"
+echo "Bootstrapping 7 secrets in project ${PROJECT_ID} (idempotent):"
 put JWT_SECRET_KEY "$JWT_KEY"
+put SECRET_KEY "$FLASK_KEY"
 put FERNET_KEY "$FERNET"
 put POSTGRES_PASSWORD "$PGPASS"
 put GITHUB_CLIENT_ID "$GH_ID"
