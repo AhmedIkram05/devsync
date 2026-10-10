@@ -134,6 +134,24 @@ describe('Login page branch coverage', () => {
         expect(screen.getByText(/Please enter both/i)).toBeInTheDocument();
       });
     });
+
+    test('shows error when email is empty but password is present', async () => {
+      render(
+        <Router>
+          <Login />
+        </Router>
+      );
+
+      const passwordInput = screen.getByPlaceholderText(/\*{6,}/);
+      fireEvent.change(passwordInput, { target: { value: 'password123', name: 'password' } });
+
+      const submitButton = screen.getByRole('button', { name: /Sign In/i });
+      fireEvent.click(submitButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Please enter both/i)).toBeInTheDocument();
+      });
+    });
   });
 
   describe('Login submission branches', () => {
@@ -193,6 +211,33 @@ describe('Login page branch coverage', () => {
 
       await waitFor(() => {
         expect(screen.getByText(/Invalid credentials/i)).toBeInTheDocument();
+      });
+    });
+
+    test('falls back to default message when rejection has no message', async () => {
+      const mockLogin = jest.fn(() => Promise.reject({}));
+      useAuth.mockReturnValue({
+        login: mockLogin,
+        loading: false,
+        error: null
+      });
+
+      render(
+        <Router>
+          <Login />
+        </Router>
+      );
+
+      const emailInput = screen.getByPlaceholderText(/you@example/i);
+      const passwordInput = screen.getByPlaceholderText(/\*{6,}/);
+
+      fireEvent.change(emailInput, { target: { value: 'test@test.com', name: 'email' } });
+      fireEvent.change(passwordInput, { target: { value: 'pass', name: 'password' } });
+
+      fireEvent.click(screen.getByRole('button', { name: /Sign In/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Invalid email or password/i)).toBeInTheDocument();
       });
     });
 

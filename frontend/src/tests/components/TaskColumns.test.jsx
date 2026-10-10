@@ -85,6 +85,24 @@ describe('TaskColumns component', () => {
     expect(screen.getByText(/Medium/i)).toBeInTheDocument();
   });
 
+  test('defaults to an empty task list when no props are provided', () => {
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <TaskColumns />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText('To Do (0)')).toBeInTheDocument();
+    expect(screen.getByText('No tasks')).toBeInTheDocument();
+  });
+
+  test('tolerates null task entries without throwing', () => {
+    renderColumns([null, undefined]);
+
+    expect(screen.getByText('To Do (0)')).toBeInTheDocument();
+    expect(screen.getByText('No completed tasks')).toBeInTheDocument();
+  });
+
   test('flags overdue tasks that are not completed', () => {
     renderColumns([
       {

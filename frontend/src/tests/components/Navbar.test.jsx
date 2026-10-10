@@ -195,4 +195,71 @@ describe('Navbar component', () => {
 
     expect(screen.getByRole('button', { name: /logout/i })).toBeInTheDocument();
   });
+
+  test('does not request notification permission when already granted', () => {
+    window.Notification.permission = 'granted';
+
+    renderNavbar();
+
+    expect(window.Notification.requestPermission).not.toHaveBeenCalled();
+  });
+
+  test('does not refresh notifications again when closing the panel', async () => {
+    renderNavbar();
+
+    const notificationButton = screen.getByRole('button', { name: /notifications?/i });
+    fireEvent.click(notificationButton);
+
+    await waitFor(() => {
+      expect(mockRefreshNotifications).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(notificationButton);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Notifications list (1)')).not.toBeInTheDocument();
+    });
+
+    expect(mockRefreshNotifications).toHaveBeenCalledTimes(1);
+  });
+
+  test('shows admin links in the mobile menu', async () => {
+    renderNavbar();
+
+    expect(screen.getAllByText('Logout')).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: /menu/i }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Logout')).toHaveLength(2);
+    });
+
+    expect(screen.getAllByText('Audit Logs').length).toBeGreaterThan(1);
+  });
+
+  test('shows team lead links in the mobile menu', async () => {
+    useAuth.mockReturnValue({
+      currentUser: {
+        id: 3,
+        role: 'team_lead',
+        name: 'Lead User',
+        email: 'lead@example.com',
+      },
+      logout: mockLogout,
+      is: (role) => role === 'team_lead',
+      can: () => true,
+    });
+
+    renderNavbar();
+
+    expect(screen.getAllByText('Logout')).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: /menu/i }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Logout')).toHaveLength(2);
+    });
+
+    expect(screen.getAllByText('Tasks').length).toBeGreaterThan(0);
+  });
 });

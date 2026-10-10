@@ -46,6 +46,34 @@ describe('GitHubActivity component', () => {
     expect(screen.getByText('org/frontend')).toBeInTheDocument();
   });
 
+  test('defaults to empty activity when no props are provided', () => {
+    render(<GitHubActivity />);
+
+    expect(screen.getByText(/No recent GitHub activity/i)).toBeInTheDocument();
+  });
+
+  test('tolerates a null activity prop', () => {
+    render(<GitHubActivity activity={null} />);
+
+    expect(screen.getByText(/No recent GitHub activity/i)).toBeInTheDocument();
+  });
+
+  test('falls back for missing PR/issue numbers and repository name', () => {
+    render(
+      <GitHubActivity
+        activity={[
+          { type: 'pull_request' },
+          { type: 'issue' },
+          { id: 'x', type: 'other', title: 'Trimmed', state: 'open', repository: {} },
+        ]}
+      />
+    );
+
+    expect(screen.getByText('PR #?:')).toBeInTheDocument();
+    expect(screen.getByText('Issue #?:')).toBeInTheDocument();
+    expect(screen.getByText('Unknown repository')).toBeInTheDocument();
+  });
+
   test('uses fallback labels for unknown activity fields', () => {
     render(
       <GitHubActivity
