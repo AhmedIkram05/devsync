@@ -1,6 +1,7 @@
 import functools
 import logging
 import os
+import time
 
 from flask import has_request_context, request
 from flask_jwt_extended import decode_token
@@ -8,6 +9,7 @@ from flask_socketio import SocketIO, disconnect, emit, join_room, leave_room
 from jwt.exceptions import InvalidTokenError
 
 from .auth.rbac import Role
+from .auth.token_blocklist import is_token_revoked
 from .db.models import User, db, project_members
 from .services.redis_client import get_redis
 
@@ -39,6 +41,7 @@ logger = logging.getLogger(__name__)
 connected_users = {}  # user_id -> session_id
 project_rooms = {}  # project_id -> [user_ids]
 sid_users = {}  # session_id -> user_id
+sid_tokens = {}  # session_id -> decoded JWT payload (re-validated on every event)
 
 # D5 presence: small keys with short TTLs; the k8s pod name distinguishes
 # replicas so a reconnect through another pod never deletes the newer key.
@@ -132,12 +135,19 @@ def _extract_token(auth_payload=None):
     return token
 
 
-def _decode_user_id(auth_payload=None):
+def _decode_token(auth_payload=None):
+    """Decode the bearer token, verifying signature + expiry and the revocation blocklist."""
     token = _extract_token(auth_payload)
     if not token:
         return None
 
     decoded_token = decode_token(token)
+    if is_token_revoked(decoded_token):
+        raise InvalidTokenError("Token has been revoked")
+    return decoded_token
+
+
+def _user_id_from_decoded(decoded_token):
     identity = decoded_token.get("identity", decoded_token.get("sub"))
     user_id = identity.get("user_id") if isinstance(identity, dict) else identity
     user_id = _normalize_user_id(user_id)
@@ -146,17 +156,56 @@ def _decode_user_id(auth_payload=None):
     return user_id
 
 
+def _decode_user_id(auth_payload=None):
+    decoded_token = _decode_token(auth_payload)
+    if decoded_token is None:
+        return None
+    return _user_id_from_decoded(decoded_token)
+
+
+def _cached_token_valid(sid):
+    """Re-verify the handshake token cached for *sid*: expiry + blocklist, every event."""
+    decoded_token = sid_tokens.get(sid)
+    if not decoded_token:
+        return False
+    exp = decoded_token.get("exp")
+    if exp is not None:
+        try:
+            if float(exp) < time.time():
+                return False
+        except (TypeError, ValueError):
+            return False
+    try:
+        if is_token_revoked(decoded_token):
+            return False
+    except Exception:
+        logger.warning("Socket blocklist re-check failed; denying event", exc_info=True)
+        return False
+    return True
+
+
 def authenticated_only(f):
-    """Decorator that verifies JWT token for socket connections"""
+    """Decorator that re-validates the JWT on every socket event.
+
+    A fresh token carried by the event (auth payload / header / cookie) is
+    decoded and refreshes the cached identity; otherwise the handshake token
+    cached for this sid is re-checked for expiry + revocation. Missing,
+    expired, or revoked auth disconnects the client.
+    """
 
     @functools.wraps(f)
     def wrapped(*args, **kwargs):
-        user_id = sid_users.get(request.sid)
-
         try:
-            if user_id is None:
-                user_id = _decode_user_id()
+            decoded_token = _decode_token()
+            if decoded_token is not None:
+                user_id = _user_id_from_decoded(decoded_token)
                 sid_users[request.sid] = user_id
+                sid_tokens[request.sid] = decoded_token
+            else:
+                user_id = sid_users.get(request.sid)
+                if user_id is None or not _cached_token_valid(request.sid):
+                    disconnect()
+                    return False
 
             # Add user_id to the kwargs so event handlers can use it
             kwargs["user_id"] = user_id
@@ -171,20 +220,27 @@ def authenticated_only(f):
 # Connection event handlers
 @socketio.on("connect")
 def handle_connect(auth=None):
-    """Handle new connections"""
+    """Handle new connections — unauthenticated clients are rejected."""
     try:
-        user_id = _decode_user_id(auth)
+        decoded_token = _decode_token(auth)
     except (InvalidTokenError, TypeError, ValueError):
         print("Client rejected due to invalid socket token:", request.sid)
         return False
 
-    if user_id is not None:
-        sid_users[request.sid] = user_id
-        connected_users[user_id] = request.sid
-        print(f"User {user_id} connected with socket ID {request.sid}")
-    else:
-        # Keep unauthenticated connections possible for tests/legacy clients; protected events still verify auth.
-        print("Client connected without socket auth:", request.sid)
+    if decoded_token is None:
+        print("Client rejected due to missing socket auth:", request.sid)
+        return False
+
+    try:
+        user_id = _user_id_from_decoded(decoded_token)
+    except (TypeError, ValueError):
+        print("Client rejected due to invalid socket identity:", request.sid)
+        return False
+
+    sid_users[request.sid] = user_id
+    sid_tokens[request.sid] = decoded_token
+    connected_users[user_id] = request.sid
+    print(f"User {user_id} connected with socket ID {request.sid}")
     return True
 
 
@@ -193,6 +249,7 @@ def handle_disconnect():
     """Handle client disconnections"""
     # Remove user from connected_users
     user_id = sid_users.pop(request.sid, None)
+    sid_tokens.pop(request.sid, None)
     if user_id is None:
         user_id = next((uid for uid, sid in connected_users.items() if sid == request.sid), None)
 
