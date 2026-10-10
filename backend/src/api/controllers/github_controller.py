@@ -1,5 +1,6 @@
 """Controller for GitHub integration with DevSync."""
 
+import contextlib
 import logging
 import time
 import uuid
@@ -55,10 +56,8 @@ def consume_oauth_state(state):
             key = f"{OAUTH_STATE_PREFIX}{state}"
             user_id = client.get(key)
             if user_id is not None:
-                try:
+                with contextlib.suppress(Exception):
                     client.delete(key)
-                except Exception:
-                    pass
                 return int(user_id) if str(user_id).isdigit() else user_id
         except Exception:
             logger.warning("OAuth state Redis read failed; checking in-memory fallback", exc_info=True)
@@ -70,6 +69,7 @@ def consume_oauth_state(state):
     if record is None:
         return None
     return record.get("user_id")
+
 
 RELINK_MESSAGE = "GitHub token invalid, please reconnect"
 

@@ -106,11 +106,11 @@ def test_get_all_tasks_developer(app, mock_jwt_identity, mock_jwt):
     # Set developer role
     mock_jwt.return_value = {"role": "developer"}
 
-    with app.test_request_context(), patch(
-        "backend.src.api.controllers.tasks_controller.Task.query"
-    ) as mock_query, patch(
-        "backend.src.api.controllers.tasks_controller.get_user_project_ids", return_value={5}
-    ) as mock_scope:
+    with (
+        app.test_request_context(),
+        patch("backend.src.api.controllers.tasks_controller.Task.query") as mock_query,
+        patch("backend.src.api.controllers.tasks_controller.get_user_project_ids", return_value={5}) as mock_scope,
+    ):
         # Non-admins get a membership-scoped filter before .all()
         filter_mock = MagicMock()
         mock_query.filter.return_value = filter_mock
