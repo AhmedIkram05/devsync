@@ -181,12 +181,7 @@ def _is_project_member_or_creator(user_id, project_id):
     from ..db.models import Project, db, project_members
 
     try:
-        if (
-            db.session.query(project_members)
-            .filter_by(project_id=project_id, user_id=user_id)
-            .first()
-            is not None
-        ):
+        if db.session.query(project_members).filter_by(project_id=project_id, user_id=user_id).first() is not None:
             return True
     except Exception:
         pass

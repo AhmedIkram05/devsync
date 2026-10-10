@@ -320,9 +320,7 @@ def test_github_exchange_rejects_missing_or_invalid_state(client, app, monkeypat
     parse_state = MagicMock(return_value=None)
     monkeypatch.setattr(github_routes.GitHubClient, "parse_state_param", parse_state)
 
-    invalid_state_response = client.get(
-        "/api/v1/github/exchange?code=test-code&state=invalid-state", headers=authed
-    )
+    invalid_state_response = client.get("/api/v1/github/exchange?code=test-code&state=invalid-state", headers=authed)
     assert invalid_state_response.status_code == 400
     assert invalid_state_response.get_json()["message"] == "Invalid state parameter"
     parse_state.assert_called_once_with("invalid-state")
