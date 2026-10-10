@@ -466,6 +466,28 @@ jobs:
       - name: Pin digests + apply overlay
         run: |
           set -euo pipefail
+          # GKE control-plane throttling (ENHANCE_YOUR_CALM / 429) is
+          # transient: retry kubectl API calls with exponential backoff
+          # instead of failing the deploy (exact failure of run 38083180131).
+          kubectl_retry() {
+            local attempts=6 delay=5 out rc
+            for ((i = 1; i <= attempts; i++)); do
+              out="$("$@" 2>&1)" && { printf '%s\n' "$out"; return 0; }
+              rc=$?
+              case "$out" in
+                *ENHANCE_YOUR_CALM*|*TooManyRequests*|*ResourceExhausted*)
+                  if [ "$i" -eq "$attempts" ]; then printf '%s\n' "$out" >&2; return "$rc"; fi
+                  echo "kubectl throttled (attempt $i/$attempts), retrying in ${delay}s..." >&2
+                  sleep "$delay"
+                  delay=$((delay * 2))
+                  ;;
+                *)
+                  printf '%s\n' "$out" >&2
+                  return "$rc"
+                  ;;
+              esac
+            done
+          }
           cd k8s/overlays/managed-db
           kustomize edit set image "devsync-backend=${BACKEND_IMG}"
           kustomize edit set image "devsync-frontend=${FRONTEND_IMG}"
@@ -474,20 +496,23 @@ jobs:
           RENDER="$(kubectl kustomize .)"
           echo "$RENDER" | grep -Fqw "image: ${BACKEND_IMG}" || { echo '::error::backend image not pinned'; exit 1; }
           echo "$RENDER" | grep -Fqw "image: ${FRONTEND_IMG}" || { echo '::error::frontend image not pinned'; exit 1; }
+          # Render to a file: retried kubectl calls re-read it (a re-run
+          # would otherwise see an already-consumed stdin pipe as empty).
+          echo "$RENDER" > /tmp/k8s-render.yaml
           # Completed Job specs are immutable — drop before re-applying with new digests.
-          kubectl delete job devsync-migrate -n "$NAMESPACE" --ignore-not-found=true
+          kubectl_retry kubectl delete job devsync-migrate -n "$NAMESPACE" --ignore-not-found=true
           # Plan preview (the K8s analog of terraform plan): server-side
           # dry-run fails closed on invalid objects; the diff lands in the
           # step summary for review. Runs after the delete so the preview
           # itself never trips on the immutable Job spec.
-          echo "$RENDER" | kubectl apply --dry-run=server -f -
+          kubectl_retry kubectl apply --dry-run=server -f /tmp/k8s-render.yaml
           set +e
-          echo "$RENDER" | kubectl diff -f - > /tmp/k8s-diff-migrate.txt 2>&1
+          kubectl_retry kubectl diff -f /tmp/k8s-render.yaml > /tmp/k8s-diff-migrate.txt 2>&1
           code=$?
           set -e
           if [ "$code" -gt 1 ]; then echo '::error::kubectl diff failed'; cat /tmp/k8s-diff-migrate.txt; exit "$code"; fi
           { echo '### K8s preview (prod overlay)'; echo '```'; head -c 12000 /tmp/k8s-diff-migrate.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          echo "$RENDER" | kubectl apply -f -
+          kubectl_retry kubectl apply -f /tmp/k8s-render.yaml
 
       - name: Wait for migrate Job Complete (600s)
         run: |
