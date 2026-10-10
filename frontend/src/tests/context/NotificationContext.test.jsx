@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import io from 'socket.io-client';
 
 import { NotificationProvider, useNotifications } from '../../context/NotificationContext';
-import { notificationService } from '../../services/utils/api';
+import { notificationService, projectService } from '../../services/utils/api';
 import { useAuth } from '../../context/AuthContext';
 
 jest.mock('socket.io-client', () => jest.fn());
@@ -14,6 +14,9 @@ jest.mock('../../services/utils/api', () => ({
     markAsRead: jest.fn(),
     markAllAsRead: jest.fn(),
     deleteNotification: jest.fn(),
+  },
+  projectService: {
+    getAllProjects: jest.fn(),
   },
 }));
 
@@ -84,6 +87,7 @@ describe('NotificationContext', () => {
     notificationService.markAsRead.mockReset();
     notificationService.markAllAsRead.mockReset();
     notificationService.deleteNotification.mockReset();
+    projectService.getAllProjects.mockReset();
   });
 
   afterEach(() => {
@@ -126,6 +130,26 @@ describe('NotificationContext', () => {
 
     expect(screen.getByTestId('is-connected')).toHaveTextContent('true');
     expect(socketMock.emit).toHaveBeenCalledWith('register', {}, expect.any(Function));
+  });
+
+  test('joins project rooms on socket connect for room-scoped pings', async () => {
+    notificationService.getNotifications.mockResolvedValue([]);
+    projectService.getAllProjects.mockResolvedValue([{ id: 11 }, { id: 22 }]);
+
+    render(
+      <NotificationProvider>
+        <NotificationHarness />
+      </NotificationProvider>
+    );
+
+    act(() => {
+      socketHandlers.connect();
+    });
+
+    await waitFor(() => {
+      expect(socketMock.emit).toHaveBeenCalledWith('join_project', { project_id: 11 });
+    });
+    expect(socketMock.emit).toHaveBeenCalledWith('join_project', { project_id: 22 });
   });
 
   test('marks notifications as read through API and optimistic state updates', async () => {

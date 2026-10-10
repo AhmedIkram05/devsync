@@ -91,8 +91,16 @@ def _safe_emit(event, payload, to):
         return False
 
 
-def emit_dashboard_refresh(event_type, *, resource_type=None, resource_id=None, payload=None):
-    """Broadcast a dashboard refresh event to all connected clients."""
+def emit_dashboard_refresh(event_type, *, resource_type=None, resource_id=None, payload=None, project_id=None):
+    """Ping clients to refetch dashboard state.
+
+    Room-scoped to `project_{project_id}` members when a project is known, so
+    task/project pings never cross member boundaries. Events with no project
+    (user_*, settings_*, report_*, project_created — clients cannot join a room
+    for a project they do not know exists yet) stay global; the audience is
+    authenticated-only since unauth socket connects are rejected, and payloads
+    are id/status metadata — details stay behind the REST authz gate.
+    """
     try:
         socketio.emit(
             "dashboard_updated",
@@ -102,6 +110,7 @@ def emit_dashboard_refresh(event_type, *, resource_type=None, resource_id=None, 
                 "resource_id": resource_id,
                 "payload": payload or {},
             },
+            to=f"project_{project_id}" if project_id is not None else None,
         )
     except Exception:
         logger.exception("Failed to emit dashboard refresh event")

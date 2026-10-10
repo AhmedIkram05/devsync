@@ -282,7 +282,11 @@ def update_project(project_id):
         },
     )
     emit_dashboard_refresh(
-        "project_updated", resource_type="project", resource_id=project.id, payload={"status": project.status}
+        "project_updated",
+        resource_type="project",
+        resource_id=project.id,
+        payload={"status": project.status},
+        project_id=project.id,
     )
 
     return jsonify(
@@ -301,7 +305,7 @@ def delete_project(project_id):
     db.session.commit()
 
     audit_service.record(action="project_deleted", resource_type="project", resource_id=project_id)
-    emit_dashboard_refresh("project_deleted", resource_type="project", resource_id=project_id)
+    emit_dashboard_refresh("project_deleted", resource_type="project", resource_id=project_id, project_id=project_id)
 
     # Updated to return 204
     return "", 204
