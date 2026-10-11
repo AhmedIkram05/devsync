@@ -510,4 +510,90 @@ describe('NotificationContext', () => {
     expect(dispatchSpy).toHaveBeenCalledWith(expect.any(CustomEvent));
     dispatchSpy.mockRestore();
   });
+
+  test('refetches after unmount/remount (mounted flag reset)', async () => {
+    notificationService.getNotifications.mockResolvedValue([
+      { id: 1, read: false, message: 'First mount' },
+    ]);
+
+    const { unmount } = render(
+      <NotificationProvider>
+        <NotificationHarness />
+      </NotificationProvider>
+    );
+
+    await waitFor(() => {
+      expect(notificationService.getNotifications).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('total-count')).toHaveTextContent('1');
+    });
+
+    unmount();
+
+    notificationService.getNotifications.mockClear();
+    notificationService.getNotifications.mockResolvedValue([
+      { id: 2, read: false, message: 'Second mount' },
+    ]);
+
+    render(
+      <NotificationProvider>
+        <NotificationHarness />
+      </NotificationProvider>
+    );
+
+    await waitFor(() => {
+      expect(notificationService.getNotifications).toHaveBeenCalled();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('total-count')).toHaveTextContent('1');
+    });
+  });
+
+  test('ignores duplicate socket notification ids', async () => {
+    notificationService.getNotifications.mockResolvedValue([
+      { id: 1, read: false, message: 'Existing' },
+    ]);
+
+    render(
+      <NotificationProvider>
+        <NotificationHarness />
+      </NotificationProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('total-count')).toHaveTextContent('1');
+    });
+
+    act(() => {
+      socketHandlers.notification({ id: 1, message: 'Existing duplicate', read: false });
+    });
+
+    expect(screen.getByTestId('total-count')).toHaveTextContent('1');
+
+    act(() => {
+      socketHandlers.notification({ id: 2, message: 'Brand new', read: false });
+    });
+
+    expect(screen.getByTestId('total-count')).toHaveTextContent('2');
+  });
+
+  test('dedups REST payload by id and caps list at 100', async () => {
+    const payload = [
+      { id: 1, read: false, message: 'Dup A' },
+      { id: 1, read: false, message: 'Dup A again' },
+      ...Array.from({ length: 150 }, (_, i) => ({ id: 1000 + i, read: false, message: `N-${i}` })),
+    ];
+    notificationService.getNotifications.mockResolvedValue(payload);
+
+    render(
+      <NotificationProvider>
+        <NotificationHarness />
+      </NotificationProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('total-count')).toHaveTextContent('100');
+    });
+  });
 });

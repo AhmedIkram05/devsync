@@ -15,6 +15,19 @@ export const useNotifications = () => useContext(NotificationContext);
 
 const isNotificationRead = (notification) => Boolean(notification?.is_read || notification?.read);
 
+const MAX_NOTIFICATIONS = 100;
+
+const dedupById = (list) => {
+  const seen = new Set();
+  return list.filter((n) => {
+    const id = n?.id;
+    if (id === undefined || id === null) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  }).slice(0, MAX_NOTIFICATIONS);
+};
+
 export const NotificationProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -107,9 +120,9 @@ export const NotificationProvider = ({ children }) => {
       }
       
       if (Array.isArray(data)) {
-        setNotifications(data);
+        setNotifications(dedupById(data));
       } else if (data && Array.isArray(data.data)) {
-        setNotifications(data.data);
+        setNotifications(dedupById(data.data));
       } else {
         console.warn('Unexpected notification data format:', data);
         setNotifications([]);
@@ -162,6 +175,11 @@ export const NotificationProvider = ({ children }) => {
   }, [currentUser, rateLimited, serverDown]);
   
   useEffect(() => {
+    lastFetchTimeRef.current = 0;
+  }, [currentUser]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
     let socketConnection = null;
     
     const connectSocket = () => {
@@ -314,7 +332,11 @@ export const NotificationProvider = ({ children }) => {
         // Listen for notifications
         socketConnection.on('notification', (newNotification) => {
           console.log('Received new notification:', newNotification);
-          setNotifications(prev => [newNotification, ...prev]);
+          setNotifications(prev =>
+            prev.some((n) => n?.id !== undefined && n?.id === newNotification?.id)
+              ? prev
+              : [newNotification, ...prev].slice(0, MAX_NOTIFICATIONS)
+          );
           
           // If browser notifications are supported and permitted, show a browser notification
           if ('Notification' in window && Notification.permission === 'granted') {
@@ -374,7 +396,9 @@ export const NotificationProvider = ({ children }) => {
     // Only try to connect if we have a user and the server is not known to be down
     if (currentUser && !serverDown) {
       connectSocket();
-      refreshNotifications(true); // Initial fetch with force=true
+      if (!rateLimited) {
+        refreshNotifications(true); // Initial fetch with force=true
+      }
     }
     
     // Clean up function
@@ -400,7 +424,7 @@ export const NotificationProvider = ({ children }) => {
         heartbeatIntervalRef.current = null;
       }
     };
-  }, [currentUser, refreshNotifications, serverDown]);
+  }, [currentUser, refreshNotifications, serverDown, rateLimited]);
   
   // Calculate unread count
   const unreadCount = notifications.filter(notification => !isNotificationRead(notification)).length;
