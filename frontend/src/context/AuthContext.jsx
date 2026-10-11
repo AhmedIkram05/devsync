@@ -78,6 +78,11 @@ export const AuthProvider = ({ children }) => {
   // Keep a ref to track initialization
   const isInitialized = useRef(false);
   const reportWarmupKeyRef = useRef(null);
+  // Whether the mount-time cached profile already carried permissions — used to
+  // avoid re-gating the UI (spinner swap) on every reload when we already have them.
+  const hadCachedPermissionsRef = useRef(
+    Boolean(initialUser && (initialUser.permissions || []).length)
+  );
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -112,7 +117,12 @@ export const AuthProvider = ({ children }) => {
           } else {
             // Fetch permissions via cookie session (awaited so loading covers
             // the window where permissions would otherwise read as []).
-            setPermissionsLoading(true);
+            // Only gate the UI when we don't already have permissions from the
+            // cached profile — re-flipping the gate on every reload swapped the
+            // mounted page for a spinner and remounted it, causing render churn.
+            if (!hadCachedPermissionsRef.current) {
+              setPermissionsLoading(true);
+            }
             try {
               const permRes = await fetch(`${process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000/api/v1' : '')}/auth/permissions`, {
                 credentials: 'include',
