@@ -28,6 +28,16 @@ resource "google_container_cluster" "devsync" {
   # Note: lifecycle.prevent_destroy below must be lifted (or state moved) for
   # that one apply, then restored.
 
+  # Binary Authorization: admission evaluates the project singleton policy
+  # (infra/terraform/binauthz.tf — REQUIRE_ATTESTATION, DRYRUN audit-only).
+  # In-place update (verified by plan). No ordering guarantee vs the policy
+  # resource within one apply is acceptable: before the policy lands,
+  # admission falls back to GCP's default allow-all policy, and the audit
+  # rule can never deny a pod.
+  binary_authorization {
+    evaluation_mode = "PROJECT_SINGLETON_POLICY_ENFORCE"
+  }
+
   release_channel {
     channel = "REGULAR"
   }

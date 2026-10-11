@@ -170,6 +170,11 @@ jobs:
       COSIGN_PASSWORD: ''
       COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
       COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }}
+      # Digest-pinned from the build job: sign/verify/attest exactly what
+      # build-push produced (tag mutation between jobs can't redirect the
+      # chain — fixes the TOCTOU of re-resolving digests by tag).
+      BACKEND_IMG: ${{ needs.build-push.outputs.backend-image }}@${{ needs.build-push.outputs.backend-digest }}
+      FRONTEND_IMG: ${{ needs.build-push.outputs.frontend-image }}@${{ needs.build-push.outputs.frontend-digest }}
     steps:
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -185,25 +190,20 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
 
-      # Self-contained: resolve digests from the registry by tag so this job
-      # never depends on a cross-job outputs hop (which silently rendered
-      # empty in run 34696085848).
-      - name: Resolve image digests
-        env:
-          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-          GCP_REGION: ${{ vars.GCP_REGION }}
-          AR_REPOSITORY: ${{ vars.AR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }}
+      # Tripwire for the outputs hop (rendered empty once in run
+      # 34696085848): refuse to proceed on anything that is not a
+      # digest-pinned ref. Everything below signs/verifies/attests exactly
+      # the digests build-push produced.
+      - name: Assert digest-pinned image refs
         run: |
           set -euo pipefail
-          AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
-          gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
-          for img in backend frontend; do
-            digest=$(docker buildx imagetools inspect "${AR}/devsync-${img}:${IMAGE_TAG}" | awk '/^Digest:/{print $2}')
-            test -n "$digest" || { echo "::error::no digest resolved for devsync-${img}"; exit 1; }
-            echo "${img^^}_IMG=${AR}/devsync-${img}@${digest}" >> "$GITHUB_ENV"
-            echo "${img^^}_AR=${AR}" >> "$GITHUB_ENV"
+          for ref in "$BACKEND_IMG" "$FRONTEND_IMG"; do
+            case "$ref" in
+              *@sha256:*) ;;
+              *) echo "::error::image ref is not digest-pinned: '$ref' (build-push outputs hop failed)"; exit 1 ;;
+            esac
           done
+          echo "digest-pinned:"; echo "  $BACKEND_IMG"; echo "  $FRONTEND_IMG"
 
       - name: Cosign sign — backend (stored key)
         run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "$BACKEND_IMG"
@@ -239,11 +239,15 @@ jobs:
           python3 -m json.tool frontend.spdx.json > /dev/null || { echo '::error::frontend.spdx.json not valid JSON'; exit 1; }
           cosign attest --yes --key env://COSIGN_PRIVATE_KEY --predicate frontend.spdx.json --type custom "$FRONTEND_IMG"
 
+      # Rekor-enforced: no --insecure-ignore-tlog. Verified locally with the
+      # pinned cosign v3.1.3 against this AR — keyed signatures carry a Rekor
+      # bundle and verify WITH the tlog check ("existence of the claims in
+      # the transparency log was verified").
       - name: Cosign verify — backend (public key)
-        run: cosign verify --key env://COSIGN_PUBLIC_KEY --insecure-ignore-tlog "$BACKEND_IMG"
+        run: cosign verify --key env://COSIGN_PUBLIC_KEY "$BACKEND_IMG"
 
       - name: Cosign verify — frontend (public key)
-        run: cosign verify --key env://COSIGN_PUBLIC_KEY --insecure-ignore-tlog "$FRONTEND_IMG"
+        run: cosign verify --key env://COSIGN_PUBLIC_KEY "$FRONTEND_IMG"
 
       # Enforce SLSA provenance: the generator jobs above emit Build L3
       # provenance for these digests; verify-image binds each digest back to
@@ -320,6 +324,10 @@ jobs:
         env:
           TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+          # Binary Authorization attestor key (cosign public key PEM). Both
+          # plan and apply need it so the plan artifact and the applied state
+          # agree on the attestor.
+          TF_VAR_binauthz_public_key: ${{ secrets.COSIGN_PUBLIC_KEY }}
         run: |
           set -euo pipefail
           terraform init -input=false -backend-config=bucket="$GCP_TF_STATE_BUCKET"
@@ -363,6 +371,12 @@ jobs:
     environment: production
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # Same TF vars as the plan job (apply only re-runs the reviewed plan,
+      # but Terraform still loads the config for variable values).
+      TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+      TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+      TF_VAR_binauthz_public_key: ${{ secrets.COSIGN_PUBLIC_KEY }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -405,6 +419,10 @@ jobs:
     timeout-minutes: 25
     env:
       COSIGN_PUBLIC_KEY: ${{ secrets.COSIGN_PUBLIC_KEY }}
+      # Digest-pinned from the build job — deploy verifies and pins exactly
+      # what was built/signed (TOCTOU fix: no tag re-resolution).
+      BACKEND_IMG: ${{ needs.build-push.outputs.backend-image }}@${{ needs.build-push.outputs.backend-digest }}
+      FRONTEND_IMG: ${{ needs.build-push.outputs.frontend-image }}@${{ needs.build-push.outputs.frontend-digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -433,31 +451,21 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
 
-      # Self-contained: no cross-job outputs hop (silently empty in run
-      # 34696085848). Digests are re-resolved from the registry by tag.
-      - name: Resolve image digests
-        env:
-          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-          GCP_REGION: ${{ vars.GCP_REGION }}
-          AR_REPOSITORY: ${{ vars.AR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          AR="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY:-devsync-repo}"
-          gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
-          for img in backend frontend; do
-            digest=$(docker buildx imagetools inspect "${AR}/devsync-${img}:${IMAGE_TAG}" | awk '/^Digest:/{print $2}')
-            test -n "$digest" || { echo "::error::no digest resolved for devsync-${img}"; exit 1; }
-            echo "${img^^}_IMG=${AR}/devsync-${img}@${digest}" >> "$GITHUB_ENV"
-            echo "${img^^}_AR=${AR}" >> "$GITHUB_ENV"
-          done
+      # Digest-pinned via job env (needs.build-push outputs): no tag
+      # re-resolution, no cross-job TOCTOU.
 
       # Re-verify chain of custody at deploy time — the registry is read
       # unauthenticated by default in other processes; don't trust it.
+      # Rekor-enforced (no --insecure-ignore-tlog; see the sign job note).
       - name: Cosign verify at deploy time — backend + frontend
         run: |
+          set -euo pipefail
           for ref in "$BACKEND_IMG" "$FRONTEND_IMG"; do
-            cosign verify --key env://COSIGN_PUBLIC_KEY --insecure-ignore-tlog "$ref"
+            case "$ref" in
+              *@sha256:*) ;;
+              *) echo "::error::image ref is not digest-pinned: '$ref' (build-push outputs hop failed)"; exit 1 ;;
+            esac
+            cosign verify --key env://COSIGN_PUBLIC_KEY "$ref"
           done
 
       - name: Resolve GCP_PROJECT_ID placeholders in k8s/base
