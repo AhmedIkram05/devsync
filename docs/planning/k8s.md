@@ -60,6 +60,35 @@ Browser → Ingress (GCE, TLS via Google-managed cert) → FE (nginx x2)
 
 No `k8s-destroy.yml` — teardown is a local hand-run checklist (D15 row above).
 
+## Cluster rebuild window (staged GKE hardening, unapplied)
+
+`infra/terraform/modules/gke/main.tf` carries a staged block (commented) for
+the two GKE changes that are create-time-only and therefore REPLACE the
+cluster — the CD tf-plan no-destroy guard correctly refuses them, so they
+land in a deliberate hand-run window, never via CD:
+
+1. `location = var.region` — regional control plane + pools across zones
+   (replaces the single-zone `us-central1-a` control plane).
+2. `datapath_provider = "ADVANCED_DATAPATH"` — Dataplane V2, which turns the
+   shipped NetworkPolicies from dormant to enforced (eBPF dataplane).
+
+Window checklist (hand-run, Terraform NOT via CD):
+
+- Lift `lifecycle.prevent_destroy` on cluster + pool (restore afterwards).
+- Uncomment the staged block; `terraform plan` shows a replace of the cluster
+  and pool; `terraform apply`.
+- Recreate the LB by re-applying the k8s overlay; GLBC issues a NEW load
+  balancer IP → update the Namecheap A-record for `gcp.devsyncapp.me`
+  (and `devsyncapp.me`/`www` if kept) before traffic resumes.
+- Cloud SQL private IP is unaffected (VPC peering is cluster-independent);
+  ESO resyncs on pod boot.
+- Post-window: `kubectl` smoke + the CD verify job green; note the new IP and
+  restore `prevent_destroy`.
+
+Everything else in the hardening set (e2-medium, deletion protection,
+Binary Authz, Cloud SQL in TF, Armor, backend HPA) is in-place and ships via
+CD.
+
 ## Images
 
 - Backend: _TODO — `REGION-docker.pkg.dev/PROJECT/devsync-repo/devsync-backend@sha256:<digest>`_

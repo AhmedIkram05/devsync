@@ -44,7 +44,9 @@ module "iam" {
   source     = "./modules/iam"
   project_id = var.project_id
 
-  # The workload-identity pool (PROJECT.svc.id.goog) exists only after the
-  # cluster does: order IAM after GKE so clean applies don't race it.
-  depends_on = [module.gke]
+  # NO depends_on on module.gke: a module-level depends_on defers every data
+  # read inside the module to apply time, which turned the OIDC impersonation
+  # member unknown during any GKE-change plan and showed a spurious
+  # destroy+create that would trip the CD no-destroy guard (verified by
+  # plan). Nothing in this module references the cluster.
 }

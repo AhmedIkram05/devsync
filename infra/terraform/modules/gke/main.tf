@@ -9,7 +9,24 @@ resource "google_container_cluster" "devsync" {
   # Standard, not Autopilot: real drain/upgrade path, PDB semantics, node ops.
   # enable_autopilot is deliberately UNSET (omitted) — setting it false still
   # conflicts with remove_default_node_pool below.
-  deletion_protection = false
+  # deletion_protection ON (API-level: no cluster delete without disabling it
+  # first). In-place flip — verified plan: update only, no replace.
+  deletion_protection = true
+
+  # Rebuild-window staged config (all three verified ForceNew by plan: they
+  # REPLACE the cluster, so the CD no-destroy guard correctly refuses until
+  # the deliberate rebuild in docs/planning/k8s.md "Cluster rebuild window").
+  # Uncomment together as ONE change and run terraform apply OUTSIDE the CD:
+  #
+  #   # Regional control plane + pools across all zone replicas:
+  #   location = var.region
+  #   # Dataplane V2: real NetworkPolicy enforcement (k8s/base netpols are
+  #   # dormant until this) + eBPF + enable_fqdn_network_policy becomes
+  #   # available. Create-time-only for Standard clusters.
+  #   datapath_provider = "ADVANCED_DATAPATH"
+  #
+  # Note: lifecycle.prevent_destroy below must be lifted (or state moved) for
+  # that one apply, then restored.
 
   release_channel {
     channel = "REGULAR"
@@ -31,6 +48,12 @@ resource "google_container_cluster" "devsync" {
   initial_node_count       = 1
 
   resource_labels = var.labels
+
+  # No terraform destroy of the cluster — the standing env is prod. Lift this
+  # block ONLY for the deliberate rebuild window (see staged config above).
+  lifecycle {
+    prevent_destroy = true
+  }
 
   timeouts {
     # Provider defaults to 40m; zonal create is ~15m but stockouts elsewhere
@@ -78,8 +101,16 @@ resource "google_container_node_pool" "primary" {
     auto_upgrade = true
   }
 
+  # No terraform destroy of the node pool — the standing env is prod.
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  # e2-medium (verified in-place: GKE updateNodePool, rolling node
+  # recreation under the PDB — no replace). e2-small's 1.36Gi allocatable
+  # starved backend scheduling during rollouts.
   node_config {
-    machine_type = "e2-small"
+    machine_type = "e2-medium"
     disk_size_gb = 20
     oauth_scopes = [
       "https://www.googleapis.com/auth/cloud-platform",
