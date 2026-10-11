@@ -28,10 +28,16 @@ describe('fetchWithAuth additional branches', () => {
     await expect(fetchWithAuth('/github/callback')).rejects.toMatchObject({ isGitHubError: true });
   });
 
-  test('403 redirects to forbidden page', async () => {
+  test('403 throws typed error without assigning window.location', async () => {
     global.fetch = jest.fn(() => Promise.resolve({ status: 403, headers: { get: () => 'application/json' }, ok: false }));
-    await expect(fetchWithAuth('/some-endpoint')).rejects.toMatchObject({ status: 403 });
-    expect(window.location.href).toBe('/forbidden');
+    const beforeHref = window.location.href;
+    await expect(fetchWithAuth('/some-endpoint')).rejects.toMatchObject({
+      status: 403,
+      isForbidden: true,
+      redirectTo: '/forbidden',
+    });
+    // Navigation is the caller's job (ProtectedRoute useNavigate), not fetch's.
+    expect(window.location.href).toBe(beforeHref);
   });
 
   test('non-json error response returns graceful non-critical object', async () => {

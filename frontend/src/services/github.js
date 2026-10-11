@@ -230,16 +230,9 @@ export const githubService = {
         url += `?${params.toString()}`;
       }
 
-      // Create a timeout promise
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Request timeout')), timeoutMs);
-      });
-
-      // Create the fetch promise
-      const fetchPromise = fetchWithAuth(url);
-
-      // Race between fetch and timeout
-      const data = await Promise.race([fetchPromise, timeoutPromise]);
+      // Canonical timeout lives in fetchWithAuth (AbortController) — just
+      // forward the deadline instead of racing here (no leaked setTimeout).
+      const data = await fetchWithAuth(url, { timeout: timeoutMs });
       return data.repositories || data;
     } catch (error) {
       console.error('Error fetching GitHub repositories:', error);

@@ -799,7 +799,13 @@ describe('api utilities', () => {
 
   test('fetchWithAuth timeout causes connection-like re-throw', async () => {
     jest.useFakeTimers();
-    global.fetch.mockImplementation(() => new Promise(() => {})); // never resolves
+    global.fetch.mockImplementation((url, options = {}) => new Promise((resolve, reject) => {
+      options.signal?.addEventListener('abort', () => {
+        const abortError = new Error('The operation was aborted.');
+        abortError.name = 'AbortError';
+        reject(abortError);
+      });
+    })); // hangs until the AbortController deadline fires
 
     const promise = fetchWithAuth('tasks');
     jest.advanceTimersByTime(8001);

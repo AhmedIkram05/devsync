@@ -92,26 +92,42 @@ const fetchWithAuth = async (endpoint, options = {}) => {
     const isAbsoluteUrl = /^https?:\/\//i.test(endpoint);
     const url = isAbsoluteUrl ? endpoint : `${API_URL}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
 
-    // Create a timeout promise - use provided timeout or default to 30 seconds
+    // AbortController timeout — the timer is always cleared on settle so
+    // slow/failed requests never leak a pending setTimeout.
     const timeoutMs = options.timeout || 8000;
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Request timeout')), timeoutMs);
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    if (options.signal) {
+      if (options.signal.aborted) {
+        controller.abort();
+      } else {
+        options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+      }
+    }
+    fetchOptions.signal = controller.signal;
+    delete fetchOptions.timeout;
 
-    // Create the fetch promise with error handling for network issues
-    const fetchPromise = fetch(url, fetchOptions)
-      .catch(error => {
-        if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-          // This typically means the server is down or unreachable
-          const connectionError = new Error('Server connection failed. Please check if the server is running.');
-          connectionError.isConnectionError = true;
-          throw connectionError;
-        }
-        throw error;
-      });
-
-    // Race between the fetch and timeout
-    const response = await Promise.race([fetchPromise, timeoutPromise]);
+    let response;
+    try {
+      // Fetch with error handling for network issues
+      response = await fetch(url, fetchOptions)
+        .catch(error => {
+          if (error?.name === 'AbortError') {
+            const timeoutError = new Error('Request timeout');
+            timeoutError.isTimeout = true;
+            throw timeoutError;
+          }
+          if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+            // This typically means the server is down or unreachable
+            const connectionError = new Error('Server connection failed. Please check if the server is running.');
+            connectionError.isConnectionError = true;
+            throw connectionError;
+          }
+          throw error;
+        });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     // Handle non-critical endpoints - avoid crashing the app for these endpoints
     const isNonCriticalEndpoint = endpoint.includes('github/status') ||
@@ -156,9 +172,8 @@ const fetchWithAuth = async (endpoint, options = {}) => {
       const error = new Error('Forbidden. You do not have permission to access this resource.');
       error.status = 403;
       error.isAuthError = true;
-
-      // Redirect to forbidden page
-      window.location.href = '/forbidden';
+      error.isForbidden = true;
+      error.redirectTo = '/forbidden';
 
       throw error;
     }

@@ -29,8 +29,14 @@ describe('fetchWithAuth additional branches', () => {
   });
 
   test('rejects with timeout error when fetch takes too long', async () => {
-    // fetch that never resolves
-    global.fetch = jest.fn(() => new Promise(() => {}));
+    // signal-aware mock: real fetch rejects with AbortError on abort
+    global.fetch = jest.fn((url, options = {}) => new Promise((resolve, reject) => {
+      options.signal?.addEventListener('abort', () => {
+        const abortError = new Error('The operation was aborted.');
+        abortError.name = 'AbortError';
+        reject(abortError);
+      });
+    }));
 
     await expect(fetchWithAuth('/test', { timeout: 1 })).rejects.toThrow('Request timeout');
   });
@@ -102,7 +108,7 @@ describe('fetchWithAuth additional branches', () => {
     expect(res).toHaveProperty('error');
   });
 
-  test('403 forbidden redirects to /forbidden page', async () => {
+  test('403 forbidden throws typed error without navigating', async () => {
     const resp = {
       status: 403,
       ok: false,
@@ -121,8 +127,11 @@ describe('fetchWithAuth additional branches', () => {
 
     await expect(fetchWithAuth('/test')).rejects.toMatchObject({
       isAuthError: true,
+      isForbidden: true,
+      redirectTo: '/forbidden',
       message: expect.stringMatching(/Forbidden/)
     });
+    expect(setHref).not.toHaveBeenCalled();
   });
 
   test('429 rate limit error includes retryAfter', async () => {
