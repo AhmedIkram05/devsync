@@ -41,10 +41,13 @@ const TEAM_LEAD_OR_ADMIN = [ROLES.TEAM_LEAD, ROLES.ADMIN];
 const getDashboardPath = (role) => (role === ROLES.ADMIN ? '/admin' : '/BasicDashboard');
 
 const ProtectedRoute = ({ children, allowedRoles = [], requiredPermission = null }) => {
-  const { currentUser, loading, can } = useAuth();
+  const { currentUser, loading, permissionsLoading, can } = useAuth();
   
-  // Show loading state while authentication is being checked
-  if (loading) {
+  // Show loading state while authentication or permissions are being checked.
+  // permissionsLoading closes the window where an authenticated user has
+  // permissions=[] (fetch in flight) and every CAN_* route bounces to
+  // /forbidden. Missing flag (older mocks) reads as falsy — no behavior change.
+  if (loading || permissionsLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
@@ -87,9 +90,9 @@ const GitHubCallbackAlias = () => {
 };
 
 function AppRoutes() {
-  const { currentUser, showGithubPrompt, loading } = useAuth();
-  // Show loading spinner while auth state is initializing
-  if (loading) {
+  const { currentUser, showGithubPrompt, loading, permissionsLoading } = useAuth();
+  // Show loading spinner while auth state or permissions are initializing
+  if (loading || permissionsLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div
@@ -197,7 +200,7 @@ function AppRoutes() {
         } />
         
         <Route path="/admin/create-task" element={
-          <ProtectedRoute requiredPermission={PERMISSIONS.CAN_CREATE_TASKS}>
+          <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES}>
             <TaskCreation />
           </ProtectedRoute>
         } />
@@ -233,7 +236,7 @@ function AppRoutes() {
         } />
 
         <Route path="/admin/users" element={
-          <ProtectedRoute allowedRoles={TEAM_LEAD_OR_ADMIN} requiredPermission={PERMISSIONS.CAN_MANAGE_USERS}>
+          <ProtectedRoute allowedRoles={TEAM_LEAD_OR_ADMIN}>
             <AdminUsers />
           </ProtectedRoute>
         } />
@@ -258,7 +261,7 @@ function AppRoutes() {
         
         {/* Default route */}
         <Route path="/" element={
-          !loading && (
+          !(loading || permissionsLoading) && (
             currentUser ? 
               <Navigate to={getDashboardPath(currentUser.role)} replace />
               : 

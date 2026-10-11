@@ -53,6 +53,12 @@ export const AuthProvider = ({ children }) => {
   const [showGithubPrompt, setShowGithubPrompt] = useState(false);
   const [authInProgress, setAuthInProgress] = useState(false);
   const [permissions, setPermissions] = useState(initialUser?.permissions || []);
+  // True while the async GET /auth/permissions fetch is in flight. Route
+  // guards must wait for it — otherwise an authenticated user with
+  // permissions=[] (not yet loaded, or fetch failed) bounces to /forbidden.
+  const [permissionsLoading, setPermissionsLoading] = useState(
+    () => Boolean(initialUser && !(initialUser.permissions || []).length)
+  );
 
   // Keep a ref to track initialization
   const isInitialized = useRef(false);
@@ -87,19 +93,26 @@ export const AuthProvider = ({ children }) => {
           setCurrentUser(user);
           if (user.permissions) {
             setPermissions(user.permissions);
+            setPermissionsLoading(false);
           } else {
-            // Fetch permissions via cookie session
-            fetch(`${process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000/api/v1' : '')}/auth/permissions`, {
-              credentials: 'include',
-            })
-                .then(res => res.json())
-                .then(data => {
-                  setPermissions(data.permissions || []);
-                  const updatedUser = sanitizeProfile({ ...user, permissions: data.permissions || [] });
-                  localStorage.setItem('user', JSON.stringify(updatedUser));
-                  setCurrentUser(updatedUser);
-                })
-                .catch(err => console.error("Failed to fetch permissions:", err));
+            // Fetch permissions via cookie session (awaited so loading covers
+            // the window where permissions would otherwise read as []).
+            setPermissionsLoading(true);
+            try {
+              const permRes = await fetch(`${process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000/api/v1' : '')}/auth/permissions`, {
+                credentials: 'include',
+              });
+              const data = await permRes.json();
+              setPermissions(data.permissions || []);
+              const updatedUser = sanitizeProfile({ ...user, permissions: data.permissions || [] });
+              localStorage.setItem('user', JSON.stringify(updatedUser));
+              setCurrentUser(updatedUser);
+            } catch (err) {
+              console.error("Failed to fetch permissions:", err);
+              setPermissions([]);
+            } finally {
+              setPermissionsLoading(false);
+            }
             }
             // Set GitHub connection status if available
             if ("github_connected" in user) {
@@ -179,6 +192,7 @@ export const AuthProvider = ({ children }) => {
         }
 
         // Fetch permissions via cookie session
+        setPermissionsLoading(true);
         try {
           const permRes = await fetch(`${process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000/api/v1' : '')}/auth/permissions`, {
             credentials: 'include',
@@ -189,6 +203,9 @@ export const AuthProvider = ({ children }) => {
         } catch (err) {
           console.error("Failed to fetch permissions during login:", err);
           profile.permissions = [];
+          setPermissions([]);
+        } finally {
+          setPermissionsLoading(false);
         }
 
         // Save to localStorage first to ensure persistence
@@ -268,6 +285,7 @@ export const AuthProvider = ({ children }) => {
       localStorage.removeItem("user");
       setCurrentUser(null);
       setPermissions([]);
+      setPermissionsLoading(false);
       setGithubConnected(false);
       setShowGithubPrompt(false);
       setAuthInProgress(false);
@@ -393,6 +411,7 @@ export const AuthProvider = ({ children }) => {
     currentUser,
     setCurrentUser: updateUser,
     permissions,
+    permissionsLoading,
     can,
     is,
     login,
