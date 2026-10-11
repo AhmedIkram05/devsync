@@ -9,8 +9,9 @@ metadata:
 spec:
   # Two replicas (Phase 2 D3): Socket.IO state used to live in process memory,
   # but the message queue (REDIS_URL, devsync-redis) publishes each room event
-  # to every replica, so rooms are cluster-wide. gunicorn still pins workers=1
-  # per pod (ADR 0002: no request/session affinity), replicas handle HA + HP.
+  # to every replica and every gunicorn worker (GUNICORN_WORKERS=2, same
+  # mechanism), so rooms are cluster-wide. HPA scales 2-4 on CPU; gunicorn
+  # workers scale in-pod. No session affinity needed (ADR 0002).
   replicas: 2
   revisionHistoryLimit: 5
   strategy:

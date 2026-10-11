@@ -16,3 +16,7 @@ data:
   # Non-sensitive (plan D4): in-cluster Socket.IO message queue. Works across
   # both base (this value) and managed-db — no Envoy/IAM grid needed.
   REDIS_URL: "redis://devsync-redis:6379/0"
+  # Gunicorn gevent workers per pod. The Redis message queue satisfies the
+  # "1 worker unless message queue" rule, so 2 workers/pod are safe; HPA
+  # scales pods beyond that (devsync-backend HPA, min 2).
+  GUNICORN_WORKERS: "2"
