@@ -15,3 +15,11 @@ patches:
     name: devsync-prod-cert
     namespace: devsync
   path: patch-ingress-host.yaml
+# Pin the Ingress rule host (kills the LB catch-all).
+- target:
+    group: networking.k8s.io
+    version: v1
+    kind: Ingress
+    name: devsync-frontend
+    namespace: devsync
+  path: patch-ingress-host-rule.yaml

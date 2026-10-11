@@ -1,0 +1,15 @@
+# Attaches the TF-owned Cloud Armor policy to the LB backend service.
+# Referenced by the devsync-frontend Service annotation
+# (cloud.google.com/backend-config). GLBC wires the policy on the next
+# Ingress reconcile; requires roles/compute.securityAdmin on the GLBC SA
+# (granted in infra/terraform/main.tf).
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: devsync-armor
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  securityPolicy:
+    name: devsync-armor-policy

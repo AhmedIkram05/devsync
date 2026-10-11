@@ -1,0 +1,8 @@
+# Prod overlay: pin the Ingress rule to the live host (infra-blockers
+# 2026-10-12). Kills the LB catch-all: any other domain pointed at the LB IP
+# no longer routes to the app (GCE LB serves 404 outside declared hosts).
+# Cloud Armor on the backend service is attached via BackendConfig
+# (service annotation), and HSTS/CSP ship from the frontend nginx.
+- op: add
+  path: /spec/rules/0/host
+  value: gcp.devsyncapp.me

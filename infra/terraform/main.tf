@@ -35,6 +35,14 @@ resource "google_project_iam_member" "nodes_ar_reader" {
   member  = "serviceAccount:${local.default_compute_sa}"
 }
 
+# GLBC (GKE ingress controller, runs as the node SA) attaches the Cloud Armor
+# policy to the LB backend service — compute.securityAdmin required.
+resource "google_project_iam_member" "armor_admin" {
+  project = var.project_id
+  role    = "roles/compute.securityAdmin"
+  member  = "serviceAccount:${local.default_compute_sa}"
+}
+
 # In-cluster image registry, created ahead of any CI push.
 resource "google_artifact_registry_repository" "images" {
   repository_id = "devsync-repo"
