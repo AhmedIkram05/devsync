@@ -125,17 +125,24 @@ export const AuthProvider = ({ children }) => {
           } else {
             // If verification fails, clear the user and redirect to login
             localStorage.removeItem("user");
+            setPermissions([]);
+            setPermissionsLoading(false);
             navigate("/login", { replace: true });
           }
       } catch (err) {
         // No valid cookie session — fall back to cached profile if present,
-        // otherwise clear and stay on public routes.
+        // otherwise clear and stay on public routes. Fail-closed on
+        // permissions in both cases so route guards stop waiting.
         const cached = authApi.getCurrentUser();
         if (cached && hasValidRole(cached)) {
           setCurrentUser(sanitizeProfile(cached));
+          setPermissions([]);
+          setPermissionsLoading(false);
         } else {
           console.error("Error validating session:", err);
           localStorage.removeItem("user");
+          setPermissions([]);
+          setPermissionsLoading(false);
         }
       } finally {
         setLoading(false);
