@@ -22,6 +22,21 @@ const sanitizeProfile = (user) => {
   return clean;
 };
 
+// The GitHub connect prompt is shown at most once per browser session. Without
+// this, every /auth/me revalidation on a full page reload re-opened the modal
+// over the app for users who had already dismissed it (or are simply
+// navigating), which blocked the page behind a full-screen overlay.
+const GITHUB_PROMPT_SEEN_KEY = 'devsync_github_prompt_seen';
+const githubPromptSeen = () => {
+  try { return sessionStorage.getItem(GITHUB_PROMPT_SEEN_KEY) === '1'; } catch { return false; }
+};
+const markGithubPromptSeen = () => {
+  try { sessionStorage.setItem(GITHUB_PROMPT_SEEN_KEY, '1'); } catch { /* storage unavailable */ }
+};
+const clearGithubPromptSeen = () => {
+  try { sessionStorage.removeItem(GITHUB_PROMPT_SEEN_KEY); } catch { /* storage unavailable */ }
+};
+
 export const AuthProvider = ({ children }) => {
   // Try to load cached profile immediately to prevent flicker.
   // No tokens are stored — HttpOnly cookies carry the session.
@@ -117,8 +132,10 @@ export const AuthProvider = ({ children }) => {
             // Set GitHub connection status if available
             if ("github_connected" in user) {
               setGithubConnected(user.github_connected);
-              // Check if we should show the GitHub prompt
-              if (!user.github_connected) {
+              // Prompt at most once per session — a reload/revalidation must
+              // not re-open the modal over an already-dismissed prompt.
+              if (!user.github_connected && !githubPromptSeen()) {
+                markGithubPromptSeen();
                 setShowGithubPrompt(true);
               }
             }
@@ -224,9 +241,13 @@ export const AuthProvider = ({ children }) => {
         const isGithubConnected = profile.github_connected || false;
         setGithubConnected(isGithubConnected);
         
-        // If user is not connected to GitHub, show the prompt after redirection
+        // If user is not connected to GitHub, show the prompt after redirection.
+        // A fresh login is a new prompt opportunity, so reset the per-session
+        // guard; mark it immediately (not inside the timeout) so a fast reload
+        // can't re-open the modal behind the user.
         if (!isGithubConnected) {
-          // Set a timeout to show GitHub prompt shortly after navigating to dashboard
+          clearGithubPromptSeen();
+          markGithubPromptSeen();
           setTimeout(() => {
             setShowGithubPrompt(true);
           }, 500);
@@ -295,6 +316,7 @@ export const AuthProvider = ({ children }) => {
       setPermissionsLoading(false);
       setGithubConnected(false);
       setShowGithubPrompt(false);
+      clearGithubPromptSeen();
       setAuthInProgress(false);
       navigate("/login", { replace: true });
     }
