@@ -134,7 +134,9 @@ describe('Client Task Flows', () => {
       body: []
     }).as('getComments');
 
-    cy.intercept('GET', '**/api/v1/github/repositories', {
+    // Trailing * is required: getUserRepos appends ?include_activity=false, and
+    // a query-less glob pattern does not match a URL with a query string.
+    cy.intercept('GET', '**/api/v1/github/repositories*', {
       statusCode: 200,
       body: []
     }).as('getRepos');
