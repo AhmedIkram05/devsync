@@ -15,10 +15,11 @@ spec:
   - Egress
   egress:
   # Backend/migrate → Cloud SQL private services access (PSA range for the
-  # peered servicenetworking connection). Dormant today: the cluster predates
-  # Dataplane V2, so no NetworkPolicy is enforced yet (RUNBOOK → "NetPol
-  # declared, not enforced"). Lands without breakage the day DPv2 is enabled —
-  # without this rule the deny-all policy would cut the DB the moment
+  # peered servicenetworking connection). Dormant until Dataplane V2 lands
+  # (create-time-only; datapath_provider staged in
+  # infra/terraform/modules/gke/main.tf for the planned rebuild window —
+  # the CD no-destroy guard correctly refuses the replacement until then).
+  # Without this rule the deny-all policy would cut the DB the moment
   # enforcement turns on.
   - to:
     - ipBlock:

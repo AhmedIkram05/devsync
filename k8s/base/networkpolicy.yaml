@@ -1,3 +1,14 @@
+# Default-deny + least-privilege egress for the devsync namespace.
+#
+# ENFORCEMENT NOTE: these policies bind at admission but only get enforced
+# once the cluster runs Dataplane V2 — create-time-only for Standard
+# clusters (infra/terraform/modules/gke/main.tf carries the staged
+# datapath_provider line for the planned rebuild window; until then this
+# file is dormant-but-ready, same posture as allow-egress-cloudsql).
+# Narrowing shipped now so the rebuild activates least-privilege egress
+# the moment DPv2 lands — and FQDN egress (enable_fqdn_network_policy)
+# becomes available to replace the 0.0.0.0/0 backend rule with GitHub's
+# published CIDRs/FQDNs.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -45,7 +56,13 @@ metadata:
   labels:
     app.kubernetes.io/part-of: devsync
 spec:
-  podSelector: {}
+  # Backend only: it is the sole workload that leaves the cluster over the
+  # internet (GitHub API: OAuth token exchange, repo sync, webhooks).
+  # Frontend/redis/postgres get no internet egress — default-deny holds.
+  # 0.0.0.0/0 stays until DPv2 (create-time-only) unlocks FQDN policies.
+  podSelector:
+    matchLabels:
+      app: devsync-backend
   policyTypes:
   - Egress
   # GitHub API + Artifact Registry pulls. FQDN policy later.
