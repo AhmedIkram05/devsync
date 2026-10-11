@@ -92,14 +92,23 @@ describe('Client Task Flows', () => {
   });
 
   it('navigates to tasks and filters them by priority', () => {
+    // Re-register the lookups TaskList fires alongside the tasks fetch so the
+    // spec can wait for all three — each lookup setState re-renders the
+    // filter row, which is what detaches the select mid-action.
+    cy.intercept('GET', '**/api/v1/users', {
+      statusCode: 200,
+      body: [{ id: 2, name: 'Client User', role: 'developer' }]
+    }).as('getUsers');
+    cy.intercept('GET', '**/api/v1/projects', { statusCode: 200, body: [] }).as('getProjectsLookup');
+
     cy.visit('/tasks');
-    cy.wait('@getTasks', { timeout: 10000 });
+    cy.wait(['@getTasks', '@getUsers', '@getProjectsLookup'], { timeout: 10000 });
 
     cy.contains('Learn Cypress').should('be.visible');
     cy.contains('Fix bug').should('be.visible');
 
-    // Filter by high priority
-    cy.get('select#priorityFilter').select('High');
+    // Filter by high priority (select by value; label match is case-sensitive)
+    cy.get('select#priorityFilter').should('be.visible').and('not.be.disabled').select('high');
     cy.contains('Learn Cypress').should('be.visible');
     cy.contains('Fix bug').should('not.exist');
   });
@@ -119,24 +128,40 @@ describe('Client Task Flows', () => {
     cy.intercept('GET', '**/api/v1/github/repositories', {
       statusCode: 200,
       body: []
-    });
+    }).as('getRepos');
+
+    // TaskDetailsUser also fetches linked GitHub items on mount; without a
+    // stub this hits the real backend and its late resolution re-renders the
+    // page (and delays loading=false) underneath the slider interactions.
+    cy.intercept('GET', '**/api/v1/tasks/10/github', {
+      statusCode: 200,
+      body: []
+    }).as('getGithubLinks');
+
+    // Same lookup shadowing as the filter test: TaskList re-renders when the
+    // user/project lookups resolve, which detaches the row mid-click.
+    cy.intercept('GET', '**/api/v1/users', {
+      statusCode: 200,
+      body: [{ id: 2, name: 'Client User', role: 'developer' }]
+    }).as('getUsers');
+    cy.intercept('GET', '**/api/v1/projects', { statusCode: 200, body: [] }).as('getProjectsLookup');
 
     cy.intercept('PUT', '**/api/v1/tasks/10', (req) => {
       req.reply({ statusCode: 200, body: Object.assign({}, req.body, { id: 10, title: 'Learn Cypress' }) });
     }).as('updateTask');
 
     cy.visit('/tasks');
-    cy.wait('@getTasks');
+    cy.wait(['@getTasks', '@getUsers', '@getProjectsLookup'], { timeout: 10000 });
 
-    cy.contains('td', 'Learn Cypress').click();
-    cy.wait(['@getTaskDetail', '@getComments']);
+    cy.get('table').contains('td', 'Learn Cypress').should('be.visible').click();
+    cy.wait(['@getTaskDetail', '@getComments', '@getGithubLinks', '@getRepos']);
 
     cy.contains('h1', 'Learn Cypress').should('be.visible');
     
     // Update progress slider to 30%
     // Use native value setter (Cypress-recommended for React controlled inputs) +
     // wait for React to commit state (UI shows "30%") before firing mouseup
-    cy.get('input[type="range"]').trigger('mousedown');
+    cy.get('input[type="range"]').should('be.visible').and('not.be.disabled').trigger('mousedown');
     cy.get('input[type="range"]').then($el => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
       setter.call($el[0], 30);
@@ -146,7 +171,7 @@ describe('Client Task Flows', () => {
     cy.wait('@updateTask').its('request.body').should('deep.include', { progress: 30 });
     
     // Update progress slider to 80%
-    cy.get('input[type="range"]').trigger('mousedown');
+    cy.get('input[type="range"]').should('be.visible').and('not.be.disabled').trigger('mousedown');
     cy.get('input[type="range"]').then($el => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
       setter.call($el[0], 80);
