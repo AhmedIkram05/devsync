@@ -79,7 +79,7 @@ describe('ReportTable branch coverage', () => {
       renderWithRouter(<ReportTable data={taskData} type="tasks" />);
       const viewLinks = screen.getAllByText('View');
       expect(viewLinks.length).toBeGreaterThan(0);
-      expect(viewLinks[0].closest('a')).toHaveAttribute('href', expect.stringContaining('/Tasks/1'));
+      expect(viewLinks[0].closest('a')).toHaveAttribute('href', expect.stringContaining('/tasks/1'));
     });
   });
 

@@ -4,15 +4,21 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import Forbidden from '../../pages/Forbidden';
 
 const mockNavigate = jest.fn();
+let mockAuthState = { currentUser: null };
 
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
   useNavigate: () => mockNavigate,
 }));
 
+jest.mock('../../context/AuthContext', () => ({
+  useAuth: () => mockAuthState,
+}));
+
 describe('Forbidden page', () => {
   beforeEach(() => {
     mockNavigate.mockReset();
+    mockAuthState = { currentUser: null };
   });
 
   afterEach(() => {
@@ -31,15 +37,21 @@ describe('Forbidden page', () => {
     expect(screen.getByText(/necessary permissions|access this page/i)).toBeInTheDocument();
   });
 
-  test('has a return to dashboard button that navigates', () => {
+  test('navigates to developer dashboard by default', () => {
     render(<Forbidden />);
 
-    const returnButton = screen.getByRole('button', { name: /return to dashboard/i });
-    expect(returnButton).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /return to dashboard/i }));
 
-    fireEvent.click(returnButton);
+    expect(mockNavigate).toHaveBeenCalledWith('/BasicDashboard');
+  });
 
-    expect(mockNavigate).toHaveBeenCalledWith('/dashboard');
+  test('navigates admin role to /admin', () => {
+    mockAuthState = { currentUser: { role: 'admin' } };
+    render(<Forbidden />);
+
+    fireEvent.click(screen.getByRole('button', { name: /return to dashboard/i }));
+
+    expect(mockNavigate).toHaveBeenCalledWith('/admin');
   });
 
   test('renders error icon svg', () => {
