@@ -1,4 +1,5 @@
 import { csrfHeaders } from '../utils/auth';
+import { notifyForbidden } from '../../utils/forbiddenHandler';
 
 const API_URL = (() => {
   const configuredBaseUrl = process.env.REACT_APP_API_URL;
@@ -174,6 +175,7 @@ const fetchWithAuth = async (endpoint, options = {}) => {
       error.isAuthError = true;
       error.isForbidden = true;
       error.redirectTo = '/forbidden';
+      notifyForbidden(error);
 
       throw error;
     }

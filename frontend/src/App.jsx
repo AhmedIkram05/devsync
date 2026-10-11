@@ -1,4 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import TaskList from "./pages/TaskList";
 import GitHubIntegration from "./pages/GitHubIntegration";
 import AdminDashboard from "./pages/AdminDashboard";
@@ -25,6 +26,7 @@ import AdminUsers from './pages/AdminUsers';
 import AdminSystemSettings from './pages/AdminSystemSettings';
 import AdminAuditLogs from './pages/AdminAuditLogs';
 import { PERMISSIONS } from './utils/rbac';
+import { FORBIDDEN_EVENT, FORBIDDEN_PATH } from './utils/forbiddenHandler';
 
 const ROLES = {
   DEVELOPER: 'developer',
@@ -268,6 +270,20 @@ function AppRoutes() {
   );
 }
 
+// Central catcher for typed 403s thrown by fetchWithAuth: any API 403
+// dispatches FORBIDDEN_EVENT, this listener navigates to /forbidden.
+const ForbiddenRedirectListener = () => {
+  const navigate = useNavigate();
+  useEffect(() => {
+    const onForbidden = (e) => {
+      navigate(e?.detail?.redirectTo || FORBIDDEN_PATH, { replace: true });
+    };
+    window.addEventListener(FORBIDDEN_EVENT, onForbidden);
+    return () => window.removeEventListener(FORBIDDEN_EVENT, onForbidden);
+  }, [navigate]);
+  return null;
+};
+
 function App() {
   return (
     <Router
@@ -276,6 +292,7 @@ function App() {
         v7_relativeSplatPath: true,
       }}
     >
+      <ForbiddenRedirectListener />
       <AuthProvider>
         <NotificationProvider>
           <AppRoutes />
