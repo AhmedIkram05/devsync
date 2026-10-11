@@ -17,7 +17,7 @@ const projectService = {
       const response = await fetchWithAuth(`projects/${projectId}`);
       return response?.project ?? response ?? null;
     } catch (error) {
-      console.error(`Failed to fetch project ${projectId}:`, error);
+      console.error('Failed to fetch project:', projectId, error);
       return null;
     }
   },
@@ -28,7 +28,7 @@ const projectService = {
       const tasks = response?.tasks ?? response;
       return Array.isArray(tasks) ? tasks : [];
     } catch (error) {
-      console.error(`Failed to fetch tasks for project ${projectId}:`, error);
+      console.error('Failed to fetch tasks for project:', projectId, error);
       return [];
     }
   },

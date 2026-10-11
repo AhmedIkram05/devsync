@@ -37,7 +37,7 @@ const taskService = {
       const response = await fetchWithAuth(`tasks/${taskId}`);
       return response?.task ?? response ?? null;
     } catch (error) {
-      console.error(`Failed to fetch task ${taskId}:`, error);
+      console.error('Failed to fetch task:', taskId, error);
       return null;
     }
   },
@@ -68,7 +68,7 @@ const taskService = {
       const comments = response?.comments ?? response;
       return Array.isArray(comments) ? comments : [];
     } catch (error) {
-      console.error(`Failed to fetch comments for task ${taskId}:`, error);
+      console.error('Failed to fetch comments for task:', taskId, error);
       return [];
     }
   },

@@ -244,11 +244,11 @@ const fetchWithAuth = async (endpoint, options = {}) => {
   } catch (error) {
     // Special handling for connection errors
     if (error.isConnectionError) {
-      console.error(`Server connection error: ${error.message}`);
+      console.error('Server connection error:', error.message);
       return { error: error.message, isConnectionError: true };
     }
 
-    console.error(`API request to ${endpoint} failed:`, error);
+    console.error('API request failed:', endpoint, error);
     throw error;
   }
 };
