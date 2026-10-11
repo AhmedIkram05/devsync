@@ -3,14 +3,52 @@
 
 describe('Client Task Flows', () => {
   beforeEach(() => {
+    const clientUser = { id: 2, name: 'Client User', email: 'client@example.com', role: 'developer', github_connected: false };
+    // 401 until login succeeds so /login renders the form first; afterwards
+    // 200 so the permissionsLoading spinner clears on every cy.visit reload
+    // (the mount-effect fallback path never clears it on a real 401).
+    let authed = false;
+
     // Stub login and restore auth state
-    cy.intercept('POST', '**/api/v1/auth/login', {
-      statusCode: 200,
-      body: {
-        token: 'fake-token-123',
-        user: { id: 2, name: 'Client User', email: 'client@example.com', role: 'developer', github_connected: false }
-      }
+    cy.intercept('POST', '**/api/v1/auth/login', (req) => {
+      authed = true;
+      req.reply({
+        statusCode: 200,
+        body: {
+          token: 'fake-token-123',
+          user: clientUser
+        }
+      });
     }).as('loginReq');
+
+    cy.intercept('GET', '**/api/v1/auth/me', (req) => {
+      if (authed) {
+        req.reply({ statusCode: 200, body: { user: clientUser, exp: 9999999999 } });
+      } else {
+        req.reply({ statusCode: 401, body: { message: 'Unauthorized' } });
+      }
+    }).as('meReq');
+
+    cy.intercept('GET', '**/api/v1/auth/permissions', (req) => {
+      if (authed) {
+        req.reply({
+          statusCode: 200,
+          body: {
+            role: 'developer',
+            permissions: ['can_view_tasks', 'can_update_assigned_tasks', 'can_comment_on_tasks', 'can_view_notifications', 'can_link_github_account']
+          }
+        });
+      } else {
+        req.reply({ statusCode: 401, body: { message: 'Unauthorized' } });
+      }
+    }).as('permissionsReq');
+
+    // TaskList fires user + project lookups alongside the tasks fetch
+    cy.intercept('GET', '**/api/v1/users', {
+      statusCode: 200,
+      body: [{ id: 2, name: 'Client User', role: 'developer' }]
+    });
+    cy.intercept('GET', '**/api/v1/projects', { statusCode: 200, body: [] });
 
     // Stub the tasks list
     cy.intercept('GET', '**/api/v1/tasks', {
