@@ -311,103 +311,11 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Check if we're returning from a GitHub OAuth flow
-  useEffect(() => {
-    // Helper function to determine if we're on a GitHub callback route
-    const isGitHubCallbackRoute = () => {
-      const callbackPaths = [
-        '/github/callback',
-        '/api/github/callback',
-        '/api/v1/github/callback'
-      ];
-      
-      return callbackPaths.some(path => location.pathname.includes(path));
-    };
-
-    // Check if we're returning from GitHub OAuth based on URL parameters
-    const urlParams = new URLSearchParams(location.search);
-    const code = urlParams.get('code');
-    const state = urlParams.get('state');
-    const githubSuccess = urlParams.get('github_success');
-    const githubUsername = urlParams.get('github_username');
-    const userId = urlParams.get('user_id');
-    
-    // Handle explicit success parameters (our custom format)
-    if (githubSuccess === 'true' && githubUsername && userId) {
-      setError(null); // Clear any errors
-      
-      // Update the user in localStorage with GitHub connection status
-      const user = authApi.getCurrentUser();
-      if (user && user.id && user.id.toString() === userId.toString()) {
-        // Update the user object with GitHub connection info
-        const updatedUser = {
-          ...user,
-          github_connected: true,
-          github_username: githubUsername
-        };
-        
-        // Save back to localStorage
-        localStorage.setItem("user", JSON.stringify(updatedUser));
-        
-        // Update context state
-        updateUser(updatedUser);
-        
-        // Set GitHub connected flag
-        setGithubConnected(true);
-        setShowGithubPrompt(false);
-        
-        // Remove GitHub OAuth parameters from URL to prevent duplicate processing
-        navigate(location.pathname.split('?')[0], { replace: true });
-      }
-    }
-    // Handle GitHub OAuth code callback
-    else if (code && state && (isGitHubCallbackRoute() || location.pathname.includes('/github'))) {
-      (async () => {
-        try {
-          setAuthInProgress(true);
-          
-          // Exchange the code for a token at the backend
-          const result = await githubService.completeOAuthFlow(code);
-          
-          if (result && result.success) {
-            // Get the current user
-            const user = authApi.getCurrentUser();
-            if (user) {
-              // Update user with GitHub info
-              const updatedUser = {
-                ...user,
-                github_connected: true,
-                github_username: result.github_username || ''
-              };
-              
-              // Save to localStorage and update state
-              localStorage.setItem("user", JSON.stringify(updatedUser));
-              updateUser(updatedUser);
-              setGithubConnected(true);
-              setShowGithubPrompt(false);
-            }
-          }
-          
-          // Clean up URL
-          navigate('/github', { replace: true });
-        } catch (error) {
-          console.error("Error completing GitHub OAuth flow:", error);
-          setError("Failed to complete GitHub connection. Please try again.");
-        } finally {
-          setAuthInProgress(false);
-        }
-      })();
-    }
-    
-    // Check for error parameter
-    const errorMsg = urlParams.get('error');
-    if (errorMsg) {
-      setError(`GitHub connection error: ${errorMsg}`);
-    }
-  }, [location.pathname, location.search, navigate]);
-  
   const currentUserId = currentUser?.id;
   const currentGithubConnected = Boolean(currentUser?.github_connected);
+
+  // Display-only GitHub status: verify the server connection when the user
+  // changes. OAuth code exchange lives solely in GitHubCallback.jsx.
 
   // Check GitHub connection status when user changes - verify with server to detect stale state
   useEffect(() => {

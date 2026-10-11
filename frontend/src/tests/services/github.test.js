@@ -31,6 +31,7 @@ describe('githubService', () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
 
     localStorage.clear();
+    sessionStorage.clear();
     global.fetch = jest.fn();
 
     authApi.getCurrentUser.mockReset();
@@ -50,6 +51,7 @@ describe('githubService', () => {
   afterEach(() => {
     jest.restoreAllMocks();
     localStorage.clear();
+    sessionStorage.clear();
   });
 
   test('createStateParam encodes user id and timestamp', () => {
@@ -102,11 +104,13 @@ describe('githubService', () => {
     const authorizationUrl = await githubService.initiateOAuthFlow();
 
     expect(authorizationUrl).toBe('https://github.com/login/oauth/authorize?state=state-abc');
-    expect(localStorage.getItem('github_oauth_state')).toBe('state-abc');
+    expect(sessionStorage.getItem('github_oauth_state')).toBe('state-abc');
+    expect(Number(sessionStorage.getItem('github_oauth_state_ts'))).not.toBeNaN();
   });
 
   test('completeOAuthFlow rejects on state mismatch before API call', async () => {
-    localStorage.setItem('github_oauth_state', 'expected-state');
+    sessionStorage.setItem('github_oauth_state', 'expected-state');
+    sessionStorage.setItem('github_oauth_state_ts', String(Date.now()));
 
     await expect(githubService.completeOAuthFlow('oauth-code', 'different-state')).rejects.toThrow(
       'Security validation failed. Please try connecting to GitHub again.'
@@ -116,7 +120,8 @@ describe('githubService', () => {
   });
 
   test('completeOAuthFlow updates github status and clears stored state', async () => {
-    localStorage.setItem('github_oauth_state', 'state-123');
+    sessionStorage.setItem('github_oauth_state', 'state-123');
+    sessionStorage.setItem('github_oauth_state_ts', String(Date.now()));
     global.fetch.mockResolvedValue(
       jsonResponse({
         success: true,
@@ -128,7 +133,7 @@ describe('githubService', () => {
 
     expect(result.success).toBe(true);
     expect(authApi.updateGitHubStatus).toHaveBeenCalledWith(true, 'octocat');
-    expect(localStorage.getItem('github_oauth_state')).toBeNull();
+    expect(sessionStorage.getItem('github_oauth_state')).toBeNull();
   });
 
   test('fetchWithAuth retries once after 401 with cookie refresh', async () => {
@@ -349,6 +354,7 @@ describe('githubService', () => {
   });
 
   test('completeOAuthFlow rejects when no state is available at all', async () => {
+    sessionStorage.clear();
     localStorage.removeItem('github_oauth_state');
 
     await expect(githubService.completeOAuthFlow('code', '')).rejects.toThrow(
@@ -357,14 +363,15 @@ describe('githubService', () => {
   });
 
   test('completeOAuthFlow handles success=false (no updateGitHubStatus call)', async () => {
-    localStorage.setItem('github_oauth_state', 'state-xyz');
+    sessionStorage.setItem('github_oauth_state', 'state-xyz');
+    sessionStorage.setItem('github_oauth_state_ts', String(Date.now()));
     global.fetch.mockResolvedValue(jsonResponse({ success: false, error: 'denied' }));
 
     const result = await githubService.completeOAuthFlow('code', 'state-xyz');
 
     expect(result.success).toBe(false);
     expect(authApi.updateGitHubStatus).not.toHaveBeenCalled();
-    expect(localStorage.getItem('github_oauth_state')).toBeNull();
+    expect(sessionStorage.getItem('github_oauth_state')).toBeNull();
   });
 
   test('getTaskGitHubLinks returns links array from response', async () => {
@@ -430,7 +437,7 @@ describe('githubService', () => {
     );
 
     await githubService.initiateOAuthFlow();
-    expect(localStorage.getItem('github_oauth_state')).toBe('url-state');
+    expect(sessionStorage.getItem('github_oauth_state')).toBe('url-state');
   });
 
   test('getIssues acts as an alias for getRepositoryIssues', async () => {

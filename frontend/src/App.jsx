@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import TaskList from "./pages/TaskList";
 import GitHubIntegration from "./pages/GitHubIntegration";
 import AdminDashboard from "./pages/AdminDashboard";
@@ -76,9 +76,15 @@ const ProtectedRoute = ({ children, allowedRoles = [], requiredPermission = null
   return children;
 };
 
+// Legacy callback paths redirect to the single canonical owner
+// (/github/callback), preserving the OAuth query string.
+const GitHubCallbackAlias = () => {
+  const location = useLocation();
+  return <Navigate to={`/github/callback${location.search}`} replace />;
+};
+
 function AppRoutes() {
   const { currentUser, showGithubPrompt, loading } = useAuth();
-  
   // Show loading spinner while auth state is initializing
   if (loading) {
     return (
@@ -162,10 +168,11 @@ function AppRoutes() {
           </ProtectedRoute>
         } />
         
-        {/* GitHub OAuth callback handling - Public route for callbacks */}
+        {/* GitHub OAuth callback handling - single owner (/github/callback);
+            legacy backend-style paths redirect with the query string intact */}
         <Route path="/github/callback" element={<GitHubCallback />} />
-        <Route path="/api/github/callback" element={<GitHubCallback />} />
-        <Route path="/api/v1/github/callback" element={<GitHubCallback />} />
+        <Route path="/api/github/callback" element={<GitHubCallbackAlias />} />
+        <Route path="/api/v1/github/callback" element={<GitHubCallbackAlias />} />
         
         <Route path="/github/connected" element={
           <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES}>

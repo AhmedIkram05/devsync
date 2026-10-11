@@ -18,6 +18,48 @@ const BASE_URL = `${API_BASE_URL}/github`;
 
 export { fetchWithAuth };
 
+// Session-scoped OAuth CSRF storage (tab-isolated, cleared on tab close).
+// Single owner of the exchange is GitHubCallback.jsx; AuthContext and
+// GitHubIntegration must not initiate or complete the flow.
+const OAUTH_STATE_KEY = 'github_oauth_state';
+const OAUTH_STATE_TS_KEY = 'github_oauth_state_ts';
+export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+
+const readStoredOAuthState = () => {
+  try {
+    const storedState = sessionStorage.getItem(OAUTH_STATE_KEY);
+    const storedTsRaw = sessionStorage.getItem(OAUTH_STATE_TS_KEY);
+    return { storedState, storedTs: storedTsRaw ? Number(storedTsRaw) : NaN };
+  } catch {
+    return { storedState: null, storedTs: NaN };
+  }
+};
+
+const clearStoredOAuthState = () => {
+  try {
+    sessionStorage.removeItem(OAUTH_STATE_KEY);
+    sessionStorage.removeItem(OAUTH_STATE_TS_KEY);
+  } catch {
+    // storage unavailable (private mode) — validation will fail closed below
+  }
+  try {
+    localStorage.removeItem('github_oauth_state');
+  } catch {
+    // ignore legacy cleanup failures
+  }
+};
+
+const generateFallbackState = () => {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // fall through to Math.random fallback
+  }
+  return `oauth-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+};
+
 // GitHub integration API service
 export const githubService = {
   // Check GitHub connection status
@@ -48,11 +90,12 @@ export const githubService = {
     return btoa(JSON.stringify(stateObj));
   },
   
-  // Initiate GitHub OAuth flow
+  // Initiate GitHub OAuth flow — strict CSRF: server state + issuance time
+  // stored in tab-scoped sessionStorage.
   initiateOAuthFlow: async () => {
     try {
       const user = authApi.getCurrentUser();
-      
+
       // Check if we have a valid user with ID
       if (!user || !user.id) {
         throw new Error('User ID is required for GitHub connection. Please log in again.');
@@ -65,68 +108,92 @@ export const githubService = {
           userId: user.id
         })
       });
-      
+
       // If we get an authorization URL, redirect to it
       if (response && response.authorization_url) {
-        const stateFromResponse = response.state || new URL(response.authorization_url).searchParams.get('state');
-        if (stateFromResponse) {
-          localStorage.setItem('github_oauth_state', stateFromResponse);
+        const serverState = response.state
+          || (() => { try { return new URL(response.authorization_url).searchParams.get('state'); } catch { return null; } })();
+        // Server state is canonical (backend only accepts server-signed states).
+        // Fall back to a client nonce so validation still fails closed.
+        const stateToStore = serverState || generateFallbackState();
+        const issuedAt = Date.now();
+        try {
+          sessionStorage.setItem(OAUTH_STATE_KEY, stateToStore);
+          sessionStorage.setItem(OAUTH_STATE_TS_KEY, String(issuedAt));
+        } catch (storageError) {
+          console.error('Error storing GitHub OAuth state:', storageError);
+          throw new Error('Security validation failed. Please try connecting to GitHub again.');
+        }
+        try {
+          localStorage.removeItem('github_oauth_state');
+        } catch {
+          // ignore legacy cleanup failures
         }
         // Return the URL for the component to handle the redirect
         return response.authorization_url;
       }
-      
+
       throw new Error('No authorization URL received from server');
     } catch (error) {
       console.error('Error initiating GitHub OAuth flow:', error);
       throw error;
     }
   },
-  
-  // Complete GitHub OAuth flow with the code from callback
+
+  // Complete GitHub OAuth flow with the code from callback.
+  // Strict: exact state match + 10min TTL + single-use, else throw.
   completeOAuthFlow: async (code, state) => {
     try {
       const user = authApi.getCurrentUser();
-      
+
       if (!user || !user.id) {
         console.error('No authenticated user found for GitHub callback');
         throw new Error('Authentication required. Please log in again before connecting GitHub.');
       }
-      
-      // Verify the state parameter matches what we stored
-      const storedState = localStorage.getItem('github_oauth_state');
-      const effectiveState = state || storedState;
 
-      if (!effectiveState) {
+      if (!code || !state) {
         throw new Error('Security validation failed. Please try connecting to GitHub again.');
       }
 
-      if (state && storedState && state !== storedState) {
+      const { storedState, storedTs } = readStoredOAuthState();
+
+      if (!storedState) {
+        throw new Error('Security validation failed. Please try connecting to GitHub again.');
+      }
+
+      if (state !== storedState) {
         console.error('OAuth state mismatch - potential CSRF attack');
+        clearStoredOAuthState();
         throw new Error('Security validation failed. Please try connecting to GitHub again.');
       }
-      
+
+      if (!Number.isFinite(storedTs) || Date.now() - storedTs > OAUTH_STATE_TTL_MS) {
+        console.error('OAuth state expired');
+        clearStoredOAuthState();
+        throw new Error('Security validation failed. Please try connecting to GitHub again.');
+      }
+
+      // Single-use: consume before the network call so a replay finds nothing.
+      clearStoredOAuthState();
+
       // Send the code to the backend along with user information
       const data = await fetchWithAuth(`${BASE_URL}/callback`, {
         method: 'POST',
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           code,
-          state: effectiveState
+          state
         })
       });
-      
+
       // If successful, update the user's GitHub connection status
       if (data && data.success) {
         // Update the local user state with GitHub connection info
         authApi.updateGitHubStatus(
-          true, 
+          true,
           data.github_username || ''
         );
       }
-      
-      // Clean up the stored state
-      localStorage.removeItem('github_oauth_state');
-      
+
       return data;
     } catch (error) {
       console.error('Error completing GitHub OAuth flow:', error);

@@ -288,7 +288,7 @@ describe('AuthContext', () => {
     expect(screen.getByTestId('show-prompt')).toHaveTextContent('false');
   });
 
-  test('handles OAuth code callback and updates connected user state', async () => {
+  test('ignores OAuth code callback — single owner is GitHubCallback', async () => {
     localStorage.setItem(
       'user',
       JSON.stringify(storedProfile(11, { github_connected: false }))
@@ -298,20 +298,22 @@ describe('AuthContext', () => {
     renderWithProvider(['/github/callback?code=oauth-code&state=test-state']);
 
     await waitFor(() => {
-      expect(githubService.completeOAuthFlow).toHaveBeenCalledWith('oauth-code');
+      expect(screen.getByTestId('user-id')).toHaveTextContent('11');
     });
 
-    await waitFor(() => {
-      const stored = JSON.parse(localStorage.getItem('user'));
-      expect(stored.github_connected).toBe(true);
-      expect(stored.github_username).toBe('octo');
-    });
+    expect(githubService.completeOAuthFlow).not.toHaveBeenCalled();
+    expect(screen.getByTestId('github-connected')).toHaveTextContent('false');
   });
 
-  test('shows callback error query parameter and handles login payload missing user', async () => {
+  test('ignores callback error query parameter — GitHubCallback owns OAuth errors', async () => {
     renderWithProvider(['/github/callback?error=access_denied']);
 
-    expect(screen.getByTestId('error-text')).toHaveTextContent('GitHub connection error: access_denied');
+    await waitFor(() => {
+      expect(screen.getByTestId('loading')).toHaveTextContent('false');
+    });
+
+    expect(screen.getByTestId('error-text')).toHaveTextContent('');
+    expect(githubService.completeOAuthFlow).not.toHaveBeenCalled();
 
     authApi.login.mockResolvedValue({ message: 'no user' });
     fireEvent.click(screen.getByRole('button', { name: 'Login' }));
@@ -413,7 +415,7 @@ describe('AuthContext', () => {
     expect(stored.token).toBeUndefined();
   });
 
-  test('OAuth code callback returns success=false — no github state update', async () => {
+  test('OAuth callback route does not trigger exchange — no github state update', async () => {
     localStorage.setItem(
       'user',
       JSON.stringify(storedProfile(11, { github_connected: false }))
@@ -423,8 +425,10 @@ describe('AuthContext', () => {
     renderWithProvider(['/github/callback?code=oauth-code&state=test-state']);
 
     await waitFor(() => {
-      expect(githubService.completeOAuthFlow).toHaveBeenCalledWith('oauth-code');
+      expect(screen.getByTestId('user-id')).toHaveTextContent('11');
     });
+
+    expect(githubService.completeOAuthFlow).not.toHaveBeenCalled();
 
     await waitFor(() => {
       expect(screen.getByTestId('github-connected')).toHaveTextContent('false');

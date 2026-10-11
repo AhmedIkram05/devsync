@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
 import { githubService } from "../services/github"; 
 import { authApi } from "../services/utils/auth";
 import { useAuth } from "../context/AuthContext";
 import GitHubRepoCard from "../components/GitHubRepoCard";
 import LoadingSpinner from "../components/LoadingSpinner";
 
+// Display-only page for connection status and repositories. The OAuth code
+// exchange lives solely in GitHubCallback.jsx — this page never reads
+// ?code/&state from the URL.
 const GitHubIntegration = () => {
   const [connectionStatus, setConnectionStatus] = useState({
     connected: false,
@@ -18,8 +20,6 @@ const GitHubIntegration = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [loadingRepos, setLoadingRepos] = useState(false);
   
-  const location = useLocation();
-  const navigate = useNavigate();
   const { currentUser, setCurrentUser, setError: setAuthError } = useAuth();
   
   // Define fetchRepositories function earlier so it can be referenced
@@ -137,75 +137,6 @@ const GitHubIntegration = () => {
     }
   }, [setCurrentUser]);
 
-  // Function to handle the OAuth callback code
-  const handleOAuthCallback = useCallback(async (code, state) => {
-    try {
-      console.log("Processing GitHub OAuth callback with code:", code.substring(0, 5) + "...");
-      setIsConnecting(true);
-      
-      // Send the code to your backend
-      const result = await githubService.completeOAuthFlow(code, state);
-      console.log("OAuth flow completion result:", result);
-      
-      // Check the connection status now that we've authorized
-      await checkGitHubConnection(true);
-      
-      // Clean up the URL by removing the code parameter
-      navigate('/github', { replace: true });
-    } catch (error) {
-      console.error("Failed to complete GitHub OAuth flow:", error);
-      
-      // Check for rate limit error specifically
-      const rateLimitInfo = githubService.handleRateLimitError(error);
-      if (rateLimitInfo) {
-        setConnectionStatus({
-          connected: false,
-          username: '',
-          loading: false,
-          error: rateLimitInfo.message,
-          rateLimitError: true,
-          rateLimitInfo
-        });
-      } else {
-        setConnectionStatus({
-          connected: false,
-          username: '',
-          loading: false,
-          error: "Failed to connect GitHub account. Please try again.",
-          rateLimitError: false
-        });
-      }
-    } finally {
-      setIsConnecting(false);
-    }
-  }, [navigate, checkGitHubConnection]);
-  
-  // Check if we're returning from GitHub OAuth flow with code parameter
-  useEffect(() => {
-    const urlParams = new URLSearchParams(location.search);
-    const code = urlParams.get('code');
-    const state = urlParams.get('state');
-    const error = urlParams.get('error');
-    
-    // If there's a code parameter, we're returning from GitHub authorization
-    if (code) {
-      console.log("GitHub OAuth code detected in URL, handling callback...");
-      handleOAuthCallback(code, state);
-    }
-    
-    // Handle GitHub OAuth errors
-    if (error) {
-      console.error("GitHub OAuth error:", error);
-      setConnectionStatus({
-        connected: false,
-        username: '',
-        loading: false,
-        error: "GitHub authentication was denied or failed. Please try again.",
-        rateLimitError: false
-      });
-    }
-  }, [location, handleOAuthCallback]);
-  
   // Check connection status on component mount
   useEffect(() => {
     console.log("GitHubIntegration component mounted, checking connection status");
