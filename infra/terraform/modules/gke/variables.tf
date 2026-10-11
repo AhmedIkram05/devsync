@@ -23,3 +23,8 @@ variable "labels" {
   default     = {}
   description = "Resource labels applied to the cluster."
 }
+
+variable "default_compute_sa_email" {
+  type        = string
+  description = "Email of the project's default compute SA (resolved at root; see modules/gke/main.tf default_node_sa)."
+}

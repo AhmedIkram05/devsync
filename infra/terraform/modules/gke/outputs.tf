@@ -13,26 +13,3 @@ output "cluster_ca" {
   sensitive   = true
   description = "PEM CA cert of the cluster (decoded for helm/k8s providers)."
 }
-
-# node_config.service_account is the literal "default" when the pool uses the
-# project's compute default service account — resolve it to the canonical
-# NUMBER-compute@PROJECT_ID.iam.gserviceaccount.com email for IAM grants.
-data "google_project" "current" {
-  project_id = var.project_id
-}
-
-locals {
-  node_sa = google_container_node_pool.primary.node_config[0].service_account
-
-  # Default compute SA lives at NUMBER-compute@developer.gserviceaccount.com
-  # (NOT @PROJECT_ID.iam.gserviceaccount.com).
-  node_sa_email = (local.node_sa == "default"
-    ? "${data.google_project.current.number}-compute@developer.gserviceaccount.com"
-    : local.node_sa
-  )
-}
-
-output "node_sa_email" {
-  value       = local.node_sa_email
-  description = "Node-pool service account (image pulls authenticate as this)."
-}

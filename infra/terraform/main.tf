@@ -1,5 +1,18 @@
 # DNS is a manual Namecheap A-record for gcp.devsyncapp.me (plan D10) — no dns.tf.
 
+locals {
+  # Default compute SA email resolved at ROOT (no in-module data read): a
+  # module-level depends_on defers data reads inside the module to apply
+  # time, which turned member strings "unknown" during any pending-change
+  # plan and showed spurious destroy+create for the IAM bindings — tripping
+  # the CD no-destroy guard. One root data read, referenced everywhere.
+  default_compute_sa = "${data.google_project.current.number}-compute@developer.gserviceaccount.com"
+}
+
+data "google_project" "current" {
+  project_id = var.project_id
+}
+
 module "gke" {
   source      = "./modules/gke"
   project_id  = var.project_id
@@ -7,14 +20,19 @@ module "gke" {
   zone        = var.zone
   environment = var.environment
   labels      = var.labels
-  depends_on  = [google_project_service.required]
+
+  # Used by the module's default-node-SA repair grant; passed instead of read
+  # in-module so the plan never sees an unknown member (see locals above).
+  default_compute_sa_email = local.default_compute_sa
+
+  depends_on = [google_project_service.required]
 }
 
 # Node-pool SA pulls images directly; WI only covers in-pod auth.
 resource "google_project_iam_member" "nodes_ar_reader" {
   project = var.project_id
   role    = "roles/artifactregistry.reader"
-  member  = "serviceAccount:${module.gke.node_sa_email}"
+  member  = "serviceAccount:${local.default_compute_sa}"
 }
 
 # In-cluster image registry, created ahead of any CI push.

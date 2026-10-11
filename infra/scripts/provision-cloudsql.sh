@@ -1,12 +1,19 @@
 #!/bin/bash
-# Cloud SQL + Private Services Access provisioning for the standing env (plan D6).
+# Cloud SQL + Private Services Access bootstrap for the standing env (plan D6).
 #
-# Idempotent-ish one-shot for a fresh project: allocates the PSA range, peers
-# to Service Networking, creates the private-IP-only instance, then writes the
-# DATABASE_URL secret for ESO. NOT Terraform-managed by design — TF keeps no
-# state for it (adding a TF resource would balloon the CD's tf-plan into a
-# CREATE for an instance that already exists) — instead this script IS the
-# reviewable record; teardown steps live in docs/planning/k8s.md (D15).
+# SPLIT OF OWNERSHIP (infra-blockers 2026-10-12): the INSTANCE and DATABASE
+# are Terraform-owned now (infra/terraform/cloudsql.tf, imported into state —
+# tier db-g1-small, PITR on, deletion protection on at TF + API level). This
+# script keeps the steps TF does not own: API enablement, the PSA range +
+# Service Networking peering, the login user (password goes straight to
+# Secret Manager, never to TF state), and the DATABASE_URL secret push.
+#
+# Fresh-project flow:
+#   1. ./provision-cloudsql.sh          (this script: APIs, PSA, peering)
+#   2. terraform apply                  (creates instance + database)
+#   3. Rerun this script's user/secret steps or run them by hand (below).
+#
+# Teardown: docs/planning/k8s.md D15.
 #
 # Usage:
 #   PROJECT_ID=<id> REGION=us-central1 DB_INSTANCE=devsync-db ./provision-cloudsql.sh
@@ -32,22 +39,25 @@ gcloud compute addresses create "$PSA_RANGE" \
 gcloud services vpc-peerings connect --service=servicenetworking.googleapis.com \
   --ranges="$PSA_RANGE" --network="$VPC" --project="$PROJECT_ID" 2>/dev/null || true
 
-# 3. Instance: POSTGRES_16, db-f1-micro, enterprise edition, private-IP only,
-#    backups at 03:00 (enabled 2026-09-13), deletion protection OFF for the
-#    teardown window (cleanup: docs/planning/k8s.md D15).
-PW=$(openssl rand -hex 24)
-gcloud sql instances create "$DB_INSTANCE" \
-  --project="$PROJECT_ID" --database-version=POSTGRES_16 \
-  --edition=enterprise --tier=db-f1-micro --region="$REGION" \
-  --network="projects/$PROJECT_ID/global/networks/$VPC" \
-  --no-assign-ip --storage-size=10GB --storage-type=SSD \
-  --backup-start-time=03:00 \
-  --root-password="$PW" \
-  --no-deletion-protection
+# 3. Instance + database: TF-owned (infra/terraform/cloudsql.tf) —
+#    POSTGRES_16, db-g1-small, private-IP-only, PITR on, deletion protection
+#    on. This script no longer creates them; apply TF instead:
+#      terraform init -backend-config=bucket=<tfstate-bucket>
+#      terraform apply
+#    (Existing-instance projects: import first — see the header of
+#    cloudsql.tf.)
 
-# 4. App role + database.
-gcloud sql users create devsync --instance="$DB_INSTANCE" --password="$PW" --project="$PROJECT_ID" 2>/dev/null \
-  || gcloud sql users set-password devsync --instance="$DB_INSTANCE" --password="$PW" --project="$PROJECT_ID"
+# 4. App role + password (TF-blind by design: the password is written
+#    straight to Secret Manager and never enters TF state). If the user
+#    already exists, STOP: pushing a fresh DSN here would not match the
+#    existing password and brick the app's DATABASE_URL secret.
+PW=$(openssl rand -hex 24)
+gcloud sql users create devsync --instance="$DB_INSTANCE" --password="$PW" --project="$PROJECT_ID" 2>/dev/null || {
+  echo "user devsync already exists — rotate deliberately instead:"
+  echo "  gcloud sql users set-password devsync --instance=$DB_INSTANCE --password=<pw> --project=$PROJECT_ID"
+  echo "  then push the matching DSN (step 5) or update Secret Manager."
+  exit 1
+}
 gcloud sql databases create devsync --instance="$DB_INSTANCE" --project="$PROJECT_ID" 2>/dev/null || true
 
 # 5. DATABASE_URL from the private IP (ESO reads Secret Manager key DATABASE_URL);

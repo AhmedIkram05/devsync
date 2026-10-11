@@ -70,9 +70,8 @@ resource "google_container_cluster" "devsync" {
 
 # Single zone-pinned node pool: autoscaler scales in-place, auto-upgrade keeps
 # nodes on the release channel.
-data "google_project" "this" {
-  project_id = var.project_id
-}
+# (No in-module data reads: they defer to apply time under the module's
+# depends_on and turn referenced strings unknown mid-plan.)
 
 # God-console Recommender repair (High priority, 2026-09-13): the node pool
 # runs on the default compute SA (standing-window trade). GKE post-1.26 needs
@@ -80,10 +79,13 @@ data "google_project" "this" {
 # Upgraded path (post-teardown): dedicated least-privilege node SA
 # (logging.logWriter + monitoring.metricWriter + autoscaling.metricsWriter,
 # no cloud-platform scope) recorded here alongside the pool recreation.
+# The SA email arrives as a variable (resolved at ROOT): in-module data reads
+# defer to apply time under the module's depends_on and turn member strings
+# unknown, which the plan then shows as a destroy+create.
 resource "google_project_iam_member" "default_node_sa" {
   project = var.project_id
   role    = "roles/container.defaultNodeServiceAccount"
-  member  = "serviceAccount:${data.google_project.this.number}-compute@developer.gserviceaccount.com"
+  member  = "serviceAccount:${var.default_compute_sa_email}"
 }
 
 resource "google_container_node_pool" "primary" {

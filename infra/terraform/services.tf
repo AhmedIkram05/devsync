@@ -12,6 +12,8 @@ locals {
     "iam.googleapis.com",                  # WIF pool (workload identity)
     "iamcredentials.googleapis.com",       # WIF token exchange + in-pod SA auth
     "cloudresourcemanager.googleapis.com", # TF project reads + IAM grants
+    "sqladmin.googleapis.com",             # Cloud SQL (cloudsql.tf)
+    "containeranalysis.googleapis.com",    # Binary Authz note + attestations
   ]
 }
 
