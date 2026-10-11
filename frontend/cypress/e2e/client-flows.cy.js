@@ -104,11 +104,20 @@ describe('Client Task Flows', () => {
     cy.visit('/tasks');
     cy.wait(['@getTasks', '@getUsers', '@getProjectsLookup'], { timeout: 10000 });
 
+    // Settle: auth + page spinners gone, rows committed, and the
+    // users-lookup setState re-render landed (assignee options prove it) so
+    // the filter row can't detach mid-select ("element is DISABLED" flake).
+    cy.contains('Loading authentication...', { timeout: 10000 }).should('not.exist');
+    cy.contains('Loading tasks...', { timeout: 10000 }).should('not.exist');
     cy.contains('Learn Cypress').should('be.visible');
     cy.contains('Fix bug').should('be.visible');
+    cy.get('table tbody tr', { timeout: 10000 }).should('have.length', 2);
+    cy.get('select#assigneeFilter option', { timeout: 10000 }).should('have.length.gt', 1);
 
-    // Filter by high priority (select by value; label match is case-sensitive)
-    cy.get('select#priorityFilter').should('be.visible').and('not.be.disabled').select('high');
+    // Filter by high priority (select by value; label match is case-sensitive).
+    // The filter selects are enabled once loading clears, but assert it
+    // explicitly with a generous timeout so a slow lookup can't flake select().
+    cy.get('select#priorityFilter', { timeout: 15000 }).should('be.visible').and('not.be.disabled').select('high');
     cy.contains('Learn Cypress').should('be.visible');
     cy.contains('Fix bug').should('not.exist');
   });
@@ -153,7 +162,17 @@ describe('Client Task Flows', () => {
     cy.visit('/tasks');
     cy.wait(['@getTasks', '@getUsers', '@getProjectsLookup'], { timeout: 10000 });
 
-    cy.get('table').contains('td', 'Learn Cypress').should('be.visible').click();
+    // Settle before touching the row: spinners gone, row count stable, and
+    // lookup-driven selects committed so no late setState detaches the row
+    // mid-click ("page updated while executing" flake).
+    cy.contains('Loading authentication...', { timeout: 10000 }).should('not.exist');
+    cy.contains('Loading tasks...', { timeout: 10000 }).should('not.exist');
+    cy.get('table', { timeout: 10000 }).should('be.visible');
+    cy.get('table tbody tr', { timeout: 10000 }).should('have.length', 2);
+    cy.get('select#assigneeFilter option', { timeout: 10000 }).should('have.length.gt', 1);
+
+    // Scope the click to the settled tbody so the row can't detach mid-click.
+    cy.get('table tbody', { timeout: 10000 }).contains('td', 'Learn Cypress').should('be.visible').click();
     cy.wait(['@getTaskDetail', '@getComments', '@getGithubLinks', '@getRepos']);
 
     cy.contains('h1', 'Learn Cypress').should('be.visible');

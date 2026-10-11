@@ -105,8 +105,13 @@ describe('Admin Flows', () => {
 
     // Wait for the list to commit before touching the header link — clicking
     // while the post-fetch re-render is still settling detaches the element
-    // ("page updated while executing").
+    // ("page updated while executing"). The spinner + stable row count prove
+    // loading=false committed and no skeleton is left on screen.
+    cy.contains('Loading authentication...', { timeout: 10000 }).should('not.exist');
+    cy.contains('Loading projects...', { timeout: 10000 }).should('not.exist');
     cy.contains('h1', 'Projects').should('be.visible');
+    cy.get('table', { timeout: 10000 }).should('be.visible');
+    cy.get('table tbody tr', { timeout: 10000 }).should('have.length.gt', 0);
     cy.contains('Alpha').should('be.visible');
 
     // Create project
@@ -124,7 +129,8 @@ describe('Admin Flows', () => {
 
     // Creation is page-based now: /admin/projects links to
     // /admin/projects/new (ProjectForm), the old inline modal is gone.
-    cy.contains('a', 'Create Project').should('be.visible').click();
+    // The list above already proved settled, so this click can't race it.
+    cy.contains('a', 'Create Project', { timeout: 15000 }).should('be.visible').and('not.be.disabled').click();
     cy.url().should('include', '/admin/projects/new');
 
     cy.wait('@getCreateUsers', { timeout: 10000 });
