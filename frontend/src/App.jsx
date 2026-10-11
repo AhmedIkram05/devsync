@@ -1,4 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import TaskList from "./pages/TaskList";
 import GitHubIntegration from "./pages/GitHubIntegration";
 import AdminDashboard from "./pages/AdminDashboard";
@@ -24,6 +25,8 @@ import Forbidden from './pages/Forbidden';
 import AdminUsers from './pages/AdminUsers';
 import AdminSystemSettings from './pages/AdminSystemSettings';
 import AdminAuditLogs from './pages/AdminAuditLogs';
+import { PERMISSIONS } from './utils/rbac';
+import { FORBIDDEN_EVENT, FORBIDDEN_PATH } from './utils/forbiddenHandler';
 
 const ROLES = {
   DEVELOPER: 'developer',
@@ -31,19 +34,20 @@ const ROLES = {
   ADMIN: 'admin',
 };
 
-const MEMBER_ROLES = [ROLES.DEVELOPER, ROLES.TEAM_LEAD];
 const AUTHENTICATED_ROLES = [ROLES.DEVELOPER, ROLES.TEAM_LEAD, ROLES.ADMIN];
-const TASK_CREATOR_ROLES = [ROLES.DEVELOPER, ROLES.TEAM_LEAD, ROLES.ADMIN];
 const TEAM_LEAD_OR_ADMIN = [ROLES.TEAM_LEAD, ROLES.ADMIN];
 
 // Team Leads should see the basic developer dashboard by default.
 const getDashboardPath = (role) => (role === ROLES.ADMIN ? '/admin' : '/BasicDashboard');
 
 const ProtectedRoute = ({ children, allowedRoles = [], requiredPermission = null }) => {
-  const { currentUser, loading, can } = useAuth();
+  const { currentUser, loading, permissionsLoading, can } = useAuth();
   
-  // Show loading state while authentication is being checked
-  if (loading) {
+  // Show loading state while authentication or permissions are being checked.
+  // permissionsLoading closes the window where an authenticated user has
+  // permissions=[] (fetch in flight) and every CAN_* route bounces to
+  // /forbidden. Missing flag (older mocks) reads as falsy — no behavior change.
+  if (loading || permissionsLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
@@ -67,7 +71,9 @@ const ProtectedRoute = ({ children, allowedRoles = [], requiredPermission = null
   }
 
   // If requiredPermission is specified, check if user has the permission
-  if (requiredPermission && !can(requiredPermission)) {
+  // (permissions come from GET /auth/permissions -> {"role", "permissions"}).
+  const canFn = typeof can === 'function' ? can : () => false;
+  if (requiredPermission && !canFn(requiredPermission)) {
     console.log(`User lacks permission ${requiredPermission} for this route`);
     return <Navigate to="/forbidden" replace />;
   }
@@ -76,11 +82,17 @@ const ProtectedRoute = ({ children, allowedRoles = [], requiredPermission = null
   return children;
 };
 
+// Legacy callback paths redirect to the single canonical owner
+// (/github/callback), preserving the OAuth query string.
+const GitHubCallbackAlias = () => {
+  const location = useLocation();
+  return <Navigate to={`/github/callback${location.search}`} replace />;
+};
+
 function AppRoutes() {
-  const { currentUser, showGithubPrompt, loading } = useAuth();
-  
-  // Show loading spinner while auth state is initializing
-  if (loading) {
+  const { currentUser, showGithubPrompt, loading, permissionsLoading } = useAuth();
+  // Show loading spinner while auth state or permissions are initializing
+  if (loading || permissionsLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div
@@ -121,19 +133,19 @@ function AppRoutes() {
         
         {/* Developer and Team Lead Routes */}
         <Route path="/BasicDashboard" element={
-          <ProtectedRoute allowedRoles={MEMBER_ROLES}>
+          <ProtectedRoute requiredPermission={PERMISSIONS.CAN_VIEW_TASKS}>
             <BasicDashboard />
           </ProtectedRoute>
         } />
-        
+
         <Route path="/dashboard/client" element={
-          <ProtectedRoute allowedRoles={MEMBER_ROLES}>
+          <ProtectedRoute requiredPermission={PERMISSIONS.CAN_VIEW_TASKS}>
             <BasicDashboard />
           </ProtectedRoute>
         } />
-        
+
         <Route path="/TaskDetailUser/:id" element={
-          <ProtectedRoute allowedRoles={MEMBER_ROLES}>
+          <ProtectedRoute requiredPermission={PERMISSIONS.CAN_VIEW_TASKS}>
             <TaskDetailsUser />
           </ProtectedRoute>
         } />
@@ -162,10 +174,11 @@ function AppRoutes() {
           </ProtectedRoute>
         } />
         
-        {/* GitHub OAuth callback handling - Public route for callbacks */}
+        {/* GitHub OAuth callback handling - single owner (/github/callback);
+            legacy backend-style paths redirect with the query string intact */}
         <Route path="/github/callback" element={<GitHubCallback />} />
-        <Route path="/api/github/callback" element={<GitHubCallback />} />
-        <Route path="/api/v1/github/callback" element={<GitHubCallback />} />
+        <Route path="/api/github/callback" element={<GitHubCallbackAlias />} />
+        <Route path="/api/v1/github/callback" element={<GitHubCallbackAlias />} />
         
         <Route path="/github/connected" element={
           <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES}>
@@ -187,7 +200,7 @@ function AppRoutes() {
         } />
         
         <Route path="/admin/create-task" element={
-          <ProtectedRoute allowedRoles={TASK_CREATOR_ROLES}>
+          <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES}>
             <TaskCreation />
           </ProtectedRoute>
         } />
@@ -229,13 +242,13 @@ function AppRoutes() {
         } />
 
         <Route path="/admin/settings" element={
-          <ProtectedRoute allowedRoles={['admin']}>
+          <ProtectedRoute allowedRoles={['admin']} requiredPermission={PERMISSIONS.CAN_MANAGE_SYSTEM_SETTINGS}>
             <AdminSystemSettings />
           </ProtectedRoute>
         } />
 
         <Route path="/admin/audit-logs" element={
-          <ProtectedRoute allowedRoles={['admin']}>
+          <ProtectedRoute allowedRoles={['admin']} requiredPermission={PERMISSIONS.CAN_VIEW_AUDIT_LOGS}>
             <AdminAuditLogs />
           </ProtectedRoute>
         } />
@@ -248,7 +261,7 @@ function AppRoutes() {
         
         {/* Default route */}
         <Route path="/" element={
-          !loading && (
+          !(loading || permissionsLoading) && (
             currentUser ? 
               <Navigate to={getDashboardPath(currentUser.role)} replace />
               : 
@@ -260,6 +273,20 @@ function AppRoutes() {
   );
 }
 
+// Central catcher for typed 403s thrown by fetchWithAuth: any API 403
+// dispatches FORBIDDEN_EVENT, this listener navigates to /forbidden.
+const ForbiddenRedirectListener = () => {
+  const navigate = useNavigate();
+  useEffect(() => {
+    const onForbidden = (e) => {
+      navigate(e?.detail?.redirectTo || FORBIDDEN_PATH, { replace: true });
+    };
+    window.addEventListener(FORBIDDEN_EVENT, onForbidden);
+    return () => window.removeEventListener(FORBIDDEN_EVENT, onForbidden);
+  }, [navigate]);
+  return null;
+};
+
 function App() {
   return (
     <Router
@@ -268,6 +295,7 @@ function App() {
         v7_relativeSplatPath: true,
       }}
     >
+      <ForbiddenRedirectListener />
       <AuthProvider>
         <NotificationProvider>
           <AppRoutes />

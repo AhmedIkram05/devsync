@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { taskService, userService, projectService } from '../services/utils/api';
+import { taskService } from '../services/utils/api';
+import { fetchTaskList, fetchTaskListLookups } from '../services/taskListService';
 import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -32,21 +33,9 @@ const TaskList = () => {
   useEffect(() => {
     const fetchUsersAndProjects = async () => {
       try {
-        const usersData = await userService.getAllUsers();
-        const users = Array.isArray(usersData?.users) ? usersData.users : Array.isArray(usersData) ? usersData : [];
-        const userById = {};
-        users.forEach(user => {
-          userById[user.id] = user.name;
-        });
-        setUserMap(userById);
-
-        const projectsData = await projectService.getAllProjects();
-        const projects = Array.isArray(projectsData?.projects) ? projectsData.projects : Array.isArray(projectsData) ? projectsData : [];
-        const projectById = {};
-        projects.forEach((project) => {
-          projectById[project.id] = project.name;
-        });
-        setProjectMap(projectById);
+        const { userMap, projectMap } = await fetchTaskListLookups();
+        setUserMap(userMap);
+        setProjectMap(projectMap);
       } catch (err) {
         console.error('Failed to fetch users or projects:', err);
       }
@@ -68,7 +57,7 @@ const TaskList = () => {
   const fetchTasks = async (params = null) => {
     try {
       setLoading(true);
-      const tasksData = await taskService.getAllTasks(params);
+      const tasksData = await fetchTaskList(params);
       setTasks(Array.isArray(tasksData) ? tasksData : []);
       setError(null);
     } catch (err) {

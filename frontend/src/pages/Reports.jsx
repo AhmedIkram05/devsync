@@ -12,7 +12,8 @@ import {
   Filler
 } from 'chart.js';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
-import { dashboardService, reportService } from '../services/utils/api';
+import { reportService } from '../services/utils/api';
+import { fetchReportViewData, fetchSavedReportsList } from '../services/reportViewService';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ReportTable from '../components/ReportTable';
 
@@ -227,7 +228,7 @@ const Reports = () => {
         setLoading(true);
       }
       setError(null);
-      const data = await dashboardService.getReportData(reportType, dateRange, { forceRefresh });
+      const data = await fetchReportViewData(reportType, dateRange, { forceRefresh });
       // Ignore stale responses from previous report/date selections.
       if (requestId !== latestRequestRef.current) {
         return null;
@@ -257,7 +258,7 @@ const Reports = () => {
   useEffect(() => {
     const loadSavedReports = async () => {
       try {
-        const response = await reportService.getSavedReports();
+        const response = await fetchSavedReportsList();
         if (response.error) {
           console.warn('Failed to load saved reports:', response.error);
         } else if (response.reports) {

@@ -1,25 +1,32 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { githubService } from '../services/github';
 import { authApi } from '../services/utils/auth';
 import LoadingSpinner from '../components/LoadingSpinner';
 
+// Sole owner of the OAuth code exchange. AuthContext and GitHubIntegration
+// must not process ?code/&state — they render connection status only.
 const GitHubCallback = () => {
   const [status, setStatus] = useState('Processing GitHub authorization...');
   const [error, setError] = useState(null);
   const [processingComplete, setProcessingComplete] = useState(false);
-  
+
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser, setCurrentUser, setError: setAuthError } = useAuth();
+  // StrictMode double-mount guard: the exchange must fire exactly once.
+  const exchangeStarted = useRef(false);
 
   useEffect(() => {
-    // Don't process if already completed
-    if (processingComplete) {
+    // Don't process if already completed or already started.
+    // The ref guards StrictMode double-mount and state-update re-runs;
+    // the state flag allows user-initiated retry via handleRetry.
+    if (processingComplete || exchangeStarted.current) {
       return;
     }
-    
+    exchangeStarted.current = true;
+
     const handleCallback = async () => {
       try {
         // Clear any existing auth errors when this component mounts
@@ -134,7 +141,8 @@ const GitHubCallback = () => {
   const handleRetry = () => {
     setError(null);
     setProcessingComplete(false);
-    
+    exchangeStarted.current = false;
+
     // Attempt to reconnect
     if (location.search.includes('code=')) {
       // Try processing the callback again

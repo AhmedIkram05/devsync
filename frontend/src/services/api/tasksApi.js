@@ -1,4 +1,4 @@
-import { csrfHeaders } from '../utils/auth';
+import { fetchWithAuth } from '../utils/api';
 
 const API_BASE_URL = (() => {
   const configuredBaseUrl = process.env.REACT_APP_API_URL;
@@ -13,47 +13,7 @@ const API_BASE_URL = (() => {
 
 const BASE_URL = `${API_BASE_URL}/tasks`;
 
-// Helper function for making cookie-authenticated fetch requests
-const fetchWithAuth = async (url, options = {}) => {
-  try {
-    const sanitizedOptionHeaders = { ...(options.headers || {}) };
-    Object.keys(sanitizedOptionHeaders).forEach((key) => {
-      if (key.toLowerCase() === 'authorization') {
-        delete sanitizedOptionHeaders[key];
-      }
-    });
-    const headers = {
-      'Content-Type': 'application/json',
-      ...csrfHeaders(),
-      ...sanitizedOptionHeaders
-    };
-
-    const fetchOptions = {
-      ...options,
-      headers,
-      credentials: 'include' // Include cookies
-    };
-
-    const response = await fetch(url, fetchOptions);
-    
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      const error = new Error(errorData.message || `HTTP error ${response.status}`);
-      error.status = response.status;
-      error.data = errorData;
-      throw error;
-    }
-    
-    if (response.status !== 204) { // No content
-      return await response.json();
-    }
-    
-    return {}; // Return empty object for 204 No Content
-  } catch (error) {
-    console.error('Fetch error in tasksApi:', error);
-    throw error;
-  }
-};
+export { fetchWithAuth };
 
 export const tasksApi = {
   // Get all tasks

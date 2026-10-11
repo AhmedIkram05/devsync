@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { projectService } from '../services/utils/api';
 import { useAuth } from '../context/AuthContext';
+import { PERMISSIONS } from '../utils/rbac';
 
 const formatDate = (value) => {
   if (!value) {
@@ -61,15 +62,17 @@ const formatProjectStatus = (status) => {
 const ProjectDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser, can } = useAuth();
 
   const [project, setProject] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fallbackRoute = currentUser?.role === 'admin' ? '/admin/projects' : '/BasicDashboard';
-  const isAdmin = currentUser?.role === 'admin';
+  const canManageProjects = typeof can === 'function'
+    ? can(PERMISSIONS.CAN_MANAGE_PROJECTS)
+    : currentUser?.role === 'admin';
+  const fallbackRoute = canManageProjects ? '/admin/projects' : '/BasicDashboard';
 
   const loadProjectDetails = useCallback(async () => {
     try {
@@ -148,7 +151,7 @@ const ProjectDetails = () => {
               <p className="text-slate-400 mt-2">{project.description || 'No description provided.'}</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              {isAdmin && (
+              {canManageProjects && (
                 <Link
                   to={`/admin/projects/${project.id}/edit`}
                   className="inline-flex items-center px-4 py-2 rounded-full bg-rose-500/90 text-white hover:bg-rose-400"

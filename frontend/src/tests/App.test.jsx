@@ -6,7 +6,9 @@ import App from '../App';
 let mockAuthState = {
   currentUser: null,
   loading: false,
+  permissionsLoading: false,
   showGithubPrompt: false,
+  can: () => false,
 };
 
 jest.mock('../context/AuthContext', () => ({
@@ -36,6 +38,9 @@ jest.mock('../pages/GithubIntegrationDetail', () => () => <div>GitHub Integratio
 jest.mock('../pages/Register', () => () => <div>Register Page</div>);
 jest.mock('../pages/GitHubCallback', () => () => <div>GitHub Callback Page</div>);
 jest.mock('../pages/Forbidden', () => () => <div>Forbidden Page</div>);
+jest.mock('../pages/AdminUsers', () => () => <div>Admin Users Page</div>);
+jest.mock('../pages/AdminSystemSettings', () => () => <div>Admin Settings Page</div>);
+jest.mock('../pages/AdminAuditLogs', () => () => <div>Admin Audit Logs Page</div>);
 
 const renderAt = (path) => {
   window.history.pushState({}, '', path);
@@ -51,7 +56,9 @@ describe('App route access controls', () => {
     mockAuthState = {
       currentUser: null,
       loading: false,
+      permissionsLoading: false,
       showGithubPrompt: false,
+      can: () => false,
     };
     window.history.pushState({}, '', '/');
   });
@@ -70,6 +77,7 @@ describe('App route access controls', () => {
     mockAuthState = {
       currentUser: null,
       loading: true,
+      permissionsLoading: false,
       showGithubPrompt: false,
     };
 
@@ -83,7 +91,9 @@ describe('App route access controls', () => {
     mockAuthState = {
       currentUser: { id: 1, role: 'admin', token: 'test-token' },
       loading: false,
+      permissionsLoading: false,
       showGithubPrompt: false,
+      can: () => true,
     };
 
     renderAt('/login');
@@ -95,7 +105,9 @@ describe('App route access controls', () => {
     mockAuthState = {
       currentUser: { id: 2, role: 'developer', token: 'test-token' },
       loading: false,
+      permissionsLoading: false,
       showGithubPrompt: false,
+      can: () => true,
     };
 
     renderAt('/admin');
@@ -107,7 +119,9 @@ describe('App route access controls', () => {
     mockAuthState = {
       currentUser: { id: 1, role: 'admin', token: 'test-token' },
       loading: false,
+      permissionsLoading: false,
       showGithubPrompt: false,
+      can: () => true,
     };
 
     renderAt('/');
@@ -119,7 +133,9 @@ describe('App route access controls', () => {
     mockAuthState = {
       currentUser: { id: 2, role: 'developer', token: 'test-token' },
       loading: false,
+      permissionsLoading: false,
       showGithubPrompt: false,
+      can: () => true,
     };
 
     renderAt('/');
@@ -127,11 +143,84 @@ describe('App route access controls', () => {
     expect(await screen.findByText('Client Dashboard Page')).toBeInTheDocument();
   });
 
+  test('allows any authenticated role on task creation route (backend POST /tasks permits all)', async () => {
+    mockAuthState = {
+      currentUser: { id: 2, role: 'developer', token: 'test-token' },
+      loading: false,
+      permissionsLoading: false,
+      showGithubPrompt: false,
+      can: () => false,
+    };
+
+    renderAt('/admin/create-task');
+
+    expect(await screen.findByText('Task Creation Page')).toBeInTheDocument();
+  });
+
+  test('allows team_lead on user management route (backend GET /admin/users permits team_lead+)', async () => {
+    mockAuthState = {
+      currentUser: { id: 3, role: 'team_lead', token: 'test-token' },
+      loading: false,
+      permissionsLoading: false,
+      showGithubPrompt: false,
+      can: (permission) => permission !== 'can_manage_users',
+    };
+
+    renderAt('/admin/users');
+
+    expect(await screen.findByText('Admin Users Page')).toBeInTheDocument();
+  });
+
+  test('allows admin on user management route', async () => {
+    mockAuthState = {
+      currentUser: { id: 1, role: 'admin', token: 'test-token' },
+      loading: false,
+      permissionsLoading: false,
+      showGithubPrompt: false,
+      can: () => true,
+    };
+
+    renderAt('/admin/users');
+
+    expect(await screen.findByText('Admin Users Page')).toBeInTheDocument();
+  });
+
+  test('denies developer on user management route (role gate)', async () => {
+    mockAuthState = {
+      currentUser: { id: 2, role: 'developer', token: 'test-token' },
+      loading: false,
+      permissionsLoading: false,
+      showGithubPrompt: false,
+      can: () => true,
+    };
+
+    renderAt('/admin/users');
+
+    expect(await screen.findByText('Forbidden Page')).toBeInTheDocument();
+  });
+
+  test('shows loading spinner while permissions are loading (no forbidden flash)', () => {
+    mockAuthState = {
+      currentUser: { id: 2, role: 'developer', token: 'test-token' },
+      loading: false,
+      permissionsLoading: true,
+      showGithubPrompt: false,
+      can: () => false,
+    };
+
+    renderAt('/BasicDashboard');
+
+    expect(screen.getByRole('status', { name: /loading authentication state/i })).toBeInTheDocument();
+    expect(screen.queryByText('Forbidden Page')).not.toBeInTheDocument();
+  });
+
   test('renders GitHub connection prompt when enabled', async () => {
     mockAuthState = {
       currentUser: { id: 2, role: 'developer', token: 'test-token' },
       loading: false,
+      permissionsLoading: false,
       showGithubPrompt: true,
+      can: () => true,
     };
 
     renderAt('/BasicDashboard');

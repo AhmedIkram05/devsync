@@ -117,34 +117,20 @@ describe('GitHubIntegration page', () => {
     ).toBeInTheDocument();
   });
 
-  test('completes oauth callback and updates auth state', async () => {
-    const updatedUser = {
-      id: 7,
-      github_connected: true,
-      github_username: 'octocat',
-    };
-
+  test('ignores oauth code in URL — single owner is GitHubCallback', async () => {
     mockUseLocation.mockReturnValue({ search: '?code=abc123&state=state-1' });
 
-    githubService.checkConnection
-      .mockResolvedValueOnce({ connected: false, username: '' })
-      .mockResolvedValueOnce({ connected: true, username: 'octocat' });
-    githubService.getUserRepos.mockResolvedValue([{ id: 1, name: 'repo-one' }]);
-    authApi.updateGitHubStatus.mockReturnValue(updatedUser);
+    githubService.checkConnection.mockResolvedValue({ connected: false, username: '' });
+    githubService.getUserRepos.mockResolvedValue([]);
 
     render(<GitHubIntegration />);
 
-    await waitFor(() => {
-      expect(githubService.completeOAuthFlow).toHaveBeenCalledWith('abc123', 'state-1');
-    });
+    expect(
+      await screen.findByRole('heading', { name: 'Connect Your GitHub Account' })
+    ).toBeInTheDocument();
 
-    await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/github', { replace: true });
-    });
-
-    await waitFor(() => {
-      expect(setCurrentUser).toHaveBeenCalledWith(updatedUser);
-    });
+    expect(githubService.completeOAuthFlow).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalledWith('/github', { replace: true });
   });
 
   test('renders connected state with repositories and disconnects account', async () => {

@@ -22,6 +22,21 @@ const sanitizeProfile = (user) => {
   return clean;
 };
 
+// The GitHub connect prompt is shown at most once per browser session. Without
+// this, every /auth/me revalidation on a full page reload re-opened the modal
+// over the app for users who had already dismissed it (or are simply
+// navigating), which blocked the page behind a full-screen overlay.
+const GITHUB_PROMPT_SEEN_KEY = 'devsync_github_prompt_seen';
+const githubPromptSeen = () => {
+  try { return sessionStorage.getItem(GITHUB_PROMPT_SEEN_KEY) === '1'; } catch { return false; }
+};
+const markGithubPromptSeen = () => {
+  try { sessionStorage.setItem(GITHUB_PROMPT_SEEN_KEY, '1'); } catch { /* storage unavailable */ }
+};
+const clearGithubPromptSeen = () => {
+  try { sessionStorage.removeItem(GITHUB_PROMPT_SEEN_KEY); } catch { /* storage unavailable */ }
+};
+
 export const AuthProvider = ({ children }) => {
   // Try to load cached profile immediately to prevent flicker.
   // No tokens are stored — HttpOnly cookies carry the session.
@@ -53,10 +68,21 @@ export const AuthProvider = ({ children }) => {
   const [showGithubPrompt, setShowGithubPrompt] = useState(false);
   const [authInProgress, setAuthInProgress] = useState(false);
   const [permissions, setPermissions] = useState(initialUser?.permissions || []);
+  // True while the async GET /auth/permissions fetch is in flight. Route
+  // guards must wait for it — otherwise an authenticated user with
+  // permissions=[] (not yet loaded, or fetch failed) bounces to /forbidden.
+  const [permissionsLoading, setPermissionsLoading] = useState(
+    () => Boolean(initialUser && !(initialUser.permissions || []).length)
+  );
 
   // Keep a ref to track initialization
   const isInitialized = useRef(false);
   const reportWarmupKeyRef = useRef(null);
+  // Whether the mount-time cached profile already carried permissions — used to
+  // avoid re-gating the UI (spinner swap) on every reload when we already have them.
+  const hadCachedPermissionsRef = useRef(
+    Boolean(initialUser && (initialUser.permissions || []).length)
+  );
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -87,42 +113,63 @@ export const AuthProvider = ({ children }) => {
           setCurrentUser(user);
           if (user.permissions) {
             setPermissions(user.permissions);
+            setPermissionsLoading(false);
           } else {
-            // Fetch permissions via cookie session
-            fetch(`${process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000/api/v1' : '')}/auth/permissions`, {
-              credentials: 'include',
-            })
-                .then(res => res.json())
-                .then(data => {
-                  setPermissions(data.permissions || []);
-                  const updatedUser = sanitizeProfile({ ...user, permissions: data.permissions || [] });
-                  localStorage.setItem('user', JSON.stringify(updatedUser));
-                  setCurrentUser(updatedUser);
-                })
-                .catch(err => console.error("Failed to fetch permissions:", err));
+            // Fetch permissions via cookie session (awaited so loading covers
+            // the window where permissions would otherwise read as []).
+            // Only gate the UI when we don't already have permissions from the
+            // cached profile — re-flipping the gate on every reload swapped the
+            // mounted page for a spinner and remounted it, causing render churn.
+            if (!hadCachedPermissionsRef.current) {
+              setPermissionsLoading(true);
+            }
+            try {
+              const permRes = await fetch(`${process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000/api/v1' : '')}/auth/permissions`, {
+                credentials: 'include',
+              });
+              const data = await permRes.json();
+              setPermissions(data.permissions || []);
+              const updatedUser = sanitizeProfile({ ...user, permissions: data.permissions || [] });
+              localStorage.setItem('user', JSON.stringify(updatedUser));
+              setCurrentUser(updatedUser);
+            } catch (err) {
+              console.error("Failed to fetch permissions:", err);
+              setPermissions([]);
+            } finally {
+              setPermissionsLoading(false);
+            }
             }
             // Set GitHub connection status if available
             if ("github_connected" in user) {
               setGithubConnected(user.github_connected);
-              // Check if we should show the GitHub prompt
-              if (!user.github_connected) {
+              // Prompt at most once per session — a reload/revalidation must
+              // not re-open the modal over an already-dismissed prompt.
+              if (!user.github_connected && !githubPromptSeen()) {
+                markGithubPromptSeen();
                 setShowGithubPrompt(true);
               }
             }
           } else {
             // If verification fails, clear the user and redirect to login
             localStorage.removeItem("user");
+            setPermissions([]);
+            setPermissionsLoading(false);
             navigate("/login", { replace: true });
           }
       } catch (err) {
         // No valid cookie session — fall back to cached profile if present,
-        // otherwise clear and stay on public routes.
+        // otherwise clear and stay on public routes. Fail-closed on
+        // permissions in both cases so route guards stop waiting.
         const cached = authApi.getCurrentUser();
         if (cached && hasValidRole(cached)) {
           setCurrentUser(sanitizeProfile(cached));
+          setPermissions([]);
+          setPermissionsLoading(false);
         } else {
           console.error("Error validating session:", err);
           localStorage.removeItem("user");
+          setPermissions([]);
+          setPermissionsLoading(false);
         }
       } finally {
         setLoading(false);
@@ -179,6 +226,7 @@ export const AuthProvider = ({ children }) => {
         }
 
         // Fetch permissions via cookie session
+        setPermissionsLoading(true);
         try {
           const permRes = await fetch(`${process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000/api/v1' : '')}/auth/permissions`, {
             credentials: 'include',
@@ -189,6 +237,9 @@ export const AuthProvider = ({ children }) => {
         } catch (err) {
           console.error("Failed to fetch permissions during login:", err);
           profile.permissions = [];
+          setPermissions([]);
+        } finally {
+          setPermissionsLoading(false);
         }
 
         // Save to localStorage first to ensure persistence
@@ -200,9 +251,13 @@ export const AuthProvider = ({ children }) => {
         const isGithubConnected = profile.github_connected || false;
         setGithubConnected(isGithubConnected);
         
-        // If user is not connected to GitHub, show the prompt after redirection
+        // If user is not connected to GitHub, show the prompt after redirection.
+        // A fresh login is a new prompt opportunity, so reset the per-session
+        // guard; mark it immediately (not inside the timeout) so a fast reload
+        // can't re-open the modal behind the user.
         if (!isGithubConnected) {
-          // Set a timeout to show GitHub prompt shortly after navigating to dashboard
+          clearGithubPromptSeen();
+          markGithubPromptSeen();
           setTimeout(() => {
             setShowGithubPrompt(true);
           }, 500);
@@ -268,8 +323,10 @@ export const AuthProvider = ({ children }) => {
       localStorage.removeItem("user");
       setCurrentUser(null);
       setPermissions([]);
+      setPermissionsLoading(false);
       setGithubConnected(false);
       setShowGithubPrompt(false);
+      clearGithubPromptSeen();
       setAuthInProgress(false);
       navigate("/login", { replace: true });
     }
@@ -311,103 +368,11 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Check if we're returning from a GitHub OAuth flow
-  useEffect(() => {
-    // Helper function to determine if we're on a GitHub callback route
-    const isGitHubCallbackRoute = () => {
-      const callbackPaths = [
-        '/github/callback',
-        '/api/github/callback',
-        '/api/v1/github/callback'
-      ];
-      
-      return callbackPaths.some(path => location.pathname.includes(path));
-    };
-
-    // Check if we're returning from GitHub OAuth based on URL parameters
-    const urlParams = new URLSearchParams(location.search);
-    const code = urlParams.get('code');
-    const state = urlParams.get('state');
-    const githubSuccess = urlParams.get('github_success');
-    const githubUsername = urlParams.get('github_username');
-    const userId = urlParams.get('user_id');
-    
-    // Handle explicit success parameters (our custom format)
-    if (githubSuccess === 'true' && githubUsername && userId) {
-      setError(null); // Clear any errors
-      
-      // Update the user in localStorage with GitHub connection status
-      const user = authApi.getCurrentUser();
-      if (user && user.id && user.id.toString() === userId.toString()) {
-        // Update the user object with GitHub connection info
-        const updatedUser = {
-          ...user,
-          github_connected: true,
-          github_username: githubUsername
-        };
-        
-        // Save back to localStorage
-        localStorage.setItem("user", JSON.stringify(updatedUser));
-        
-        // Update context state
-        updateUser(updatedUser);
-        
-        // Set GitHub connected flag
-        setGithubConnected(true);
-        setShowGithubPrompt(false);
-        
-        // Remove GitHub OAuth parameters from URL to prevent duplicate processing
-        navigate(location.pathname.split('?')[0], { replace: true });
-      }
-    }
-    // Handle GitHub OAuth code callback
-    else if (code && state && (isGitHubCallbackRoute() || location.pathname.includes('/github'))) {
-      (async () => {
-        try {
-          setAuthInProgress(true);
-          
-          // Exchange the code for a token at the backend
-          const result = await githubService.completeOAuthFlow(code);
-          
-          if (result && result.success) {
-            // Get the current user
-            const user = authApi.getCurrentUser();
-            if (user) {
-              // Update user with GitHub info
-              const updatedUser = {
-                ...user,
-                github_connected: true,
-                github_username: result.github_username || ''
-              };
-              
-              // Save to localStorage and update state
-              localStorage.setItem("user", JSON.stringify(updatedUser));
-              updateUser(updatedUser);
-              setGithubConnected(true);
-              setShowGithubPrompt(false);
-            }
-          }
-          
-          // Clean up URL
-          navigate('/github', { replace: true });
-        } catch (error) {
-          console.error("Error completing GitHub OAuth flow:", error);
-          setError("Failed to complete GitHub connection. Please try again.");
-        } finally {
-          setAuthInProgress(false);
-        }
-      })();
-    }
-    
-    // Check for error parameter
-    const errorMsg = urlParams.get('error');
-    if (errorMsg) {
-      setError(`GitHub connection error: ${errorMsg}`);
-    }
-  }, [location.pathname, location.search, navigate]);
-  
   const currentUserId = currentUser?.id;
   const currentGithubConnected = Boolean(currentUser?.github_connected);
+
+  // Display-only GitHub status: verify the server connection when the user
+  // changes. OAuth code exchange lives solely in GitHubCallback.jsx.
 
   // Check GitHub connection status when user changes - verify with server to detect stale state
   useEffect(() => {
@@ -485,6 +450,7 @@ export const AuthProvider = ({ children }) => {
     currentUser,
     setCurrentUser: updateUser,
     permissions,
+    permissionsLoading,
     can,
     is,
     login,

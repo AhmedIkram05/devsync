@@ -90,9 +90,27 @@ describe('Auth flow pages', () => {
       }
     }).as('meReq');
 
+    // Permissions gate both the AppRoutes/ProtectedRoute spinner
+    // (loading || permissionsLoading) and /BasicDashboard, which requires
+    // can_view_tasks — without this the login lands on /forbidden.
+    cy.intercept('GET', '**/api/v1/auth/permissions', (req) => {
+      if (authed) {
+        req.reply({
+          statusCode: 200,
+          body: {
+            role: 'developer',
+            permissions: ['can_view_tasks', 'can_update_assigned_tasks', 'can_comment_on_tasks', 'can_view_notifications', 'can_link_github_account'],
+          },
+        });
+      } else {
+        req.reply({ statusCode: 401, body: { message: 'Unauthorized' } });
+      }
+    }).as('permissionsReq');
+
     // Mocks for dashboard entry
     cy.intercept('GET', '**/api/v1/dashboard/client', { statusCode: 200, body: { tasks: { total: 0 }, repositories: [] } });
     cy.intercept('GET', '**/api/v1/github/status', { statusCode: 200, body: { connected: false } });
+    cy.intercept('GET', '**/api/v1/notifications', { statusCode: 200, body: [] });
 
     // 2. Perform Login
     cy.visit('/login');

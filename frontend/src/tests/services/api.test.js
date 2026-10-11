@@ -265,10 +265,22 @@ describe('api utilities', () => {
     await expect(githubService.initiateOAuthFlow()).rejects.toThrow('Could not get GitHub authorization URL');
 
     const authUrl = await githubService.initiateOAuthFlow();
-    const callbackResult = await githubService.completeOAuthFlow('code-123');
+
+    // Insecure {code}-only path is gone: missing state throws before any fetch.
+    await expect(githubService.completeOAuthFlow('code-123')).rejects.toThrow(
+      'Security validation failed. Please try connecting to GitHub again.'
+    );
+    await expect(githubService.completeOAuthFlow('code-123', '')).rejects.toThrow(
+      'Security validation failed. Please try connecting to GitHub again.'
+    );
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+
+    const callbackResult = await githubService.completeOAuthFlow('code-123', 'state-123');
 
     expect(authUrl).toBe('https://github.com/oauth');
     expect(callbackResult).toEqual({ success: true, linked: true });
+    const [, callbackOptions] = global.fetch.mock.calls[2];
+    expect(JSON.parse(callbackOptions.body)).toEqual({ code: 'code-123', state: 'state-123' });
   });
 
   test('githubService utility methods map expected shapes', () => {
@@ -799,7 +811,13 @@ describe('api utilities', () => {
 
   test('fetchWithAuth timeout causes connection-like re-throw', async () => {
     jest.useFakeTimers();
-    global.fetch.mockImplementation(() => new Promise(() => {})); // never resolves
+    global.fetch.mockImplementation((url, options = {}) => new Promise((resolve, reject) => {
+      options.signal?.addEventListener('abort', () => {
+        const abortError = new Error('The operation was aborted.');
+        abortError.name = 'AbortError';
+        reject(abortError);
+      });
+    })); // hangs until the AbortController deadline fires
 
     const promise = fetchWithAuth('tasks');
     jest.advanceTimersByTime(8001);

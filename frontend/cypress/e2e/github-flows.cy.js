@@ -3,13 +3,43 @@
 
 describe('GitHub Connect Flows', () => {
   beforeEach(() => {
-    cy.intercept('POST', '**/api/v1/auth/login', {
-      statusCode: 200,
-      body: {
-        token: 'dev-token',
-        user: { id: 3, name: 'Dev', email: 'dev@example.com', role: 'developer', github_connected: false }
-      }
+    const devUser = { id: 3, name: 'Dev', email: 'dev@example.com', role: 'developer', github_connected: false };
+    // 401 until login succeeds so /login renders the form first; afterwards
+    // 200 so AppRoutes clears the permissionsLoading spinner on reloads.
+    let authed = false;
+
+    cy.intercept('POST', '**/api/v1/auth/login', (req) => {
+      authed = true;
+      req.reply({
+        statusCode: 200,
+        body: {
+          token: 'dev-token',
+          user: devUser
+        }
+      });
     }).as('loginReq');
+
+    cy.intercept('GET', '**/api/v1/auth/me', (req) => {
+      if (authed) {
+        req.reply({ statusCode: 200, body: { user: devUser, exp: 9999999999 } });
+      } else {
+        req.reply({ statusCode: 401, body: { message: 'Unauthorized' } });
+      }
+    }).as('meReq');
+
+    cy.intercept('GET', '**/api/v1/auth/permissions', (req) => {
+      if (authed) {
+        req.reply({
+          statusCode: 200,
+          body: {
+            role: 'developer',
+            permissions: ['can_view_tasks', 'can_link_github_account', 'can_view_notifications']
+          }
+        });
+      } else {
+        req.reply({ statusCode: 401, body: { message: 'Unauthorized' } });
+      }
+    }).as('permissionsReq');
 
     cy.intercept('GET', '**/api/v1/github/status', {
       statusCode: 200,
@@ -59,8 +89,15 @@ describe('GitHub Connect Flows', () => {
 
     cy.intercept('GET', '**/api/v1/dashboard/client', { statusCode: 200, body: { tasks: { total: 0 }, repositories: [] } });
 
-    // Visit the callback URL with code
-    cy.visit('/github/callback?code=mock_code&state=mock_state');
+    // Strict OAuth state: seed the exact sessionStorage entries the app
+    // validates (exact match + 10min TTL, single-use) before visiting —
+    // without them completeOAuthFlow throws before any network call.
+    cy.visit('/github/callback?code=mock_code&state=mock_state', {
+      onBeforeLoad(win) {
+        win.sessionStorage.setItem('github_oauth_state', 'mock_state');
+        win.sessionStorage.setItem('github_oauth_state_ts', String(Date.now()));
+      },
+    });
 
     cy.wait('@githubCallback');
     // Ensure we redirect to /github integrations view

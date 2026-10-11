@@ -29,8 +29,14 @@ describe('fetchWithAuth additional branches', () => {
   });
 
   test('rejects with timeout error when fetch takes too long', async () => {
-    // fetch that never resolves
-    global.fetch = jest.fn(() => new Promise(() => {}));
+    // signal-aware mock: real fetch rejects with AbortError on abort
+    global.fetch = jest.fn((url, options = {}) => new Promise((resolve, reject) => {
+      options.signal?.addEventListener('abort', () => {
+        const abortError = new Error('The operation was aborted.');
+        abortError.name = 'AbortError';
+        reject(abortError);
+      });
+    }));
 
     await expect(fetchWithAuth('/test', { timeout: 1 })).rejects.toThrow('Request timeout');
   });
@@ -102,7 +108,7 @@ describe('fetchWithAuth additional branches', () => {
     expect(res).toHaveProperty('error');
   });
 
-  test('403 forbidden redirects to /forbidden page', async () => {
+  test('403 forbidden throws typed error without navigating', async () => {
     const resp = {
       status: 403,
       ok: false,
@@ -121,8 +127,11 @@ describe('fetchWithAuth additional branches', () => {
 
     await expect(fetchWithAuth('/test')).rejects.toMatchObject({
       isAuthError: true,
+      isForbidden: true,
+      redirectTo: '/forbidden',
       message: expect.stringMatching(/Forbidden/)
     });
+    expect(setHref).not.toHaveBeenCalled();
   });
 
   test('429 rate limit error includes retryAfter', async () => {
@@ -169,5 +178,83 @@ describe('fetchWithAuth additional branches', () => {
 
     const res = await fetchWithAuth('/test');
     expect(res).toEqual({ id: 1, name: 'test' });
+  });
+
+  test('401 triggers refresh and retries once with success', async () => {
+    const jsonHeaders = { get: () => 'application/json' };
+    let dataCalls = 0;
+    global.fetch = jest.fn((url) => {
+      if (String(url).includes('/auth/refresh')) {
+        return Promise.resolve({ status: 200, ok: true, headers: { get: () => null } });
+      }
+      dataCalls += 1;
+      if (dataCalls === 1) {
+        return Promise.resolve({ status: 401, ok: false, headers: jsonHeaders });
+      }
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        headers: jsonHeaders,
+        json: async () => ({ id: 1, name: 'retried' })
+      });
+    });
+
+    const res = await fetchWithAuth('/test');
+    expect(res).toEqual({ id: 1, name: 'retried' });
+
+    const refreshCalls = global.fetch.mock.calls.filter(([u]) => String(u).includes('/auth/refresh'));
+    expect(refreshCalls).toHaveLength(1);
+    expect(refreshCalls[0][1].credentials).toBe('include');
+
+    const retryCall = global.fetch.mock.calls[global.fetch.mock.calls.length - 1];
+    expect(retryCall[1].__authRetried).toBe(true);
+  });
+
+  test('401 when refresh fails throws auth error without retry loop', async () => {
+    const jsonHeaders = { get: () => 'application/json' };
+    global.fetch = jest.fn((url) => {
+      if (String(url).includes('/auth/refresh')) {
+        return Promise.resolve({ status: 401, ok: false, headers: jsonHeaders });
+      }
+      return Promise.resolve({ status: 401, ok: false, headers: jsonHeaders });
+    });
+
+    await expect(fetchWithAuth('/test')).rejects.toMatchObject({
+      status: 401,
+      isAuthError: true
+    });
+
+    const dataCalls = global.fetch.mock.calls.filter(([u]) => !String(u).includes('/auth/refresh'));
+    expect(dataCalls).toHaveLength(1);
+  });
+
+  test('concurrent 401s share a single in-flight refresh', async () => {
+    const jsonHeaders = { get: () => 'application/json' };
+    let dataCalls = 0;
+    let refreshCalls = 0;
+    global.fetch = jest.fn((url) => {
+      if (String(url).includes('/auth/refresh')) {
+        refreshCalls += 1;
+        return new Promise((resolve) => setTimeout(
+          () => resolve({ status: 200, ok: true, headers: { get: () => null } }),
+          20
+        ));
+      }
+      dataCalls += 1;
+      if (dataCalls <= 2) {
+        return Promise.resolve({ status: 401, ok: false, headers: jsonHeaders });
+      }
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        headers: jsonHeaders,
+        json: async () => ({ ok: true })
+      });
+    });
+
+    const [a, b] = await Promise.all([fetchWithAuth('/test'), fetchWithAuth('/test')]);
+    expect(a).toEqual({ ok: true });
+    expect(b).toEqual({ ok: true });
+    expect(refreshCalls).toBe(1);
   });
 });
