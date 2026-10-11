@@ -41,11 +41,16 @@ const githubService = {
     return response.authorization_url;
   },
 
-  // Complete OAuth flow with code
-  completeOAuthFlow: async (code) => {
+  // Complete OAuth flow — back-compat forward to the strict contract.
+  // Requires code+state; throws before any network call if state is missing
+  // so the insecure {code}-only path can never reach the backend.
+  completeOAuthFlow: async (code, state) => {
+    if (!code || !state) {
+      throw new Error('Security validation failed. Please try connecting to GitHub again.');
+    }
     return await fetchWithAuth('github/callback', {
       method: 'POST',
-      body: JSON.stringify({ code })
+      body: JSON.stringify({ code, state })
     });
   },
 

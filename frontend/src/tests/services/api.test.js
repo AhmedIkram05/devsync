@@ -265,10 +265,22 @@ describe('api utilities', () => {
     await expect(githubService.initiateOAuthFlow()).rejects.toThrow('Could not get GitHub authorization URL');
 
     const authUrl = await githubService.initiateOAuthFlow();
-    const callbackResult = await githubService.completeOAuthFlow('code-123');
+
+    // Insecure {code}-only path is gone: missing state throws before any fetch.
+    await expect(githubService.completeOAuthFlow('code-123')).rejects.toThrow(
+      'Security validation failed. Please try connecting to GitHub again.'
+    );
+    await expect(githubService.completeOAuthFlow('code-123', '')).rejects.toThrow(
+      'Security validation failed. Please try connecting to GitHub again.'
+    );
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+
+    const callbackResult = await githubService.completeOAuthFlow('code-123', 'state-123');
 
     expect(authUrl).toBe('https://github.com/oauth');
     expect(callbackResult).toEqual({ success: true, linked: true });
+    const [, callbackOptions] = global.fetch.mock.calls[2];
+    expect(JSON.parse(callbackOptions.body)).toEqual({ code: 'code-123', state: 'state-123' });
   });
 
   test('githubService utility methods map expected shapes', () => {

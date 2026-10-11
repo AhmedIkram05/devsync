@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 
 import GitHubCallback from '../../pages/GitHubCallback';
 import { githubService, OAUTH_STATE_TTL_MS } from '../../services/github';
+import { githubService as legacyGithubService } from '../../services/utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { authApi } from '../../services/utils/auth';
 
@@ -138,5 +139,22 @@ describe('GitHubCallback OAuth single-owner strict state', () => {
     expect(url).toContain('/api/v1/github/callback');
     expect(JSON.parse(options.body)).toEqual({ code: 'oauth-code', state: 'oauth-state' });
     expect(await screen.findByText(/GitHub connected successfully!/i)).toBeInTheDocument();
+  });
+
+  test('legacy utils/api shim requires state (insecure code-only path gone)', async () => {
+    global.fetch.mockResolvedValue(jsonResponse({ success: true }));
+
+    await expect(legacyGithubService.completeOAuthFlow('code-123')).rejects.toThrow(
+      'Security validation failed. Please try connecting to GitHub again.'
+    );
+    await expect(legacyGithubService.completeOAuthFlow('code-123', '')).rejects.toThrow(
+      'Security validation failed. Please try connecting to GitHub again.'
+    );
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    const result = await legacyGithubService.completeOAuthFlow('code-123', 'state-123');
+    expect(result).toEqual({ success: true });
+    const [, options] = global.fetch.mock.calls[0];
+    expect(JSON.parse(options.body)).toEqual({ code: 'code-123', state: 'state-123' });
   });
 });
