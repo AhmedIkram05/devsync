@@ -7,6 +7,7 @@ let mockAuthState = {
   currentUser: null,
   loading: false,
   showGithubPrompt: false,
+  can: () => false,
 };
 
 jest.mock('../context/AuthContext', () => ({
@@ -52,6 +53,7 @@ describe('App route access controls', () => {
       currentUser: null,
       loading: false,
       showGithubPrompt: false,
+      can: () => false,
     };
     window.history.pushState({}, '', '/');
   });
@@ -84,6 +86,7 @@ describe('App route access controls', () => {
       currentUser: { id: 1, role: 'admin', token: 'test-token' },
       loading: false,
       showGithubPrompt: false,
+      can: () => true,
     };
 
     renderAt('/login');
@@ -96,6 +99,7 @@ describe('App route access controls', () => {
       currentUser: { id: 2, role: 'developer', token: 'test-token' },
       loading: false,
       showGithubPrompt: false,
+      can: () => true,
     };
 
     renderAt('/admin');
@@ -108,6 +112,7 @@ describe('App route access controls', () => {
       currentUser: { id: 1, role: 'admin', token: 'test-token' },
       loading: false,
       showGithubPrompt: false,
+      can: () => true,
     };
 
     renderAt('/');
@@ -120,6 +125,7 @@ describe('App route access controls', () => {
       currentUser: { id: 2, role: 'developer', token: 'test-token' },
       loading: false,
       showGithubPrompt: false,
+      can: () => true,
     };
 
     renderAt('/');
@@ -127,11 +133,25 @@ describe('App route access controls', () => {
     expect(await screen.findByText('Client Dashboard Page')).toBeInTheDocument();
   });
 
+  test('denies task creation route without can_create_tasks permission', async () => {
+    mockAuthState = {
+      currentUser: { id: 2, role: 'developer', token: 'test-token' },
+      loading: false,
+      showGithubPrompt: false,
+      can: (permission) => permission !== 'can_create_tasks',
+    };
+
+    renderAt('/admin/create-task');
+
+    expect(await screen.findByText('Forbidden Page')).toBeInTheDocument();
+  });
+
   test('renders GitHub connection prompt when enabled', async () => {
     mockAuthState = {
       currentUser: { id: 2, role: 'developer', token: 'test-token' },
       loading: false,
       showGithubPrompt: true,
+      can: () => true,
     };
 
     renderAt('/BasicDashboard');

@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { adminUserService } from '../services/utils/api';
 import { useAuth } from '../context/AuthContext';
-import { ROLES } from '../utils/rbac';
+import { PERMISSIONS, ROLES } from '../utils/rbac';
 
 const AdminUsers = () => {
-  const { currentUser, is } = useAuth();
-  const isAdmin = is('admin');
+  const { currentUser, can, is } = useAuth();
+  const canManageUsers = typeof can === 'function'
+    ? can(PERMISSIONS.CAN_MANAGE_USERS)
+    : (typeof is === 'function' ? is('admin') : currentUser?.role === 'admin');
   const [users, setUsers] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -51,7 +53,7 @@ const AdminUsers = () => {
   }, [searchTerm, roleFilter, users]);
 
   const handleRoleChange = async (userId, newRole) => {
-    if (!isAdmin) return;
+    if (!canManageUsers) return;
     try {
       setError('');
       await adminUserService.updateUserRole(userId, newRole);
@@ -78,7 +80,7 @@ const AdminUsers = () => {
   };
 
   const handleEditSave = async () => {
-    if (!editingUser || !isAdmin) return;
+    if (!editingUser || !canManageUsers) return;
     try {
       setError('');
       await adminUserService.updateUser(editingUser.id, editForm);
@@ -94,7 +96,7 @@ const AdminUsers = () => {
   };
 
   const handleDelete = async (userId) => {
-    if (!isAdmin) return;
+    if (!canManageUsers) return;
     try {
       setError('');
       await adminUserService.deleteUser(userId);
@@ -121,7 +123,7 @@ const AdminUsers = () => {
       <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
         <div className="flex justify-between items-center mb-10">
           <h1 className="text-2xl font-bold text-slate-100">User Management</h1>
-          {isAdmin && (
+          {canManageUsers && (
             <button
               onClick={() => setShowCreateModal(true)}
               className="px-4 py-2 rounded-lg bg-rose-500/90 text-white font-semibold hover:bg-rose-400 transition"
@@ -175,7 +177,7 @@ const AdminUsers = () => {
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Email</th>
                   <th className="px-4 py-3">Role</th>
-                  {isAdmin && <th className="px-4 py-3 text-right">Actions</th>}
+                  {canManageUsers && <th className="px-4 py-3 text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -185,7 +187,7 @@ const AdminUsers = () => {
                     <td className="px-4 py-3">{user.name}</td>
                     <td className="px-4 py-3 text-sm text-slate-300">{user.email}</td>
                     <td className="px-4 py-3">
-                      {!isAdmin || user.id === currentUser?.id ? (
+                      {!canManageUsers || user.id === currentUser?.id ? (
                         <span className={`text-xs px-2 py-1 rounded border ${roleBadge(user.role)}`}>
                           {user.role}
                         </span>
@@ -201,7 +203,7 @@ const AdminUsers = () => {
                         </select>
                       )}
                     </td>
-                    {isAdmin && (
+                    {canManageUsers && (
                       <td className="px-4 py-3 text-right space-x-2">
                         <button
                           onClick={() => {
@@ -226,7 +228,7 @@ const AdminUsers = () => {
                 ))}
                 {filteredUsers.length === 0 && (
                   <tr>
-                    <td colSpan={isAdmin ? 5 : 4} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={canManageUsers ? 5 : 4} className="px-4 py-8 text-center text-slate-500">
                       No users found.
                     </td>
                   </tr>

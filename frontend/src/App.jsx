@@ -24,6 +24,7 @@ import Forbidden from './pages/Forbidden';
 import AdminUsers from './pages/AdminUsers';
 import AdminSystemSettings from './pages/AdminSystemSettings';
 import AdminAuditLogs from './pages/AdminAuditLogs';
+import { PERMISSIONS } from './utils/rbac';
 
 const ROLES = {
   DEVELOPER: 'developer',
@@ -31,9 +32,7 @@ const ROLES = {
   ADMIN: 'admin',
 };
 
-const MEMBER_ROLES = [ROLES.DEVELOPER, ROLES.TEAM_LEAD];
 const AUTHENTICATED_ROLES = [ROLES.DEVELOPER, ROLES.TEAM_LEAD, ROLES.ADMIN];
-const TASK_CREATOR_ROLES = [ROLES.DEVELOPER, ROLES.TEAM_LEAD, ROLES.ADMIN];
 const TEAM_LEAD_OR_ADMIN = [ROLES.TEAM_LEAD, ROLES.ADMIN];
 
 // Team Leads should see the basic developer dashboard by default.
@@ -67,7 +66,9 @@ const ProtectedRoute = ({ children, allowedRoles = [], requiredPermission = null
   }
 
   // If requiredPermission is specified, check if user has the permission
-  if (requiredPermission && !can(requiredPermission)) {
+  // (permissions come from GET /auth/permissions -> {"role", "permissions"}).
+  const canFn = typeof can === 'function' ? can : () => false;
+  if (requiredPermission && !canFn(requiredPermission)) {
     console.log(`User lacks permission ${requiredPermission} for this route`);
     return <Navigate to="/forbidden" replace />;
   }
@@ -127,19 +128,19 @@ function AppRoutes() {
         
         {/* Developer and Team Lead Routes */}
         <Route path="/BasicDashboard" element={
-          <ProtectedRoute allowedRoles={MEMBER_ROLES}>
+          <ProtectedRoute requiredPermission={PERMISSIONS.CAN_VIEW_TASKS}>
             <BasicDashboard />
           </ProtectedRoute>
         } />
-        
+
         <Route path="/dashboard/client" element={
-          <ProtectedRoute allowedRoles={MEMBER_ROLES}>
+          <ProtectedRoute requiredPermission={PERMISSIONS.CAN_VIEW_TASKS}>
             <BasicDashboard />
           </ProtectedRoute>
         } />
-        
+
         <Route path="/TaskDetailUser/:id" element={
-          <ProtectedRoute allowedRoles={MEMBER_ROLES}>
+          <ProtectedRoute requiredPermission={PERMISSIONS.CAN_VIEW_TASKS}>
             <TaskDetailsUser />
           </ProtectedRoute>
         } />
@@ -194,7 +195,7 @@ function AppRoutes() {
         } />
         
         <Route path="/admin/create-task" element={
-          <ProtectedRoute allowedRoles={TASK_CREATOR_ROLES}>
+          <ProtectedRoute requiredPermission={PERMISSIONS.CAN_CREATE_TASKS}>
             <TaskCreation />
           </ProtectedRoute>
         } />
@@ -230,19 +231,19 @@ function AppRoutes() {
         } />
 
         <Route path="/admin/users" element={
-          <ProtectedRoute allowedRoles={TEAM_LEAD_OR_ADMIN}>
+          <ProtectedRoute allowedRoles={TEAM_LEAD_OR_ADMIN} requiredPermission={PERMISSIONS.CAN_MANAGE_USERS}>
             <AdminUsers />
           </ProtectedRoute>
         } />
 
         <Route path="/admin/settings" element={
-          <ProtectedRoute allowedRoles={['admin']}>
+          <ProtectedRoute allowedRoles={['admin']} requiredPermission={PERMISSIONS.CAN_MANAGE_SYSTEM_SETTINGS}>
             <AdminSystemSettings />
           </ProtectedRoute>
         } />
 
         <Route path="/admin/audit-logs" element={
-          <ProtectedRoute allowedRoles={['admin']}>
+          <ProtectedRoute allowedRoles={['admin']} requiredPermission={PERMISSIONS.CAN_VIEW_AUDIT_LOGS}>
             <AdminAuditLogs />
           </ProtectedRoute>
         } />
