@@ -1,4 +1,4 @@
-import { csrfHeaders } from '../utils/auth';
+import { fetchWithAuth } from '../utils/api';
 
 const API_BASE_URL = (() => {
   const configuredBaseUrl = process.env.REACT_APP_API_URL;
@@ -13,42 +13,7 @@ const API_BASE_URL = (() => {
 
 const BASE_URL = `${API_BASE_URL}/github`;
 
-// Helper function for making cookie-authenticated fetch requests
-const fetchWithAuth = async (url, options = {}) => {
-  const sanitizedOptionHeaders = { ...(options.headers || {}) };
-  Object.keys(sanitizedOptionHeaders).forEach((key) => {
-    if (key.toLowerCase() === 'authorization') {
-      delete sanitizedOptionHeaders[key];
-    }
-  });
-  const headers = {
-    'Content-Type': 'application/json',
-    ...csrfHeaders(),
-    ...sanitizedOptionHeaders
-  };
-
-  const fetchOptions = {
-    ...options,
-    headers,
-    credentials: 'include'
-  };
-
-  const response = await fetch(url, fetchOptions);
-  
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    const error = new Error(errorData.message || `HTTP error ${response.status}`);
-    error.status = response.status;
-    error.data = errorData;
-    throw error;
-  }
-  
-  if (response.status !== 204) { // No Content
-    return await response.json();
-  }
-  
-  return {};
-};
+export { fetchWithAuth };
 
 export const githubApi = {
   // Initialize GitHub OAuth flow

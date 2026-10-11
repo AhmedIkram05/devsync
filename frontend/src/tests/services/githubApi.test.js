@@ -105,7 +105,8 @@ describe('githubApi service', () => {
 
     await expect(githubApi.getRepositories()).rejects.toMatchObject({
       status: 403,
-      message: 'Forbidden',
+      isAuthError: true,
+      message: expect.stringMatching(/Forbidden/),
     });
   });
 

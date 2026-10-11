@@ -11,10 +11,18 @@ import { authApi } from '../../services/utils/auth';
   },
 }));
 
-const jsonResponse = (payload, status = 200) => ({
+const jsonResponse = (payload, status = 200, contentType = 'application/json') => ({
   ok: status >= 200 && status < 300,
   status,
   json: jest.fn().mockResolvedValue(payload),
+  headers: {
+    get: (name) => {
+      if (String(name || '').toLowerCase() === 'content-type') {
+        return contentType;
+      }
+      return null;
+    },
+  },
 });
 
 describe('githubService', () => {
@@ -124,18 +132,34 @@ describe('githubService', () => {
   });
 
   test('fetchWithAuth retries once after 401 with cookie refresh', async () => {
-    global.fetch
-      .mockResolvedValueOnce(jsonResponse({ message: 'unauthorized' }, 401))
-      .mockResolvedValueOnce(jsonResponse({ connected: true }, 200));
+    const jsonHeaders = { get: () => 'application/json' };
+    let dataCalls = 0;
+    global.fetch = jest.fn((url) => {
+      if (String(url).includes('/auth/refresh')) {
+        return Promise.resolve({ status: 200, ok: true, headers: { get: () => null } });
+      }
+      dataCalls += 1;
+      if (dataCalls === 1) {
+        return Promise.resolve({ status: 401, ok: false, headers: jsonHeaders });
+      }
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        headers: jsonHeaders,
+        json: async () => ({ connected: true }),
+      });
+    });
 
     const result = await githubService.checkConnectionStatus();
 
     expect(result.connected).toBe(true);
-    expect(authApi.refreshToken).toHaveBeenCalledTimes(1);
-    expect(global.fetch).toHaveBeenCalledTimes(2);
+    const refreshCalls = global.fetch.mock.calls.filter(([u]) => String(u).includes('/auth/refresh'));
+    expect(refreshCalls).toHaveLength(1);
+    expect(refreshCalls[0][1].method).toBe('POST');
+    expect(refreshCalls[0][1].credentials).toBe('include');
 
-    const secondCall = global.fetch.mock.calls[1];
-    expect(secondCall[1].__tokenRefreshAttempted).toBe(true);
+    const retryCall = global.fetch.mock.calls[global.fetch.mock.calls.length - 1];
+    expect(retryCall[1].__authRetried).toBe(true);
   });
 
   test('addRepository surfaces rate-limit responses as thrown errors', async () => {
@@ -147,7 +171,8 @@ describe('githubService', () => {
       githubService.addRepository({ owner: 'org', repo: 'name' })
     ).rejects.toMatchObject({
       status: 403,
-      message: 'GitHub API rate limit exceeded',
+      isAuthError: true,
+      message: expect.stringMatching(/Forbidden/),
     });
   });
 
@@ -160,8 +185,8 @@ describe('githubService', () => {
       githubService.addRepository({ owner: 'org', repo: 'name' })
     ).rejects.toMatchObject({
       status: 500,
-      isServerError: true,
-      message: 'Server Error: backend unavailable',
+      message: 'backend unavailable',
+      data: { message: 'backend unavailable' },
     });
   });
 
@@ -217,15 +242,14 @@ describe('githubService', () => {
     expect(githubService.handleServerError({ status: 404 })).toBeNull();
   });
 
-  test('fetchWithAuth refreshes cookie session proactively when isTokenExpired is true', async () => {
-    authApi.isTokenExpired.mockReturnValue(true);
-    authApi.refreshToken.mockResolvedValue({ id: 7, email: 'dev@example.com' });
+  test('fetchWithAuth sends cookie session without proactive refresh', async () => {
     global.fetch.mockResolvedValue(jsonResponse({ connected: true }));
 
     const result = await githubService.checkConnectionStatus();
 
-    expect(authApi.refreshToken).toHaveBeenCalled();
     expect(result).toEqual({ connected: true });
+    const refreshCalls = global.fetch.mock.calls.filter(([u]) => String(u).includes('/auth/refresh'));
+    expect(refreshCalls).toHaveLength(0);
     const [, options] = global.fetch.mock.calls[0];
     expect(options.headers.Authorization).toBeUndefined();
     expect(options.credentials).toBe('include');
@@ -244,10 +268,13 @@ describe('githubService', () => {
 
   test('fetchWithAuth handles 401 when token refresh also fails and method re-throws', async () => {
     // addRepository propagates errors (unlike checkConnectionStatus which catches them)
-    authApi.refreshToken.mockRejectedValue(new Error('refresh down'));
-    global.fetch
-      .mockResolvedValueOnce(jsonResponse({ message: 'unauthorized' }, 401))
-      .mockResolvedValueOnce(jsonResponse({ message: 'still unauthorized' }, 401));
+    const jsonHeaders = { get: () => 'application/json' };
+    global.fetch = jest.fn((url) => {
+      if (String(url).includes('/auth/refresh')) {
+        return Promise.resolve({ status: 401, ok: false, headers: jsonHeaders });
+      }
+      return Promise.resolve({ status: 401, ok: false, headers: jsonHeaders });
+    });
 
     await expect(githubService.addRepository({ owner: 'x', repo: 'y' })).rejects.toMatchObject({
       status: 401,
@@ -255,19 +282,27 @@ describe('githubService', () => {
     });
   });
 
-  test('fetchWithAuth skips second refresh when __tokenRefreshAttempted already set', async () => {
+  test('fetchWithAuth skips second refresh when __authRetried already set', async () => {
     // First call: 401 → triggers refresh → second call also 401 → throws authError (no further refresh)
-    authApi.refreshToken.mockResolvedValue({ id: 7, token: 'tok-2' });
-    global.fetch
-      .mockResolvedValueOnce(jsonResponse({ message: 'unauthorized' }, 401)) // original request
-      .mockResolvedValueOnce(jsonResponse({ message: 'still unauthorized' }, 401)); // retry
+    const jsonHeaders = { get: () => 'application/json' };
+    global.fetch = jest.fn((url, options) => {
+      if (String(url).includes('/auth/refresh')) {
+        return Promise.resolve({ status: 200, ok: true, headers: { get: () => null } });
+      }
+      if (options?.__authRetried) {
+        return Promise.resolve({ status: 401, ok: false, headers: jsonHeaders });
+      }
+      return Promise.resolve({ status: 401, ok: false, headers: jsonHeaders });
+    });
 
     await expect(githubService.addRepository({ owner: 'x', repo: 'y' })).rejects.toMatchObject({
       status: 401,
       isAuthError: true,
     });
-    // refreshToken called exactly once (not again on the retry)
-    expect(authApi.refreshToken).toHaveBeenCalledTimes(1);
+    // refresh via fetch POST /auth/refresh called exactly once (not again on the retry)
+    const refreshCalls = global.fetch.mock.calls.filter(([u]) => String(u).includes('/auth/refresh'));
+    expect(refreshCalls).toHaveLength(1);
+    expect(refreshCalls[0][1].method).toBe('POST');
   });
 
   test('fetchWithAuth handles 403 rate-limit — method that propagates (linkTaskWithGitHub)', async () => {

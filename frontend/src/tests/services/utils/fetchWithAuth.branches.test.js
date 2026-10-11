@@ -170,4 +170,82 @@ describe('fetchWithAuth additional branches', () => {
     const res = await fetchWithAuth('/test');
     expect(res).toEqual({ id: 1, name: 'test' });
   });
+
+  test('401 triggers refresh and retries once with success', async () => {
+    const jsonHeaders = { get: () => 'application/json' };
+    let dataCalls = 0;
+    global.fetch = jest.fn((url) => {
+      if (String(url).includes('/auth/refresh')) {
+        return Promise.resolve({ status: 200, ok: true, headers: { get: () => null } });
+      }
+      dataCalls += 1;
+      if (dataCalls === 1) {
+        return Promise.resolve({ status: 401, ok: false, headers: jsonHeaders });
+      }
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        headers: jsonHeaders,
+        json: async () => ({ id: 1, name: 'retried' })
+      });
+    });
+
+    const res = await fetchWithAuth('/test');
+    expect(res).toEqual({ id: 1, name: 'retried' });
+
+    const refreshCalls = global.fetch.mock.calls.filter(([u]) => String(u).includes('/auth/refresh'));
+    expect(refreshCalls).toHaveLength(1);
+    expect(refreshCalls[0][1].credentials).toBe('include');
+
+    const retryCall = global.fetch.mock.calls[global.fetch.mock.calls.length - 1];
+    expect(retryCall[1].__authRetried).toBe(true);
+  });
+
+  test('401 when refresh fails throws auth error without retry loop', async () => {
+    const jsonHeaders = { get: () => 'application/json' };
+    global.fetch = jest.fn((url) => {
+      if (String(url).includes('/auth/refresh')) {
+        return Promise.resolve({ status: 401, ok: false, headers: jsonHeaders });
+      }
+      return Promise.resolve({ status: 401, ok: false, headers: jsonHeaders });
+    });
+
+    await expect(fetchWithAuth('/test')).rejects.toMatchObject({
+      status: 401,
+      isAuthError: true
+    });
+
+    const dataCalls = global.fetch.mock.calls.filter(([u]) => !String(u).includes('/auth/refresh'));
+    expect(dataCalls).toHaveLength(1);
+  });
+
+  test('concurrent 401s share a single in-flight refresh', async () => {
+    const jsonHeaders = { get: () => 'application/json' };
+    let dataCalls = 0;
+    let refreshCalls = 0;
+    global.fetch = jest.fn((url) => {
+      if (String(url).includes('/auth/refresh')) {
+        refreshCalls += 1;
+        return new Promise((resolve) => setTimeout(
+          () => resolve({ status: 200, ok: true, headers: { get: () => null } }),
+          20
+        ));
+      }
+      dataCalls += 1;
+      if (dataCalls <= 2) {
+        return Promise.resolve({ status: 401, ok: false, headers: jsonHeaders });
+      }
+      return Promise.resolve({
+        status: 200,
+        ok: true,
+        headers: jsonHeaders,
+        json: async () => ({ ok: true })
+      });
+    });
+
+    const [a, b] = await Promise.all([fetchWithAuth('/test'), fetchWithAuth('/test')]);
+    expect(a).toEqual({ ok: true });
+    expect(b).toEqual({ ok: true });
+    expect(refreshCalls).toBe(1);
+  });
 });

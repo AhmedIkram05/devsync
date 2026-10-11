@@ -1,5 +1,6 @@
 // GitHub integration service with improved error handling and token management
-import { authApi, csrfHeaders } from './utils/auth';
+import { authApi } from './utils/auth';
+import { fetchWithAuth } from './utils/api';
 
 // Base URL for GitHub integration API endpoints
 const API_BASE_URL = (() => {
@@ -15,135 +16,7 @@ const API_BASE_URL = (() => {
 
 const BASE_URL = `${API_BASE_URL}/github`;
 
-// Helper for cookie-authenticated requests: HttpOnly cookies carry the JWT,
-// the double-submit CSRF header proves origin. No Bearer headers.
-const stripAuthHeader = (headers = {}) => {
-  const clean = { ...headers };
-  Object.keys(clean).forEach((key) => {
-    if (key.toLowerCase() === 'authorization') {
-      delete clean[key];
-    }
-  });
-  return clean;
-};
-
-const fetchWithAuth = async (url, options = {}) => {
-  try {
-    // Proactively rotate when the cached profile exp says the session is stale.
-    try {
-      if (authApi.isTokenExpired()) {
-        await authApi.refreshToken().catch((refreshError) => {
-          console.error('Failed to refresh token:', refreshError);
-        });
-      }
-    } catch {
-      // Best-effort only — the request below will 401 and retry if needed.
-    }
-
-    // Set up headers — session comes from cookies, never localStorage tokens.
-    const headers = stripAuthHeader({
-      'Content-Type': 'application/json',
-      ...csrfHeaders(),
-      ...stripAuthHeader(options.headers)
-    });
-
-    // Configure fetch options
-    const fetchOptions = {
-      ...options,
-      headers,
-      credentials: 'include' // Include cookies
-    };
-
-    // Make the request
-    const response = await fetch(url, fetchOptions);
-    
-    // Handle 401 Unauthorized - session cookie may have expired, try rotation once.
-    if (response.status === 401) {
-
-      // Try to refresh the cookie session if not already attempted
-      if (!options.__tokenRefreshAttempted) {
-        try {
-          const refreshedUser = await authApi.refreshToken();
-
-          if (refreshedUser && refreshedUser.id) {
-
-            // Retry the original request — refreshed cookies attach automatically.
-            return fetchWithAuth(url, {
-              ...options,
-              __tokenRefreshAttempted: true, // Mark that we already tried refresh
-              headers: {
-                ...stripAuthHeader(options.headers),
-              }
-            });
-          }
-        } catch (refreshError) {
-          console.error('Token refresh after 401 failed:', refreshError);
-          // Let it continue to the error throw below
-        }
-      }
-      
-      // If we get here, either token refresh failed or was already attempted
-      const error = new Error('Authentication failed. Please log in again.');
-      error.status = 401;
-      error.isAuthError = true;
-      throw error;
-    }
-    
-    // For 500 Internal Server Error - provide more detailed error reporting
-    if (response.status === 500) {
-      let errorData = {};
-      try {
-        errorData = await response.json();
-      } catch (e) {
-        console.error('Failed to parse 500 error JSON response:', e);
-        errorData = { message: 'Internal server error without details' };
-      }
-      
-      console.error('GitHub API 500 Internal Server Error:', errorData);
-      
-      const errorMessage = errorData.message || errorData.error || 'Internal server error occurred. Please try again later.';
-      const error = new Error(`Server Error: ${errorMessage}`);
-      error.status = 500;
-      error.data = errorData;
-      error.isServerError = true;
-      throw error;
-    }
-    
-    // For rate limit errors
-    if (response.status === 403) {
-      const data = await response.json();
-      if (data.message && data.message.includes('rate limit')) {
-        const rateLimitError = new Error(data.message);
-        rateLimitError.status = 403;
-        rateLimitError.data = data;
-        throw rateLimitError;
-      }
-    }
-    
-    // Handle other non-ok responses
-    if (!response.ok) {
-      // Try to get error message from the response
-      const errorData = await response.json().catch(() => ({}));
-      const errorMessage = errorData.message || errorData.error || `HTTP error ${response.status}`;
-      console.error(`GitHub API error (${response.status}):`, errorMessage);
-      
-      const error = new Error(errorMessage);
-      error.status = response.status;
-      error.data = errorData;
-      throw error;
-    }
-    
-    // Parse JSON for successful responses
-    if (response.status !== 204) { // No content
-      return await response.json();
-    }
-    
-    return {}; // Return empty object for 204 No Content
-  } catch (error) {
-    console.error('GitHub API fetch error:', error);
-    throw error;
-  }
-};
+export { fetchWithAuth };
 
 // GitHub integration API service
 export const githubService = {

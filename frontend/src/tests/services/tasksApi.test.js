@@ -8,10 +8,18 @@ import { authApi } from '../../services/utils/auth';
   },
 }));
 
-const buildResponse = (payload, status = 200) => ({
+const buildResponse = (payload, status = 200, contentType = 'application/json') => ({
   ok: status >= 200 && status < 300,
   status,
   json: jest.fn().mockResolvedValue(payload),
+  headers: {
+    get: (name) => {
+      if (String(name || '').toLowerCase() === 'content-type') {
+        return contentType;
+      }
+      return null;
+    },
+  },
 });
 
 describe('tasksApi service', () => {
@@ -119,8 +127,8 @@ describe('tasksApi service', () => {
   });
 
   test('rethrows network failures from fetch', async () => {
-    global.fetch.mockRejectedValue(new TypeError('Failed to fetch'));
+    global.fetch.mockRejectedValue(new Error('Network error'));
 
-    await expect(tasksApi.getAllTasks()).rejects.toThrow('Failed to fetch');
+    await expect(tasksApi.getAllTasks()).rejects.toThrow('Network error');
   });
 });

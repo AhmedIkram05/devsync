@@ -87,8 +87,10 @@ const fetchWithAuth = async (endpoint, options = {}) => {
       };
     }
     
-    // Create URL - handle both cases with or without leading slash
-    const url = `${API_URL}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
+    // Create URL - absolute URLs (from consolidated callers) pass through,
+    // relative endpoints resolve against API_URL.
+    const isAbsoluteUrl = /^https?:\/\//i.test(endpoint);
+    const url = isAbsoluteUrl ? endpoint : `${API_URL}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
     
     // Create a timeout promise - use provided timeout or default to 30 seconds
     const timeoutMs = options.timeout || 8000;
@@ -183,7 +185,7 @@ const fetchWithAuth = async (endpoint, options = {}) => {
     }
     
     if (response.status === 429) {
-      const retryAfter = response.headers.get('Retry-After') || 30;
+      const retryAfter = response.headers?.get?.('Retry-After') || 30;
       const error = new Error('Rate limit exceeded. Too many requests.');
       error.status = 429;
       error.retryAfter = parseInt(retryAfter, 10);
@@ -195,7 +197,7 @@ const fetchWithAuth = async (endpoint, options = {}) => {
       
       // Try to parse error data if available
       try {
-        if (response.headers.get('content-type')?.includes('application/json')) {
+        if (response.headers?.get?.('content-type')?.includes('application/json')) {
           errorData = await response.json();
         }
       } catch (e) {
@@ -216,7 +218,7 @@ const fetchWithAuth = async (endpoint, options = {}) => {
     }
     
     // Check if the response has content
-    const contentType = response.headers.get('content-type');
+    const contentType = response.headers?.get?.('content-type');
     if (contentType && contentType.includes('application/json')) {
       return await response.json();
     }
