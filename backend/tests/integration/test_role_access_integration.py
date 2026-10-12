@@ -329,7 +329,7 @@ def test_github_exchange_rejects_missing_or_invalid_state(client, app, monkeypat
 def test_github_callback_post_rejects_invalid_request_and_failed_exchange(client, app, monkeypatch):
     missing_params_response = client.post("/api/v1/github/callback", json={"state": "only-state"})
     assert missing_params_response.status_code == 400
-    assert missing_params_response.get_json()["error"] == "Missing required parameters"
+    assert missing_params_response.get_json()["message"] == "Missing required parameters"
 
     github_controller.oauth_states.clear()
     parse_state = MagicMock(return_value="1")
@@ -343,7 +343,7 @@ def test_github_callback_post_rejects_invalid_request_and_failed_exchange(client
         json={"code": "test-code", "state": "state-without-token"},
     )
     assert failed_exchange_response.status_code == 400
-    assert failed_exchange_response.get_json()["error"] == "Failed to obtain access token"
+    assert failed_exchange_response.get_json()["message"] == "Failed to obtain access token"
     parse_state.assert_called_once_with("state-without-token")
     exchange_code.assert_called_once_with("test-code")
 
