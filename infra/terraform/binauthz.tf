@@ -69,6 +69,6 @@ resource "google_binary_authorization_policy" "policy" {
   default_admission_rule {
     evaluation_mode         = "REQUIRE_ATTESTATION"
     enforcement_mode        = "DRYRUN_AUDIT_LOG_ONLY" # audit-only upgrade path, see file header
-    require_attestations_by = [google_binary_authorization_attestor.devsync_attestor.name]
+    require_attestations_by = ["projects/${var.project_id}/attestors/${google_binary_authorization_attestor.devsync_attestor.name}"]
   }
 }
