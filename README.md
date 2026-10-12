@@ -110,11 +110,11 @@ End-to-end: Browser hits the GCE Ingress over managed TLS → nginx serves the S
 
 | Piece | What it does |
 | --- | --- |
-| **GKE Standard `devsync-prod`** | Zonal us-central1-a, REGULAR channel, e2-small pool autoscale 2-6 (3 at capture 2026-09-12, ~4 after Phase 2), endpoint computed via TF outputs |
+| **GKE Standard `devsync-prod`** | Zonal us-central1-a, REGULAR channel, e2-medium pool autoscale 2-6, deletion protection + prevent_destroy, endpoint computed via TF outputs |
 | **Terraform modules `gke` + `iam`; root `dashboard` + `services`** | Cluster, WIF OIDC for repo AhmedIkram05/devsync, Artifact Registry `devsync-repo` in us-central1, dashboard and alerts |
-| **GCE Ingress + `devsync-prod-cert`** | Catch-all → `frontend:80`, covers devsyncapp.me, www.devsyncapp.me, gcp.devsyncapp.me |
+| **GCE Ingress + `devsync-prod-cert`** | Prod host pinned to `gcp.devsyncapp.me` (catch-all closed), Cloud Armor rate-ban, managed TLS cert |
 | **Frontend 2/2** | nginx image, req 100m/128Mi lim 500m/512Mi, proxies to backend FQDN with node-local DNS 169.254.20.10 |
-| **Backend 2/2 + Migrate Job** | Flask-SocketIO on gunicorn, req 250m/256Mi lim 1000m/1Gi, startup/liveness/readiness on `/health:8000`, preStop sleep 15, SA `devsync-ksa`; migrate Job runs first, backoffLimit 3 |
+| **Backend 2/2 (HPA 2-4) + Migrate Job** | Flask-SocketIO on gunicorn (2 workers/pod via GUNICORN_WORKERS, Redis message queue), req 250m/256Mi lim 1000m/1Gi, startup/liveness/readiness on `/health:8000`, preStop sleep 15, SA `devsync-ksa`; migrate Job runs first, backoffLimit 3 |
 | **Redis + realtime** | `REDIS_URL=redis://devsync-redis:6379/0`; `message_queue=REDIS_URL` in prod else None with CORS locked to FRONTEND_URL; `presence:user:<id>` SETEX 30s with 10s heartbeat and POD_ID from HOSTNAME; `_membership_denied` re-check on every emit with `_safe_emit` degrading instead of 500ing; Redis INCR/EXPIRE 300/60s fail-open with bypass via env (CI perf sets 0; live verify keeps 300/60s) |
 | **ESO → `devsync-app-secrets`** | Syncs 6 secrets (DATABASE_URL, JWT_SECRET_KEY, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, FERNET_KEY, POSTGRES_PASSWORD) |
 | **`managed-db` overlay (applied)** | Deletes PG StatefulSet, Cloud SQL annotation, DATABASE_URL via secretKeyRef, private IP with no proxy |
@@ -143,7 +143,7 @@ End-to-end: Browser hits the GCE Ingress over managed TLS → nginx serves the S
 | CI k6 baseline | p95 9.65ms, 46.58 rps at 10 VU ([baseline.json](backend/tests/perf/baseline.json)) |
 | Realtime proof | Broadcast 2026-09-12 over polling, websocket, and port-forward, all OK |
 | Resilience proofs | BackendDown CrashLoop email fired; PDB drain-denied |
-| Cluster | Standard zonal us-central1-a, e2-small 2-6 (3 at capture 2026-09-12, ~4 after Phase 2), REGULAR, endpoint via TF outputs |
+| Cluster | Standard zonal us-central1-a, e2-medium 2-6, REGULAR, deletion protection + prevent_destroy, endpoint via TF outputs |
 | Deployments | Backend 2/2 (250m/256Mi → 1000m/1Gi), frontend 2/2 (100m/128Mi → 500m/512Mi), PDBs minAvailable 1, HPA 2-6 CPU 60 |
 | Data | Managed Postgres devsync-db PG16.15 Enterprise 1vCPU 628MB 10GB SSD single zone (console/GIF capture); retention control proven 30d→1d |
 | Cost | **~$4-5/day** (Standard $0.10/hr control plane) until credits out; billing budget $50/mo at 50/80/100% |
@@ -210,7 +210,7 @@ End-to-end: Browser hits the GCE Ingress over managed TLS → nginx serves the S
 | **Cloud SQL private IP, no proxy** | Public IP or proxy sidecar | Private IP with sslmode require is simplest; proxy only if private IP or IAM auth ever needs it |
 | **Fail-open limiter on Redis outage** | Fail-closed | A cache outage must not become a self-outage; throttle-disabled CI already proves the open shape |
 | **Stored-key cosign over keyless** | Keyless OIDC | Keyless hung with no local token and the SPDX bundle path failed; stored key with custom attest is green |
-| **Catch-all Ingress, no per-host rules** | Per-host routing | One backend serves devsyncapp.me, www, and gcp hosts; fewer rules, same TLS coverage |
+| **Host pinned to `gcp.devsyncapp.me` (was catch-all)** | Per-host routing | Prod overlay pins the rule host — other domains pointed at the LB no longer route; apex/www cert entries remain in the ManagedCertificate |
 
 All numbered ADRs plus the full reasoning live in [docs/planning](docs/planning/) with component depth in [docs/deep-dives.md](docs/deep-dives.md).
 
