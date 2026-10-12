@@ -15,6 +15,10 @@ jest.mock('../../services/utils/auth', () => ({
     register: jest.fn(),
     logout: jest.fn(),
   },
+  // client.js imports this from the same module — the factory above replaced
+  // the whole module, which made fetchWithAuth throw "csrfHeaders is not a
+  // function" and silently swallow the permissions fetch.
+  csrfHeaders: jest.fn(() => ({})),
 }));
 
 jest.mock('../../services/utils/api', () => ({
@@ -476,7 +480,9 @@ describe('AuthContext', () => {
 
   test('fetches permissions via cookie session and warms GitHub reports for connected admins', async () => {
     global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
       json: jest.fn().mockResolvedValue({ permissions: ['can_view_all_users'] }),
+      headers: { get: () => 'application/json' },
     });
 
     const adminProfile = storedProfile(31, {
@@ -507,7 +513,11 @@ describe('AuthContext', () => {
         })
       );
     });
-    expect(global.fetch.mock.calls[0][1].headers).toBeUndefined();
+    // fetchWithAuth attaches Content-Type/Accept/CSRF headers by design.
+    expect(global.fetch.mock.calls[0][1].credentials).toBe('include');
+    expect(global.fetch.mock.calls[0][1].headers).toEqual(
+      expect.objectContaining({ 'Content-Type': 'application/json' })
+    );
 
     await waitFor(() => {
       expect(dashboardService.prefetchReportData).toHaveBeenCalledWith('github', 'week');

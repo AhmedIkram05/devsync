@@ -1,5 +1,6 @@
 import { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { authApi } from '../services/utils/auth';
+import { fetchWithAuth } from '../services/api/client';
 import { githubService } from '../services/github';
 import { dashboardService } from '../services/utils/api';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -124,12 +125,15 @@ export const AuthProvider = ({ children }) => {
               setPermissionsLoading(true);
             }
             try {
-              const permRes = await fetch(`${process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000/api/v1' : '')}/auth/permissions`, {
-                credentials: 'include',
-              });
-              const data = await permRes.json();
-              setPermissions(data.permissions || []);
-              const updatedUser = sanitizeProfile({ ...user, permissions: data.permissions || [] });
+              // fetchWithAuth resolves the endpoint against the normalized
+              // API base (/api/v1). A hand-rolled `${REACT_APP_API_URL}/auth/permissions`
+              // URL misses the /api/v1 prefix in prod, falls through to the SPA
+              // fallback, and nginx 200s with index.html — json() then throws
+              // and every user without a cached profile bounced to /forbidden
+              // (fresh signups, new devices, cleared storage).
+              const data = await fetchWithAuth('/auth/permissions');
+              setPermissions(data?.permissions || []);
+              const updatedUser = sanitizeProfile({ ...user, permissions: data?.permissions || [] });
               localStorage.setItem('user', JSON.stringify(updatedUser));
               setCurrentUser(updatedUser);
             } catch (err) {
