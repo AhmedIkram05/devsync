@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import io from 'socket.io-client';
 import { notificationService, projectService } from '../services/utils/api';
 import { useAuth } from './AuthContext';
+import { logger } from '../utils/logger';
 
 const NotificationContext = createContext();
 
@@ -64,13 +65,13 @@ export const NotificationProvider = ({ children }) => {
     
     // If server is detected as down and not a forced refresh, skip
     if (serverDown && !force) {
-      console.log('Skipping notification refresh as server appears to be down');
+      logger.log('Skipping notification refresh as server appears to be down');
       return;
     }
-    
+
     // If rate limited and not forced, skip this refresh
     if (rateLimited && !force) {
-      console.log('Skipping notification refresh due to rate limiting');
+      logger.log('Skipping notification refresh due to rate limiting');
       return;
     }
     
@@ -138,7 +139,7 @@ export const NotificationProvider = ({ children }) => {
       } else if (data && Array.isArray(data.data)) {
         setNotifications(dedupById(data.data));
       } else {
-        console.warn('Unexpected notification data format:', data);
+        logger.warn('Unexpected notification data format:', data);
         setNotifications([]);
       }
     } catch (error) {
@@ -164,7 +165,7 @@ export const NotificationProvider = ({ children }) => {
             refreshTimeoutRef.current = null;
             return;
           }
-          console.log('Checking if server is back online...');
+          logger.log('Checking if server is back online...');
           refreshNotifications(true);
         }, SERVER_RETRY_DELAY);
         
@@ -173,7 +174,7 @@ export const NotificationProvider = ({ children }) => {
       
       // Handle rate limiting error specifically
       if (error.status === 429 || (error.message && error.message.includes('429'))) {
-        console.warn('Rate limited when fetching notifications. Will try again later.');
+        logger.warn('Rate limited when fetching notifications. Will try again later.');
         setRateLimited(true);
 
         // Under Cypress skip the auto-retry loop (re-render churn).
@@ -187,7 +188,7 @@ export const NotificationProvider = ({ children }) => {
             refreshTimeoutRef.current = null;
             return;
           }
-          console.log('Attempting to fetch notifications again after rate limit cooling period');
+          logger.log('Attempting to fetch notifications again after rate limit cooling period');
           refreshNotifications(true);
         }, RATE_LIMIT_RETRY_DELAY);
       } else {
@@ -208,13 +209,13 @@ export const NotificationProvider = ({ children }) => {
     
     const connectSocket = () => {
       if (!currentUser) {
-        console.log('No user available for socket connection');
+        logger.log('No user available for socket connection');
         return;
       }
       
       // Don't try to connect if we know the server is down
       if (serverDown) {
-        console.log('Not connecting to WebSocket - server appears to be down');
+        logger.log('Not connecting to WebSocket - server appears to be down');
         return;
       }
       
@@ -238,13 +239,13 @@ export const NotificationProvider = ({ children }) => {
             ? `${window.location.protocol}//${window.location.hostname}:8000`
             : `${window.location.protocol}//${window.location.hostname}`;
 
-        const configuredTransport = (process.env.REACT_APP_SOCKET_TRANSPORT || 'polling').toLowerCase();
+        const configuredTransport = (process.env.REACT_APP_SOCKET_TRANSPORT || 'both').toLowerCase();
         const transportMap = {
           polling: ['polling'],
           websocket: ['websocket'],
           both: ['polling', 'websocket']
         };
-        const socketTransports = transportMap[configuredTransport] || transportMap.polling;
+        const socketTransports = transportMap[configuredTransport] || transportMap.both;
         socketConnection = io(socketUrl, {
           withCredentials: true,
           transports: socketTransports,
@@ -276,7 +277,7 @@ export const NotificationProvider = ({ children }) => {
         
         // Socket event handlers
         socketConnection.on('connect', () => {
-          console.log('Socket.IO connected');
+          logger.log('Socket.IO connected');
           setIsConnected(true);
           setServerDown(false); // Clear server down flag on successful connection
           reconnectAttemptsRef.current = 0; // Reset reconnect counter
@@ -288,7 +289,7 @@ export const NotificationProvider = ({ children }) => {
           if (typeof socketConnection.emit === 'function') {
             socketConnection.emit('register', {}, (ack) => {
               if (ack?.status && ack.status !== 'success') {
-                console.warn('Socket.IO registration did not succeed:', ack);
+                logger.warn('Socket.IO registration did not succeed:', ack);
               }
             });
 
@@ -309,13 +310,13 @@ export const NotificationProvider = ({ children }) => {
                 });
               })
               .catch((e) => {
-                console.warn('Socket project-room join failed:', e?.message || e);
+                logger.warn('Socket project-room join failed:', e?.message || e);
               });
           }
         });
         
         socketConnection.on('disconnect', () => {
-          console.log('Socket.IO disconnected');
+          logger.log('Socket.IO disconnected');
           setIsConnected(false);
         });
         
@@ -324,7 +325,7 @@ export const NotificationProvider = ({ children }) => {
           setIsConnected(false);
           
           reconnectAttemptsRef.current++;
-          console.log(`Socket connection attempt ${reconnectAttemptsRef.current} of ${maxReconnectAttempts} failed`);
+          logger.log(`Socket connection attempt ${reconnectAttemptsRef.current} of ${maxReconnectAttempts} failed`);
           
           // After max attempts, stop trying and mark server as down
           if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
@@ -349,7 +350,7 @@ export const NotificationProvider = ({ children }) => {
                   reconnectTimeoutRef.current = null;
                   return;
                 }
-                console.log('Checking if server is back online...');
+                logger.log('Checking if server is back online...');
                 setServerDown(false); // Reset the flag to allow reconnection attempts
                 reconnectAttemptsRef.current = 0; // Reset counter
                 connectSocket(); // Try to connect again
@@ -362,7 +363,7 @@ export const NotificationProvider = ({ children }) => {
         
         // Listen for notifications
         socketConnection.on('notification', (newNotification) => {
-          console.log('Received new notification:', newNotification);
+          logger.log('Received new notification:', newNotification);
           setNotifications(prev =>
             prev.some((n) => n?.id !== undefined && n?.id === newNotification?.id)
               ? prev
@@ -394,7 +395,7 @@ export const NotificationProvider = ({ children }) => {
           try {
             window.dispatchEvent(new CustomEvent('devsync:task-updated', { detail: taskPayload }));
           } catch (e) {
-            console.warn('Failed to dispatch devsync:task-updated event', e);
+            logger.warn('Failed to dispatch devsync:task-updated event', e);
           }
         };
 
@@ -402,21 +403,21 @@ export const NotificationProvider = ({ children }) => {
           try {
             window.dispatchEvent(new CustomEvent('devsync:dashboard-updated', { detail: payload }));
           } catch (e) {
-            console.warn('Failed to dispatch devsync:dashboard-updated event', e);
+            logger.warn('Failed to dispatch devsync:dashboard-updated event', e);
           }
         };
 
         // Common task event names the backend may emit; listen to several variants.
         ['task', 'task.updated', 'task_update', 'task:updated', 'task_updated'].forEach((evtName) => {
           socketConnection.on(evtName, (payload) => {
-            console.log(`Received socket event ${evtName}`, payload);
+            logger.log(`Received socket event ${evtName}`, payload);
             relayTaskEvent(payload || {});
             relayDashboardEvent(payload || {});
           });
         });
 
         socketConnection.on('dashboard_updated', (payload) => {
-          console.log('Received socket event dashboard_updated', payload);
+          logger.log('Received socket event dashboard_updated', payload);
           relayDashboardEvent(payload || {});
         });
       } catch (error) {
@@ -467,7 +468,7 @@ export const NotificationProvider = ({ children }) => {
   // Mark a notification as read
   const markAsRead = async (notificationId) => {
     if (serverDown) {
-      console.log('Server appears to be down, cannot mark notification as read');
+      logger.log('Server appears to be down, cannot mark notification as read');
       return;
     }
     
@@ -490,7 +491,7 @@ export const NotificationProvider = ({ children }) => {
 
   const deleteNotification = async (notificationId) => {
     if (serverDown) {
-      console.log('Server appears to be down, cannot delete notification');
+      logger.log('Server appears to be down, cannot delete notification');
       return;
     }
 
@@ -508,7 +509,7 @@ export const NotificationProvider = ({ children }) => {
   // Mark all notifications as read
   const markAllAsRead = async () => {
     if (serverDown) {
-      console.log('Server appears to be down, cannot mark all notifications as read');
+      logger.log('Server appears to be down, cannot mark all notifications as read');
       return;
     }
     
@@ -528,7 +529,7 @@ export const NotificationProvider = ({ children }) => {
   // Check if server is back online
   const checkServerStatus = useCallback(() => {
     if (serverDown) {
-      console.log('Checking if server is back online...');
+      logger.log('Checking if server is back online...');
       refreshNotifications(true);
     }
   }, [serverDown, refreshNotifications]);

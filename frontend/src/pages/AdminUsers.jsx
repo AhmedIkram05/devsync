@@ -39,6 +39,19 @@ const AdminUsers = () => {
   }, [fetchUsers]);
 
   useEffect(() => {
+    if (!showCreateModal && !editingUser && !deleteConfirm) return;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setShowCreateModal(false);
+        setEditingUser(null);
+        setDeleteConfirm(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showCreateModal, editingUser, deleteConfirm]);
+
+  useEffect(() => {
     let result = users;
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
@@ -146,14 +159,18 @@ const AdminUsers = () => {
 
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
+          <label htmlFor="admin-users-search" className="sr-only">Search by name or email</label>
           <input
+            id="admin-users-search"
             type="text"
             placeholder="Search by name or email..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-1 rounded-lg border border-slate-700/60 bg-slate-900/80 py-2 px-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
+            className="flex-1 rounded-lg border border-slate-700/60 bg-slate-900/80 py-2 px-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
           />
+          <label htmlFor="admin-users-role-filter" className="sr-only">Filter by role</label>
           <select
+            id="admin-users-role-filter"
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value)}
             className="rounded-lg border border-slate-700/60 bg-slate-900/80 py-2 px-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
@@ -240,43 +257,47 @@ const AdminUsers = () => {
 
         {/* Create Modal */}
         {showCreateModal && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-md shadow-2xl">
-              <h2 className="text-xl font-bold mb-4 text-slate-100">Create New User</h2>
+          <div onClick={() => setShowCreateModal(false)} className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+            <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="admin-create-user-title" className="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-md shadow-2xl">
+              <h2 id="admin-create-user-title" className="text-xl font-bold mb-4 text-slate-100">Create New User</h2>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm text-slate-400 mb-1">Name</label>
+                  <label htmlFor="admin-create-name" className="block text-sm text-slate-400 mb-1">Name</label>
                   <input
+                    id="admin-create-name"
                     type="text"
                     value={createForm.name}
                     onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
-                    className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
+                    className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
                     placeholder="Full Name"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-400 mb-1">Email</label>
+                  <label htmlFor="admin-create-email" className="block text-sm text-slate-400 mb-1">Email</label>
                   <input
+                    id="admin-create-email"
                     type="email"
                     value={createForm.email}
                     onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
-                    className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
+                    className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
                     placeholder="email@example.com"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-400 mb-1">Password</label>
+                  <label htmlFor="admin-create-password" className="block text-sm text-slate-400 mb-1">Password</label>
                   <input
+                    id="admin-create-password"
                     type="password"
                     value={createForm.password}
                     onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
-                    className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
+                    className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
                     placeholder="••••••••"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-400 mb-1">Initial Role</label>
+                  <label htmlFor="admin-create-role" className="block text-sm text-slate-400 mb-1">Initial Role</label>
                   <select
+                    id="admin-create-role"
                     value={createForm.role}
                     onChange={(e) => setCreateForm({ ...createForm, role: e.target.value })}
                     className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
@@ -307,13 +328,14 @@ const AdminUsers = () => {
 
         {/* Edit Modal */}
         {editingUser && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-md">
-              <h2 className="text-lg font-semibold mb-4">Edit User</h2>
+          <div onClick={() => setEditingUser(null)} className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+            <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="admin-edit-user-title" className="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-md">
+              <h2 id="admin-edit-user-title" className="text-lg font-semibold mb-4">Edit User</h2>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm text-slate-400 mb-1">Name</label>
+                  <label htmlFor="admin-edit-name" className="block text-sm text-slate-400 mb-1">Name</label>
                   <input
+                    id="admin-edit-name"
                     type="text"
                     value={editForm.name}
                     onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
@@ -321,8 +343,9 @@ const AdminUsers = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-slate-400 mb-1">Email</label>
+                  <label htmlFor="admin-edit-email" className="block text-sm text-slate-400 mb-1">Email</label>
                   <input
+                    id="admin-edit-email"
                     type="email"
                     value={editForm.email}
                     onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
@@ -350,9 +373,9 @@ const AdminUsers = () => {
 
         {/* Delete Confirmation Modal */}
         {deleteConfirm && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-sm">
-              <h2 className="text-lg font-semibold mb-2 text-rose-300">Confirm Delete</h2>
+          <div onClick={() => setDeleteConfirm(null)} className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+            <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="admin-delete-user-title" className="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-sm">
+              <h2 id="admin-delete-user-title" className="text-lg font-semibold mb-2 text-rose-300">Confirm Delete</h2>
               <p className="text-slate-400 mb-6">
                 Are you sure you want to delete <strong className="text-slate-200">{deleteConfirm.name}</strong>? This action cannot be undone.
               </p>

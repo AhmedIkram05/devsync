@@ -118,7 +118,7 @@ function Notifications({ notifications = [], onNotificationUpdate, onMarkRead, o
   if (!notifications || notifications.length === 0) {
     return (
       <div className="bg-slate-900/70 p-4 rounded-xl border border-slate-800/80">
-        <div className="text-slate-500 text-center">No new notifications</div>
+        <div className="text-slate-400 text-center">No new notifications</div>
       </div>
     );
   }
@@ -126,27 +126,34 @@ function Notifications({ notifications = [], onNotificationUpdate, onMarkRead, o
   return (
     <div className="bg-slate-900/70 p-4 rounded-xl border border-slate-800/80">
       <div className="space-y-2">
-        {notifications.map((notification) => {
-          // Ensure each notification has an id
-          const notificationId = notification?.id || `notification-${Math.random().toString(36).substr(2, 9)}`;
+        {notifications.map((notification, index) => {
+          // Stable key: prefer server id, fall back to render index (never random).
+          const notificationId = notification?.id ?? `notification-index-${index}`;
           const isRead = notification?.is_read || notification?.read || false;
           const content = notification?.content || notification?.message || 'No content';
           const title = notification?.title;
           const timestamp = notification?.created_at || notification?.timestamp;
           const createdAt = timestamp ? new Date(timestamp).toLocaleDateString() : 'Unknown date';
-          
+
           return (
-            <div 
-              key={notificationId} 
+            <div
+              key={notificationId}
+              role="status"
+              aria-label={`${isRead ? 'Read' : 'Unread'} notification: ${content}`}
               className={`p-3 rounded cursor-pointer border ${isRead ? 'bg-slate-950/60 border-slate-800/60' : 'bg-rose-500/10 border-rose-400/20'} hover:bg-slate-900/70`}
               onClick={() => handleNotificationClick(notificationId)}
             >
               <div className="flex justify-between items-start">
                 <div>
+                  {!isRead && (
+                    <span className="mb-1 inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-rose-200">
+                      <span aria-hidden="true">●</span> Unread
+                    </span>
+                  )}
                   {title && <div className="text-sm font-semibold text-slate-100">{title}</div>}
                   <div className="text-slate-200">{content}</div>
                 </div>
-                <div className="text-xs text-slate-500">
+                <div className="text-xs text-slate-400">
                   {createdAt}
                 </div>
               </div>

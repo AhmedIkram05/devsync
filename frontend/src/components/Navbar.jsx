@@ -18,6 +18,18 @@ const Navbar = () => {
     }
   }, []);
 
+  useEffect(() => {
+    if (!showMobileMenu && !showNotifications) return;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setShowMobileMenu(false);
+        setShowNotifications(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showMobileMenu, showNotifications]);
+
   const handleLogout = async () => {
     try {
       setIsLoggingOut(true);
@@ -49,6 +61,41 @@ const Navbar = () => {
   const isTeamLead = is('team_lead');
   const dashboardPath = isAdmin ? '/admin' : '/BasicDashboard';
 
+  // Single source for desktop + mobile nav — mobile maps this same array.
+  const navLinks = isAdmin
+    ? [
+        { to: '/admin', label: 'Dashboard' },
+        { to: '/tasks', label: 'Tasks' },
+        { to: '/admin/projects', label: 'Projects' },
+        { to: '/admin/developer-progress', label: 'Developer Progress' },
+        { to: '/admin/reports', label: 'Reports' },
+        { to: '/admin/users', label: 'Users', system: true },
+        { to: '/admin/settings', label: 'Settings', system: true },
+        { to: '/admin/audit-logs', label: 'Audit Logs', system: true },
+        { to: '/github', label: 'GitHub' },
+      ]
+    : isTeamLead
+      ? [
+          { to: dashboardPath, label: 'Dashboard' },
+          { to: '/tasks', label: 'Tasks' },
+          { to: '/admin/projects', label: 'Projects' },
+          { to: '/admin/developer-progress', label: 'Developer Progress' },
+          { to: '/admin/reports', label: 'Reports' },
+          { to: '/github', label: 'GitHub' },
+        ]
+      : [
+          { to: '/BasicDashboard', label: 'Dashboard' },
+          { to: '/tasks', label: 'Tasks' },
+          { to: '/github', label: 'GitHub' },
+        ];
+  const systemLinks = navLinks.filter((l) => l.system);
+  const githubLink = navLinks.find((l) => l.to === '/github');
+  const primaryLinks = navLinks.filter((l) => !l.system && l.to !== '/github');
+  const closeMenus = () => {
+    setShowMobileMenu(false);
+    setShowNotifications(false);
+  };
+
   return (
     <header className="bg-slate-950/80 backdrop-blur-md sticky top-0 z-50 font-['Space_Grotesk']">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4 md:px-10">
@@ -57,41 +104,30 @@ const Navbar = () => {
         </Link>
         
         {/* Desktop Navigation - Centered */}
-        <nav className="hidden lg:flex flex-1 justify-center items-center gap-5 text-[13px] font-medium text-slate-300 px-4">
+        <nav aria-label="Primary" className="hidden lg:flex flex-1 justify-center items-center gap-5 text-[13px] font-medium text-slate-300 px-4">
           {isAdmin ? (
             <>
-              <Link to="/admin" className="transition hover:text-white">Dashboard</Link>
-              <Link to="/tasks" className="transition hover:text-white">Tasks</Link>
-              <Link to="/admin/projects" className="transition hover:text-white">Projects</Link>
-              <Link to="/admin/developer-progress" className="transition hover:text-white text-nowrap">Developer Progress</Link>
-              <Link to="/admin/reports" className="transition hover:text-white">Reports</Link>
+              {primaryLinks.map((l) => (
+                <Link key={l.to} to={l.to} className="transition hover:text-white">{l.label}</Link>
+              ))}
               <div className="relative group/dropdown">
                 <button className="transition hover:text-white flex items-center gap-1">
                   System
                   <svg className="h-3 w-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
                 </button>
                 <div className="absolute top-full left-0 mt-2 w-48 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl opacity-0 invisible group-hover/dropdown:opacity-100 group-hover/dropdown:visible transition-all duration-200 z-[100] py-2">
-                  <Link to="/admin/users" className="block px-4 py-2 hover:bg-slate-800 transition text-slate-300 hover:text-white">Users</Link>
-                  <Link to="/admin/settings" className="block px-4 py-2 hover:bg-slate-800 transition text-slate-300 hover:text-white">Settings</Link>
-                  <Link to="/admin/audit-logs" className="block px-4 py-2 hover:bg-slate-800 transition text-slate-300 hover:text-white">Audit Logs</Link>
+                  {systemLinks.map((l) => (
+                    <Link key={l.to} to={l.to} className="block px-4 py-2 hover:bg-slate-800 transition text-slate-300 hover:text-white">{l.label}</Link>
+                  ))}
                 </div>
               </div>
-              <Link to="/github" className="transition hover:text-white">GitHub</Link>
-            </>
-          ) : isTeamLead ? (
-            <>
-              <Link to={dashboardPath} className="transition hover:text-white">Dashboard</Link>
-              <Link to="/tasks" className="transition hover:text-white">Tasks</Link>
-              <Link to="/admin/projects" className="transition hover:text-white">Projects</Link>
-              <Link to="/admin/developer-progress" className="transition hover:text-white text-nowrap">Developer Progress</Link>
-              <Link to="/admin/reports" className="transition hover:text-white">Reports</Link>
-              <Link to="/github" className="transition hover:text-white">GitHub</Link>
+              {githubLink && <Link to={githubLink.to} className="transition hover:text-white">GitHub</Link>}
             </>
           ) : (
             <>
-              <Link to="/BasicDashboard" className="transition hover:text-white">Dashboard</Link>
-              <Link to="/tasks" className="transition hover:text-white">Tasks</Link>
-              <Link to="/github" className="transition hover:text-white">GitHub</Link>
+              {navLinks.map((l) => (
+                <Link key={l.to} to={l.to} className="transition hover:text-white">{l.label}</Link>
+              ))}
             </>
           )}
         </nav>
@@ -99,9 +135,11 @@ const Navbar = () => {
         <div className="flex-shrink-0 flex items-center gap-6">
           {/* Notification Bell */}
           <div className="relative">
-            <button 
+            <button
               onClick={toggleNotifications}
-              aria-label="Notifications"
+              aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}
+              aria-expanded={showNotifications}
+              aria-controls="navbar-notifications-popover"
               className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-all focus:outline-none relative"
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -115,7 +153,7 @@ const Navbar = () => {
             </button>
             
             {showNotifications && (
-              <div className="absolute right-0 mt-3 w-80 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden z-[100]">
+              <div id="navbar-notifications-popover" className="absolute right-0 mt-3 w-80 max-w-[calc(100vw-2rem)] bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden z-[100]">
                 <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
                   <h3 className="text-sm font-bold text-white tracking-tight">Notifications</h3>
                   <button 
@@ -153,9 +191,11 @@ const Navbar = () => {
         </div>
 
         {/* Mobile Menu Button */}
-        <button 
+        <button
           onClick={toggleMobileMenu}
           aria-label={showMobileMenu ? "Close menu" : "Open menu"}
+          aria-expanded={showMobileMenu}
+          aria-controls="navbar-mobile-menu"
           className="lg:hidden p-2 text-slate-400 hover:text-white transition focus:outline-none"
         >
           <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -170,32 +210,11 @@ const Navbar = () => {
 
       {/* Mobile Menu */}
       {showMobileMenu && (
-        <div className="lg:hidden absolute top-full left-0 right-0 bg-slate-900 border-b border-slate-800 py-6 px-6 space-y-4 shadow-xl animate-in slide-in-from-top-4 duration-200 z-[100]">
+        <div id="navbar-mobile-menu" className="lg:hidden absolute top-full left-0 right-0 bg-slate-900 border-b border-slate-800 py-6 px-6 space-y-4 shadow-xl animate-in slide-in-from-top-4 duration-200 z-[100]">
           <div className="grid grid-cols-2 gap-4">
-            {isAdmin ? (
-              <>
-                <Link to="/admin" className="text-slate-300 py-2 hover:text-white transition">Dashboard</Link>
-                <Link to="/admin/developer-progress" className="text-slate-300 py-2 hover:text-white transition">Developer Progress</Link>
-                <Link to="/admin/reports" className="text-slate-300 py-2 hover:text-white transition">Reports</Link>
-                <Link to="/admin/users" className="text-slate-300 py-2 hover:text-white transition">Users</Link>
-                <Link to="/admin/settings" className="text-slate-300 py-2 hover:text-white transition">Settings</Link>
-                <Link to="/admin/audit-logs" className="text-slate-300 py-2 hover:text-white transition">Audit Logs</Link>
-                <Link to="/github" className="text-slate-300 py-2 hover:text-white transition">GitHub</Link>
-              </>
-            ) : isTeamLead ? (
-              <>
-                <Link to={dashboardPath} className="text-slate-300 py-2 hover:text-white transition">Dashboard</Link>
-                <Link to="/tasks" className="text-slate-300 py-2 hover:text-white transition">Tasks</Link>
-                <Link to="/admin/reports" className="text-slate-300 py-2 hover:text-white transition">Reports</Link>
-                <Link to="/github" className="text-slate-300 py-2 hover:text-white transition">GitHub</Link>
-              </>
-            ) : (
-              <>
-                <Link to="/BasicDashboard" className="text-slate-300 py-2 hover:text-white transition">Dashboard</Link>
-                <Link to="/tasks" className="text-slate-300 py-2 hover:text-white transition">Tasks</Link>
-                <Link to="/github" className="text-slate-300 py-2 hover:text-white transition">GitHub</Link>
-              </>
-            )}
+            {navLinks.map((l) => (
+              <Link key={l.to} to={l.to} onClick={closeMenus} className="text-slate-300 py-2 hover:text-white transition">{l.label}</Link>
+            ))}
           </div>
           <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-3">

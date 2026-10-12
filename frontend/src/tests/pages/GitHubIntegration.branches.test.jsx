@@ -357,7 +357,7 @@ describe('GitHubIntegration page', () => {
     });
   });
 
-  test('logs current user info', async () => {
+  test('renders github integration without debug console noise', async () => {
     const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
 
     render(
@@ -369,8 +369,9 @@ describe('GitHubIntegration page', () => {
     );
 
     await waitFor(() => {
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(githubModule.githubService.checkConnection).toHaveBeenCalled();
     });
+    expect(consoleSpy).not.toHaveBeenCalled();
 
     consoleSpy.mockRestore();
   });

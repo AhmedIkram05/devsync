@@ -120,14 +120,14 @@ const TaskList = () => {
   // Get status badge color and format status text
   const getStatusInfo = (status) => {
     const statusMap = {
-      'todo': { class: 'text-slate-300', text: 'To Do' },
-      'backlog': { class: 'text-slate-300', text: 'Backlog' },
-      'in_progress': { class: 'text-amber-200', text: 'In Progress' },
-      'review': { class: 'text-sky-200', text: 'Review' },
-      'completed': { class: 'text-emerald-200', text: 'Completed' }
+      'todo': { class: 'text-slate-300', text: 'To Do', icon: '○' },
+      'backlog': { class: 'text-slate-300', text: 'Backlog', icon: '○' },
+      'in_progress': { class: 'text-amber-200', text: 'In Progress', icon: '◐' },
+      'review': { class: 'text-sky-200', text: 'Review', icon: '◎' },
+      'completed': { class: 'text-emerald-200', text: 'Completed', icon: '●' }
     };
-    
-    return statusMap[status] || { class: 'bg-gray-100 text-gray-800', text: status };
+
+    return statusMap[status] || { class: 'bg-gray-100 text-gray-800', text: status, icon: '○' };
   };
   
   // Get priority badge
@@ -355,7 +355,7 @@ const TaskList = () => {
                 placeholder="Search tasks..."
                 value={filters.search}
                 onChange={(e) => setFilters({...filters, search: e.target.value})}
-                className="w-full p-2 border border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60"
+                className="w-full p-2 border border-slate-700/60 rounded-md bg-slate-950/60 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-rose-400/60 focus:border-rose-400/60"
               />
             </div>
 
@@ -380,7 +380,7 @@ const TaskList = () => {
                 className={`px-6 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-all ${
                   filters.scope === 'my' 
                     ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20' 
-                    : 'text-slate-500 hover:text-slate-300'
+                    : 'text-slate-400 hover:text-slate-300'
                 }`}
               >
                 My Tasks
@@ -390,7 +390,7 @@ const TaskList = () => {
                 className={`px-6 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-all ${
                   filters.scope === 'all' 
                     ? 'bg-slate-900 text-white border border-slate-800' 
-                    : 'text-slate-500 hover:text-slate-300'
+                    : 'text-slate-400 hover:text-slate-300'
                 }`}
               >
                 All Tasks
@@ -400,8 +400,8 @@ const TaskList = () => {
           
           {/* Task List */}
           {filteredTasks.length === 0 ? (
-            <div className="text-center py-10 text-slate-500 border border-slate-800/70 rounded-lg bg-slate-900/60">
-              <svg className="mx-auto h-12 w-12 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="text-center py-10 text-slate-400 border border-slate-800/70 rounded-lg bg-slate-900/60">
+              <svg className="mx-auto h-12 w-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
               </svg>
               <p className="mt-2 text-lg">No tasks found matching your filters</p>
@@ -472,8 +472,8 @@ const TaskList = () => {
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${statusInfo.class}`}>
-                            {statusInfo.text}
+                          <span role="status" aria-label={`Task state: ${statusInfo.text}`} className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${statusInfo.class}`}>
+                            <span aria-hidden="true" className="mr-1">{statusInfo.icon}</span>{statusInfo.text}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">

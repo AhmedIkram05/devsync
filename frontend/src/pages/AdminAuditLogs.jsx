@@ -32,6 +32,15 @@ const AdminAuditLogs = () => {
 
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
+  useEffect(() => {
+    if (!selectedLog) return;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setSelectedLog(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedLog]);
+
   const handleViewDetail = async (logId) => {
     const detail = await auditLogService.getLogById(logId);
     setSelectedLog(detail);
@@ -52,12 +61,14 @@ const AdminAuditLogs = () => {
 
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          <input type="text" placeholder="Filter by action..." value={actionFilter}
+          <label htmlFor="audit-action-filter" className="sr-only">Filter by action</label>
+          <input id="audit-action-filter" type="text" placeholder="Filter by action..." value={actionFilter}
             onChange={(e) => { setActionFilter(e.target.value); setPage(1); }}
-            className="flex-1 rounded-lg border border-slate-700/60 bg-slate-900/80 py-2 px-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-400/60" />
-          <input type="text" placeholder="Filter by actor ID..." value={actorFilter}
+            className="flex-1 rounded-lg border border-slate-700/60 bg-slate-900/80 py-2 px-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60" />
+          <label htmlFor="audit-actor-filter" className="sr-only">Filter by actor ID</label>
+          <input id="audit-actor-filter" type="text" placeholder="Filter by actor ID..." value={actorFilter}
             onChange={(e) => { setActorFilter(e.target.value); setPage(1); }}
-            className="w-40 rounded-lg border border-slate-700/60 bg-slate-900/80 py-2 px-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-400/60" />
+            className="w-40 rounded-lg border border-slate-700/60 bg-slate-900/80 py-2 px-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60" />
         </div>
 
         {/* Table */}
@@ -125,9 +136,9 @@ const AdminAuditLogs = () => {
 
         {/* Detail Drawer */}
         {selectedLog && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-            <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
-              <h2 className="text-lg font-semibold mb-4">Audit Log Detail</h2>
+          <div onClick={() => setSelectedLog(null)} className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+            <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="audit-log-detail-title" className="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
+              <h2 id="audit-log-detail-title" className="text-lg font-semibold mb-4">Audit Log Detail</h2>
               <dl className="space-y-3 text-sm">
                 {[['ID', selectedLog.id], ['Action', selectedLog.action], ['Actor', selectedLog.actor_name || selectedLog.actor_user_id],
                   ['Role', selectedLog.actor_role], ['Resource', `${selectedLog.resource_type || ''} ${selectedLog.resource_id || ''}`],

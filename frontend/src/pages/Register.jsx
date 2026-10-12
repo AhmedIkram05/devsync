@@ -59,8 +59,7 @@ const Register = () => {
       
       // Remove confirmPassword before sending to API
       const { confirmPassword, ...userData } = formData;
-      console.log("Registering user with data:", userData);
-      
+
       // Actual API call to register
       const response = await fetch(`${API_BASE_URL}/auth/register`, {
         method: 'POST',
@@ -70,10 +69,7 @@ const Register = () => {
         body: JSON.stringify(userData),
       });
 
-      // Log full response info
-      console.log("Registration response status:", response.status);
       const responseText = await response.text();
-      console.log("Registration raw response:", responseText);
       
       let responseData;
       try {
@@ -113,7 +109,7 @@ const Register = () => {
     <div className="flex justify-center items-center min-h-screen bg-slate-950 font-['Space_Grotesk']">
       <div className="w-full max-w-md rounded-2xl border border-slate-800/80 bg-slate-900/80 p-8 shadow-2xl">
         <div className="text-center mb-6">
-          <p className="text-xs uppercase tracking-[0.35em] text-slate-500">DevSync</p>
+          <p className="text-xs uppercase tracking-[0.35em] text-slate-400">DevSync</p>
           <h1 className="text-2xl font-semibold text-slate-100 mt-3">Create an account</h1>
           <p className="text-sm text-slate-400 mt-2">Join the workspace and start syncing.</p>
         </div>
@@ -132,61 +128,65 @@ const Register = () => {
         
         <form onSubmit={handleSubmit} noValidate>
           <div className="mb-4">
-            <label className="block text-slate-300 text-sm font-medium mb-2">
+            <label htmlFor="register-name" className="block text-slate-300 text-sm font-medium mb-2">
               Full Name*
             </label>
             <input
+              id="register-name"
               type="text"
               name="name"
               value={formData.name}
               onChange={handleChange}
-              className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
+              className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
               placeholder="John Doe"
               required
             />
           </div>
           
           <div className="mb-4">
-            <label className="block text-slate-300 text-sm font-medium mb-2">
+            <label htmlFor="register-email" className="block text-slate-300 text-sm font-medium mb-2">
               Email Address*
             </label>
             <input
+              id="register-email"
               type="email"
               name="email"
               value={formData.email}
               onChange={handleChange}
-              className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
+              className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
               placeholder="john@example.com"
               required
             />
           </div>
           
           <div className="mb-4">
-            <label className="block text-slate-300 text-sm font-medium mb-2">
+            <label htmlFor="register-password" className="block text-slate-300 text-sm font-medium mb-2">
               Password*
             </label>
             <input
+              id="register-password"
               type="password"
               name="password"
               value={formData.password}
               onChange={handleChange}
-              className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
+              className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
               placeholder="********"
               required
             />
-            <p className="text-xs text-slate-500 mt-1">Must be at least 8 characters</p>
+            <p className="text-xs text-slate-400 mt-1">Must be at least 8 characters</p>
           </div>
           
           <div className="mb-4">
-            <label className="block text-slate-300 text-sm font-medium mb-2">
+            <label htmlFor="register-confirm-password" className="block text-slate-300 text-sm font-medium mb-2">
               Confirm Password*
             </label>
             <input
+              id="register-confirm-password"
               type="password"
               name="confirmPassword"
               value={formData.confirmPassword}
               onChange={handleChange}
-              className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
+              className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
               placeholder="********"
               required
             />
