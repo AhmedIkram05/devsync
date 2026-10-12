@@ -24,6 +24,11 @@ resource "google_container_analysis_note" "devsync_images" {
       human_readable_name = "DevSync image attestations"
     }
   }
+
+  # Order after API enablement — without this the note creation races
+  # google_project_service and 403s "API not used in project" mid-apply
+  # (CD run 38224761253).
+  depends_on = [google_project_service.required]
 }
 
 resource "google_binary_authorization_attestor" "devsync_attestor" {

@@ -14,6 +14,7 @@ locals {
     "cloudresourcemanager.googleapis.com", # TF project reads + IAM grants
     "sqladmin.googleapis.com",             # Cloud SQL (cloudsql.tf)
     "containeranalysis.googleapis.com",    # Binary Authz note + attestations
+    "binaryauthorization.googleapis.com",  # Binary Authz attestor + policy (cluster evaluation_mode needs it at admission)
   ]
 }
 
