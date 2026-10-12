@@ -6,6 +6,8 @@ from functools import wraps
 from flask import jsonify
 from flask_jwt_extended import get_jwt, get_jwt_identity
 
+from ..services.coercion import to_int as _to_int
+
 
 class Role(Enum):
     """User roles with hierarchical permissions"""
@@ -143,13 +145,6 @@ def role_at_least(min_role):
         return wrapper
 
     return decorator
-
-
-def _to_int(value):
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def get_user_project_ids(user_id):

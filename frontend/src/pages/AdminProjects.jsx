@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { useAuth } from '../context/AuthContext';
 import { projectService } from '../services/utils/api';
+import { formatDate } from '../utils/dates';
 
 const statusClasses = {
-  active: 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40',
   completed: 'bg-sky-500/20 text-sky-300 border border-sky-400/40',
   on_hold: 'bg-amber-500/20 text-amber-300 border border-amber-400/40',
   'on-hold': 'bg-amber-500/20 text-amber-300 border border-amber-400/40',
@@ -20,19 +20,6 @@ const statusLabels = {
   'on-hold': 'On Hold',
   planning: 'Planning',
   cancelled: 'Cancelled'
-};
-
-const formatDate = (value) => {
-  if (!value) {
-    return 'N/A';
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return 'N/A';
-  }
-
-  return parsed.toLocaleDateString();
 };
 
 const AdminProjects = () => {

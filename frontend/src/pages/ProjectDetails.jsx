@@ -4,19 +4,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import { projectService } from '../services/utils/api';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../utils/rbac';
-
-const formatDate = (value) => {
-  if (!value) {
-    return 'N/A';
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return 'N/A';
-  }
-
-  return parsed.toLocaleDateString();
-};
+import { formatDate } from '../utils/dates';
 
 const statusBadgeClass = (status) => {
   const statusMap = {

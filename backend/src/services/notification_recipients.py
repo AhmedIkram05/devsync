@@ -5,14 +5,7 @@ Determines who should receive notifications based on user roles, project scope, 
 
 from ..db.db_connection import db
 from ..db.models import Project, User
-
-
-def _to_int(value):
-    """Safe int conversion"""
-    try:
-        return int(value) if value is not None else None
-    except (TypeError, ValueError):
-        return None
+from .coercion import to_int as _to_int
 
 
 def get_tls_for_project(project_id):

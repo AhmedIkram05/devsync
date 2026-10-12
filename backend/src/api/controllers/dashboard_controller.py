@@ -13,19 +13,13 @@ from ...db.db_connection import db
 from ...db.models import GitHubRepository, Project, Task, TaskGitHubLink, User  # Changed to relative import
 from ...services import settings_service
 from ...services.task_rules import count_overdue_tasks, get_project_scope_ids
+from .helpers import safe_query_all as _safe_query_all  # noqa: F401 (back-compat re-export)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 COMPLETED_TASK_STATUSES = {"done", "completed"}
-
-
-def _safe_query_all(model):
-    try:
-        return model.query.all()
-    except Exception:
-        return []
 
 
 def _is_completed_status(status):

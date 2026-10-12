@@ -9,13 +9,7 @@ from ...auth.rbac import Role
 from ...db.models import Project, Task, User, db
 from ...services import audit_service, settings_service
 from ..validators.admin_validator import validate_system_settings, validate_user_role_update
-
-
-def _safe_query_all(model):
-    try:
-        return model.query.all()
-    except Exception:
-        return []
+from .helpers import safe_query_all as _safe_query_all
 
 
 def _count(items, predicate):

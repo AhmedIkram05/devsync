@@ -12,6 +12,15 @@ def _ids_match(left, right):
     return str(left) == str(right)
 
 
+def run_notification(callback, *args, logger_msg="Failed to create notification", **kwargs):
+    """Create notifications without making the primary mutation fail."""
+    try:
+        callback(*args, **kwargs)
+    except Exception:
+        db.session.rollback()
+        logger.exception(logger_msg)
+
+
 class NotificationService:
     @staticmethod
     def send_to_user(user_id, notification_type, title, message, reference_id=None, task_id=None):

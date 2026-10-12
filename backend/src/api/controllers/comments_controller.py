@@ -7,19 +7,15 @@ from flask_jwt_extended import get_jwt, get_jwt_identity
 
 from ...auth.rbac import Role  # Changed to relative import
 from ...db.models import Comment, Task, User, db  # Changed to relative import
-from ...services.notification_service import NotificationService
+from ...services.notification_service import (
+    NotificationService,
+)
+from ...services.notification_service import (
+    run_notification as _run_notification,
+)
 from ..validators.comment_validator import validate_comment_data  # Changed to relative import
 
 logger = logging.getLogger(__name__)
-
-
-def _run_notification(callback, *args, **kwargs):
-    """Create notifications without making the primary comment mutation fail."""
-    try:
-        callback(*args, **kwargs)
-    except Exception:
-        db.session.rollback()
-        logger.exception("Failed to create comment notification")
 
 
 def get_task_comments(task_id):
@@ -87,6 +83,7 @@ def add_comment(task_id):
         user_id,
         mentioned_user_ids,
         recipient_user_ids,
+        logger_msg="Failed to create comment notification",
     )
 
     # Get user info for response

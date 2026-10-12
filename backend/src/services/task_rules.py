@@ -3,17 +3,11 @@
 from datetime import datetime
 
 from ..db.models import Project
+from .coercion import to_int as _to_int
 
 COMPLETED_TASK_STATUSES = {"done", "completed"}
 OVERDUE_EXCLUDED_STATUSES = {"done", "completed", "review", "in_review"}
 PROJECT_SCOPE_ROLES = {"admin", "team_lead"}
-
-
-def _to_int(value):
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def normalize_task_status(status):

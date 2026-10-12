@@ -1,12 +1,7 @@
 import { Link } from 'react-router-dom';
+import { formatGithubDate as formatDate } from '../utils/dates';
 
 const GitHubRepoCard = ({ repo }) => {
-  // Format date to be more readable
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Unknown';
-    const date = new Date(dateString);
-    return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-  };
 
   return (
     <div className="bg-slate-900/70 p-5 rounded-2xl shadow hover:shadow-lg transition-shadow border border-slate-800/70">
