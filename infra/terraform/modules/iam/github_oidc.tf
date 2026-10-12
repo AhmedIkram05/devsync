@@ -55,6 +55,10 @@ resource "google_project_iam_member" "cicd" {
     "roles/compute.viewer",                  # provider refresh reads instanceGroupUrls (compute.instanceGroupManagers.get)
     "roles/iam.serviceAccountAdmin",         # module.iam owns google_service_account.runner + impersonation member
     "roles/iam.workloadIdentityPoolAdmin",   # module.iam owns WIF pool `github` + provider `github-actions`
+    "roles/cloudsql.admin",                  # cloudsql.tf: imported instance/database read+update (plan READS the instance — pre-granted 2026-10-12 after CD plan 403)
+    "roles/compute.securityAdmin",           # armor.tf: Cloud Armor security policy CRUD + GLBC policy attach
+    "roles/binaryauthorization.admin",       # binauthz.tf: attestor + project policy CRUD
+    "roles/containeranalysis.admin",         # binauthz.tf: container-analysis note + note IAM
   ])
   project = var.project_id
   role    = each.value
