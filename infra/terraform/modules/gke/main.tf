@@ -71,11 +71,13 @@ resource "google_container_cluster" "devsync" {
     create = "60m"
   }
 
-  # Config for the initial (immediately-removed) throwaway node pool. e2-medium
-  # hit a GCE stockout in us-central1-f; small slices have more headroom.
-  node_config {
-    machine_type = "e2-small"
-  }
+  # NO node_config block: the boot-seed (throwaway) default pool config used
+  # to pin machine_type here. GKE mirrors the LIVE node pool's machine type
+  # into clusters.get().nodeConfig, so the pinned "e2-small" turned into a
+  # phantom reverse diff ("e2-medium -> e2-small") whose update API call
+  # targeted the long-removed default-pool and 400'd every cluster update
+  # (CD runs 38224761253/38228774703). The seed pool is provider-defaulted
+  # (e2-medium) and removed immediately after boot anyway.
 }
 
 # Single zone-pinned node pool: autoscaler scales in-place, auto-upgrade keeps
