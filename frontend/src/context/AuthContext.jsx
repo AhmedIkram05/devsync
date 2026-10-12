@@ -229,15 +229,16 @@ export const AuthProvider = ({ children }) => {
           throw new Error("This account role is no longer supported. Please contact an administrator.");
         }
 
-        // Fetch permissions via cookie session
+        // Fetch permissions via cookie session. fetchWithAuth resolves the
+        // endpoint against the normalized API base (/api/v1) — a hand-rolled
+        // URL misses the prefix in prod, 200s from the SPA fallback as
+        // index.html, and json() throws, leaving every fresh login with
+        // permissions=[] → /forbidden (audit finding, CD run 38234691866).
         setPermissionsLoading(true);
         try {
-          const permRes = await fetch(`${process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'development' ? 'http://localhost:8000/api/v1' : '')}/auth/permissions`, {
-            credentials: 'include',
-          });
-          const permData = await permRes.json();
-          profile.permissions = permData.permissions || [];
-          setPermissions(permData.permissions || []);
+          const permData = await fetchWithAuth('/auth/permissions');
+          profile.permissions = permData?.permissions || [];
+          setPermissions(permData?.permissions || []);
         } catch (err) {
           console.error("Failed to fetch permissions during login:", err);
           profile.permissions = [];
