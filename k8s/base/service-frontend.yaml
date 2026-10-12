@@ -5,6 +5,10 @@ metadata:
   namespace: devsync
   labels:
     app.kubernetes.io/part-of: devsync
+  annotations:
+    # Attaches the TF-owned Cloud Armor policy (infra/terraform/armor.tf) to
+    # the LB backend service via BackendConfig devsync-armor.
+    cloud.google.com/backend-config: '{"default": "devsync-armor"}'
 spec:
   type: ClusterIP
   selector:

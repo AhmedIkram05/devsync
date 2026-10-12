@@ -9,7 +9,34 @@ resource "google_container_cluster" "devsync" {
   # Standard, not Autopilot: real drain/upgrade path, PDB semantics, node ops.
   # enable_autopilot is deliberately UNSET (omitted) — setting it false still
   # conflicts with remove_default_node_pool below.
-  deletion_protection = false
+  # deletion_protection ON (API-level: no cluster delete without disabling it
+  # first). In-place flip — verified plan: update only, no replace.
+  deletion_protection = true
+
+  # Rebuild-window staged config (all three verified ForceNew by plan: they
+  # REPLACE the cluster, so the CD no-destroy guard correctly refuses until
+  # the deliberate rebuild in docs/planning/k8s.md "Cluster rebuild window").
+  # Uncomment together as ONE change and run terraform apply OUTSIDE the CD:
+  #
+  #   # Regional control plane + pools across all zone replicas:
+  #   location = var.region
+  #   # Dataplane V2: real NetworkPolicy enforcement (k8s/base netpols are
+  #   # dormant until this) + eBPF + enable_fqdn_network_policy becomes
+  #   # available. Create-time-only for Standard clusters.
+  #   datapath_provider = "ADVANCED_DATAPATH"
+  #
+  # Note: lifecycle.prevent_destroy below must be lifted (or state moved) for
+  # that one apply, then restored.
+
+  # Binary Authorization: admission evaluates the project singleton policy
+  # (infra/terraform/binauthz.tf — REQUIRE_ATTESTATION, DRYRUN audit-only).
+  # In-place update (verified by plan). No ordering guarantee vs the policy
+  # resource within one apply is acceptable: before the policy lands,
+  # admission falls back to GCP's default allow-all policy, and the audit
+  # rule can never deny a pod.
+  binary_authorization {
+    evaluation_mode = "PROJECT_SINGLETON_POLICY_ENFORCE"
+  }
 
   release_channel {
     channel = "REGULAR"
@@ -32,6 +59,12 @@ resource "google_container_cluster" "devsync" {
 
   resource_labels = var.labels
 
+  # No terraform destroy of the cluster — the standing env is prod. Lift this
+  # block ONLY for the deliberate rebuild window (see staged config above).
+  lifecycle {
+    prevent_destroy = true
+  }
+
   timeouts {
     # Provider defaults to 40m; zonal create is ~15m but stockouts elsewhere
     # have burned long waits — leave headroom instead of dying mid-create.
@@ -47,9 +80,8 @@ resource "google_container_cluster" "devsync" {
 
 # Single zone-pinned node pool: autoscaler scales in-place, auto-upgrade keeps
 # nodes on the release channel.
-data "google_project" "this" {
-  project_id = var.project_id
-}
+# (No in-module data reads: they defer to apply time under the module's
+# depends_on and turn referenced strings unknown mid-plan.)
 
 # God-console Recommender repair (High priority, 2026-09-13): the node pool
 # runs on the default compute SA (standing-window trade). GKE post-1.26 needs
@@ -57,10 +89,13 @@ data "google_project" "this" {
 # Upgraded path (post-teardown): dedicated least-privilege node SA
 # (logging.logWriter + monitoring.metricWriter + autoscaling.metricsWriter,
 # no cloud-platform scope) recorded here alongside the pool recreation.
+# The SA email arrives as a variable (resolved at ROOT): in-module data reads
+# defer to apply time under the module's depends_on and turn member strings
+# unknown, which the plan then shows as a destroy+create.
 resource "google_project_iam_member" "default_node_sa" {
   project = var.project_id
   role    = "roles/container.defaultNodeServiceAccount"
-  member  = "serviceAccount:${data.google_project.this.number}-compute@developer.gserviceaccount.com"
+  member  = "serviceAccount:${var.default_compute_sa_email}"
 }
 
 resource "google_container_node_pool" "primary" {
@@ -78,8 +113,16 @@ resource "google_container_node_pool" "primary" {
     auto_upgrade = true
   }
 
+  # No terraform destroy of the node pool — the standing env is prod.
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  # e2-medium (verified in-place: GKE updateNodePool, rolling node
+  # recreation under the PDB — no replace). e2-small's 1.36Gi allocatable
+  # starved backend scheduling during rollouts.
   node_config {
-    machine_type = "e2-small"
+    machine_type = "e2-medium"
     disk_size_gb = 20
     oauth_scopes = [
       "https://www.googleapis.com/auth/cloud-platform",

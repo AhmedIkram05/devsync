@@ -14,6 +14,7 @@ resources:
 - service-frontend.yaml
 - ingress.yaml
 - managedcertificate.yaml
+- backendconfig.yaml
 - migrate-job.yaml
 - postgres.yaml
 - resourcequota.yaml

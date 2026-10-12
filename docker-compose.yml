@@ -8,11 +8,14 @@ services:
     depends_on:
       devsync-postgres:
         condition: service_healthy
+      devsync-redis:
+        condition: service_healthy
     environment:
       - FLASK_APP=src.app:create_app
       - FLASK_ENV=development
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - DATABASE_URL=postgresql://devsync:${POSTGRES_PASSWORD}@devsync-postgres:5432/devsync?sslmode=disable
+      - REDIS_URL=${REDIS_URL:-redis://devsync-redis:6379/0}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - SECRET_KEY=${SECRET_KEY:-}
       - FERNET_KEY=${FERNET_KEY:-}
@@ -21,7 +24,7 @@ services:
       - GITHUB_REDIRECT_URI=${GITHUB_REDIRECT_URI}
       - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -46,6 +49,21 @@ services:
       - "${DEVSYNC_FRONTEND_PORT:-3000}:80"
     networks:
       - devsync-network
+
+  devsync-redis:
+    image: redis:7-alpine
+    container_name: devsync-redis
+    restart: unless-stopped
+    networks:
+      - devsync-network
+    # Same shape as k8s/base/redis.yaml: ephemeral queue/ratelimiter state,
+    # no persistence.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   devsync-postgres:
     image: postgres:16

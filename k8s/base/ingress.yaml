@@ -16,9 +16,10 @@ metadata:
     app.kubernetes.io/part-of: devsync
 spec:
   ingressClassName: gce
-  # No host rule on purpose: any domain pointed at the LB (devsyncapp.me,
-  # www.devsyncapp.me, gcp.devsyncapp.me) routes to this backend. The pr
-  # overlay drops this Ingress entirely.
+  # No host rule in BASE on purpose (pr overlay renders it and drops the
+  # Ingress anyway); the PROD overlay pins /spec/rules/0/host to the live
+  # host via patch-ingress-host-rule.yaml — the catch-all (any domain pointed
+  # at the LB routes) is closed there.
   rules:
   - http:
       paths:

@@ -23,6 +23,11 @@ def _reload_config(monkeypatch, **env):
             monkeypatch.delenv(key, raising=False)
         else:
             monkeypatch.setenv(key, value)
+    # Hermetic reload: config.py runs load_dotenv() at import. Without this,
+    # the repo-root .env re-injects vars deleted by the caller (e.g.
+    # JWT_ACCESS_EXPIRE_MINUTES from a local .env override), so "default"
+    # assertions silently track the developer's .env instead of the code.
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None)
     module = importlib.reload(sys.modules["backend.src.config.config"])
     return module
 
@@ -34,6 +39,7 @@ def _restore_config(monkeypatch):
     monkeypatch.delenv("FERNET_KEY", raising=False)
     monkeypatch.delenv("FERNET_KEYS", raising=False)
     monkeypatch.delenv("ALLOW_DERIVED_FERNET", raising=False)
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None)
     return importlib.reload(sys.modules["backend.src.config.config"])
 
 

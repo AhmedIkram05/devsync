@@ -18,6 +18,12 @@ server {
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
+    # HSTS rides the client-facing HTTPS response (the GCE LB terminates
+    # TLS and forwards HTTP to nginx); browsers honour it only over HTTPS.
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    # Tight CSP: the CRA build loads nothing off-origin (no CDNs, no web
+    # fonts); runtime style tags need 'unsafe-inline' under style-src.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss: https:; font-src 'self' data:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
 
     # API proxy — uses variable so nginx resolves at runtime (supports Docker DNS)
     set $api_upstream "${API_UPSTREAM}";
@@ -58,9 +64,16 @@ server {
     }
 
     # Static asset caching (fingerprinted files)
+    # NOTE: a location-level add_header REPLACES inherited server-level
+    # headers, so the security headers are repeated here — without that,
+    # /static/* responses would drop XFO/nosniff/HSTS/CSP entirely.
     location /static/ {
         expires 1y;
         add_header Cache-Control "public, immutable";
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss: https:; font-src 'self' data:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
     }
 
     # SPA fallback — all non-file routes serve index.html
