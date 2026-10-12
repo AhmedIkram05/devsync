@@ -21,6 +21,7 @@ from ...db.models import (
 )
 from ...services.github_client import GitHubClient
 from ...services.redis_client import get_redis
+from ..middlewares.error_handler import error_response
 from ..validators.github_validator import validate_github_repo_data, validate_task_github_link
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,7 @@ def _resolve_access_token(token_row, user_id):
 
 def _relink_response(user_id):
     logger.warning("GitHub token needs re-link user_id=%s", user_id)
-    return jsonify({"message": RELINK_MESSAGE}), 401
+    return error_response(RELINK_MESSAGE, "unauthorized", 401)
 
 
 def check_github_config():
@@ -121,12 +122,12 @@ def initiate_github_auth():
 
     # Check if GitHub OAuth credentials are configured
     if not current_app.config.get("GITHUB_CLIENT_ID") or not current_app.config.get("GITHUB_CLIENT_SECRET"):
-        return jsonify(
-            {
-                "error": "GitHub OAuth credentials not configured",
-                "message": "GitHub integration is not available at this time.",
-            }
-        ), 503
+        return error_response(
+            "GitHub integration is not available at this time.",
+            "service_unavailable",
+            503,
+            details={"error": "GitHub OAuth credentials not configured"},
+        )
 
     # Get authorization URL
     auth_url = GitHubClient.get_auth_url(state)
@@ -142,7 +143,7 @@ def github_callback():
 
     # Validate the request
     if not code or not state:
-        return jsonify({"message": "Missing code or state parameter"}), 400
+        return error_response("Missing code or state parameter", "bad_request", 400)
 
     try:
         # Single-use server-issued state first (Redis SETEX 600, memory fallback)...
@@ -154,21 +155,21 @@ def github_callback():
 
             if not user_id:
                 logger.error("Rejected OAuth callback: state not signed by this server or expired")
-                return jsonify({"error": "Invalid state parameter format"}), 400
+                return error_response("Invalid state parameter format", "bad_request", 400)
     except Exception as e:
         logger.error(f"Error processing state parameter: {str(e)}")
-        return jsonify({"error": "Invalid state parameter format - processing error"}), 400
+        return error_response("Invalid state parameter format - processing error", "bad_request", 400)
 
     try:
         user_id = int(user_id)
     except (TypeError, ValueError):
-        return jsonify({"error": "Invalid state parameter format - userId must be an integer"}), 400
+        return error_response("Invalid state parameter format - userId must be an integer", "bad_request", 400)
 
     # Exchange code for access token
     token_data = GitHubClient.exchange_code_for_token(code)
 
     if not token_data or "access_token" not in token_data:
-        return jsonify({"message": "Failed to obtain access token"}), 400
+        return error_response("Failed to obtain access token", "bad_request", 400)
 
     # Create GitHub client with new token
     github_client = GitHubClient(token_data["access_token"])
@@ -176,7 +177,7 @@ def github_callback():
     # Fetch user profile to get GitHub username
     github_profile = github_client.get_user_profile()
     if not github_profile:
-        return jsonify({"message": "Failed to fetch GitHub profile"}), 400
+        return error_response("Failed to fetch GitHub profile", "bad_request", 400)
 
     # Check if user already has a GitHub token
     existing_token = GitHubToken.query.filter_by(user_id=user_id).first()
@@ -223,7 +224,7 @@ def get_github_repositories():
     # Check if user has a GitHub token
     token = GitHubToken.query.filter_by(user_id=user_id).first()
     if not token:
-        return jsonify({"message": "GitHub account not connected"}), 401
+        return error_response("GitHub account not connected", "unauthorized", 401)
 
     # Create GitHub client
     access_token = _resolve_access_token(token, user_id)
@@ -462,7 +463,7 @@ def add_github_repository():
     # Check if user has a GitHub token
     token = GitHubToken.query.filter_by(user_id=user_id).first()
     if not token:
-        return jsonify({"message": "GitHub account not connected"}), 401
+        return error_response("GitHub account not connected", "unauthorized", 401)
 
     # Create GitHub client
     access_token = _resolve_access_token(token, user_id)
@@ -473,14 +474,14 @@ def add_github_repository():
     # Parse repository name (owner/repo)
     repo_parts = data["repository_name"].split("/")
     if len(repo_parts) != 2:
-        return jsonify({"message": "Invalid repository name format"}), 400
+        return error_response("Invalid repository name format", "bad_request", 400)
 
     owner, repo_name = repo_parts
 
     # Fetch repository details from GitHub
     repo_data = github_client.get_repository(owner, repo_name)
     if not repo_data:
-        return jsonify({"message": "Repository not found on GitHub"}), 404
+        return error_response("Repository not found on GitHub", "not_found", 404)
 
     # Check if repository is already tracked
     existing_repo = GitHubRepository.query.filter_by(repo_url=data["repository_url"]).first()
@@ -522,7 +523,7 @@ def get_repository_issues(repo_id):
     # Check if user has a GitHub token
     token = GitHubToken.query.filter_by(user_id=user_id).first()
     if not token:
-        return jsonify({"message": "GitHub account not connected"}), 401
+        return error_response("GitHub account not connected", "unauthorized", 401)
 
     # Create GitHub client
     access_token = _resolve_access_token(token, user_id)
@@ -533,7 +534,7 @@ def get_repository_issues(repo_id):
     # Parse repository name to get owner and repo
     repo_parts = repo.repo_name.split("/")
     if len(repo_parts) != 2:
-        return jsonify({"message": "Invalid repository name format"}), 400
+        return error_response("Invalid repository name format", "bad_request", 400)
 
     owner, repo_name = repo_parts
 
@@ -578,7 +579,7 @@ def get_repository_pulls(repo_id):
     # Check if user has a GitHub token
     token = GitHubToken.query.filter_by(user_id=user_id).first()
     if not token:
-        return jsonify({"message": "GitHub account not connected"}), 401
+        return error_response("GitHub account not connected", "unauthorized", 401)
 
     # Create GitHub client
     access_token = _resolve_access_token(token, user_id)
@@ -589,7 +590,7 @@ def get_repository_pulls(repo_id):
     # Parse repository name to get owner and repo
     repo_parts = repo.repo_name.split("/")
     if len(repo_parts) != 2:
-        return jsonify({"message": "Invalid repository name format"}), 400
+        return error_response("Invalid repository name format", "bad_request", 400)
 
     owner, repo_name = repo_parts
 
@@ -752,7 +753,7 @@ def delete_task_github_link(task_id, link_id):
 
     # Verify link belongs to the task
     if link.task_id != task_id:
-        return jsonify({"message": "Link does not belong to this task"}), 400
+        return error_response("Link does not belong to this task", "bad_request", 400)
 
     # Delete the link
     db.session.delete(link)
@@ -769,11 +770,11 @@ def disconnect_github_account():
     try:
         user_id = int(user_id)
     except (TypeError, ValueError):
-        return jsonify({"message": "Invalid user identity"}), 401
+        return error_response("Invalid user identity", "unauthorized", 401)
 
     user = User.query.get(user_id)
     if not user:
-        return jsonify({"message": "User not found"}), 404
+        return error_response("User not found", "not_found", 404)
 
     GitHubToken.query.filter_by(user_id=user_id).delete()
     user.github_username = None

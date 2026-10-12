@@ -11,6 +11,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 # Import after path setup
 from backend.src.api.middlewares.error_handler import (
     APIError,
+    build_error_envelope,
+    error_response,
     handle_404_error,
     handle_api_error,
     handle_generic_error,
@@ -51,10 +53,10 @@ def test_handle_api_error():
     # Need to use app context to use jsonify
     with app.app_context():
         # Call the error handler
-        response = handle_api_error(error)
+        response, status_code = handle_api_error(error)
 
         # Check response
-        assert response.status_code == 422
+        assert status_code == 422
         assert response.get_json()["message"] == "Test error message"
         assert response.get_json()["status"] == "error"
 
@@ -101,7 +103,7 @@ def test_handle_generic_error_debug_mode():
     error = ValueError("Something went wrong")
 
     # Need to use app context and patch current_app inside it
-    with app.app_context(), patch("flask.current_app.config", {"DEBUG": True}):
+    with app.test_request_context(), patch("flask.current_app.config", {"DEBUG": True}):
         # Mock the logger to avoid actual logging
         with patch("backend.src.api.middlewares.error_handler.logger") as mock_logger:
             # Call the error handler
@@ -124,7 +126,7 @@ def test_handle_generic_error_production():
     error = ValueError("Something went wrong")
 
     # Need to use app context and patch current_app inside it
-    with app.app_context(), patch("flask.current_app.config", {"DEBUG": False}):
+    with app.test_request_context(), patch("flask.current_app.config", {"DEBUG": False}):
         # Mock the logger to avoid actual logging
         with patch("backend.src.api.middlewares.error_handler.logger") as mock_logger:
             # Call the error handler
@@ -157,3 +159,27 @@ def test_register_error_handlers():
         mock_register.assert_any_call(APIError, handle_api_error)
         mock_register.assert_any_call(404, handle_404_error)
         mock_register.assert_any_call(Exception, handle_generic_error)
+
+
+def test_error_envelope_shape():
+    """All error responses share {status, message, code, request_id}."""
+    with app.test_request_context():
+        body = build_error_envelope("oops", "bad_request", request_id="r1", details={"errors": {"x": 1}})
+        assert body == {
+            "status": "error",
+            "message": "oops",
+            "code": "bad_request",
+            "request_id": "r1",
+            "errors": {"x": 1},
+        }
+        resp, status_code = error_response(
+            "oops", "bad_request", 400, details={"errors": {"x": 1}}, headers={"Retry-After": "60"}
+        )
+        assert status_code == 400
+        data = resp.get_json()
+        assert data["status"] == "error"
+        assert data["message"] == "oops"
+        assert data["code"] == "bad_request"
+        assert "request_id" in data
+        assert data["errors"] == {"x": 1}
+        assert resp.headers["Retry-After"] == "60"

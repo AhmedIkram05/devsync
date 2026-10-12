@@ -42,6 +42,7 @@ class TestGitHubController(unittest.TestCase):
         self.controller_patchers = [
             patch("backend.src.api.controllers.github_controller.request", mock_request),
             patch("backend.src.api.controllers.github_controller.jsonify", mock_jsonify),
+            patch("backend.src.api.middlewares.error_handler.jsonify", mock_jsonify),
             patch("backend.src.api.controllers.github_controller.get_jwt_identity", mock_jwt),
             patch("backend.src.api.controllers.github_controller.redirect", mock_redirect),
             patch(
@@ -504,7 +505,8 @@ class TestGitHubController(unittest.TestCase):
 
         # Assertions
         self.assertEqual(result[1], 400)
-        self.assertIn("Invalid state parameter format", result[0]["error"])
+        body = result[0] if isinstance(result[0], dict) else result[0].get_json()
+        self.assertIn("Invalid state parameter format", body["message"])
         mock_logger.error.assert_called()
 
     @patch("backend.src.api.controllers.github_controller.GitHubClient")

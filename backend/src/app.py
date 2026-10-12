@@ -9,6 +9,7 @@ from flask_swagger_ui import get_swaggerui_blueprint
 
 from src.api import init_app as init_api
 from src.api.middlewares import setup_middlewares
+from src.api.middlewares.error_handler import error_response
 from src.config.config import (
     get_config,
     is_valid_cors_origin,
@@ -228,6 +229,11 @@ def create_app(config_class=None):
             vary = response.headers.get("Vary", "")
             if "Origin" not in vary:
                 response.headers["Vary"] = f"{vary}, Origin" if vary else "Origin"
+        response.headers.setdefault("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         return response
 
     # Preflight OPTIONS is handled by Flask-CORS on registered routes; a
@@ -237,15 +243,15 @@ def create_app(config_class=None):
     # JWT error handlers
     @jwt.expired_token_loader
     def expired_token_callback(jwt_header, jwt_payload):
-        return {"status": 401, "message": "The authentication token has expired", "error": "token_expired"}, 401
+        return error_response("The authentication token has expired", "token_expired", 401)
 
     @jwt.invalid_token_loader
     def invalid_token_callback(error):
-        return {"status": 401, "message": "Invalid authentication token", "error": "token_invalid"}, 401
+        return error_response("Invalid authentication token", "token_invalid", 401)
 
     @jwt.unauthorized_loader
     def missing_token_callback(error):
-        return {"status": 401, "message": "Authentication token is missing", "error": "authorization_required"}, 401
+        return error_response("Authentication token is missing", "authorization_required", 401)
 
     @jwt.revoked_token_loader
     def revoked_token_callback(jwt_header, jwt_payload):
@@ -272,7 +278,7 @@ def create_app(config_class=None):
                     app.logger.warning("refresh reuse audit failed", exc_info=True)
             except Exception as exc:
                 app.logger.warning("refresh reuse revocation failed: %s", exc)
-        return {"status": 401, "message": "The authentication token has been revoked", "error": "token_revoked"}, 401
+        return error_response("The authentication token has been revoked", "token_revoked", 401)
 
     # Modified exempt function to correctly bypass JWT and auth checks for public routes
     @jwt.token_in_blocklist_loader

@@ -52,24 +52,12 @@ components:
         valid bearer token is also sent. See docs/backend/api-conventions.md.
 
   schemas:
-    ErrorResponse:
+    ErrorEnvelope:
       description: >
-        Legacy shape, referenced by no operation. The live error bodies are
-        BadRequestError, UnauthorizedError, ForbiddenError, NotFoundError,
-        RateLimitError and InternalServerError - see docs/backend/api-conventions.md.
+        Single error shape emitted by every error path via
+        `error_response()` - see docs/backend/api-conventions.md.
       type: object
-      properties:
-        message:
-          type: string
-        error:
-          type: string
-
-    BadRequestError:
-      type: object
-      description: >
-        Emitted by `@validate_json` and the schema validators. `GET`/`POST
-        /github/connect` skip this shape entirely and answer their 404/500 with
-        a bare `{"error": "..."}` - see docs/backend/api-conventions.md.
+      required: [status, message, code, request_id]
       properties:
         status:
           type: string
@@ -77,76 +65,49 @@ components:
         message:
           type: string
           example: Missing JSON in request body
+        code:
+          type: string
+          example: bad_request
+        request_id:
+          type: string
+          example: a1b2c3d4e5f60001
+
+    ErrorResponse:
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+      description: Legacy alias of ErrorEnvelope.
+
+    BadRequestError:
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+      description: 400 as ErrorEnvelope (code bad_request / validation_error).
 
     UnauthorizedError:
-      type: object
-      description: Returned by the JWT middleware before any role check runs.
-      properties:
-        status:
-          type: string
-          example: error
-        message:
-          type: string
-          example: Missing or invalid access token
-        error:
-          type: string
-          enum: [token_expired, token_invalid, authorization_required]
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+      description: 401 as ErrorEnvelope (code unauthorized / token_expired / token_invalid / authorization_required / token_revoked).
 
     ForbiddenError:
-      type: object
-      description: >
-        Role and permission denials. These bodies omit `status` - a known
-        inconsistency, see docs/backend/api-conventions.md.
-      properties:
-        message:
-          type: string
-          example: Insufficient permissions
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+      description: 403 as ErrorEnvelope (code forbidden).
 
     NotFoundError:
-      type: object
-      properties:
-        status:
-          type: string
-          example: error
-        message:
-          type: string
-          example: Resource not found
-        error:
-          type: string
-          example: Task not found
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+      description: 404 as ErrorEnvelope (code not_found).
 
     RateLimitError:
-      type: object
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
       description: >
-        Every operation is subject to the global 300 requests / 60s limiter, so
-        this response is possible on any endpoint. A subset of admin endpoints
-        additionally carry a tighter per-route bucket, whose message reads
-        "Rate limit exceeded. Please try again later.".
-      properties:
-        status:
-          type: string
-          example: error
-        message:
-          type: string
-          example: Global rate limit exceeded. Please try again later.
+        429 as ErrorEnvelope (code rate_limited) with a Retry-After header.
+        Every operation is subject to the global 300 requests / 60s limiter.
 
     InternalServerError:
-      type: object
-      properties:
-        status:
-          type: string
-          example: error
-        message:
-          type: string
-          example: Internal server error
-        error:
-          type: string
-          example: An unexpected error occurred
-        traceback:
-          type: string
-          nullable: true
-          description: Only populated when the app runs in DEBUG mode.
-          example: 'Traceback (most recent call last): ...'
+      allOf:
+        - $ref: '#/components/schemas/ErrorEnvelope'
+      description: 500 as ErrorEnvelope (code internal_error). Extra error/traceback keys appear only as details passthrough.
 
     Pagination:
       type: object

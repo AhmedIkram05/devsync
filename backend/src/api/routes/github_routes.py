@@ -24,6 +24,7 @@ from ..controllers.github_controller import (
     link_task_with_github,
 )
 from ..middlewares import rate_limit, role_required
+from ..middlewares.error_handler import error_response
 from ..middlewares.validation_middleware import validate_json
 
 
@@ -56,7 +57,7 @@ def register_routes(bp):
         state = data.get("state")
 
         if not code or not state:
-            return jsonify({"error": "Missing required parameters"}), 400
+            return error_response("Missing required parameters", "bad_request", 400)
 
         try:
             # The SPA posts with auth; bind the exchange to the caller's own
@@ -66,7 +67,7 @@ def register_routes(bp):
             try:
                 jwt_user_id = int(jwt_user_id)
             except (TypeError, ValueError):
-                return jsonify({"error": "Invalid user identity"}), 401
+                return error_response("Invalid user identity", "unauthorized", 401)
 
             # Single-use server-issued state first, then the signed state token.
             user_id = consume_oauth_state(state)
@@ -79,16 +80,16 @@ def register_routes(bp):
                 user_id = None
 
             if not user_id:
-                return jsonify({"error": "Invalid state parameter - missing user ID"}), 400
+                return error_response("Invalid state parameter - missing user ID", "bad_request", 400)
 
             if user_id != jwt_user_id:
-                return jsonify({"error": "State does not belong to the authenticated user"}), 403
+                return error_response("State does not belong to the authenticated user", "forbidden", 403)
 
             # Exchange the code for an access token
             token_data = GitHubClient.exchange_code_for_token(code)
 
             if not token_data or "access_token" not in token_data:
-                return jsonify({"error": "Failed to obtain access token"}), 400
+                return error_response("Failed to obtain access token", "bad_request", 400)
 
             # Create GitHub client with new token
             github_client = GitHubClient(token_data["access_token"])
@@ -97,12 +98,12 @@ def register_routes(bp):
             github_profile = github_client.get_user_profile()
 
             if not github_profile:
-                return jsonify({"error": "Failed to fetch GitHub profile"}), 400
+                return error_response("Failed to fetch GitHub profile", "bad_request", 400)
 
             # Find the user
             user = User.query.get(user_id)
             if not user:
-                return jsonify({"error": "User not found"}), 404
+                return error_response("User not found", "not_found", 404)
 
             # Check if user already has a GitHub token
             existing_token = GitHubToken.query.filter_by(user_id=user_id).first()
@@ -138,7 +139,9 @@ def register_routes(bp):
             db.session.rollback()
             current_app.logger.error(f"Error processing GitHub callback: {str(e)}")
 
-            return jsonify({"success": False, "message": f"Error processing GitHub callback: {str(e)}"}), 500
+            return error_response(
+                f"Error processing GitHub callback: {str(e)}", "internal_error", 500, details={"success": False}
+            )
 
     @bp.route("/github/repositories", methods=["GET"])
     @jwt_required()
@@ -200,13 +203,13 @@ def register_routes(bp):
         state = request.args.get("state")
 
         if not code:
-            return jsonify({"success": False, "message": "No code provided"}), 400
+            return error_response("No code provided", "bad_request", 400, details={"success": False})
 
         jwt_user_id = _extract_user_id()
         try:
             jwt_user_id = int(jwt_user_id)
         except (TypeError, ValueError):
-            return jsonify({"success": False, "message": "Invalid user identity"}), 401
+            return error_response("Invalid user identity", "unauthorized", 401, details={"success": False})
 
         try:
             # Single-use server-issued state first, then the signed state token.
@@ -220,16 +223,18 @@ def register_routes(bp):
                 user_id = None
 
             if not user_id:
-                return jsonify({"success": False, "message": "Invalid state parameter"}), 400
+                return error_response("Invalid state parameter", "bad_request", 400, details={"success": False})
 
             if user_id != jwt_user_id:
-                return jsonify({"success": False, "message": "State does not belong to the authenticated user"}), 403
+                return error_response(
+                    "State does not belong to the authenticated user", "forbidden", 403, details={"success": False}
+                )
 
             # Exchange the code for an access token
             token_data = GitHubClient.exchange_code_for_token(code)
 
             if not token_data or "access_token" not in token_data:
-                return jsonify({"success": False, "message": "Failed to obtain access token"}), 400
+                return error_response("Failed to obtain access token", "bad_request", 400, details={"success": False})
 
             # Create GitHub client with new token
             github_client = GitHubClient(token_data["access_token"])
@@ -238,12 +243,12 @@ def register_routes(bp):
             github_profile = github_client.get_user_profile()
 
             if not github_profile:
-                return jsonify({"success": False, "message": "Failed to fetch GitHub profile"}), 400
+                return error_response("Failed to fetch GitHub profile", "bad_request", 400, details={"success": False})
 
             # Find the user
             user = User.query.get(user_id)
             if not user:
-                return jsonify({"success": False, "message": "User not found"}), 404
+                return error_response("User not found", "not_found", 404, details={"success": False})
 
             # Check if user already has a GitHub token
             existing_token = GitHubToken.query.filter_by(user_id=user_id).first()
@@ -279,7 +284,7 @@ def register_routes(bp):
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Error processing GitHub exchange: {str(e)}")
-            return jsonify({"success": False, "message": str(e)}), 500
+            return error_response(str(e), "internal_error", 500, details={"success": False})
 
     @bp.route("/github/connect", methods=["GET", "POST"])
     @jwt_required()
@@ -292,11 +297,11 @@ def register_routes(bp):
         try:
             user_id = int(user_id)
         except (TypeError, ValueError):
-            return jsonify({"error": "Invalid user identity"}), 401
+            return error_response("Invalid user identity", "unauthorized", 401)
 
         user = User.query.get(user_id)
         if not user:
-            return jsonify({"error": "User not found"}), 404
+            return error_response("User not found", "not_found", 404)
 
         # A client-supplied state may be forged; only server-signed states are
         # accepted on the callback, so always issue a fresh signed one.
@@ -309,7 +314,7 @@ def register_routes(bp):
         redirect_uri = current_app.config.get("GITHUB_REDIRECT_URI", "http://localhost:8000/api/v1/github/callback")
 
         if not client_id:
-            return jsonify({"error": "GitHub OAuth configuration is incomplete"}), 500
+            return error_response("GitHub OAuth configuration is incomplete", "internal_error", 500)
 
         oauth_query = urlencode(
             {
@@ -332,14 +337,14 @@ def register_routes(bp):
         try:
             user_id = int(user_id)
         except (TypeError, ValueError):
-            return jsonify({"error": "Invalid user identity"}), 401
+            return error_response("Invalid user identity", "unauthorized", 401)
 
         user = User.query.get(user_id)
         if user:
             token = GitHubToken.query.filter_by(user_id=user_id).first()
             connected = token is not None
             return jsonify({"connected": connected, "username": user.github_username if connected else ""})
-        return jsonify({"error": "User not found"}), 404
+        return error_response("User not found", "not_found", 404)
 
     @bp.route("/github/disconnect", methods=["POST"])
     @jwt_required()

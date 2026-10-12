@@ -11,10 +11,11 @@ import time
 from collections import defaultdict
 from functools import wraps
 
-from flask import jsonify, request
+from flask import request
 from flask_jwt_extended import get_jwt_identity
 
 from ...services.redis_client import get_redis
+from .error_handler import error_response
 
 # In-memory storage for rate limiting (per-pod fallback when Redis is unset/down)
 request_counts = defaultdict(lambda: defaultdict(int))
@@ -117,7 +118,12 @@ def rate_limit(requests_per_window=100, window_seconds=60, by_endpoint=True):
             endpoint = request.endpoint if by_endpoint else "global"
 
             if _record_hit(client_id, endpoint, requests_per_window, window_seconds):
-                return jsonify({"status": "error", "message": "Rate limit exceeded. Please try again later."}), 429
+                return error_response(
+                    "Rate limit exceeded. Please try again later.",
+                    "rate_limited",
+                    429,
+                    headers={"Retry-After": str(window_seconds)},
+                )
 
             # Execute the request handler
             return f(*args, **kwargs)
@@ -146,4 +152,9 @@ def apply_global_rate_limit(app, requests_per_window=300, window_seconds=60):
         endpoint = request.endpoint or request.path
 
         if _record_hit(client_id, endpoint, requests_per_window, window_seconds):
-            return jsonify({"status": "error", "message": "Global rate limit exceeded. Please try again later."}), 429
+            return error_response(
+                "Global rate limit exceeded. Please try again later.",
+                "rate_limited",
+                429,
+                headers={"Retry-After": str(window_seconds)},
+            )

@@ -3,12 +3,11 @@
 import os
 from functools import wraps
 
-from flask import jsonify
 from flask_jwt_extended import get_jwt, verify_jwt_in_request
 
 from ...auth.rbac import Role  # Changed to relative import
 from .api_usage_logger import apply_api_usage_logger, log_api_usage
-from .error_handler import APIError, register_error_handlers
+from .error_handler import APIError, error_response, register_error_handlers
 from .rate_limiter import apply_global_rate_limit, rate_limit
 
 # Import all middleware modules - changed to relative imports
@@ -25,7 +24,7 @@ def admin_required():
             verify_jwt_in_request()
             claims = get_jwt()
             if claims.get("role") != Role.ADMIN.value:
-                return jsonify({"message": "Admin access required"}), 403
+                return error_response("Admin access required", "forbidden", 403)
             return fn(*args, **kwargs)
 
         return decorator
@@ -45,7 +44,7 @@ def role_required(allowed_roles):
             verify_jwt_in_request()
             claims = get_jwt()
             if claims.get("role") not in allowed_role_values:
-                return jsonify({"message": "Insufficient permissions"}), 403
+                return error_response("Insufficient permissions", "forbidden", 403)
             return fn(*args, **kwargs)
 
         return decorator
