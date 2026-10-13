@@ -2,7 +2,7 @@
 
 # Database dependencies
 python-dotenv==1.2.2
-psycopg2-binary>=2.9.9
+psycopg2-binary>=2.9.13
 
 # Web framework
 fastapi==0.137.2
