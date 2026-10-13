@@ -33,7 +33,7 @@ pytest-cov>=7.0.0
 marshmallow==3.26.2
 
 # Swagger UI
-flask-swagger-ui==4.11.1
+flask-swagger-ui==5.33.1
 
 # Background task processing
 celery==5.6.3
