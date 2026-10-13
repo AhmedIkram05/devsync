@@ -319,6 +319,7 @@ def test_resolve_cors_allowed_origins_skips_invalid(monkeypatch):
         "https://app.example.com, *, null, not-a-url, http://localhost:3000",
     )
     origins = resolve_cors_allowed_origins()
+    # codeql[py/list-membership]: origins is a list — 'in' is list-membership, not substring
     assert "https://app.example.com" in origins
     assert "http://localhost:3000" in origins
     assert "*" not in origins

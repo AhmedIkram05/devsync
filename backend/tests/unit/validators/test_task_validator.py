@@ -1,7 +1,7 @@
 import os
 import sys
 
-from flask import Flask, jsonify
+from flask import Flask
 
 # Set up proper import paths
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))

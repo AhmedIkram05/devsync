@@ -1,8 +1,3 @@
-import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
-import * as api from '../../services/utils/api';
-
 jest.mock('../../services/utils/api');
 jest.mock('../../context/AuthContext', () => ({
   useAuth: jest.fn()

@@ -35,6 +35,10 @@ class BoomRedis:
         raise RuntimeError("redis down")
 
 
+def _boom():
+    return BoomRedis()
+
+
 @pytest.fixture(autouse=True)
 def _clean_state():
     tb.reset_for_tests()
@@ -150,7 +154,7 @@ def test_redis_user_epoch_bad_value(monkeypatch):
 
 
 def test_redis_write_failure_fail_open_keeps_memory(monkeypatch):
-    monkeypatch.setattr(tb, "_redis", lambda: BoomRedis())
+    monkeypatch.setattr(tb, "_redis", _boom)
     tb.revoke_token("bf", 60)
     tb.revoke_all_user_tokens(1)
     assert tb.get_blocklist_metrics()["backend_errors"] == 2
@@ -158,7 +162,7 @@ def test_redis_write_failure_fail_open_keeps_memory(monkeypatch):
 
 
 def test_redis_read_failure_falls_back_to_memory(monkeypatch):
-    monkeypatch.setattr(tb, "_redis", lambda: BoomRedis())
+    monkeypatch.setattr(tb, "_redis", _boom)
     assert tb.is_token_revoked({"jti": "x"}) is False
     assert tb.get_blocklist_metrics()["backend_errors"] >= 1
 

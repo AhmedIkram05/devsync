@@ -1,9 +1,8 @@
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
 
 import pytest
-import src.services.notification_service  # force module registration
 from flask import Flask
 
 
@@ -359,7 +358,7 @@ def test_get_user_notifications():
         assert result == mock_paginate
 
         # Test with custom values
-        result = NotificationService.get_user_notifications(user_id=1, page=2, per_page=20, unread_only=True)
+        result_custom = NotificationService.get_user_notifications(user_id=1, page=2, per_page=20, unread_only=True)
         # Should check mock_filter.filter_by (not mock_query.filter_by) since we call filter_by twice
         mock_filter.filter_by.assert_called_with(is_read=False)
         mock_order.paginate.assert_called_with(page=2, per_page=20, error_out=False)

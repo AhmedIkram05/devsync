@@ -1,7 +1,5 @@
 from unittest.mock import patch
 
-import pytest
-
 
 def test_validate_notification_data_valid():
     # Updated patch target:

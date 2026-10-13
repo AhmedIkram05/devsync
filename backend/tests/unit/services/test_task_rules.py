@@ -2,8 +2,6 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from backend.src.services import task_rules
 
 

@@ -1,8 +1,6 @@
 import os
 import sys
 import unittest
-import uuid
-from datetime import datetime
 from unittest.mock import MagicMock, Mock, patch
 
 from flask import Flask

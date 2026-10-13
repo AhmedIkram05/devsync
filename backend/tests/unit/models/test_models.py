@@ -1,9 +1,8 @@
 import os
 import sys
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 
-import pytest
 from flask import Flask  # added import
 
 # Set up proper import paths
@@ -19,8 +18,6 @@ from backend.src.db.models.models import (
     Task,
     TaskGitHubLink,
     User,
-    db,
-    project_members,
 )
 
 app = Flask(__name__)  # added app instance

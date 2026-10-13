@@ -88,8 +88,6 @@ describe('AdminUsers page - branches', () => {
     render(<AdminUsers />);
 
     await waitFor(() => {
-      const errorElement = screen.queryByText(/failed|error/i);
-      // Error may or may not display depending on component implementation
       expect(api.adminUserService.getAllUsers).toHaveBeenCalled();
     }, { timeout: 2000 });
   });

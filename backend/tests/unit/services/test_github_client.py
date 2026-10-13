@@ -1,10 +1,8 @@
-import json
 import os
 import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
-import requests
 from flask import Flask
 
 # Set up proper import paths
@@ -81,7 +79,7 @@ class TestGitHubClient(unittest.TestCase):
         profile = self.client.get_user_profile()
 
         self.assertEqual(profile["login"], "testuser")
-        mock_get.assert_called_with("https://api.github.com/user", headers=self.client.get_headers())
+        mock_get.assert_called_with("https://api.github.com/user", headers=self.client.get_headers(), timeout=10)
 
     @patch("backend.src.services.github_client.requests.get")
     def test_get_user_profile_failure(self, mock_get):
@@ -119,6 +117,7 @@ class TestGitHubClient(unittest.TestCase):
                 "affiliation": "owner,collaborator,organization_member",
             },
             headers=self.client.get_headers(),
+            timeout=10,
         )
 
     @patch("backend.src.services.github_client.requests.get")
@@ -132,7 +131,9 @@ class TestGitHubClient(unittest.TestCase):
         repo = self.client.get_repository("owner", "repo1")
 
         self.assertEqual(repo["name"], "repo1")
-        mock_get.assert_called_with("https://api.github.com/repos/owner/repo1", headers=self.client.get_headers())
+        mock_get.assert_called_with(
+            "https://api.github.com/repos/owner/repo1", headers=self.client.get_headers(), timeout=10
+        )
 
     @patch("backend.src.services.github_client.requests.get")
     def test_get_repository_issues(self, mock_get):
@@ -150,6 +151,7 @@ class TestGitHubClient(unittest.TestCase):
             "https://api.github.com/repos/owner/repo1/issues",
             params={"state": "open", "page": 1, "per_page": 30},
             headers=self.client.get_headers(),
+            timeout=10,
         )
 
     @patch("backend.src.services.github_client.requests.post")
@@ -167,6 +169,7 @@ class TestGitHubClient(unittest.TestCase):
             "https://api.github.com/repos/owner/repo1/issues/101/comments",
             json={"body": "Test comment"},
             headers=self.client.get_headers(),
+            timeout=10,
         )
 
     @patch("backend.src.services.github_client.requests.get")

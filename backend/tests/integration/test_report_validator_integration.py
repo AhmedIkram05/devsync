@@ -1,7 +1,5 @@
 """Integration tests for report validator"""
 
-import pytest
-from flask import json
 from src.api.validators.report_validator import validate_report_data
 
 

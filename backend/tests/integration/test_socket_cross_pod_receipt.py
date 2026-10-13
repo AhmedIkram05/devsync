@@ -18,7 +18,6 @@ import os
 import socket as socket_mod
 import sys
 import threading
-import time
 from pathlib import Path
 from socketserver import ThreadingMixIn
 from unittest.mock import MagicMock

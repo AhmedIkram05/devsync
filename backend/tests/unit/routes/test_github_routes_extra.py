@@ -1,4 +1,3 @@
-import pytest
 from flask import Blueprint, Flask
 from flask_jwt_extended import JWTManager
 from src.api.routes import github_routes

@@ -1,4 +1,3 @@
-import pytest
 from src.services.notification_service import NotificationService
 
 
@@ -34,7 +33,7 @@ def test_task_overdue_existing_returns_existing(monkeypatch):
     class Q:
         def filter_by(self, **kwargs):
             class F:
-                def first(self_inner):
+                def first(self):
                     return sentinel
 
             return F()

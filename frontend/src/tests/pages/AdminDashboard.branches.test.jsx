@@ -33,13 +33,6 @@ describe('AdminDashboard page branch coverage', () => {
     email: 'tl@example.com'
   };
 
-  const mockDeveloperUser = {
-    id: 3,
-    name: 'Developer User',
-    role: 'developer',
-    email: 'dev@example.com'
-  };
-
   const mockDashboardData = {
     tasks: {
       total: 15,

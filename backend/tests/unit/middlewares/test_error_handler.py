@@ -2,8 +2,7 @@ import os
 import sys
 from unittest.mock import Mock, patch
 
-import pytest
-from flask import Flask, jsonify
+from flask import Flask
 
 # Set up proper import paths
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
@@ -76,7 +75,8 @@ def test_handle_404_error():
         assert status_code == 404
         assert response.get_json()["message"] == "Resource not found"
         assert response.get_json()["status"] == "error"
-        assert response.get_json()["error"] == "Resource not found"
+        assert response.get_json()["code"] == "not_found"
+        assert "error" not in response.get_json()
 
 
 def test_handle_validation_error():

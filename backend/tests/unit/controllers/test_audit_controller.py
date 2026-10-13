@@ -46,7 +46,7 @@ class FakeUserColumn:
         return values
 
 
-class FakeAuditColumn:
+class FakeAuditColumn:  # codeql[py/minimal-test-double]: only the operators the controller uses are implemented
     """Records the comparisons the controller makes, so tests can assert on filters.
 
     The date filters use ``column >= value`` / ``column <= value``, so the

@@ -141,6 +141,37 @@ describe('GitHubCallback OAuth single-owner strict state', () => {
     expect(await screen.findByText(/GitHub connected successfully!/i)).toBeInTheDocument();
   });
 
+  test('forged ?github_success=true without server connected:true does NOT set github_connected', async () => {
+    global.fetch.mockResolvedValue(jsonResponse({ connected: false }));
+    authApi.updateGitHubStatus.mockClear();
+    mockUseLocation.mockReturnValue({
+      search: '?github_success=true&github_username=attacker&user_id=7',
+    });
+
+    render(<GitHubCallback />);
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/github', expect.objectContaining({ replace: true }));
+    }, { timeout: 3000 });
+    expect(authApi.updateGitHubStatus).not.toHaveBeenCalled();
+    expect(setCurrentUser).not.toHaveBeenCalled();
+  });
+
+  test('verified ?github_success=true with server connected:true updates status', async () => {
+    global.fetch.mockResolvedValue(jsonResponse({ connected: true, username: 'octocat' }));
+    authApi.updateGitHubStatus.mockClear();
+    mockUseLocation.mockReturnValue({
+      search: '?github_success=true&github_username=octocat&user_id=7',
+    });
+
+    render(<GitHubCallback />);
+
+    await waitFor(() => {
+      expect(authApi.updateGitHubStatus).toHaveBeenCalledWith(true, 'octocat');
+    });
+    expect(setCurrentUser).toHaveBeenCalled();
+  });
+
   test('legacy utils/api shim requires state (insecure code-only path gone)', async () => {
     global.fetch.mockResolvedValue(jsonResponse({ success: true }));
 

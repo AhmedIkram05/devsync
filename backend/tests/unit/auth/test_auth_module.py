@@ -140,7 +140,7 @@ def test_register_handles_integrity_error(monkeypatch):
         response, status = auth_module.register_user()
 
     assert status == 500
-    assert "An error occurred while registering the user" in response.get_json()["message"]
+    assert response.get_json()["message"] == "Registration failed"
     session.rollback.assert_called_once_with()
 
 

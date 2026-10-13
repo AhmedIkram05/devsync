@@ -26,7 +26,7 @@ describe('Login page branch coverage', () => {
       const adminUser = { id: 1, email: 'admin@test.com', role: 'admin' };
       localStorage.setItem('user', JSON.stringify(adminUser));
 
-      const { container } = render(
+      render(
         <Router>
           <Login />
         </Router>
