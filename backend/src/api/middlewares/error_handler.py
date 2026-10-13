@@ -64,7 +64,8 @@ def handle_api_error(error):
 
 def handle_404_error(error):
     """Handler for 404 not found errors"""
-    return error_response("Resource not found", "not_found", 404, details={"error": str(error)})
+    logger.debug("Resource not found", exc_info=True)
+    return error_response("Resource not found", "not_found", 404)
 
 
 def handle_validation_error(error):

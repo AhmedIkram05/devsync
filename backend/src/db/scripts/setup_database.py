@@ -8,20 +8,16 @@ import sys
 
 from sqlalchemy import inspect, text
 
-from .sqlite_helpers import (  # noqa: E402
-    assert_valid_sqlite_identifier,
-)
-from .sqlite_helpers import (
-    quote_sqlite_identifier as _quote_sqlite_identifier,
-)
+from .sqlite_helpers import assert_valid_sqlite_identifier  # noqa: E402
+from .sqlite_helpers import quote_sqlite_identifier as _quote_sqlite_identifier  # noqa: E402
 
-# Add the backend directory to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
+if __name__ == "__main__":
+    # Add the backend directory to the Python path for direct script runs only.
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
 
 from flask import Flask  # noqa: E402
 from src.config.config import get_config  # noqa: E402
 from src.db.models import db  # noqa: E402
-from src.db.models.models import *  # noqa: E402,F403
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

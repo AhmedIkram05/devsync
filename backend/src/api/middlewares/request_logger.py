@@ -7,6 +7,20 @@ from functools import wraps
 
 from flask import g, request
 
+try:
+    from src.logging_config import sanitize_for_log
+except ImportError:
+    try:
+        from backend.src.logging_config import sanitize_for_log
+    except ImportError:
+
+        def sanitize_for_log(s, max_len=200):
+            if s is None:
+                return "-"
+            text = str(s).replace("\r", " ").replace("\n", " ")
+            return text[:max_len] if len(text) > max_len else text
+
+
 # Configure logger
 logger = logging.getLogger("api.requests")
 
@@ -39,7 +53,12 @@ def log_request():
             g.request_ip = request.remote_addr
 
             # Log initial request information
-            logger.info(f"Request started: {request.method} {request.path} from {request.remote_addr}")
+            logger.info(
+                "Request started: %s %s from %s",
+                sanitize_for_log(request.method),
+                sanitize_for_log(request.path),
+                sanitize_for_log(request.remote_addr),
+            )
 
             # Execute the request handler
             response = f(*args, **kwargs)
@@ -50,8 +69,11 @@ def log_request():
             # Log request completion information
             status_code = response.status_code if hasattr(response, "status_code") else 200
             logger.info(
-                f"Request completed: {request.method} {request.path} - "
-                f"Status: {status_code} - Duration: {duration:.4f}s"
+                "Request completed: %s %s - Status: %s - Duration: %.4fs",
+                sanitize_for_log(request.method),
+                sanitize_for_log(request.path),
+                status_code,
+                duration,
             )
 
             return response
@@ -69,7 +91,11 @@ def apply_request_logger(app):
         g.request_start_time = time.time()
         g.request_id = request.headers.get(REQUEST_ID_HEADER) or uuid.uuid4().hex[:16]
         logger.info(
-            f"Request started: {request.method} {request.path} from {request.remote_addr} request_id={g.request_id}"
+            "Request started: %s %s from %s request_id=%s",
+            sanitize_for_log(request.method),
+            sanitize_for_log(request.path),
+            sanitize_for_log(request.remote_addr),
+            sanitize_for_log(g.request_id),
         )
 
     @app.after_request
@@ -78,7 +104,11 @@ def apply_request_logger(app):
         request_id = g.get("request_id", "-")
         response.headers[REQUEST_ID_HEADER] = request_id
         logger.info(
-            f"Request completed: {request.method} {request.path} - "
-            f"Status: {response.status_code} - Duration: {duration:.4f}s - request_id={request_id}"
+            "Request completed: %s %s - Status: %s - Duration: %.4fs - request_id=%s",
+            sanitize_for_log(request.method),
+            sanitize_for_log(request.path),
+            response.status_code,
+            duration,
+            sanitize_for_log(request_id),
         )
         return response

@@ -40,7 +40,7 @@ def record(action, *, actor=None, resource_type=None, resource_id=None, metadata
                     if claims:
                         actor_role = claims.get("role")
             except Exception:
-                pass
+                logger.debug("audit actor lookup failed", exc_info=True)
 
         ip = None
         user_agent = None
@@ -49,7 +49,7 @@ def record(action, *, actor=None, resource_type=None, resource_id=None, metadata
                 ip = request.remote_addr
                 user_agent = request.user_agent.string if request.user_agent else None
         except Exception:
-            pass
+            logger.debug("audit request context lookup failed", exc_info=True)
 
         audit_entry = AuditLog(
             actor_user_id=actor_id,

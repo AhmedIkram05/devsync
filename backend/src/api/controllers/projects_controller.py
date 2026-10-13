@@ -1,10 +1,5 @@
 # Project controller - business logic
 
-import json
-import time
-import traceback
-import uuid
-
 from flask import jsonify, request
 from flask_jwt_extended import get_jwt, get_jwt_identity
 
@@ -13,24 +8,6 @@ from ...db.models import Project, Task, User, db  # Changed to relative import
 from ...services import audit_service, settings_service
 from ...socketio_server import emit_dashboard_refresh
 from ..validators.project_validator import validate_project_data  # Changed to relative import
-
-
-def _debug_log(hypothesis_id, location, message, data, run_id="initial"):
-    payload = {
-        "sessionId": "fb26a3",
-        "runId": run_id,
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-        "id": f"log_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}",
-    }
-    try:
-        with open("/Users/ahmedikram/GitHub Repos/DevSync/.cursor/debug-fb26a3.log", "a", encoding="utf-8") as log_file:
-            log_file.write(json.dumps(payload) + "\n")
-    except Exception:
-        pass
 
 
 def _relationship_items(value):
@@ -91,39 +68,11 @@ def get_project_by_id(project_id):
         user_role = claims.get("role")
 
         project = Project.query.get_or_404(project_id)
-        # region agent log
-        _debug_log(
-            "H3",
-            "projects_controller.py:get_project_by_id:after_project_lookup",
-            "Loaded project and claims for access check",
-            {
-                "project_id": project_id,
-                "project_created_by": project.created_by,
-                "user_id": user_id,
-                "user_role": user_role,
-            },
-        )
-        # endregion
 
         # Check if user has access to this project
         if user_role == Role.DEVELOPER.value:
             # Check if developer is assigned to this project
             user = User.query.get(user_id)
-            # region agent log
-            user_project_ids = [p.id for p in user.projects.all()] if user else []
-            _debug_log(
-                "H1-H4",
-                "projects_controller.py:get_project_by_id:membership_check",
-                "Evaluating membership access for developer",
-                {
-                    "project_id": project_id,
-                    "user_id": user_id,
-                    "user_role": user_role,
-                    "user_project_ids": user_project_ids,
-                    "contains_project": project_id in user_project_ids,
-                },
-            )
-            # endregion
             if project not in user.projects:
                 return jsonify({"message": "You do not have access to this project"}), 403
 
@@ -151,20 +100,7 @@ def get_project_by_id(project_id):
         }
 
         return jsonify({"project": project_data})
-    except Exception as exc:
-        # region agent log
-        _debug_log(
-            "H6",
-            "projects_controller.py:get_project_by_id:exception",
-            "Unhandled exception in get_project_by_id",
-            {
-                "project_id": project_id,
-                "error_type": type(exc).__name__,
-                "error_message": str(exc),
-                "traceback": traceback.format_exc(),
-            },
-        )
-        # endregion
+    except Exception:
         raise
 
 
@@ -178,20 +114,6 @@ def create_project():
         return validation_result
 
     user_id = get_jwt_identity()["user_id"]
-
-    # region agent log
-    _debug_log(
-        "H2",
-        "projects_controller.py:create_project:payload",
-        "Received project creation payload",
-        {
-            "user_id": user_id,
-            "name": data.get("name"),
-            "status": data.get("status"),
-            "team_members": data.get("team_members"),
-        },
-    )
-    # endregion
 
     # Create new project
     new_project = Project(
@@ -217,18 +139,6 @@ def create_project():
     emit_dashboard_refresh(
         "project_created", resource_type="project", resource_id=new_project.id, payload={"status": new_project.status}
     )
-    # region agent log
-    _debug_log(
-        "H1-H2",
-        "projects_controller.py:create_project:post_commit",
-        "Project created and memberships persisted",
-        {
-            "project_id": new_project.id,
-            "created_by": user_id,
-            "team_member_ids": [member.id for member in _relationship_items(new_project.team_members)],
-        },
-    )
-    # endregion
 
     return jsonify(
         {

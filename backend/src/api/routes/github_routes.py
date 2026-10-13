@@ -135,13 +135,11 @@ def register_routes(bp):
                 }
             )
 
-        except Exception as e:
+        except Exception:
             db.session.rollback()
-            current_app.logger.error(f"Error processing GitHub callback: {str(e)}")
+            current_app.logger.error("Error processing GitHub callback", exc_info=True)
 
-            return error_response(
-                f"Error processing GitHub callback: {str(e)}", "internal_error", 500, details={"success": False}
-            )
+            return error_response("GitHub connection failed", "internal_error", 500, details={"success": False})
 
     @bp.route("/github/repositories", methods=["GET"])
     @jwt_required()
@@ -281,10 +279,10 @@ def register_routes(bp):
                 }
             )
 
-        except Exception as e:
+        except Exception:
             db.session.rollback()
-            current_app.logger.error(f"Error processing GitHub exchange: {str(e)}")
-            return error_response(str(e), "internal_error", 500, details={"success": False})
+            current_app.logger.error("Error processing GitHub exchange", exc_info=True)
+            return error_response("GitHub connection failed", "internal_error", 500, details={"success": False})
 
     @bp.route("/github/connect", methods=["GET", "POST"])
     @jwt_required()

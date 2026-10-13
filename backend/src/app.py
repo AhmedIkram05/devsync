@@ -95,8 +95,9 @@ def create_app(config_class=None):
         """Serve the Swagger YAML file"""
         try:
             return send_file(swagger_path, mimetype="text/yaml")
-        except Exception as e:
-            return jsonify({"error": f"Could not load Swagger file: {str(e)}"}), 500
+        except Exception:
+            app.logger.error("Could not load Swagger file", exc_info=True)
+            return jsonify({"error": "Could not load Swagger file"}), 500
 
     # Configure database using the selected config class/environment.
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False

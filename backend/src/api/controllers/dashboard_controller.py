@@ -1,6 +1,5 @@
 # Dashboard controller - business logic for user dashboards
 import logging
-import traceback
 from datetime import datetime, timedelta
 
 from flask import jsonify
@@ -239,11 +238,9 @@ def get_user_dashboard():
             }
 
         return jsonify(dashboard_data)
-    except Exception as e:
-        # Log the error with traceback
-        logger.error(f"Error in get_user_dashboard: {str(e)}")
-        logger.error(traceback.format_exc())
-        return jsonify({"message": "An error occurred while loading the dashboard", "error": str(e)}), 500
+    except Exception:
+        logger.error("Error in get_user_dashboard", exc_info=True)
+        return jsonify({"message": "An error occurred while loading the dashboard"}), 500
 
 
 def get_client_dashboard():
@@ -360,11 +357,9 @@ def get_client_dashboard():
         }
 
         return jsonify(dashboard_data)
-    except Exception as e:
-        # Log the error with traceback
-        logger.error(f"Error in get_client_dashboard: {str(e)}")
-        logger.error(traceback.format_exc())
-        return jsonify({"message": "An error occurred while loading the dashboard", "error": str(e)}), 500
+    except Exception:
+        logger.error("Error in get_client_dashboard", exc_info=True)
+        return jsonify({"message": "An error occurred while loading the dashboard"}), 500
 
 
 def get_admin_dashboard():
@@ -562,11 +557,9 @@ def get_admin_dashboard():
             dashboard_data["recentProjects"] = []
 
         return jsonify(dashboard_data)
-    except Exception as e:
-        # Log the error with traceback
-        logger.error(f"Error in get_admin_dashboard: {str(e)}")
-        logger.error(traceback.format_exc())
-        return jsonify({"message": "An error occurred while loading the dashboard", "error": str(e)}), 500
+    except Exception:
+        logger.error("Error in get_admin_dashboard", exc_info=True)
+        return jsonify({"message": "An error occurred while loading the dashboard"}), 500
 
 
 def get_project_dashboard(project_id):
@@ -640,8 +633,6 @@ def get_project_dashboard(project_id):
         }
 
         return jsonify(dashboard_data)
-    except Exception as e:
-        # Log the error with traceback
-        logger.error(f"Error in get_project_dashboard: {str(e)}")
-        logger.error(traceback.format_exc())
-        return jsonify({"message": "An error occurred while loading the dashboard", "error": str(e)}), 500
+    except Exception:
+        logger.error("Error in get_project_dashboard", exc_info=True)
+        return jsonify({"message": "An error occurred while loading the dashboard"}), 500

@@ -24,6 +24,20 @@ from ...services.redis_client import get_redis
 from ..middlewares.error_handler import error_response
 from ..validators.github_validator import validate_github_repo_data, validate_task_github_link
 
+try:
+    from src.logging_config import sanitize_for_log
+except ImportError:
+    try:
+        from backend.src.logging_config import sanitize_for_log
+    except ImportError:
+
+        def sanitize_for_log(s, max_len=200):
+            if s is None:
+                return "-"
+            text = str(s).replace("\r", " ").replace("\n", " ")
+            return text[:max_len] if len(text) > max_len else text
+
+
 logger = logging.getLogger(__name__)
 
 # In-memory fallback for OAuth state parameters when Redis is unset/down.
@@ -156,8 +170,8 @@ def github_callback():
             if not user_id:
                 logger.error("Rejected OAuth callback: state not signed by this server or expired")
                 return error_response("Invalid state parameter format", "bad_request", 400)
-    except Exception as e:
-        logger.error(f"Error processing state parameter: {str(e)}")
+    except Exception:
+        logger.error("Error processing state parameter", exc_info=True)
         return error_response("Invalid state parameter format - processing error", "bad_request", 400)
 
     try:
@@ -203,14 +217,18 @@ def github_callback():
         user.github_username = github_profile["login"]
         user.github_connected = True
 
-        logger.info(f"Updated user {user_id} with GitHub username: {user.github_username}")
+        logger.info(
+            "Updated user %s with GitHub username: %s",
+            sanitize_for_log(user_id),
+            sanitize_for_log(user.github_username),
+        )
 
     db.session.commit()
 
     # Redirect to frontend with success message
     frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
     redirect_url = f"{frontend_url}/github/connected?success=true&github_username={github_profile.get('login', '')}&user_id={user_id}"
-    logger.info(f"Redirecting to: {redirect_url}")
+    logger.info("Redirecting to: %s", sanitize_for_log(redirect_url))
     return redirect(redirect_url)
 
 
@@ -219,7 +237,7 @@ def get_github_repositories():
     start_time = time.time()
 
     user_id = get_jwt_identity()["user_id"]
-    logger.info(f"[PERF] get_github_repositories START - user_id: {user_id}")
+    logger.info("[PERF] get_github_repositories START - user_id: %s", sanitize_for_log(user_id))
 
     # Check if user has a GitHub token
     token = GitHubToken.query.filter_by(user_id=user_id).first()
@@ -346,8 +364,8 @@ def get_github_repositories():
                 key = futures[future]
                 try:
                     activity_results[key] = future.result()
-                except Exception as e:
-                    logger.warning(f"Failed to fetch activity for {key}: {str(e)}")
+                except Exception:
+                    logger.warning("Failed to fetch activity for %s", sanitize_for_log(key), exc_info=True)
                     # Use fallback metrics on error
                     repo_info = next((r for r in repos_needing_activity if f"{r['owner']}/{r['repo_name']}" == key), {})
                     activity_results[key] = {

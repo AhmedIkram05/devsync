@@ -67,13 +67,12 @@ def register_routes(bp):
                     "result": result,
                 }
             ), 200
-        except Exception as exc:
-            current_app.logger.error(f"Retention cleanup failed: {exc}", exc_info=True)
+        except Exception:
+            current_app.logger.error("Retention cleanup failed", exc_info=True)
             return jsonify(
                 {
                     "status": "error",
                     "message": "Retention cleanup failed",
-                    "error": str(exc),
                     "result": None,
                 }
             ), 500

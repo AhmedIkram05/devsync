@@ -6,6 +6,7 @@ unreachable the in-memory dict path below takes over verbatim (fail-open
 per-pod behaviour, same messages and defaults).
 """
 
+import logging
 import threading
 import time
 from collections import defaultdict
@@ -16,6 +17,8 @@ from flask_jwt_extended import get_jwt_identity
 
 from ...services.redis_client import get_redis
 from .error_handler import error_response
+
+logger = logging.getLogger(__name__)
 
 # In-memory storage for rate limiting (per-pod fallback when Redis is unset/down)
 request_counts = defaultdict(lambda: defaultdict(int))
@@ -32,7 +35,7 @@ def get_client_identifier():
         if identity and "user_id" in identity:
             user_id = identity["user_id"]
     except Exception:
-        pass
+        logger.debug("client identifier lookup failed", exc_info=True)
 
     # Fall back to IP address if not authenticated
     if not user_id:
@@ -158,3 +161,5 @@ def apply_global_rate_limit(app, requests_per_window=300, window_seconds=60):
                 429,
                 headers={"Retry-After": str(window_seconds)},
             )
+        # Intentional Flask before_request contract: None continues, Response short-circuits.
+        return None
