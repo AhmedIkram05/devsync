@@ -190,7 +190,7 @@ const fetchWithAuth = async (endpoint, options = {}) => {
       }
 
       const errorMsg = errorData.message || 'GitHub connection failed. Please try again.';
-      console.error(`GitHub API error (400): ${errorMsg}`);
+      console.error('GitHub API error (400):', errorMsg);
 
       // Create a structured error
       const error = new Error(errorMsg);

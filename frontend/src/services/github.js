@@ -267,7 +267,7 @@ export const githubService = {
       const data = await fetchWithAuth(`${BASE_URL}/repositories/${repoId}/issues?${queryParams}`);
       return data.issues || data;
     } catch (error) {
-      console.error(`Error fetching issues for repository ${repoId}:`, error);
+      console.error('Error fetching issues for repository', repoId, error);
       return [];
     }
   },
@@ -285,7 +285,7 @@ export const githubService = {
       const data = await fetchWithAuth(`${BASE_URL}/repositories/${repoId}/pulls?${queryParams}`);
       return data.pull_requests || data;
     } catch (error) {
-      console.error(`Error fetching pull requests for repository ${repoId}:`, error);
+      console.error('Error fetching pull requests for repository', repoId, error);
       return [];
     }
   },
@@ -313,7 +313,7 @@ export const githubService = {
       });
       return data;
     } catch (error) {
-      console.error(`Error linking task ${taskId} with GitHub:`, error);
+      console.error('Error linking task', taskId, 'with GitHub:', error);
       throw error;
     }
   },
@@ -324,7 +324,7 @@ export const githubService = {
       const data = await fetchWithAuth(`${BASE_URL}/tasks/${taskId}/github`);
       return data.links || data;
     } catch (error) {
-      console.error(`Error fetching GitHub links for task ${taskId}:`, error);
+      console.error('Error fetching GitHub links for task', taskId, error);
       return [];
     }
   },
@@ -337,7 +337,7 @@ export const githubService = {
       });
       return data;
     } catch (error) {
-      console.error(`Error deleting GitHub link ${linkId} from task ${taskId}:`, error);
+      console.error('Error deleting GitHub link', linkId, 'from task', taskId, error);
       throw error;
     }
   },

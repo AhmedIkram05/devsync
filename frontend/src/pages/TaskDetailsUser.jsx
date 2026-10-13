@@ -585,7 +585,7 @@ function TaskDetailsUser() {
                           disabled={loadingRepos}
                           className="px-4 py-2 rounded-full bg-rose-500/90 text-white hover:bg-rose-400 disabled:opacity-60"
                         >
-                          {loadingRepos ? 'Loading...' : 'Load Repositories'}
+                          Load Repositories
                         </button>
                       </>
                     )}

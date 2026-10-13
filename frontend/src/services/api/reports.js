@@ -48,7 +48,7 @@ const reportService = {
       const response = await fetchWithAuth(`reports/${reportId}`);
       return response;
     } catch (error) {
-      console.error(`Failed to fetch report ${reportId}:`, error);
+      console.error('Failed to fetch report', reportId, error);
       return { error: error.message };
     }
   },
@@ -60,7 +60,7 @@ const reportService = {
       });
       return response;
     } catch (error) {
-      console.error(`Failed to delete report ${reportId}:`, error);
+      console.error('Failed to delete report', reportId, error);
       return { error: error.message };
     }
   }

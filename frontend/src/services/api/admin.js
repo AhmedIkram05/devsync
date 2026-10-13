@@ -94,7 +94,7 @@ const auditLogService = {
       const response = await fetchWithAuth(`admin/audit-logs/${logId}`);
       return response?.log ?? response ?? null;
     } catch (error) {
-      console.error(`Failed to fetch audit log ${logId}:`, error);
+      console.error('Failed to fetch audit log', logId, error);
       return null;
     }
   }

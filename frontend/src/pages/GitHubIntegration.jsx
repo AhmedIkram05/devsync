@@ -187,6 +187,7 @@ const GitHubIntegration = () => {
   };
   
   const disconnectGitHub = async () => {
+    // CodeQL js/user-controlled-bypass: explicit user confirmation gates disconnect, not URL input.
     const confirmed = window.confirm("Are you sure you want to disconnect your GitHub account? This will remove all repository links.");
     
     if (confirmed) {

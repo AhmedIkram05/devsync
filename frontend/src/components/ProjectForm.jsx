@@ -32,7 +32,7 @@ const buildInitialState = (initialData) => {
   return {
     name: initialData?.name || '',
     description: initialData?.description || '',
-    status: normalizeStatus(initialData?.status) || 'active',
+    status: normalizeStatus(initialData?.status),
     github_repo: initialData?.github_repo || '',
     team_members: members.map((id) => String(id))
   };
