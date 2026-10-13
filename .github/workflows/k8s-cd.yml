@@ -359,7 +359,7 @@ jobs:
           { echo '### Terraform plan'; echo '```'; head -c 15000 plan-human.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload saved plan (crosses the approval boundary)
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tfplan-${{ github.sha }}
           path: infra/terraform/tfplan
@@ -679,7 +679,7 @@ jobs:
 
       - name: Upload k6 live results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: k6-live-results
           path: /tmp/k6-live.json
@@ -724,7 +724,7 @@ jobs:
 
       - name: Upload workload logs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: k8s-cd-logs
           path: /tmp/k8s-cd-*.log
