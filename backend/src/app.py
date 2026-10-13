@@ -86,18 +86,26 @@ def create_app(config_class=None):
     # Register blueprint at URL
     app.register_blueprint(swaggerui_blueprint, url_prefix=swagger_url)
 
-    # Serve the canonical Swagger file from the docs tree.
+    # Serve the canonical Swagger file from the docs tree, falling back to
+    # the packaged copy (backend/src/static/) inside the Docker image, whose
+    # build context (./backend) excludes the repo docs tree.
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    swagger_path = os.path.join(project_root, "docs", "backend", "swagger.yaml")
+    swagger_candidates = [
+        os.path.join(project_root, "docs", "backend", "swagger.yaml"),
+        os.path.join(os.path.dirname(__file__), "static", "swagger.yaml"),
+    ]
 
     @app.route("/api/swagger.yaml")
     def serve_swagger_spec():
         """Serve the Swagger YAML file"""
-        try:
-            return send_file(swagger_path, mimetype="text/yaml")
-        except Exception:
-            app.logger.error("Could not load Swagger file", exc_info=True)
-            return jsonify({"error": "Could not load Swagger file"}), 500
+        for swagger_path in swagger_candidates:
+            if os.path.isfile(swagger_path):
+                try:
+                    return send_file(swagger_path, mimetype="text/yaml")
+                except Exception:
+                    continue
+        app.logger.error("Could not load Swagger file", exc_info=True)
+        return jsonify({"error": "Could not load Swagger file"}), 500
 
     # Configure database using the selected config class/environment.
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
