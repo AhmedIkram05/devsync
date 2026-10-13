@@ -29,6 +29,9 @@ const GitHubIntegration = () => {
       setLoadingRepos(true);
       logger.log("Fetching GitHub repositories...");
       const data = await githubService.getUserRepos();
+      if (data?.isConnectionError) {
+        throw new Error(data.error || 'Server connection failed.');
+      }
       logger.log("GitHub repositories received:", data);
       
       // Ensure we have an array of repos

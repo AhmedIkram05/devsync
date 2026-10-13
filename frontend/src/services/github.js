@@ -202,42 +202,39 @@ export const githubService = {
   },
   
   // Get user's GitHub repositories
+  // NOTE: errors propagate to callers (all wrap in try/catch) so pages can
+  // render rate-limit/offline UI instead of a misleading empty state.
   getUserRepos: async (options = {}) => {
-    try {
-      const params = new URLSearchParams();
+    const params = new URLSearchParams();
 
-      if (options.page) {
-        params.set('page', String(options.page));
-      }
-
-      if (options.perPage) {
-        params.set('per_page', String(options.perPage));
-      }
-
-      // Only fetch activity metrics when explicitly requested
-      let url = `${BASE_URL}/repositories`;
-      let timeoutMs = 30000; // default 30 second timeout
-      
-      if (options.activityWindowDays) {
-        params.set('activity_window_days', String(options.activityWindowDays));
-        params.set('include_activity', 'true'); // only set when activity is actually needed
-        timeoutMs = 90000; // 90 seconds for activity-heavy requests
-      } else {
-        params.set('include_activity', 'false');
-      }
-
-      if (params.toString()) {
-        url += `?${params.toString()}`;
-      }
-
-      // Canonical timeout lives in fetchWithAuth (AbortController) — just
-      // forward the deadline instead of racing here (no leaked setTimeout).
-      const data = await fetchWithAuth(url, { timeout: timeoutMs });
-      return data.repositories || data;
-    } catch (error) {
-      console.error('Error fetching GitHub repositories:', error);
-      return [];
+    if (options.page) {
+      params.set('page', String(options.page));
     }
+
+    if (options.perPage) {
+      params.set('per_page', String(options.perPage));
+    }
+
+    // Only fetch activity metrics when explicitly requested
+    let url = `${BASE_URL}/repositories`;
+    let timeoutMs = 30000; // default 30 second timeout
+
+    if (options.activityWindowDays) {
+      params.set('activity_window_days', String(options.activityWindowDays));
+      params.set('include_activity', 'true'); // only set when activity is actually needed
+      timeoutMs = 90000; // 90 seconds for activity-heavy requests
+    } else {
+      params.set('include_activity', 'false');
+    }
+
+    if (params.toString()) {
+      url += `?${params.toString()}`;
+    }
+
+    // Canonical timeout lives in fetchWithAuth (AbortController) — just
+    // forward the deadline instead of racing here (no leaked setTimeout).
+    const data = await fetchWithAuth(url, { timeout: timeoutMs });
+    return data.repositories || data;
   },
 
   // Alias for getUserRepos to fix method name mismatch
