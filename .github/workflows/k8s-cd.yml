@@ -616,12 +616,26 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Warm up live LB path before Cypress (absorb cold start)
+        if: steps.tls.outputs.ready == 'true'
+        run: |
+          # Cypress spec #1 (admin-flows) intermittently times out finding the
+          # login form on a just-deployed env (cold pods / NEG flap) while
+          # later specs pass. Hit the same LB path first so the first spec
+          # measures the app, not the rollout.
+          for _ in $(seq 1 30); do
+            curl -fsS "https://${LIVE_HOST}/login" > /dev/null 2>&1 && break
+            sleep 10
+          done
+          curl -fsS "https://${LIVE_HOST}/login" > /dev/null
+          curl -fsS "https://${LIVE_HOST}/api/v1/github/config-check" > /dev/null
+
       - name: Cypress against live URL (baseUrl override)
         if: steps.tls.outputs.ready == 'true'
         uses: cypress-io/github-action@c541a95ea92d9239347a2355f2e895cd4b3f8060 # v7.4.6
         with:
           working-directory: frontend
-          config: baseUrl=https://${{ env.LIVE_HOST }}
+          config: baseUrl=https://${{ env.LIVE_HOST }},retries=1
         env:
           CYPRESS_BASE_URL: https://${{ env.LIVE_HOST }}
 
