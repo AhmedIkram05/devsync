@@ -1,10 +1,15 @@
 # Role-Based Access Control (RBAC) implementation
 
+import logging
 from enum import Enum
 from functools import wraps
 
 from flask import jsonify
 from flask_jwt_extended import get_jwt, get_jwt_identity
+
+from ..services.coercion import to_int as _to_int
+
+logger = logging.getLogger(__name__)
 
 
 class Role(Enum):
@@ -145,13 +150,6 @@ def role_at_least(min_role):
     return decorator
 
 
-def _to_int(value):
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def get_user_project_ids(user_id):
     """Project IDs *user_id* belongs to (team member or creator). Empty set on bad input/DB error."""
     user_id = _to_int(user_id)
@@ -167,7 +165,7 @@ def get_user_project_ids(user_id):
         created = Project.query.filter_by(created_by=user_id).with_entities(Project.id).all()
         ids.update(row[0] for row in created)
     except Exception:
-        pass
+        logger.debug("get_user_project_ids lookup failed", exc_info=True)
     ids.discard(None)
     return ids
 
@@ -184,10 +182,11 @@ def _is_project_member_or_creator(user_id, project_id):
         if db.session.query(project_members).filter_by(project_id=project_id, user_id=user_id).first() is not None:
             return True
     except Exception:
-        pass
+        logger.debug("project membership lookup failed", exc_info=True)
     try:
         project = db.session.get(Project, project_id)
     except Exception:
+        logger.debug("project lookup failed", exc_info=True)
         project = None
     return project is not None and _to_int(getattr(project, "created_by", None)) == user_id
 

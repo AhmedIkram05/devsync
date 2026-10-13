@@ -6,6 +6,14 @@ import logging.config
 from datetime import UTC, datetime
 
 
+def sanitize_for_log(s, max_len=200):
+    """Log-safe view: strip CR/LF to stop log injection, then truncate."""
+    if s is None:
+        return "-"
+    text = str(s).replace("\r", " ").replace("\n", " ")
+    return text[:max_len] if len(text) > max_len else text
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record):
         payload = {

@@ -96,7 +96,7 @@ def _emit_decrypt_failure_metric():
             client = statsd.StatsClient(host, 8125)
             client.incr("github.token.decrypt_failed")
     except Exception:
-        pass
+        logger.debug("statsd metric emit failed", exc_info=True)
 
 
 def _primary_key():

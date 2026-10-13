@@ -55,12 +55,12 @@ def register_user():
     # If this is the very first user, automatically make them an admin
     if user_count == 0:
         forced_role = Role.ADMIN.value
-        print(f"First user registration detected! Automatically granting admin role to {data['email']}")
+        logger.info("First user registration detected; granting admin role")
     else:
         # Otherwise get default role from settings
         forced_role = settings_service.get_default_role()
 
-    print(f"Registering user: {data['email']} with role: {forced_role} (ignoring any client-supplied role)")
+    logger.info("Registering user with role: %s (ignoring any client-supplied role)", forced_role)
 
     try:
         new_user = User(
@@ -100,10 +100,10 @@ def register_user():
 
         return resp, 201
 
-    except Exception as e:
+    except Exception:
         db.session.rollback()
-        print(f"Registration error: {str(e)}")
-        return jsonify({"message": f"An error occurred while registering the user: {str(e)}"}), 500
+        logger.error("Registration failed", exc_info=True)
+        return jsonify({"message": "Registration failed"}), 500
 
 
 def login():

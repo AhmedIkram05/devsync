@@ -15,70 +15,52 @@ Read alongside [rbac.md](rbac.md) (who may call what) and
 | `200` | Success, including reads, updates and the two deletes that return a confirmation message | resource schema |
 | `201` | Resource created | resource schema |
 | `204` | `DELETE /projects/{project_id}` only | empty |
-| `400` | `Content-Type` is not JSON, body is malformed JSON, or an inline validator rejected the payload | `BadRequestError` |
-| `401` | Missing, malformed or expired JWT | `UnauthorizedError` |
-| `403` | Authenticated, but the role or permission gate rejected the caller | `ForbiddenError` |
-| `404` | Resource does not exist, or the global 404 handler fired | `NotFoundError` |
-| `429` | Per-route or global rate limit tripped | `RateLimitError` |
-| `500` | Unhandled exception reached `handle_generic_error` | `InternalServerError` |
+| `400` | `Content-Type` is not JSON, body is malformed JSON, or an inline validator rejected the payload | `ErrorEnvelope` |
+| `401` | Missing, malformed or expired JWT | `ErrorEnvelope` |
+| `403` | Authenticated, but the role or permission gate rejected the caller | `ErrorEnvelope` |
+| `404` | Resource does not exist, or the global 404 handler fired | `ErrorEnvelope` |
+| `429` | Per-route or global rate limit tripped | `ErrorEnvelope` |
+| `500` | Unhandled exception reached `handle_generic_error` | `ErrorEnvelope` |
 
-## The three body shapes
+## The single error envelope
 
-Most error bodies carry a `status: "error"` discriminator plus a `message`.
-Three exceptions matter when writing a client:
-
-**1. `403` omits `status`.** Every 403 is raised by a decorator in
-`api/middlewares/__init__.py` or `auth/rbac.py`, and none of them sets it:
+Every error body is an `ErrorEnvelope` built by `error_response()` in
+`api/middlewares/error_handler.py`:
 
 ```json
-{ "message": "Admin access required" }
-{ "message": "Insufficient permissions" }
-{ "message": "Insufficient role permissions" }
+{ "status": "error", "message": "...", "code": "bad_request", "request_id": "a1b2c3d4e5f60001" }
 ```
 
-So do not branch on `status` to detect an authorization failure — branch on the
-HTTP status code. `GET /users/{user_id}` adds a fourth body,
-`{ "message": "You can only view your own profile" }`, from a hand-rolled check
-in `users_routes.py` with no decorator behind it.
+Branch on the HTTP status code and the stable `code`, never on `message`
+prose. `request_id` echoes `X-Request-ID` (see `request_logger.py`) so a
+client report maps to exactly one log line. Extra keys (`errors`,
+`missing_params`, `error`, `traceback`, `success`) are details passthrough
+and are not part of the contract.
 
-**2. The GitHub OAuth routes use a bare `{ "error": "..." }`.**
-`/github/connect`, `/github/callback` and `/github/exchange` skip the shared
-error helpers, so their 404/500 responses have neither `status` nor `message`.
-
-**3. `401` uses a machine-readable `error` code.** `app.py` builds these by
-hand for the three JWT failure modes rather than going through `APIError`:
-
-```json
-{ "status": "error", "message": "Token has expired", "error": "token_expired" }
-{ "status": "error", "message": "Invalid token", "error": "token_invalid" }
-{ "status": "error", "message": "Authorization required", "error": "authorization_required" }
-```
-
-`error` is the field to switch on here; `message` is prose and is not stable.
+Common `code` values: `bad_request`, `validation_error`, `unauthorized`,
+`token_expired`, `token_invalid`, `authorization_required`, `token_revoked`,
+`forbidden`, `not_found`, `rate_limited`, `internal_error`,
+`service_unavailable`, `api_error`.
 
 ### Error bodies by origin
 
-| Origin | Status | Body |
+| Origin | Status | Envelope |
 | --- | --- | --- |
-| `APIError.to_dict()` (`error_handler.py`) | any | `{ **payload, "message": ..., "status": "error" }` |
-| `handle_404_error` | 404 | `{ "status": "error", "message": "Resource not found", "error": <str(exc)> }` |
-| `handle_generic_error` | 500 | `{ "status": "error", "message": "Internal server error", "error": ..., "traceback": ... }` |
-| `validate_json` | 400 | `{ "status": "error", "message": "Missing JSON in request body" }` |
-| `validate_json` | 400 | `{ "status": "error", "message": "Invalid JSON format in request body" }` |
-| `validate_schema` | 400 | `{ "status": "error", "message": "Validation error", "errors": { ... } }` |
-| `validate_params` | 400 | `{ "status": "error", "message": "Missing required URL parameters", "missing_params": [ ... ] }` |
-| `@rate_limit` | 429 | `{ "status": "error", "message": "Rate limit exceeded. Please try again later." }` |
-| global `before_request` limiter | 429 | `{ "status": "error", "message": "Global rate limit exceeded. Please try again later." }` |
+| `APIError.to_dict()` (`error_handler.py`) | any | `{ **payload, "message": ..., "status": "error", "code": ..., "request_id": ... }` |
+| `handle_404_error` | 404 | `code not_found`, details `{"error": <str(exc)>}` |
+| `handle_generic_error` | 500 | `code internal_error`, details `{"error": ..., "traceback": ...}` |
+| `validate_json` | 400 | `code bad_request` |
+| `validate_schema` | 400 | `code validation_error`, details `{"errors": { ... }}` |
+| `validate_params` | 400 | `code bad_request`, details `{"missing_params": [ ... ]}` |
+| `@rate_limit` | 429 | `code rate_limited` + `Retry-After` header |
+| global `before_request` limiter | 429 | `code rate_limited` + `Retry-After` header |
+| JWT loaders (`app.py`) | 401 | `code token_expired` / `token_invalid` / `authorization_required` / `token_revoked` |
+| GitHub routes/controller | 4xx/5xx | `ErrorEnvelope`; legacy `success: false` kept inside details where callers branched on it |
 
-`InternalServerError.error` is the exception string when `DEBUG` is on and the
+`details.error` is the exception string when `DEBUG` is on and the
 literal `"An unexpected error occurred"` otherwise; `traceback` is non-null
 only in `DEBUG`. Never parse `error` or `traceback` for logic — they exist for
 operators.
-
-`handle_validation_error` in `error_handler.py` is commented out and never
-registered, so its `{status, message, errors}` 400 shape does not occur at
-runtime. The `errors` key above comes from `validate_schema`, which is a
-different decorator.
 
 ## Order of enforcement
 
@@ -102,10 +84,10 @@ checked last, after authorization:
 
 Every other route shares the global bucket: **300 requests / 60s**, counted per
 client per endpoint, overridable via `RATE_LIMIT_REQUESTS_PER_WINDOW` and
-`RATE_LIMIT_WINDOW_SECONDS`. The window is epoch-aligned, not sliding. There is
-no `Retry-After` header anywhere in the codebase — clients must back off on
-their own. Redis holds the shared counters across pods; the in-process fallback
-is per-pod, so a Redis outage makes the effective limit `300 x pod_count`.
+`RATE_LIMIT_WINDOW_SECONDS`. The window is epoch-aligned, not sliding. Every
+`429` carries a `Retry-After` header (seconds). Redis holds the shared counters
+across pods; the in-process fallback is per-pod, so a Redis outage makes the
+effective limit `300 x pod_count`.
 
 ## Public endpoints
 
@@ -171,23 +153,14 @@ the frontend's five fetch wrappers use it. Because the cookies are only set
 when CSRF protection is on, sessions issued before this was enabled have no
 csrf cookie and get a `401` until the user logs in again.
 
-## Known behaviour that looks like a bug
-
-These are real and current; they are recorded so nobody re-derives them.
-
-- **`/github/connect` and the other GitHub OAuth routes use a bare
-  `{ "error": "..." }`.** They skip the shared error helpers, so their 404/500
-  responses have neither `status` nor `message`.
-
 ## Client checklist
 
-1. Branch on the HTTP status, never on a `status` field — `403` has none.
-2. Read `error` for `401` codes and `errors` for `400` schema failures; treat
-   `message` as display-only.
-3. Treat the `404`/`500` from `/github/connect` as `{error: string}` rather
-   than the shared shape.
-4. Back off on `429` without expecting `Retry-After`, and expect the message to
-   differ between the per-route and global limiters.
+1. Branch on the HTTP status + `code`, never on `message` prose.
+2. Read `code` for `401`/`403`/`429`; read `errors` for `400` schema failures;
+   treat `message` as display-only.
+3. Echo `X-Request-ID` / `request_id` when reporting failures.
+4. Back off on `429` using the `Retry-After` header; the message differs
+   between the per-route and global limiters.
 5. If you authenticate with the cookie, echo `X-CSRF-TOKEN` on every `POST`,
    `PUT`, `PATCH` and `DELETE` — a bearer token alone is not enough once the
    cookie is present.

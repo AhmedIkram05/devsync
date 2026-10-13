@@ -104,7 +104,7 @@ def test_github_callback_invalid_base64_state(app):
         response, status = github_callback()
 
     assert status == 400
-    assert "Invalid state parameter format" in response.get_json()["error"]
+    assert "Invalid state parameter format" in response.get_json()["message"]
 
 
 def test_github_callback_missing_user_id_in_decoded_state(app):
@@ -558,7 +558,7 @@ def test_github_callback_state_processing_error(app):
             response, status = github_callback()
 
     assert status == 400
-    assert "processing error" in response.get_json()["error"]
+    assert "processing error" in response.get_json()["message"]
 
 
 @patch("backend.src.api.controllers.github_controller.get_jwt_identity", return_value={"user_id": 1})

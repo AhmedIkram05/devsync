@@ -3,7 +3,9 @@
 import json
 from functools import wraps
 
-from flask import jsonify, request
+from flask import request
+
+from .error_handler import error_response
 
 
 def validate_json():
@@ -13,13 +15,13 @@ def validate_json():
         @wraps(f)
         def decorated_function(*args, **kwargs):
             if not request.is_json:
-                return jsonify({"status": "error", "message": "Missing JSON in request body"}), 400
+                return error_response("Missing JSON in request body", "bad_request", 400)
 
             # Try to parse JSON to ensure it's valid
             try:
                 request.get_json()
             except json.JSONDecodeError:
-                return jsonify({"status": "error", "message": "Invalid JSON format in request body"}), 400
+                return error_response("Invalid JSON format in request body", "bad_request", 400)
 
             return f(*args, **kwargs)
 
@@ -41,7 +43,7 @@ def validate_schema(schema_class):
         def decorated_function(*args, **kwargs):
             # Ensure we have JSON data
             if not request.is_json:
-                return jsonify({"status": "error", "message": "Missing JSON in request body"}), 400
+                return error_response("Missing JSON in request body", "bad_request", 400)
 
             # Get JSON data
             data = request.get_json()
@@ -51,7 +53,7 @@ def validate_schema(schema_class):
             errors = schema.validate(data)
 
             if errors:
-                return jsonify({"status": "error", "message": "Validation error", "errors": errors}), 400
+                return error_response("Validation error", "validation_error", 400, details={"errors": errors})
 
             return f(*args, **kwargs)
 
@@ -78,9 +80,12 @@ def validate_params(*required_params):
                     missing_params.append(param)
 
             if missing_params:
-                return jsonify(
-                    {"status": "error", "message": "Missing required URL parameters", "missing_params": missing_params}
-                ), 400
+                return error_response(
+                    "Missing required URL parameters",
+                    "bad_request",
+                    400,
+                    details={"missing_params": missing_params},
+                )
 
             return f(*args, **kwargs)
 

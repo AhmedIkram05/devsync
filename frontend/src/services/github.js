@@ -202,42 +202,39 @@ export const githubService = {
   },
   
   // Get user's GitHub repositories
+  // NOTE: errors propagate to callers (all wrap in try/catch) so pages can
+  // render rate-limit/offline UI instead of a misleading empty state.
   getUserRepos: async (options = {}) => {
-    try {
-      const params = new URLSearchParams();
+    const params = new URLSearchParams();
 
-      if (options.page) {
-        params.set('page', String(options.page));
-      }
-
-      if (options.perPage) {
-        params.set('per_page', String(options.perPage));
-      }
-
-      // Only fetch activity metrics when explicitly requested
-      let url = `${BASE_URL}/repositories`;
-      let timeoutMs = 30000; // default 30 second timeout
-      
-      if (options.activityWindowDays) {
-        params.set('activity_window_days', String(options.activityWindowDays));
-        params.set('include_activity', 'true'); // only set when activity is actually needed
-        timeoutMs = 90000; // 90 seconds for activity-heavy requests
-      } else {
-        params.set('include_activity', 'false');
-      }
-
-      if (params.toString()) {
-        url += `?${params.toString()}`;
-      }
-
-      // Canonical timeout lives in fetchWithAuth (AbortController) — just
-      // forward the deadline instead of racing here (no leaked setTimeout).
-      const data = await fetchWithAuth(url, { timeout: timeoutMs });
-      return data.repositories || data;
-    } catch (error) {
-      console.error('Error fetching GitHub repositories:', error);
-      return [];
+    if (options.page) {
+      params.set('page', String(options.page));
     }
+
+    if (options.perPage) {
+      params.set('per_page', String(options.perPage));
+    }
+
+    // Only fetch activity metrics when explicitly requested
+    let url = `${BASE_URL}/repositories`;
+    let timeoutMs = 30000; // default 30 second timeout
+
+    if (options.activityWindowDays) {
+      params.set('activity_window_days', String(options.activityWindowDays));
+      params.set('include_activity', 'true'); // only set when activity is actually needed
+      timeoutMs = 90000; // 90 seconds for activity-heavy requests
+    } else {
+      params.set('include_activity', 'false');
+    }
+
+    if (params.toString()) {
+      url += `?${params.toString()}`;
+    }
+
+    // Canonical timeout lives in fetchWithAuth (AbortController) — just
+    // forward the deadline instead of racing here (no leaked setTimeout).
+    const data = await fetchWithAuth(url, { timeout: timeoutMs });
+    return data.repositories || data;
   },
 
   // Alias for getUserRepos to fix method name mismatch
@@ -270,7 +267,7 @@ export const githubService = {
       const data = await fetchWithAuth(`${BASE_URL}/repositories/${repoId}/issues?${queryParams}`);
       return data.issues || data;
     } catch (error) {
-      console.error(`Error fetching issues for repository ${repoId}:`, error);
+      console.error('Error fetching issues for repository', repoId, error);
       return [];
     }
   },
@@ -288,7 +285,7 @@ export const githubService = {
       const data = await fetchWithAuth(`${BASE_URL}/repositories/${repoId}/pulls?${queryParams}`);
       return data.pull_requests || data;
     } catch (error) {
-      console.error(`Error fetching pull requests for repository ${repoId}:`, error);
+      console.error('Error fetching pull requests for repository', repoId, error);
       return [];
     }
   },
@@ -316,7 +313,7 @@ export const githubService = {
       });
       return data;
     } catch (error) {
-      console.error(`Error linking task ${taskId} with GitHub:`, error);
+      console.error('Error linking task', taskId, 'with GitHub:', error);
       throw error;
     }
   },
@@ -327,7 +324,7 @@ export const githubService = {
       const data = await fetchWithAuth(`${BASE_URL}/tasks/${taskId}/github`);
       return data.links || data;
     } catch (error) {
-      console.error(`Error fetching GitHub links for task ${taskId}:`, error);
+      console.error('Error fetching GitHub links for task', taskId, error);
       return [];
     }
   },
@@ -340,7 +337,7 @@ export const githubService = {
       });
       return data;
     } catch (error) {
-      console.error(`Error deleting GitHub link ${linkId} from task ${taskId}:`, error);
+      console.error('Error deleting GitHub link', linkId, 'from task', taskId, error);
       throw error;
     }
   },

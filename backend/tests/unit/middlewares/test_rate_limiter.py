@@ -1,7 +1,7 @@
 import os
 import sys
 import time
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 from flask import Flask, jsonify, request

@@ -261,12 +261,10 @@ function AppRoutes() {
         
         {/* Default route */}
         <Route path="/" element={
-          !(loading || permissionsLoading) && (
-            currentUser ? 
-              <Navigate to={getDashboardPath(currentUser.role)} replace />
-              : 
-              <Landing />
-          )
+          currentUser ? 
+            <Navigate to={getDashboardPath(currentUser.role)} replace />
+            : 
+            <Landing />
         } />
       </Routes>
     </>

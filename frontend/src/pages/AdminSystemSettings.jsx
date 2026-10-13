@@ -105,12 +105,12 @@ const AdminSystemSettings = () => {
           <section className="border-t border-slate-800 pt-5 space-y-4">
             <div>
               <h3 className="text-sm font-semibold text-slate-300">Access & Registration</h3>
-              <p className="mt-1 text-xs text-slate-500">Controls whether new users can sign up without admin approval.</p>
+              <p className="mt-1 text-xs text-slate-400">Controls whether new users can sign up without admin approval.</p>
             </div>
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-sm text-slate-100">Allow self-registration</span>
-                <p className="text-xs text-slate-500">When off, only admins can create accounts.</p>
+                <p className="text-xs text-slate-400">When off, only admins can create accounts.</p>
               </div>
               <Toggle active={isEnabled('allow_self_registration', true)} onToggle={() => handleChange('allow_self_registration', !isEnabled('allow_self_registration', true))} />
             </div>
@@ -119,7 +119,7 @@ const AdminSystemSettings = () => {
           <section className="border-t border-slate-800 pt-5 space-y-4">
             <div>
               <h3 className="text-sm font-semibold text-slate-300">Retention & Cleanup</h3>
-              <p className="mt-1 text-xs text-slate-500">Audit logs use their own retention period. Completed projects use a separate retention period and are deleted with their tasks, comments, and GitHub links when they expire.</p>
+              <p className="mt-1 text-xs text-slate-400">Audit logs use their own retention period. Completed projects use a separate retention period and are deleted with their tasks, comments, and GitHub links when they expire.</p>
             </div>
 
             <div>
@@ -138,7 +138,7 @@ const AdminSystemSettings = () => {
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-sm text-slate-100">Auto-delete completed projects</span>
-                <p className="text-xs text-slate-500">Deletes completed projects and their related data after the project retention period expires.</p>
+                <p className="text-xs text-slate-400">Deletes completed projects and their related data after the project retention period expires.</p>
               </div>
               <Toggle active={isEnabled('auto_archive_completed_projects', true)} onToggle={() => handleChange('auto_archive_completed_projects', !isEnabled('auto_archive_completed_projects', true))} />
             </div>

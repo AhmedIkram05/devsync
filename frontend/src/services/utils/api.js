@@ -131,7 +131,7 @@ const githubService = {
       const response = await fetchWithAuth(`github/repositories/${repoId}/issues`);
       return response?.issues || response || [];
     } catch (error) {
-      console.error(`Failed to get issues for repository ${repoId}:`, error);
+      console.error('Failed to get issues for repository', repoId, error);
       return [];
     }
   },
@@ -142,7 +142,7 @@ const githubService = {
       const response = await fetchWithAuth(`github/repositories/${repoId}/pulls`);
       return response?.pulls || response || [];
     } catch (error) {
-      console.error(`Failed to get pull requests for repository ${repoId}:`, error);
+      console.error('Failed to get pull requests for repository', repoId, error);
       return [];
     }
   },
@@ -161,7 +161,7 @@ const githubService = {
       const links = response?.links ?? response;
       return Array.isArray(links) ? links : [];
     } catch (error) {
-      console.error(`Failed to get GitHub links for task ${taskId}:`, error);
+      console.error('Failed to get GitHub links for task', taskId, error);
       return [];
     }
   },
@@ -241,7 +241,7 @@ const userService = {
     try {
       return await fetchWithAuth(`users/${userId}/progress`);
     } catch (error) {
-      console.error(`Failed to fetch progress for user ${userId}:`, error);
+      console.error('Failed to fetch progress for user', userId, error);
       return null;
     }
   }

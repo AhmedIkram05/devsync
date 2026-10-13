@@ -10,6 +10,20 @@ from functools import wraps
 from flask import g, request
 from flask_jwt_extended import get_jwt_identity
 
+try:
+    from src.logging_config import sanitize_for_log
+except ImportError:
+    try:
+        from backend.src.logging_config import sanitize_for_log
+    except ImportError:
+
+        def sanitize_for_log(s, max_len=200):
+            if s is None:
+                return "-"
+            text = str(s).replace("\r", " ").replace("\n", " ")
+            return text[:max_len] if len(text) > max_len else text
+
+
 # Configure logger
 logger = logging.getLogger("api.usage")
 
@@ -46,9 +60,12 @@ def log_api_usage():
 
             # Log usage information
             logger.info(
-                f"API usage: {endpoint} [{method}] - "
-                f"Status: {status_code} - Duration: {duration:.4f}s - "
-                f"User: {user_id}"
+                "API usage: %s [%s] - Status: %s - Duration: %.4fs - User: %s",
+                sanitize_for_log(endpoint),
+                sanitize_for_log(method),
+                status_code,
+                duration,
+                sanitize_for_log(user_id),
             )
 
             return response
@@ -87,9 +104,13 @@ def apply_api_usage_logger(app):
 
         # Log usage information
         logger.info(
-            f"API usage: {endpoint} [{method}] - "
-            f"Path: {request.path} - Status: {status_code} - "
-            f"Duration: {duration:.4f}s - User: {user_id}"
+            "API usage: %s [%s] - Path: %s - Status: %s - Duration: %.4fs - User: %s",
+            sanitize_for_log(endpoint),
+            sanitize_for_log(method),
+            sanitize_for_log(request.path),
+            status_code,
+            duration,
+            sanitize_for_log(user_id),
         )
 
         return response

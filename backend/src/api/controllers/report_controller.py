@@ -1,5 +1,7 @@
 # Report controller - business logic for report operations
 
+import logging
+
 from flask import jsonify, request
 from flask_jwt_extended import get_jwt, get_jwt_identity
 
@@ -9,6 +11,8 @@ from ...auth.rbac import Role
 from ...db.models import Report, db
 from ...services import audit_service
 from ..validators.report_validator import validate_report_data
+
+logger = logging.getLogger(__name__)
 
 
 def save_report():
@@ -49,9 +53,10 @@ def save_report():
 
         return jsonify({"message": "Report saved successfully", "report": report.to_dict()}), 201
 
-    except Exception as e:
+    except Exception:
         db.session.rollback()
-        return jsonify({"message": f"Failed to save report: {str(e)}"}), 500
+        logger.error("Failed to save report", exc_info=True)
+        return jsonify({"message": "Failed to save report"}), 500
 
 
 def get_reports():
@@ -99,8 +104,9 @@ def get_reports():
             }
         ), 200
 
-    except Exception as e:
-        return jsonify({"message": f"Failed to retrieve reports: {str(e)}"}), 500
+    except Exception:
+        logger.error("Failed to retrieve reports", exc_info=True)
+        return jsonify({"message": "Failed to retrieve reports"}), 500
 
 
 def get_report_by_id(report_id):
@@ -120,8 +126,9 @@ def get_report_by_id(report_id):
 
         return jsonify({"message": "Report retrieved successfully", "report": report.to_dict()}), 200
 
-    except Exception as e:
-        return jsonify({"message": f"Failed to retrieve report: {str(e)}"}), 500
+    except Exception:
+        logger.error("Failed to retrieve report", exc_info=True)
+        return jsonify({"message": "Failed to retrieve report"}), 500
 
 
 def delete_report(report_id):
@@ -157,6 +164,7 @@ def delete_report(report_id):
 
         return jsonify({"message": "Report deleted successfully"}), 200
 
-    except Exception as e:
+    except Exception:
         db.session.rollback()
-        return jsonify({"message": f"Failed to delete report: {str(e)}"}), 500
+        logger.error("Failed to delete report", exc_info=True)
+        return jsonify({"message": "Failed to delete report"}), 500

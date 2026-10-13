@@ -1,7 +1,3 @@
-import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
-
 // Test suite for conditional rendering and branching logic
 describe('Conditional Rendering and Branching - Extended Coverage', () => {
   describe('Role-based rendering', () => {
@@ -201,12 +197,15 @@ describe('Conditional Rendering and Branching - Extended Coverage', () => {
       expect(val2).toBe(true);
     });
 
+    // codeql[js/nested-conditional-fixture] intentional nested-ternary fixture — covers each branch; eslint-disable-next-line no-nested-ternary
     test('nested ternaries', () => {
       const value = 5;
+      // codeql[js/nested-conditional-fixture] intentional fixture, not production logic; eslint-disable-next-line no-nested-ternary
       const result = value > 10 ? 'high' : value > 5 ? 'medium' : 'low';
       expect(result).toBe('low');
 
       const value2 = 7;
+      // codeql[js/nested-conditional-fixture] intentional fixture, second input covers medium branch; eslint-disable-next-line no-nested-ternary
       const result2 = value2 > 10 ? 'high' : value2 > 5 ? 'medium' : 'low';
       expect(result2).toBe('medium');
     });
@@ -283,13 +282,16 @@ describe('Conditional Rendering and Branching - Extended Coverage', () => {
   });
 
   describe('Comparison operators', () => {
+    // codeql[js/loose-equality-fixture] intentional == vs === fixture — asserts coercion semantics, not a bug; eslint-disable-next-line eqeqeq
     test('equality comparisons', () => {
+      // codeql[js/loose-equality-fixture] intentional loose-equality fixture; eslint-disable-next-line eqeqeq
       expect(5 == '5').toBe(true);  // loose equality
       expect(5 === '5').toBe(false); // strict equality
       expect(5 === 5).toBe(true);
     });
 
     test('inequality comparisons', () => {
+      // codeql[js/loose-equality-fixture] intentional loose-inequality fixture; eslint-disable-next-line eqeqeq
       expect(5 != '5').toBe(false);  // loose inequality
       expect(5 !== '5').toBe(true);  // strict inequality
     });
@@ -302,6 +304,7 @@ describe('Conditional Rendering and Branching - Extended Coverage', () => {
     });
 
     test('NaN special case', () => {
+      // codeql[js/nan-self-compare-fixture] intentional NaN self-compare — documents IEEE semantics; eslint-disable-next-line use-isnan
       expect(NaN === NaN).toBe(false);
       expect(Number.isNaN(NaN)).toBe(true);
     });

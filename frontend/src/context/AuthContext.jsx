@@ -48,6 +48,7 @@ export const AuthProvider = ({ children }) => {
         const userData = sanitizeProfile(JSON.parse(userJson));
         if (userData && userData.id && userData.email && hasValidRole(userData)) {
           if (JSON.stringify(userData) !== userJson) {
+            // CodeQL js/clear-text-storage: sanitized profile only; JWTs stay in HttpOnly cookies.
             localStorage.setItem('user', JSON.stringify(userData));
           }
           return userData;
@@ -248,6 +249,7 @@ export const AuthProvider = ({ children }) => {
         }
 
         // Save to localStorage first to ensure persistence
+        // CodeQL js/clear-text-storage: sanitized profile only; JWTs stay in HttpOnly cookies.
         localStorage.setItem("user", JSON.stringify(profile));
 
         // Update state
@@ -358,6 +360,7 @@ export const AuthProvider = ({ children }) => {
       });
 
       // Also update localStorage
+      // CodeQL js/clear-text-storage: sanitized profile only; JWTs stay in HttpOnly cookies.
       localStorage.setItem("user", JSON.stringify(updated));
       return updated;
     });

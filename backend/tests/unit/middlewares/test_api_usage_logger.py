@@ -1,6 +1,5 @@
 import os
 import sys
-import threading
 from unittest.mock import Mock, patch
 
 import pytest
@@ -53,7 +52,7 @@ def test_log_api_usage_decorator(reset_usage_stats):
                 # Check if logger was called
                 assert mock_logger.info.called
                 assert "API usage:" in mock_logger.info.call_args[0][0]
-                assert "User: 123" in mock_logger.info.call_args[0][0]
+                assert "123" in [str(a) for a in mock_logger.info.call_args[0][1:]]
 
                 # Check response
                 assert response.status_code == 200
@@ -89,7 +88,7 @@ def test_log_api_usage_without_jwt(reset_usage_stats):
                 # Check if logger was called
                 assert mock_logger.info.called
                 assert "API usage:" in mock_logger.info.call_args[0][0]
-                assert "User: None" in mock_logger.info.call_args[0][0]
+                assert "-" in [str(a) for a in mock_logger.info.call_args[0][1:]]
 
                 # Check that stats were updated
                 stats = get_api_usage_stats()
@@ -135,7 +134,7 @@ def test_apply_api_usage_logger(reset_usage_stats):
             # Check if logger was called
             assert mock_logger.info.called
             assert "API usage:" in mock_logger.info.call_args[0][0]
-            assert "User: 123" in mock_logger.info.call_args[0][0]
+            assert "123" in [str(a) for a in mock_logger.info.call_args[0][1:]]
 
             # Check that stats were updated using None instead of "None"
             assert None in api_usage_stats  # None endpoint in test context - not a string

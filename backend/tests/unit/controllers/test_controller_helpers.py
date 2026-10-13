@@ -7,8 +7,6 @@ ever exercised indirectly, through view functions whose behaviour changes
 whenever the helpers do.
 """
 
-import builtins
-import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -168,75 +166,6 @@ def test_run_notification_swallows_and_rolls_back(monkeypatch):
     tasks_controller._run_notification(boom, 1)  # must not raise
 
     rollback.assert_called_once()
-
-
-# --------------------------------------------------------------------------
-# _debug_log
-# --------------------------------------------------------------------------
-
-
-@pytest.fixture
-def captured_writes(monkeypatch):
-    """Capture what _debug_log appends, without touching the real log file."""
-    written = []
-
-    class FakeFile:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def write(self, text):
-            written.append(text)
-
-    real_open = builtins.open
-
-    def fake_open(path, mode="r", *args, **kwargs):
-        if str(path).endswith(".log"):
-            return FakeFile()
-        return real_open(path, mode, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "open", fake_open)
-    return written
-
-
-def test_debug_log_writes_structured_payload(captured_writes):
-    projects_controller._debug_log(
-        "H1",
-        "projects_controller.py:get_project_by_id:membership_check",
-        "Evaluating membership access",
-        {"project_id": 4, "user_id": 1},
-    )
-
-    assert len(captured_writes) == 1
-    payload = json.loads(captured_writes[0].rstrip("\n"))
-    assert payload["sessionId"] == "fb26a3"
-    assert payload["runId"] == "initial"
-    assert payload["hypothesisId"] == "H1"
-    assert payload["location"] == "projects_controller.py:get_project_by_id:membership_check"
-    assert payload["message"] == "Evaluating membership access"
-    assert payload["data"] == {"project_id": 4, "user_id": 1}
-    assert isinstance(payload["timestamp"], int)
-    assert payload["id"].startswith("log_")
-
-
-def test_debug_log_honours_run_id(captured_writes):
-    projects_controller._debug_log("H2", "loc", "msg", {}, run_id="verify")
-
-    payload = json.loads(captured_writes[0].rstrip("\n"))
-    assert payload["runId"] == "verify"
-
-
-def test_debug_log_never_raises_when_path_unwritable(monkeypatch):
-    """Logging is best-effort: a failed write must not break the request."""
-
-    def exploding_open(*args, **kwargs):
-        raise OSError("read-only filesystem")
-
-    monkeypatch.setattr(builtins, "open", exploding_open)
-
-    projects_controller._debug_log("H3", "loc", "msg", {})
 
 
 # --------------------------------------------------------------------------

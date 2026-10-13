@@ -24,6 +24,8 @@ server {
     # Tight CSP: the CRA build loads nothing off-origin (no CDNs, no web
     # fonts); runtime style tags need 'unsafe-inline' under style-src.
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss: https:; font-src 'self' data:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
 
     # API proxy — uses variable so nginx resolves at runtime (supports Docker DNS)
     set $api_upstream "${API_UPSTREAM}";
@@ -74,6 +76,8 @@ server {
         add_header X-Content-Type-Options "nosniff" always;
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss: https:; font-src 'self' data:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
     }
 
     # SPA fallback — all non-file routes serve index.html

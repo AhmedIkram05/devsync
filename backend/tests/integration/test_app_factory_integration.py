@@ -163,9 +163,10 @@ def test_protected_route_requires_token_with_expected_contract(client):
 
     assert response.status_code == 401
     payload = response.get_json()
-    assert payload["status"] == 401
-    assert payload["error"] == "authorization_required"
+    assert payload["status"] == "error"
+    assert payload["code"] == "authorization_required"
     assert payload["message"] == "Authentication token is missing"
+    assert payload["request_id"]
 
 
 def test_github_connect_route_requires_token(client):
@@ -173,7 +174,8 @@ def test_github_connect_route_requires_token(client):
 
     assert response.status_code == 401
     payload = response.get_json()
-    assert payload["error"] == "authorization_required"
+    assert payload["status"] == "error"
+    assert payload["code"] == "authorization_required"
 
 
 def test_socket_register_accepts_valid_bearer_token(app_and_socket):

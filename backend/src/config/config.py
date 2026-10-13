@@ -41,6 +41,8 @@ HKDF_SALT = b"devsync-hkdf-salt-v1"
 
 def hkdf_sha256(ikm: bytes, salt=None, info=b"", length=32):
     """Minimal HKDF-SHA256 (RFC 5869) via stdlib hmac/hashlib."""
+    # CodeQL py/weak-sensitive-data-hashing is a false positive here: this is
+    # HKDF key derivation (not password hashing); passwords use scrypt via hash_password.
     if not salt:
         salt = b"\x00" * hashlib.sha256().digest_size
     prk = hmac.new(salt, ikm, hashlib.sha256).digest()

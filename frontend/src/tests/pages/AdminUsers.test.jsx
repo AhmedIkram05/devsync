@@ -127,7 +127,6 @@ describe('AdminUsers', () => {
 
     expect(await screen.findByText('New Hire')).toBeInTheDocument();
 
-    const table = screen.getByRole('table');
     const teamLeadRow = screen.getByText('Team Lead One').closest('tr');
     fireEvent.click(within(teamLeadRow).getByRole('button', { name: 'Delete' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete User' }));

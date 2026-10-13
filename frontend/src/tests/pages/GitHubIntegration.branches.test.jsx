@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import GitHubIntegration from '../../pages/GitHubIntegration';
 import * as githubModule from '../../services/github';
@@ -357,7 +357,7 @@ describe('GitHubIntegration page', () => {
     });
   });
 
-  test('logs current user info', async () => {
+  test('renders github integration without debug console noise', async () => {
     const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
 
     render(
@@ -369,8 +369,9 @@ describe('GitHubIntegration page', () => {
     );
 
     await waitFor(() => {
-      expect(consoleSpy).toHaveBeenCalled();
+      expect(githubModule.githubService.checkConnection).toHaveBeenCalled();
     });
+    expect(consoleSpy).not.toHaveBeenCalled();
 
     consoleSpy.mockRestore();
   });

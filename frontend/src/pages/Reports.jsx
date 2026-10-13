@@ -589,7 +589,7 @@ const Reports = () => {
       <div className="h-72">
         {emptyState ? (
           <div className="h-full flex items-center justify-center border border-dashed border-slate-700/70 rounded-lg">
-            <p className="text-sm text-slate-500">No chart data for this range.</p>
+            <p className="text-sm text-slate-400">No chart data for this range.</p>
           </div>
         ) : (
           children
@@ -806,11 +806,11 @@ const Reports = () => {
           <div className="bg-slate-900/70 rounded-2xl shadow-md border border-slate-800/70 flex h-full flex-col lg:h-[36rem]">
             <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-slate-100">Generated Reports</h2>
-              <span className="text-xs text-slate-500 uppercase tracking-wide">PDF downloads</span>
+              <span className="text-xs text-slate-400 uppercase tracking-wide">PDF downloads</span>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto p-6 pr-4">
               {generatedReports.length === 0 ? (
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-slate-400">
                   No generated reports yet. Use Generate Report to create one.
                 </p>
               ) : (
@@ -823,7 +823,7 @@ const Reports = () => {
                       {/* Delete Button */}
                       <button
                         onClick={() => handleDeleteReport(report.id)}
-                        className="absolute top-3 right-3 p-1.5 text-slate-500 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-rose-500/10"
+                        className="absolute top-3 right-3 p-1.5 text-slate-400 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-all rounded-lg hover:bg-rose-500/10"
                         title="Delete Report"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -840,7 +840,7 @@ const Reports = () => {
                         </div>
                       </div>
                       <div className="flex items-center justify-between">
-                        <div className="text-xs text-slate-500">
+                        <div className="text-xs text-slate-400">
                           Summary entries: {Object.keys(report.summary || {}).length}
                         </div>
                         <button
@@ -896,10 +896,11 @@ const Reports = () => {
       <div className="bg-slate-900/70 rounded-2xl shadow-md p-5 mb-6 border border-slate-800/70">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">
+            <label htmlFor="reports-type" className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">
               Report Type
             </label>
             <select
+              id="reports-type"
               value={reportType}
               onChange={(e) => setReportType(e.target.value)}
               className="w-full px-3 py-2 border border-slate-700/70 bg-slate-800/60 text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500/70 transition-colors"
@@ -911,10 +912,11 @@ const Reports = () => {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">
+            <label htmlFor="reports-range" className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">
               Date Range
             </label>
             <select
+              id="reports-range"
               value={dateRange}
               onChange={(e) => setDateRange(e.target.value)}
               className="w-full px-3 py-2 border border-slate-700/70 bg-slate-800/60 text-slate-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500/70 transition-colors"
@@ -928,7 +930,7 @@ const Reports = () => {
         </div>
 
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-h-[1.25rem] text-xs text-slate-500">
+          <div className="min-h-[1.25rem] text-xs text-slate-400">
             {reportType === 'github' && (
               <span>{refreshing ? 'Refreshing GitHub stats...' : getGithubUpdatedLabel()}</span>
             )}

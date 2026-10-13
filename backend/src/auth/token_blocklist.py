@@ -208,4 +208,4 @@ def reset_for_tests() -> None:
 
         redis_reset()
     except Exception:
-        pass
+        logger.debug("redis reset failed", exc_info=True)

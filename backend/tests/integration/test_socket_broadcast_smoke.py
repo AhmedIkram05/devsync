@@ -150,7 +150,7 @@ def test_non_member_cannot_broadcast(app_and_socket, app, fake_redis):
 
     member = _connect(app_and_socket, app, 1)
 
-    from src.db.models import User, db, project_members
+    from src.db.models import User, db
 
     with app.app_context():
         db.session.add(User(id=5, name="Late Outsider", email="smoke5@example.com", password="x", role="developer"))

@@ -28,12 +28,15 @@ def _to_bool(value, default):
     return default
 
 
-def _to_int(value, default):
+def _to_int_with_default(value, default):
     try:
         parsed = int(value)
         return parsed if parsed >= 0 else default
     except (TypeError, ValueError):
         return default
+
+
+_to_int = _to_int_with_default
 
 
 def _normalize_setting(key, value):

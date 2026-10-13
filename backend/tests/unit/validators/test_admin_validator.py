@@ -3,7 +3,7 @@ import os
 import sys
 import unittest
 
-from flask import Flask, jsonify
+from flask import Flask
 
 # Create a test Flask app context for the validators to use
 app = Flask(__name__)
@@ -13,7 +13,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 
 # Import after path setup
 from backend.src.api.validators.admin_validator import validate_system_settings, validate_user_role_update
-from backend.src.auth.rbac import Role
 
 
 class TestAdminValidator(unittest.TestCase):

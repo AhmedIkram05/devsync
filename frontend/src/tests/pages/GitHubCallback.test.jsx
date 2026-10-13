@@ -22,6 +22,7 @@ jest.mock('../../context/AuthContext', () => ({
 jest.mock('../../services/github', () => ({
   githubService: {
     completeOAuthFlow: jest.fn(),
+    checkConnection: jest.fn(),
   },
 }));
 
@@ -59,6 +60,12 @@ describe('GitHubCallback page', () => {
     githubService.completeOAuthFlow.mockResolvedValue({
       success: true,
       github_username: 'octocat',
+    });
+
+    githubService.checkConnection.mockReset();
+    githubService.checkConnection.mockResolvedValue({
+      connected: true,
+      username: 'octocat',
     });
 
     authApi.getCurrentUser.mockReset();

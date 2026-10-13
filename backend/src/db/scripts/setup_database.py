@@ -8,29 +8,30 @@ import sys
 
 from sqlalchemy import inspect, text
 
-# Add the backend directory to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
+from .sqlite_helpers import assert_valid_sqlite_identifier  # noqa: E402
+from .sqlite_helpers import quote_sqlite_identifier as _quote_sqlite_identifier  # noqa: E402
 
-from flask import Flask
-from src.config.config import get_config
-from src.db.models import db
-from src.db.models.models import *
+if __name__ == "__main__":
+    # Add the backend directory to the Python path for direct script runs only.
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
+
+from flask import Flask  # noqa: E402
+from src.config.config import get_config  # noqa: E402
+from src.db.models import db  # noqa: E402
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def _quote_sqlite_identifier(identifier):
-    """Quote SQLite identifiers for PRAGMA statements."""
-    return '"' + identifier.replace('"', '""') + '"'
-
-
 def create_index_safely(conn, index_name, table, columns):
     """Create an index with proper error handling"""
     try:
+        cols = list(columns) if isinstance(columns, list) else [columns]
+        for identifier in [index_name, table, *cols]:
+            assert_valid_sqlite_identifier(identifier)
         # Format columns for the SQL statement
-        col_str = ", ".join(columns) if isinstance(columns, list) else columns
+        col_str = ", ".join(cols)
 
         # First drop the index if it exists
         conn.execute(text(f"DROP INDEX IF EXISTS {index_name};"))

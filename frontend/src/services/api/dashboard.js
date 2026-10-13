@@ -116,14 +116,10 @@ const buildDeveloperProgress = (users, tasks) => {
     tasksByAssignee.get(assigneeKey).push(task);
   });
 
-  console.log('[buildDeveloperProgress] Tasks by assignee:', tasksByAssignee);
-  console.log('[buildDeveloperProgress] Total tasks with assignees:', Array.from(tasksByAssignee.values()).flat().length);
-
   return users
     .filter((user) => progressTrackingRoles.has(user.role))
     .map((user) => {
       const userTasks = tasksByAssignee.get(String(user.id)) || [];
-      console.log(`[buildDeveloperProgress] User ${user.id} (${user.name}): ${userTasks.length} tasks`);
 
       let completedCount = 0;
 
@@ -376,11 +372,6 @@ const dashboardService = {
       const allProjects = Array.isArray(projects) ? projects : [];
       const currentUser = options.currentUser || null;
 
-      console.log('[getDeveloperProgressStats] Users:', users.length);
-      console.log('[getDeveloperProgressStats] Tasks:', allTasks.length, allTasks.slice(0, 3));
-      console.log('[getDeveloperProgressStats] Projects:', allProjects.length);
-      console.log('[getDeveloperProgressStats] currentUser:', currentUser);
-
       const scopedProjectIds = new Set();
       if (currentUser?.role === 'team_lead' && currentUser?.id) {
         allProjects.forEach((project) => {
@@ -396,16 +387,8 @@ const dashboardService = {
       }
 
       const isTeamLead = currentUser?.role === 'team_lead';
-      // Debug: show sample task/project fields to help diagnose scoping issues
-      try {
-        console.log('[getDeveloperProgressStats] Sample tasks:', allTasks.slice(0, 5).map(t => ({ id: t.id, project_id: t.project_id, assigned_to: t.assigned_to })));
-        console.log('[getDeveloperProgressStats] Sample projects:', allProjects.map(p => ({ id: p.id, created_by: p.created_by, team_members: (p.team_members || []).map(m => ({ id: m.id, role: m.role })) })).slice(0,5));
-      } catch (e) {
-        console.warn('[getDeveloperProgressStats] Debug logging failed', e);
-      }
 
       if (isTeamLead && scopedProjectIds.size === 0) {
-        console.log('[getDeveloperProgressStats] TL with no scoped projects, returning []');
         return [];
       }
 
@@ -454,18 +437,8 @@ const dashboardService = {
           return inProject || assignedToTeam;
         })
         : allTasks;
-      if (isTeamLead && scopedProjectIds.size > 0 && scopedTasks.length === 0) {
-        console.warn('[getDeveloperProgressStats] No scoped tasks found for TL - inspecting all tasks vs scopedProjectIds', Array.from(scopedProjectIds));
-        allTasks.forEach((task) => {
-          console.log('[getDeveloperProgressStats] task:', task.id, 'project_id:', task.project_id, 'Number(project_id):', Number(task.project_id));
-        });
-      }
-
-      console.log('[getDeveloperProgressStats] Scoped users:', scopedUsers.length);
-      console.log('[getDeveloperProgressStats] Scoped tasks:', scopedTasks.length, scopedTasks.slice(0, 3));
 
       const result = buildDeveloperProgress(scopedUsers, scopedTasks);
-      console.log('[getDeveloperProgressStats] Result:', result);
       return result;
     } catch (error) {
       console.error('Failed to fetch developer progress stats:', error);

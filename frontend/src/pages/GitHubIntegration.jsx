@@ -4,6 +4,7 @@ import { authApi } from "../services/utils/auth";
 import { useAuth } from "../context/AuthContext";
 import GitHubRepoCard from "../components/GitHubRepoCard";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { logger } from "../utils/logger";
 
 // Display-only page for connection status and repositories. The OAuth code
 // exchange lives solely in GitHubCallback.jsx — this page never reads
@@ -26,9 +27,12 @@ const GitHubIntegration = () => {
   const fetchRepositories = async () => {
     try {
       setLoadingRepos(true);
-      console.log("Fetching GitHub repositories...");
+      logger.log("Fetching GitHub repositories...");
       const data = await githubService.getUserRepos();
-      console.log("GitHub repositories received:", data);
+      if (data?.isConnectionError) {
+        throw new Error(data.error || 'Server connection failed.');
+      }
+      logger.log("GitHub repositories received:", data);
       
       // Ensure we have an array of repos
       const repos = Array.isArray(data) ? data : (data?.repositories || []);
@@ -61,12 +65,12 @@ const GitHubIntegration = () => {
     
     // Log current user info
     if (currentUser) {
-      console.log("GitHubIntegration - Current user:", 
+      logger.log("GitHubIntegration - Current user:", 
         currentUser.email, 
         "Role:", currentUser.role, 
         "GitHub connected:", currentUser.github_connected);
     } else {
-      console.log("GitHubIntegration - No current user found");
+      logger.log("GitHubIntegration - No current user found");
     }
   }, [setAuthError, currentUser]);
   
@@ -75,9 +79,9 @@ const GitHubIntegration = () => {
     try {
       setConnectionStatus(prev => ({ ...prev, loading: true, error: null, rateLimitError: false }));
       
-      console.log("Checking GitHub connection status...");
+      logger.log("Checking GitHub connection status...");
       const data = await githubService.checkConnection();
-      console.log("GitHub connection status:", data);
+      logger.log("GitHub connection status:", data);
       
       // If we just connected or the status changed, update local storage
       if (justConnected) {
@@ -139,26 +143,26 @@ const GitHubIntegration = () => {
 
   // Check connection status on component mount
   useEffect(() => {
-    console.log("GitHubIntegration component mounted, checking connection status");
+    logger.log("GitHubIntegration component mounted, checking connection status");
     checkGitHubConnection();
   }, [checkGitHubConnection]);
   
   const connectGitHub = async () => {
     try {
-      console.log("Initiating GitHub OAuth flow...");
+      logger.log("Initiating GitHub OAuth flow...");
       setIsConnecting(true);
       setConnectionStatus(prev => ({ ...prev, error: null, rateLimitError: false }));
       
       // Get the OAuth URL from our service
       const oauthUrl = await githubService.initiateOAuthFlow();
-      console.log("Received GitHub OAuth URL:", oauthUrl);
+      logger.log("Received GitHub OAuth URL:", oauthUrl);
       
       if (!oauthUrl) {
         throw new Error("No GitHub authorization URL received from server");
       }
       
       // Redirect user to GitHub for authorization
-      console.log("Redirecting to GitHub authorization page...");
+      logger.log("Redirecting to GitHub authorization page...");
       window.location.href = oauthUrl;
     } catch (error) {
       console.error("GitHub connection error:", error);
@@ -183,11 +187,12 @@ const GitHubIntegration = () => {
   };
   
   const disconnectGitHub = async () => {
+    // CodeQL js/user-controlled-bypass: explicit user confirmation gates disconnect, not URL input.
     const confirmed = window.confirm("Are you sure you want to disconnect your GitHub account? This will remove all repository links.");
     
     if (confirmed) {
       try {
-        console.log("Disconnecting GitHub account...");
+        logger.log("Disconnecting GitHub account...");
         await githubService.disconnectAccount();
         
         // Update local storage
@@ -205,7 +210,7 @@ const GitHubIntegration = () => {
         });
         
         setRepos([]);
-        console.log("GitHub account disconnected successfully");
+        logger.log("GitHub account disconnected successfully");
       } catch (error) {
         console.error("GitHub disconnect error:", error);
         // Check for rate limit error

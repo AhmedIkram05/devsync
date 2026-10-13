@@ -1,8 +1,7 @@
 import os
 import sys
-from unittest.mock import Mock, call, patch
+from unittest.mock import Mock, patch
 
-import pytest
 from flask import Flask, g, jsonify
 
 # Set up proper import paths
@@ -43,7 +42,7 @@ def test_log_request_decorator():
 
             # Check if the second log was for request completion
             assert "Request completed:" in mock_logger.info.call_args_list[1][0][0]
-            assert "Status: 200" in mock_logger.info.call_args_list[1][0][0]
+            assert 200 in mock_logger.info.call_args_list[1][0][1:]
 
             # Check response
             assert response.status_code == 200
@@ -87,7 +86,7 @@ def test_apply_request_logger():
             # Check if logger was called again
             assert mock_logger.info.call_count == 2
             assert "Request completed:" in mock_logger.info.call_args[0][0]
-            assert "Status: 200" in mock_logger.info.call_args[0][0]
+            assert 200 in mock_logger.info.call_args[0][1:]
 
             # Check that the original response was returned
             assert result == response

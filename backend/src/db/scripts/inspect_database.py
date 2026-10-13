@@ -8,21 +8,18 @@ import sys
 
 from sqlalchemy import inspect, text
 
+from .sqlite_helpers import quote_sqlite_identifier as _quote_sqlite_identifier  # noqa: E402
+
 # Add the backend directory to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
 
-from flask import Flask
-from src.config.config import get_config
-from src.db.models import db
+from flask import Flask  # noqa: E402
+from src.config.config import get_config  # noqa: E402
+from src.db.models import db  # noqa: E402
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-def _quote_sqlite_identifier(identifier):
-    """Quote SQLite identifiers for PRAGMA statements."""
-    return '"' + identifier.replace('"', '""') + '"'
 
 
 def inspect_database():

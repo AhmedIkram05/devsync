@@ -13,6 +13,7 @@ from ...auth.rbac import Role, get_user_project_ids  # Changed to relative impor
 from ...db.models import Project, Task, User, db  # Changed to relative import
 from ...services import audit_service, settings_service
 from ...services.notification_service import NotificationService
+from ...services.notification_service import run_notification as _run_notification
 from ...services.task_rules import get_project_scope_ids, is_task_overdue
 from ..validators.task_validator import validate_task_data  # Changed to relative import
 
@@ -27,15 +28,6 @@ TASK_MANAGER_ROLES = {
     Role.TEAM_LEAD.value,
     Role.ADMIN.value,
 }
-
-
-def _run_notification(callback, *args, **kwargs):
-    """Create notifications without making the primary task mutation fail."""
-    try:
-        callback(*args, **kwargs)
-    except Exception:
-        db.session.rollback()
-        logger.exception("Failed to create task notification")
 
 
 def _coerce_int(value):
@@ -269,6 +261,7 @@ def create_new_task():
         assignee_id=new_task.assigned_to,
         project_name=project_name,
         assignee_name=assignee_name,
+        logger_msg="Failed to create task notification",
     )
 
     return jsonify(
@@ -365,6 +358,7 @@ def update_task_by_id(task_id):
         user_id,
         assignee_id=task.assigned_to,
         changed_fields=changed_fields if changed_fields else None,
+        logger_msg="Failed to create task notification",
     )
 
     return jsonify(

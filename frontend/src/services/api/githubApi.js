@@ -41,7 +41,7 @@ export const githubApi = {
     try {
       return await fetchWithAuth(`${BASE_URL}/repositories/${repoId}/issues`);
     } catch (error) {
-      console.error(`Error fetching issues for repository ${repoId}:`, error);
+      console.error('Error fetching issues for repository', repoId, error);
       throw error;
     }
   },
@@ -54,7 +54,7 @@ export const githubApi = {
         body: JSON.stringify(data)
       });
     } catch (error) {
-      console.error(`Error linking task ${taskId} with GitHub:`, error);
+      console.error('Error linking task', taskId, 'with GitHub:', error);
       throw error;
     }
   },
@@ -64,7 +64,7 @@ export const githubApi = {
     try {
       return await fetchWithAuth(`${BASE_URL}/tasks/${taskId}/github`);
     } catch (error) {
-      console.error(`Error fetching GitHub links for task ${taskId}:`, error);
+      console.error('Error fetching GitHub links for task', taskId, error);
       throw error;
     }
   },

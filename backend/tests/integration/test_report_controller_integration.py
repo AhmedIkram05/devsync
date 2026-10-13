@@ -1,9 +1,6 @@
 """Integration tests for report controller endpoints"""
 
-import json
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 class TestReportControllerIntegration:

@@ -42,16 +42,27 @@ const GitHubCallback = () => {
         const userId = urlParams.get('user_id');
         
         // Handle GitHub success parameter format
+        // CodeQL js/user-controlled-bypass: ?github_success/user_id alone never
+        // marks connected — server GET /github/status must say connected:true.
         if (githubSuccess === 'true' && githubUsername && userId) {
-          setStatus('Successfully connected to GitHub!');
-          
           // Update the user in localStorage with GitHub connection status
           const user = authApi.getCurrentUser();
           if (user && user.id && user.id.toString() === userId.toString()) {
-            // Update the user object with GitHub connection info
-            const updatedUser = authApi.updateGitHubStatus(true, githubUsername);
-            if (updatedUser && typeof setCurrentUser === 'function') {
-              setCurrentUser(updatedUser);
+            try {
+              const serverStatus = await githubService.checkConnection();
+              if (serverStatus?.connected) {
+                setStatus('Successfully connected to GitHub!');
+                // Update the user object with GitHub connection info
+                const updatedUser = authApi.updateGitHubStatus(
+                  true,
+                  serverStatus?.username || githubUsername
+                );
+                if (updatedUser && typeof setCurrentUser === 'function') {
+                  setCurrentUser(updatedUser);
+                }
+              }
+            } catch {
+              // Fail closed: forged params without server confirmation change nothing.
             }
           }
           

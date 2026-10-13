@@ -1,9 +1,6 @@
 """Integration tests for dashboard controller"""
 
-from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 class TestDashboardControllerIntegration:

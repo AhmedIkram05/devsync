@@ -121,5 +121,5 @@ def test_run_retention_cleanup_reports_failure_as_500(monkeypatch, client):
     payload = response.get_json()
     assert payload["status"] == "error"
     assert payload["message"] == "Retention cleanup failed"
-    assert payload["error"] == "database is down"
     assert payload["result"] is None
+    assert "error" not in payload

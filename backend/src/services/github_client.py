@@ -5,6 +5,7 @@ GitHub API client utilities for DevSync with rate limit handling
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -13,6 +14,28 @@ from urllib.parse import parse_qs, urlparse
 import requests
 from flask import current_app
 from itsdangerous import BadData, SignatureExpired, URLSafeTimedSerializer
+
+try:
+    from src.logging_config import sanitize_for_log
+except ImportError:
+    try:
+        from backend.src.logging_config import sanitize_for_log
+    except ImportError:
+
+        def sanitize_for_log(s, max_len=200):
+            if s is None:
+                return "-"
+            text = str(s).replace("\r", " ").replace("\n", " ")
+            return text[:max_len] if len(text) > max_len else text
+
+
+def _validate_repo_segments(owner, repo):
+    if not isinstance(owner, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", owner):
+        raise ValueError("Invalid repository owner")
+    if not isinstance(repo, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", repo):
+        raise ValueError("Invalid repository name")
+    return owner, repo
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -149,9 +172,8 @@ class GitHubClient:
         redirect_uri = current_app.config.get("GITHUB_REDIRECT_URI")
 
         logger.info("Exchanging code for token with GitHub...")
-        logger.info(f"Using client_id: {client_id}")
-        logger.info(f"Using redirect_uri: {redirect_uri}")
-        logger.info(f"Code (first 10 chars): {code[:10]}...")
+        logger.info("Using client_id: %s", sanitize_for_log(client_id))
+        logger.info("Using redirect_uri: %s", sanitize_for_log(redirect_uri))
 
         # Create payload for token request
         data = {"client_id": client_id, "client_secret": client_secret, "code": code, "redirect_uri": redirect_uri}
@@ -160,7 +182,7 @@ class GitHubClient:
 
         logger.info("Making POST request to GitHub for token exchange...")
         try:
-            response = requests.post(GitHubClient.TOKEN_URL, data=data, headers=headers)
+            response = requests.post(GitHubClient.TOKEN_URL, data=data, headers=headers, timeout=10)
 
             status_code = response.status_code
             logger.info(f"GitHub token exchange response status: {status_code}")
@@ -251,7 +273,7 @@ class GitHubClient:
 
             # Check if we have a cached response
             if cache_key in self._cache and datetime.now() < self._cache_expiry.get(cache_key, datetime.min):
-                logger.debug(f"Using cached response for {cache_key}")
+                logger.debug("Using cached response for %s", sanitize_for_log(cache_key))
                 return self._cache[cache_key]
 
         # Make the actual request
@@ -265,8 +287,10 @@ class GitHubClient:
 
             try:
                 method_upper = method.upper()
+                assert url.startswith(self.BASE_API_URL)
                 request_kwargs = {
                     "headers": self.get_headers(),
+                    "timeout": 10,
                     **kwargs,
                 }
 
@@ -301,7 +325,7 @@ class GitHubClient:
                     except Exception:
                         return True
                 else:
-                    logger.error(f"GitHub API error: {response.status_code} - {response.text}")
+                    logger.error("GitHub API error: %s - %s", response.status_code, sanitize_for_log(response.text))
                     return None
 
             except GitHubRateLimitError as e:
@@ -342,6 +366,7 @@ class GitHubClient:
 
     def get_repository(self, owner, repo):
         """Get a specific repository by owner and name"""
+        _validate_repo_segments(owner, repo)
         return self._make_request(
             "GET",
             f"{self.BASE_API_URL}/repos/{owner}/{repo}",
@@ -351,6 +376,7 @@ class GitHubClient:
 
     def get_repository_issues(self, owner, repo, state="open", page=1, per_page=30):
         """Get issues for a repository"""
+        _validate_repo_segments(owner, repo)
         return (
             self._make_request(
                 "GET",
@@ -364,6 +390,7 @@ class GitHubClient:
 
     def get_repository_pulls(self, owner, repo, state="open", page=1, per_page=30):
         """Get pull requests for a repository"""
+        _validate_repo_segments(owner, repo)
         return (
             self._make_request(
                 "GET",
@@ -377,6 +404,7 @@ class GitHubClient:
 
     def create_issue_comment(self, owner, repo, issue_number, body):
         """Add a comment to an issue or pull request"""
+        _validate_repo_segments(owner, repo)
         return self._make_request(
             "POST",
             f"{self.BASE_API_URL}/repos/{owner}/{repo}/issues/{issue_number}/comments",
@@ -424,6 +452,7 @@ class GitHubClient:
 
     def get_open_issues_count(self, owner, repo):
         """Get count of open issues for a repository."""
+        _validate_repo_segments(owner, repo)
         return self._count_paginated_results(
             f"{self.BASE_API_URL}/repos/{owner}/{repo}/issues",
             params={"state": "open"},
@@ -466,9 +495,11 @@ class GitHubClient:
         filtering by `created_at` to count PRs within the requested window.
         """
         try:
+            _validate_repo_segments(owner, repo)
             # Fast path: no time window requested, use Link header optimization
             if not since_days:
                 url = f"{self.BASE_API_URL}/repos/{owner}/{repo}/pulls"
+                assert url.startswith(self.BASE_API_URL)
                 params = {
                     "state": "all",
                     "page": 1,
@@ -483,6 +514,7 @@ class GitHubClient:
                     url,
                     params=params,
                     headers=self.get_headers(),
+                    timeout=10,
                 )
 
                 if self._handle_rate_limit(response):
@@ -490,10 +522,11 @@ class GitHubClient:
                         url,
                         params=params,
                         headers=self.get_headers(),
+                        timeout=10,
                     )
 
                 if not 200 <= response.status_code < 300:
-                    logger.error(f"GitHub API error: {response.status_code} - {response.text}")
+                    logger.error("GitHub API error: %s - %s", response.status_code, sanitize_for_log(response.text))
                     return None
 
                 pulls = response.json()
@@ -511,7 +544,9 @@ class GitHubClient:
                 return pull_count
 
             # Windowed path: count PRs created within the window by filtering pages
+            _validate_repo_segments(owner, repo)
             url = f"{self.BASE_API_URL}/repos/{owner}/{repo}/pulls"
+            assert url.startswith(self.BASE_API_URL)
             params = {"state": "all"}
 
             window_days = max(int(since_days or 0), 1)
@@ -535,6 +570,7 @@ class GitHubClient:
         """Get count of commits pushed to a repository within the given window."""
 
         try:
+            _validate_repo_segments(owner, repo)
             window_days = max(int(since_days or 0), 1)
             # Use timezone-aware UTC datetimes instead of deprecated utcnow()
             since_date = (
@@ -579,6 +615,7 @@ class GitHubClient:
 
     def get_repository_activity_summary(self, owner, repo, fallback_open_issues=0, since_days=7):
         """Build the report activity metrics for a repository."""
+        _validate_repo_segments(owner, repo)
         # The repository list payload already includes open_issues_count.
         # Reusing it prevents an extra API call per repo and reduces rate-limit pressure.
         open_issues = fallback_open_issues or 0

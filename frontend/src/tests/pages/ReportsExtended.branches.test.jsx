@@ -1,8 +1,4 @@
-import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import * as dashboardService from '../../services/utils/api';
 
 jest.mock('../../context/AuthContext');
 jest.mock('../../services/utils/api');
@@ -202,9 +198,9 @@ describe('Reports Coverage - Additional Branches', () => {
 
   describe('Report error states', () => {
     test('handles no data returned for date range', () => {
-      const data = null;
-      const hasData = data && data.tasks && data.tasks.length > 0;
-      expect(!hasData).toBe(true);
+      const hasReportTasks = (data) => Boolean(data && data.tasks && data.tasks.length > 0);
+      expect(hasReportTasks(null)).toBe(false);
+      expect(hasReportTasks({ tasks: [{ id: 1 }] })).toBe(true);
     });
 
     test('handles malformed date in report request', () => {

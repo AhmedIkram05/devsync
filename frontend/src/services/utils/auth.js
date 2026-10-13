@@ -31,6 +31,8 @@ const sanitizeUser = (user) => {
 
 const persistProfile = (user) => {
   const clean = sanitizeUser(user);
+  // CodeQL js/clear-text-storage: profile-only (sanitized, no token/password);
+  // JWTs travel in HttpOnly cookies, never in localStorage.
   localStorage.setItem('user', JSON.stringify(clean));
   return clean;
 };
