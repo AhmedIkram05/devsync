@@ -68,7 +68,6 @@
     "cypress": "^16.1.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "istanbul-lib-coverage": "^3.2.2",
-    "msw": "^2.13.3",
     "nyc": "^18.0.0",
     "postcss": "^8.5.28",
     "serve": "^14.2.6",
