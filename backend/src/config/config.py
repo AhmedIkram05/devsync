@@ -16,6 +16,10 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 POSTGRES_URL_EXAMPLE = "postgresql://<db_user>:<db_password>@localhost:5432/devsync"
+# SQLAlchemy 2.1 repoints bare postgresql:// to psycopg v3, which measured a
+# ~5x latency regression vs the psycopg2 path this app is tuned for; pin the
+# driver explicitly so the bare-URL convention stays on psycopg2.
+POSTGRES_DRIVER_SCHEME = "postgresql+psycopg2://"
 LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "db", "postgres"}
 
 # Known insecure placeholders that must never be used outside tests.
@@ -90,7 +94,9 @@ def derive_oauth_state_secret(jwt_secret: str) -> str:
 
 def _normalize_postgres_scheme(database_url):
     if database_url.startswith("postgres://"):
-        return database_url.replace("postgres://", "postgresql://", 1)
+        return database_url.replace("postgres://", POSTGRES_DRIVER_SCHEME, 1)
+    if database_url.startswith("postgresql://"):
+        return database_url.replace("postgresql://", POSTGRES_DRIVER_SCHEME, 1)
     return database_url
 
 
@@ -127,7 +133,7 @@ def _mask_database_url(database_url):
 
 def _append_default_sslmode(database_url):
     """Default sslmode to match local Docker and cloud Postgres setups."""
-    if not database_url.startswith("postgresql://") or "sslmode=" in database_url:
+    if not database_url.startswith(POSTGRES_DRIVER_SCHEME) or "sslmode=" in database_url:
         return database_url
 
     parsed_url = urlparse(database_url)
@@ -167,7 +173,7 @@ def _resolve_database_uri(env):
             f"{POSTGRES_URL_EXAMPLE}"
         )
 
-    if not database_url.startswith("postgresql://"):
+    if not database_url.startswith(POSTGRES_DRIVER_SCHEME):
         raise ValueError(
             f"Unsupported DATABASE_URL scheme: {_mask_database_url(database_url)}. "
             f"Use a postgresql:// connection string, for example: {POSTGRES_URL_EXAMPLE}"
