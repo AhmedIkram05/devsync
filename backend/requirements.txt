@@ -6,9 +6,9 @@ psycopg2-binary>=2.9.13
 
 # Web framework
 fastapi==0.137.2
-uvicorn==0.24.0
+uvicorn==0.54.0
 Flask==3.1.3
-flask-socketio==5.6.1
+flask-socketio==5.7.0
 Flask-SQLAlchemy==3.1.1
 SQLAlchemy>=2.1.4,<2.2  # 2.1 defaults plain postgresql:// to psycopg v3; config pins postgresql+psycopg2
 Flask-Migrate==4.1.0
@@ -17,7 +17,7 @@ flask-cors==6.0.5
 # Authentication
 cryptography==50.0.2  # Fernet encryption-at-rest for stored OAuth tokens
 passlib==1.7.4
-bcrypt==4.1.2
+bcrypt==5.0.0
 python-multipart==0.0.32
 Flask-JWT-Extended==4.7.4
 
@@ -51,10 +51,10 @@ python-engineio==4.14.0
 gunicorn==22.0.0
 gevent==26.9.0
 gevent-websocket==0.10.1
-supervisor==4.2.5
+supervisor==4.3.0
 
 # API documentation
-pydantic>=2.13.5
+pydantic>=2.14.0
 pyAml==26.7.0
 
 # Force fixed vendored copies (setuptools vendors jaraco.context + wheel)
