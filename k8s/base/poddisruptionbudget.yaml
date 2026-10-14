@@ -6,7 +6,10 @@ metadata:
   labels:
     app.kubernetes.io/part-of: devsync
 spec:
-  minAvailable: 1
+  # maxUnavailable, not minAvailable:1 — at 2 replicas both allow one eviction,
+  # but when replicas drop to 1 (ephemeral PR overlay pins replicas: 1) a
+  # minAvailable:1 PDB gives disruptionsAllowed 0 and blocks node scale-down.
+  maxUnavailable: 1
   selector:
     matchLabels:
       app: devsync-frontend
@@ -19,9 +22,10 @@ metadata:
   labels:
     app.kubernetes.io/part-of: devsync
 spec:
-  # With replicas 2 + the Redis message queue (rooms no longer pod-local),
-  # one pod can absorb a voluntary eviction: minAvailable 1, not maxUnavailable 0.
-  minAvailable: 1
+  # With the Redis message queue (rooms no longer pod-local) one pod can absorb
+  # a voluntary eviction. maxUnavailable:1 (not minAvailable:1) so the
+  # single-replica PR overlay can still drain.
+  maxUnavailable: 1
   selector:
     matchLabels:
       app: devsync-backend
