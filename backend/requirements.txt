@@ -37,7 +37,7 @@ flask-swagger-ui==5.33.1
 
 # Background task processing
 celery==5.6.3
-redis==5.0.1
+redis==8.1.0
 # flask_socketio's redis:// message_queue rides kombu; already present as a
 # transitive dep, pinned explicitly so the MQ path never floats.
 kombu==5.6.2
