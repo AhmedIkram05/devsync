@@ -6,7 +6,7 @@
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "axios": "^1.20.0",
-    "chart.js": "^4.4.1",
+    "chart.js": "^4.5.1",
     "dompurify": "^3.4.17",
     "formik": "^2.4.5",
     "lodash": "^4.17.21",
