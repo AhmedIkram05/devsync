@@ -1,3 +1,6 @@
+# Dependabot — unified Monday-morning dependency updates.
+# Weekly, Monday 09:00 Europe/London. Minor/patch bumps are grouped into one
+# PR per ecosystem; majors stay individual PRs for review.
 version: 2
 updates:
   - package-ecosystem: "pip"
@@ -6,11 +9,17 @@ updates:
       interval: "weekly"
       day: "monday"
       time: "09:00"
-      timezone: "America/New_York"
+      timezone: "Europe/London"
+    target-branch: "main"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "python"
+    commit-message:
+      prefix: "chore"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "npm"
     directory: "/frontend"
@@ -18,11 +27,17 @@ updates:
       interval: "weekly"
       day: "monday"
       time: "09:00"
-      timezone: "America/New_York"
+      timezone: "Europe/London"
+    target-branch: "main"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "javascript"
+    commit-message:
+      prefix: "chore"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -30,11 +45,12 @@ updates:
       interval: "weekly"
       day: "monday"
       time: "09:00"
-      timezone: "America/New_York"
-    open-pull-requests-limit: 3
+      timezone: "Europe/London"
+    target-branch: "main"
+    open-pull-requests-limit: 5
     # codeql-action/* is SHA-pinned per action; a lone init bump leaves
-    # autobuild/analyze behind and fails Analyze with a version-skew config
-    # error. Group them so they always move as one PR.
+    # analyze behind and fails Analyze with a version-skew config error.
+    # Group them so they always move as one PR.
     groups:
       codeql-action:
         patterns:
@@ -42,6 +58,45 @@ updates:
     labels:
       - "dependencies"
       - "ci"
+    commit-message:
+      prefix: "chore"
+
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/London"
+    target-branch: "main"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "chore"
+    # Docker tags are not SemVer — group every base-image bump into one PR.
+    groups:
+      docker-all:
+        patterns: ["*"]
+
+  - package-ecosystem: "docker"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/London"
+    target-branch: "main"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "chore"
+    groups:
+      docker-all:
+        patterns: ["*"]
 
   - package-ecosystem: "terraform"
     directory: "/infra/terraform"
@@ -49,8 +104,14 @@ updates:
       interval: "weekly"
       day: "monday"
       time: "09:00"
-      timezone: "America/New_York"
-    open-pull-requests-limit: 3
+      timezone: "Europe/London"
+    target-branch: "main"
+    open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "terraform"
+    commit-message:
+      prefix: "chore"
+    groups:
+      minor-patch:
+        update-types: ["minor", "patch"]
