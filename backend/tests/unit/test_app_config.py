@@ -399,3 +399,29 @@ def test_is_public_route_exact_or_subpath_only():
     assert not is_public_route("/api/v1/tasks")
     assert not is_public_route("/api/v1/admin/stats")
     assert not is_public_route("/")
+
+
+def test_postgres_uri_pins_psycopg2_driver(monkeypatch):
+    # SQLAlchemy 2.1 defaults bare postgresql:// to psycopg v3, which measured a
+    # ~5x latency regression; the resolver must pin the psycopg2 dialect.
+    from backend.src.config.config import (
+        POSTGRES_DRIVER_SCHEME,
+        _append_default_sslmode,
+        _normalize_postgres_scheme,
+    )
+
+    assert POSTGRES_DRIVER_SCHEME == "postgresql+psycopg2://"
+    assert _normalize_postgres_scheme("postgresql://u:p@db:5432/x") == "postgresql+psycopg2://u:p@db:5432/x"
+    assert _normalize_postgres_scheme("postgres://u:p@db:5432/x") == "postgresql+psycopg2://u:p@db:5432/x"
+    # Idempotent: an already-pinned URL is left untouched.
+    assert _normalize_postgres_scheme("postgresql+psycopg2://u:p@db:5432/x") == "postgresql+psycopg2://u:p@db:5432/x"
+    assert _normalize_postgres_scheme("sqlite:///:memory:") == "sqlite:///:memory:"
+    # sslmode default is appended to the pinned scheme (disable local, require remote).
+    assert (
+        _append_default_sslmode("postgresql+psycopg2://u:p@localhost:5432/x")
+        == "postgresql+psycopg2://u:p@localhost:5432/x?sslmode=disable"
+    )
+    assert (
+        _append_default_sslmode("postgresql+psycopg2://u:p@db.example.com:5432/x")
+        == "postgresql+psycopg2://u:p@db.example.com:5432/x?sslmode=require"
+    )
