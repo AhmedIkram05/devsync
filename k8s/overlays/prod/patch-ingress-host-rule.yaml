@@ -1,8 +1,39 @@
-# Prod overlay: pin the Ingress rule to the live host (infra-blockers
-# 2026-10-12). Kills the LB catch-all: any other domain pointed at the LB IP
-# no longer routes to the app (GCE LB serves 404 outside declared hosts).
-# Cloud Armor on the backend service is attached via BackendConfig
-# (service annotation), and HSTS/CSP ship from the frontend nginx.
-- op: add
-  path: /spec/rules/0/host
-  value: gcp.devsyncapp.me
+# Prod overlay: declare every host that DNS actually points at the LB
+# (devsyncapp.me and www per the registrar; gcp.devsyncapp.me is the legacy /
+# CD-verify host). The GCE LB serves 404 for any host not declared here, so
+# this list must stay in sync with the A/CNAME records. Declaring hosts
+# explicitly (instead of a catch-all) still blocks arbitrary domains pointed
+# at the LB from routing to the app.
+- op: replace
+  path: /spec/rules
+  value:
+  - host: devsyncapp.me
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: devsync-frontend
+            port:
+              number: 80
+  - host: www.devsyncapp.me
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: devsync-frontend
+            port:
+              number: 80
+  - host: gcp.devsyncapp.me
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: devsync-frontend
+            port:
+              number: 80
