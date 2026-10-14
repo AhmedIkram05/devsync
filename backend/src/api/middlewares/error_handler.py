@@ -5,6 +5,7 @@ import logging
 import traceback
 
 from flask import jsonify
+from werkzeug.exceptions import HTTPException
 
 from .request_logger import get_request_id
 
@@ -73,6 +74,22 @@ def handle_validation_error(error):
     return error_response("Validation error", "validation_error", 400, details={"errors": error.messages})
 
 
+def handle_http_exception(error):
+    """Handler for Werkzeug HTTPExceptions (405, 401, 403, 409, 429, ...).
+
+    404 has a dedicated handler above; this catches every other HTTPException
+    so it keeps its real status instead of being swallowed into a 500 by the
+    generic Exception handler.
+    """
+    status = error.code or 500
+    # Werkzeug's get_headers() includes Content-Type: text/html; drop it so the
+    # JSON envelope keeps application/json, but keep Allow / WWW-Authenticate.
+    headers = None
+    with contextlib.suppress(Exception):
+        headers = {k: v for k, v in error.get_headers() if k.lower() != "content-type"} or None
+    return error_response(error.description or "HTTP error", f"http_{status}", status, headers=headers)
+
+
 def handle_generic_error(error):
     """Handler for all other unhandled exceptions"""
     # Log the full traceback for debugging
@@ -105,6 +122,7 @@ def register_error_handlers(app):
     """Register all error handlers with the Flask app"""
     app.register_error_handler(APIError, handle_api_error)
     app.register_error_handler(404, handle_404_error)
+    app.register_error_handler(HTTPException, handle_http_exception)
     app.register_error_handler(Exception, handle_generic_error)
 
     # Register additional error handlers as needed
