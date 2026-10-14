@@ -32,6 +32,13 @@ updates:
       time: "09:00"
       timezone: "America/New_York"
     open-pull-requests-limit: 3
+    # codeql-action/* is SHA-pinned per action; a lone init bump leaves
+    # autobuild/analyze behind and fails Analyze with a version-skew config
+    # error. Group them so they always move as one PR.
+    groups:
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
     labels:
       - "dependencies"
       - "ci"
