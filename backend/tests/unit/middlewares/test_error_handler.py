@@ -3,6 +3,7 @@ import sys
 from unittest.mock import Mock, patch
 
 from flask import Flask
+from werkzeug.exceptions import HTTPException, MethodNotAllowed
 
 # Set up proper import paths
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
@@ -15,6 +16,7 @@ from backend.src.api.middlewares.error_handler import (
     handle_404_error,
     handle_api_error,
     handle_generic_error,
+    handle_http_exception,
     handle_validation_error,
     register_error_handlers,
 )
@@ -153,12 +155,25 @@ def test_register_error_handlers():
         register_error_handlers(test_app)
 
         # Check that handlers were registered
-        assert mock_register.call_count == 3
+        assert mock_register.call_count == 4
 
         # Check specific registrations
         mock_register.assert_any_call(APIError, handle_api_error)
         mock_register.assert_any_call(404, handle_404_error)
+        mock_register.assert_any_call(HTTPException, handle_http_exception)
         mock_register.assert_any_call(Exception, handle_generic_error)
+
+
+def test_handle_http_exception():
+    """A non-404 HTTPException keeps its real status (e.g. 405), not a 500."""
+    with app.app_context():
+        response, status_code = handle_http_exception(MethodNotAllowed())
+
+        assert status_code == 405
+        body = response.get_json()
+        assert body["status"] == "error"
+        assert body["code"] == "http_405"
+        assert body["message"]
 
 
 def test_error_envelope_shape():
