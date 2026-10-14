@@ -1,5 +1,5 @@
 # ===== Build Stage =====
-FROM node:20-alpine AS build
+FROM node:26-alpine AS build
 
 # Pull patched alpine packages (openssl, expat, libpng, etc. — Trivy gate)
 RUN apk upgrade --no-cache
@@ -17,7 +17,7 @@ ENV REACT_APP_SOCKET_TRANSPORT=${REACT_APP_SOCKET_TRANSPORT:-polling}
 RUN npm run build
 
 # ===== Production Serve Stage =====
-FROM nginx:1.27-alpine
+FROM nginx:1.29-alpine
 
 # Pull patched alpine packages (openssl, expat, libpng, etc. — Trivy gate)
 RUN apk upgrade --no-cache
