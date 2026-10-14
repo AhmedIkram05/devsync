@@ -17,9 +17,9 @@ metadata:
 spec:
   ingressClassName: gce
   # No host rule in BASE on purpose (pr overlay renders it and drops the
-  # Ingress anyway); the PROD overlay pins /spec/rules/0/host to the live
-  # host via patch-ingress-host-rule.yaml — the catch-all (any domain pointed
-  # at the LB routes) is closed there.
+  # Ingress anyway); the PROD overlay replaces /spec/rules with the explicit
+  # host list DNS points at the LB via patch-ingress-host-rule.yaml — the
+  # catch-all (any domain pointed at the LB routes) is closed there.
   rules:
   - http:
       paths:
