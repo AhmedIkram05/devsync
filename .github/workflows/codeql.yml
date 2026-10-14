@@ -1,12 +1,12 @@
 name: CodeQL Security Analysis
 
 on:
-  schedule:
-    - cron: "0 10 * * 1"  # Mondays at 10:00 UTC
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: "0 10 * * 1"  # Mondays 10:00 UTC — after Dependabot opens its PRs
   workflow_dispatch:
 
 permissions:
@@ -26,36 +26,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language:
-          - python
-          - javascript
+        include:
+          - language: python
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+          - language: actions
+            build-mode: none
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Python
-        if: matrix.language == 'python'
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.11"
-
-      - name: Set up Node
-        if: matrix.language == 'javascript'
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "20"
-
       - name: Initialize CodeQL
         uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           languages: ${{ matrix.language }}
-          # Full security-and-quality suite only on the weekly cron — heavy.
+          build-mode: ${{ matrix.build-mode }}
+          # Full security-extended suite only on the weekly cron — heavy.
           # PRs and pushes run the default query set to stay fast.
-          queries: ${{ github.event_name == 'schedule' && '+security-and-quality' || '' }}
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+          queries: ${{ github.event_name == 'schedule' && 'security-extended' || '' }}
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
