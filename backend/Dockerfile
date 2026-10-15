@@ -1,5 +1,5 @@
 # ===== Build Stage =====
-FROM python:3.11-slim-bookworm AS build
+FROM python:3.14-slim-bookworm AS build
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uv/bin/uv
 
@@ -26,7 +26,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     VIRTUAL_ENV=/opt/venv /uv/bin/uv pip install -r requirements.txt
 
 # ===== Runtime Stage =====
-FROM python:3.11-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uv/bin/uv
 
