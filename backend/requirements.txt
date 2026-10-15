@@ -30,7 +30,7 @@ requests==2.33.0
 # Testing dependencies
 pytest>=9.1.1
 pytest-cov>=7.1.0
-marshmallow==3.26.2
+marshmallow==4.3.1
 
 # Swagger UI
 flask-swagger-ui==5.33.1
