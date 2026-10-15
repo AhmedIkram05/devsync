@@ -49,8 +49,16 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
 COPY --from=build /opt/venv /opt/venv
 
 # Replace base-image setuptools/wheel in place: the base ships setuptools
-# 79.0.1 (vendored jaraco.context 5.3.0, Trivy HIGH).
-RUN /uv/bin/uv pip install --system --break-system-packages --no-cache --upgrade "setuptools>=80" "wheel>=0.46.2"
+# 79.0.1 (vendored jaraco.context 5.3.0, Trivy HIGH). Then drop the base pip:
+# it is unused at runtime (installs go through uv, the app runs from /opt/venv)
+# and pip vendors stale msgpack 1.1.2 / urllib3 2.7.0 / setuptools 70.3.0 whose
+# CycloneDX manifest (pip/_vendor/bom.cdx.json) the Trivy gate reports as HIGH.
+# No pip release ships fixed vendored copies (26.2.1 is current), so the only
+# fix is to not ship pip. Target /usr/local explicitly: /opt/venv is on PATH.
+RUN /uv/bin/uv pip install --system --break-system-packages --no-cache --upgrade "setuptools>=80" "wheel>=0.46.2" \
+ && rm -rf /usr/local/lib/python*/site-packages/pip \
+           /usr/local/lib/python*/site-packages/pip-*.dist-info \
+           /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.*
 
 # Copy application code
 COPY . .
