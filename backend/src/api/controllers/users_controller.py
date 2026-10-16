@@ -19,6 +19,7 @@ from ...db.models import (
     db,
 )
 from ...db.models.models import project_members
+from ...db.transaction import transactional
 from ...services import audit_service
 from ..validators.user_validator import validate_profile_update, validate_user_data
 
@@ -72,6 +73,7 @@ def get_all_users():
     return jsonify({"users": users_data})
 
 
+@transactional
 def create_user():
     """Controller function to create a new user (admin only)"""
     data = request.get_json()
@@ -96,7 +98,7 @@ def create_user():
     )
 
     db.session.add(new_user)
-    db.session.commit()
+    db.session.flush()
 
     audit_service.record(
         action="user_created", resource_type="user", resource_id=new_user.id, metadata={"role": new_user.role}
@@ -140,6 +142,7 @@ def get_user_by_id(user_id):
     return jsonify({"user": user_data})
 
 
+@transactional
 def update_user(user_id):
     """Controller function to update a user (admin only)"""
     data = request.get_json()
@@ -179,7 +182,7 @@ def update_user(user_id):
         changed_fields["avatar"] = ("...", "...")
         user.avatar = data["avatar"]
 
-    db.session.commit()
+    db.session.flush()
 
     # Password or role change invalidates existing tokens.
     if "password" in changed_fields or "role" in changed_fields:
@@ -217,6 +220,7 @@ def update_user(user_id):
     )
 
 
+@transactional
 def delete_user(user_id):
     """Controller function to delete a user (admin only)"""
     user = db.session.get(User, user_id)
@@ -232,7 +236,7 @@ def delete_user(user_id):
     try:
         _cleanup_user_dependencies(user.id, admin_user_id)
         db.session.delete(user)
-        db.session.commit()
+        db.session.flush()
     except Exception:
         db.session.rollback()
         return jsonify({"message": "Failed to delete user"}), 500
@@ -280,6 +284,7 @@ def get_current_user_profile():
     return jsonify({"user": user_data, "exp": claims.get("exp") if isinstance(claims, dict) else None})
 
 
+@transactional
 def update_current_user_profile():
     """Controller function to update the current user's profile"""
     data = request.get_json()
@@ -314,7 +319,7 @@ def update_current_user_profile():
     else:
         password_changed = False
 
-    db.session.commit()
+    db.session.flush()
 
     # Password change invalidates existing tokens so stolen sessions die.
     if password_changed:

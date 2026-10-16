@@ -11,6 +11,7 @@ from src.socketio_server import emit_dashboard_refresh
 
 from ...auth.rbac import Role, get_user_project_ids  # Changed to relative import
 from ...db.models import Project, Task, User, db  # Changed to relative import
+from ...db.transaction import transactional
 from ...services import audit_service, settings_service
 from ...services.notification_service import NotificationService
 from ...services.notification_service import run_notification as _run_notification
@@ -178,6 +179,7 @@ def get_task_by_id(task_id):
     return jsonify({"task": task_data})
 
 
+@transactional
 def create_new_task():
     """Controller function to create a new task"""
     data = request.get_json()
@@ -222,7 +224,7 @@ def create_new_task():
     new_task.project_id = project_id
 
     db.session.add(new_task)
-    db.session.commit()
+    db.session.flush()
 
     # Fetch project and assignee names for notification context
     project_name = None
@@ -272,6 +274,7 @@ def create_new_task():
     ), 201
 
 
+@transactional
 def update_task_by_id(task_id):
     """Controller function to update a task"""
     data = request.get_json()
@@ -333,7 +336,7 @@ def update_task_by_id(task_id):
         elif _coerce_int(data["assigned_to"]) != task.assigned_to:
             return jsonify({"message": "You do not have permission to reassign tasks"}), 403
 
-    db.session.commit()
+    db.session.flush()
 
     audit_service.record(
         action="task_updated",
@@ -379,6 +382,7 @@ def update_task_by_id(task_id):
     )
 
 
+@transactional
 def delete_task_by_id(task_id):
     """Controller function to delete a task"""
     user_id = get_jwt_identity()["user_id"]
@@ -392,7 +396,7 @@ def delete_task_by_id(task_id):
         return jsonify({"message": "You can only delete tasks assigned to you"}), 403
 
     db.session.delete(task)
-    db.session.commit()
+    db.session.flush()
 
     audit_service.record(
         action="task_deleted",

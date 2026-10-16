@@ -121,7 +121,7 @@ def test_register_handles_integrity_error(monkeypatch):
     StubUser.query.count.return_value = 1
 
     session = MagicMock()
-    session.commit.side_effect = IntegrityError("insert", {}, Exception("duplicate"))
+    session.flush.side_effect = IntegrityError("insert", {}, Exception("duplicate"))
 
     monkeypatch.setattr(auth_module, "User", StubUser)
     monkeypatch.setattr(auth_module, "hash_password", MagicMock(return_value="hashed-password"))

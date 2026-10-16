@@ -260,3 +260,28 @@ def test_github_callback_post_success_updates_user_and_returns_contract(app_and_
     exchange_code.assert_called_once_with("valid-code")
     session.add.assert_called_once()
     session.commit.assert_called_once_with()
+
+
+def test_healthz_is_public_liveness(client):
+    response = client.get("/healthz")
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "ok"
+
+
+def test_readyz_reports_ready_when_db_reachable(client):
+    response = client.get("/readyz")
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "ready"
+
+
+def test_readyz_reports_503_when_db_unreachable(client, monkeypatch):
+    from src.db.models import db
+
+    monkeypatch.setattr(db.session, "execute", MagicMock(side_effect=Exception("db down")))
+
+    response = client.get("/readyz")
+
+    assert response.status_code == 503
+    assert response.get_json()["status"] == "not_ready"

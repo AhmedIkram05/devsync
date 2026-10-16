@@ -65,7 +65,7 @@ def test_save_report_success(
 @patch("backend.src.api.controllers.report_controller.get_jwt_identity", return_value={"user_id": 4})
 @patch("backend.src.api.controllers.report_controller.validate_report_data", return_value=None)
 def test_save_report_db_exception(mock_validate, mock_identity, mock_jwt, mock_report, mock_db, app):
-    mock_db.session.commit.side_effect = Exception("db failed")
+    mock_db.session.flush.side_effect = Exception("db failed")
     mock_report.return_value = SimpleNamespace(id=1, report_type="tasks", date_range="week", to_dict=lambda: {})
 
     payload = {
@@ -230,7 +230,7 @@ def test_delete_report_success(mock_report, mock_identity, mock_jwt, mock_db, mo
 @patch("backend.src.api.controllers.report_controller.Report")
 def test_delete_report_db_error(mock_report, mock_identity, mock_jwt, mock_db, app):
     mock_report.query.get.return_value = SimpleNamespace(user_id=8, report_type="tasks", date_range="week")
-    mock_db.session.commit.side_effect = Exception("delete failed")
+    mock_db.session.flush.side_effect = Exception("delete failed")
 
     with app.app_context():
         from backend.src.api.controllers.report_controller import delete_report

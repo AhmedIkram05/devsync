@@ -7,6 +7,7 @@ from flask_jwt_extended import get_jwt, get_jwt_identity
 
 from ...auth.rbac import Role
 from ...db.models import Notification, db  # Changed to relative import
+from ...db.transaction import transactional
 from ...services.notification_service import NotificationService
 from ..validators.notification_validator import validate_notification_data  # Changed to relative import
 
@@ -25,6 +26,7 @@ def get_user_notifications():
     )
 
 
+@transactional
 def create_notification():
     """Controller function to create a notification"""
     data = request.get_json()
@@ -70,11 +72,12 @@ def create_notification():
     if data.get("is_read") and new_notification:
         new_notification.is_read = True
         new_notification.read_at = datetime.now(UTC)
-        db.session.commit()
+        db.session.flush()
 
     return jsonify({"message": "Notification created successfully", "notification": new_notification.to_dict()}), 201
 
 
+@transactional
 def mark_notification_read(notification_id):
     """Controller function to mark a notification as read"""
     user_id = get_jwt_identity()["user_id"]
@@ -89,11 +92,12 @@ def mark_notification_read(notification_id):
     # Mark as read
     notification.is_read = True
     notification.read_at = datetime.now(UTC)
-    db.session.commit()
+    db.session.flush()
 
     return jsonify({"message": "Notification marked as read"})
 
 
+@transactional
 def mark_all_notifications_read():
     """Controller function to mark all notifications as read for the current user"""
     user_id = get_jwt_identity()["user_id"]
@@ -104,11 +108,12 @@ def mark_all_notifications_read():
         {Notification.is_read: True, Notification.read_at: now}
     )
 
-    db.session.commit()
+    db.session.flush()
 
     return jsonify({"message": "All notifications marked as read"})
 
 
+@transactional
 def delete_notification(notification_id):
     """Controller function to delete a notification"""
     user_id = get_jwt_identity()["user_id"]
@@ -122,6 +127,6 @@ def delete_notification(notification_id):
 
     # Delete notification
     db.session.delete(notification)
-    db.session.commit()
+    db.session.flush()
 
     return jsonify({"message": "Notification deleted"})

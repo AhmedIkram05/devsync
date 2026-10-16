@@ -136,7 +136,7 @@ spec:
           timeoutSeconds: 5
         readinessProbe:
           httpGet:
-            path: /health
+            path: /readyz
             port: 8000
           periodSeconds: 10
           timeoutSeconds: 5

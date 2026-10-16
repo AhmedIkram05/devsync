@@ -19,6 +19,7 @@ from ...db.models import (
     User,
     db,
 )
+from ...db.transaction import transactional
 from ...services.github_client import GitHubClient
 from ...services.redis_client import get_redis
 from ..middlewares.error_handler import error_response
@@ -149,6 +150,7 @@ def initiate_github_auth():
     return jsonify({"authorization_url": auth_url})
 
 
+@transactional
 def github_callback():
     """Handle GitHub OAuth callback"""
     # Get code and state from query parameters
@@ -223,7 +225,7 @@ def github_callback():
             sanitize_for_log(user.github_username),
         )
 
-    db.session.commit()
+    db.session.flush()
 
     # Redirect to frontend with success message
     frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
@@ -232,6 +234,7 @@ def github_callback():
     return redirect(redirect_url)
 
 
+@transactional
 def get_github_repositories():
     """Get repositories for the authenticated user. Lazy-loads activity metrics when requested."""
     start_time = time.time()
@@ -460,7 +463,7 @@ def get_github_repositories():
         )
 
     if should_commit:
-        db.session.commit()
+        db.session.flush()
 
     total_time = time.time() - start_time
     logger.info(f"[PERF] get_github_repositories COMPLETE - total time: {total_time:.2f}s")
@@ -468,6 +471,7 @@ def get_github_repositories():
     return jsonify({"repositories": formatted_response})
 
 
+@transactional
 def add_github_repository():
     """Add a GitHub repository to track"""
     data = request.get_json()
@@ -517,7 +521,7 @@ def add_github_repository():
     )
 
     db.session.add(new_repo)
-    db.session.commit()
+    db.session.flush()
 
     return jsonify(
         {
@@ -646,6 +650,7 @@ def get_repository_pulls(repo_id):
     return jsonify({"pull_requests": formatted_pulls})
 
 
+@transactional
 def link_task_with_github(task_id):
     """Link a task with a GitHub issue or PR"""
     data = request.get_json() or {}
@@ -689,7 +694,7 @@ def link_task_with_github(task_id):
         db.session.add(new_link)
         persisted_link = new_link
 
-    db.session.commit()
+    db.session.flush()
 
     # If we have a GitHub token, add a comment to the issue/PR referencing this task
     token = GitHubToken.query.filter_by(user_id=user_id).first()
@@ -761,6 +766,7 @@ def get_task_github_links(task_id):
     return jsonify({"links": formatted_links})
 
 
+@transactional
 def delete_task_github_link(task_id, link_id):
     """Delete a GitHub link from a task"""
     # Check if task exists
@@ -775,11 +781,12 @@ def delete_task_github_link(task_id, link_id):
 
     # Delete the link
     db.session.delete(link)
-    db.session.commit()
+    db.session.flush()
 
     return jsonify({"message": "GitHub link removed from task"})
 
 
+@transactional
 def disconnect_github_account():
     """Disconnect the authenticated user's GitHub account."""
     identity = get_jwt_identity()
@@ -797,6 +804,6 @@ def disconnect_github_account():
     GitHubToken.query.filter_by(user_id=user_id).delete()
     user.github_username = None
     user.github_connected = False
-    db.session.commit()
+    db.session.flush()
 
     return jsonify({"message": "GitHub account disconnected successfully"})

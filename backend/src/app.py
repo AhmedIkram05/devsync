@@ -38,6 +38,7 @@ from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
+from sqlalchemy import text
 
 PUBLIC_ROUTES = [
     "/api/v1/auth/register",
@@ -46,6 +47,8 @@ PUBLIC_ROUTES = [
     "/api/v1/github/exchange",
     "/api/v1/github/connect",
     "/health",
+    "/healthz",
+    "/readyz",
     "/api/docs",
     "/api/swagger.yaml",
 ]
@@ -323,6 +326,21 @@ def create_app(config_class=None):
     @app.route("/health")
     def health():
         return jsonify({"status": "ok"}), 200
+
+    @app.route("/healthz")
+    def healthz():
+        """Liveness probe: the process is up. No dependency checks."""
+        return jsonify({"status": "ok"}), 200
+
+    @app.route("/readyz")
+    def readyz():
+        """Readiness probe: the process can serve traffic (database reachable)."""
+        try:
+            db.session.execute(text("SELECT 1"))
+            return jsonify({"status": "ready"}), 200
+        except Exception:
+            db.session.rollback()
+            return jsonify({"status": "not_ready"}), 503
 
     return app, socketio
 

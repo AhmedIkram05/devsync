@@ -8,6 +8,7 @@ from flask_jwt_extended import get_jwt_identity, jwt_required, verify_jwt_in_req
 from ...auth.encryption import encrypt_token
 from ...auth.rbac import Role, require_permission, require_project_membership
 from ...db.models import GitHubToken, User, db
+from ...db.transaction import transactional
 from ...services.github_client import GitHubClient
 from ..controllers.github_controller import (
     add_github_repository,
@@ -47,6 +48,7 @@ def register_routes(bp):
         return initiate_github_auth()
 
     @bp.route("/github/callback", methods=["GET", "POST"])
+    @transactional
     def github_oauth_callback():
         """Route to handle GitHub OAuth callback"""
         if request.method == "GET":
@@ -126,7 +128,7 @@ def register_routes(bp):
             if github_profile and "login" in github_profile:
                 user.github_username = github_profile["login"]
 
-            db.session.commit()
+            db.session.flush()
             return jsonify(
                 {
                     "success": True,
@@ -195,6 +197,7 @@ def register_routes(bp):
     @bp.route("/github/exchange", methods=["GET"])
     @jwt_required()
     @rate_limit(requests_per_window=5, window_seconds=60)
+    @transactional
     def exchange_github_code():
         """Exchange a GitHub OAuth code for a token for the authenticated user only."""
         code = request.args.get("code")
@@ -269,7 +272,7 @@ def register_routes(bp):
             if github_profile and "login" in github_profile:
                 user.github_username = github_profile["login"]
 
-            db.session.commit()
+            db.session.flush()
 
             return jsonify(
                 {

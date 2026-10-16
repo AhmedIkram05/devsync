@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 
 from ..db.models import AuditLog, Comment, Notification, Project, SystemSetting, Task, TaskGitHubLink, db
+from ..db.transaction import commit_or_flush
 
 DEFAULT_SETTINGS = {
     "default_user_role": "developer",
@@ -84,7 +85,7 @@ def update_settings(data, actor_id):
             new_setting = SystemSetting(key=key, value=normalized_value, updated_by=actor_id)
             db.session.add(new_setting)
 
-    db.session.commit()
+    commit_or_flush(db)
 
 
 def get_default_role():
@@ -113,7 +114,7 @@ def cleanup_old_audit_logs(retention_days=None):
 
         cutoff = datetime.now(UTC) - timedelta(days=days)
         deleted_count = AuditLog.query.filter(AuditLog.created_at < cutoff).delete(synchronize_session=False)
-        db.session.commit()
+        commit_or_flush(db)
         return deleted_count
     except Exception:
         db.session.rollback()
@@ -148,7 +149,7 @@ def cleanup_completed_projects(retention_days=None):
             deleted_projects += 1
 
         if deleted_projects:
-            db.session.commit()
+            commit_or_flush(db)
 
         return deleted_projects
     except Exception:

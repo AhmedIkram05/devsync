@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 from src.db.db_connection import db
 from src.db.models import Notification, Project
+from src.db.transaction import commit_or_flush
 from src.socketio_server import connected_users, project_rooms, socketio
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,7 @@ class NotificationService:
 
         # Save to database
         db.session.add(notification)
-        db.session.commit()
+        commit_or_flush(db)
 
         # Send via Socket.IO if user is connected
         if user_id in connected_users:
@@ -158,7 +159,7 @@ class NotificationService:
         if notification:
             notification.is_read = True  # changed from notification.read
             notification.read_at = datetime.now(UTC)
-            db.session.commit()
+            commit_or_flush(db)
             return True
         return False
 
@@ -172,7 +173,7 @@ class NotificationService:
                 "read_at": now,
             }
         )
-        db.session.commit()
+        commit_or_flush(db)
         return True
 
     @staticmethod

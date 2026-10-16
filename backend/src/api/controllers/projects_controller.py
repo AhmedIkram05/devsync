@@ -5,6 +5,7 @@ from flask_jwt_extended import get_jwt, get_jwt_identity
 
 from ...auth.rbac import Role  # Changed to relative import
 from ...db.models import Project, Task, User, db  # Changed to relative import
+from ...db.transaction import transactional
 from ...services import audit_service, settings_service
 from ...socketio_server import emit_dashboard_refresh
 from ..validators.project_validator import validate_project_data  # Changed to relative import
@@ -104,6 +105,7 @@ def get_project_by_id(project_id):
         raise
 
 
+@transactional
 def create_project():
     """Controller function to create a new project"""
     data = request.get_json()
@@ -133,7 +135,7 @@ def create_project():
             if member:
                 new_project.team_members.append(member)
 
-    db.session.commit()
+    db.session.flush()
 
     audit_service.record(action="project_created", resource_type="project", resource_id=new_project.id)
     emit_dashboard_refresh(
@@ -148,6 +150,7 @@ def create_project():
     ), 201
 
 
+@transactional
 def update_project(project_id):
     """Controller function to update a project"""
     data = request.get_json()
@@ -180,7 +183,7 @@ def update_project(project_id):
             if member:
                 project.team_members.append(member)
 
-    db.session.commit()
+    db.session.flush()
 
     audit_service.record(
         action="project_updated",
@@ -207,12 +210,13 @@ def update_project(project_id):
     )
 
 
+@transactional
 def delete_project(project_id):
     """Controller function to delete a project"""
     project = Project.query.get_or_404(project_id)
 
     db.session.delete(project)
-    db.session.commit()
+    db.session.flush()
 
     audit_service.record(action="project_deleted", resource_type="project", resource_id=project_id)
     emit_dashboard_refresh("project_deleted", resource_type="project", resource_id=project_id, project_id=project_id)

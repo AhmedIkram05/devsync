@@ -9,12 +9,14 @@ from src.socketio_server import emit_dashboard_refresh
 
 from ...auth.rbac import Role
 from ...db.models import Report, db
+from ...db.transaction import transactional
 from ...services import audit_service
 from ..validators.report_validator import validate_report_data
 
 logger = logging.getLogger(__name__)
 
 
+@transactional
 def save_report():
     """Controller function to save a generated report"""
     user_id = get_jwt_identity()["user_id"]
@@ -36,7 +38,7 @@ def save_report():
         )
 
         db.session.add(report)
-        db.session.commit()
+        db.session.flush()
 
         audit_service.record(
             action="report_created",
@@ -131,6 +133,7 @@ def get_report_by_id(report_id):
         return jsonify({"message": "Failed to retrieve report"}), 500
 
 
+@transactional
 def delete_report(report_id):
     """Controller function to delete a report"""
     user_id = get_jwt_identity()["user_id"]
@@ -147,7 +150,7 @@ def delete_report(report_id):
             return jsonify({"message": "Unauthorized to delete this report"}), 403
 
         db.session.delete(report)
-        db.session.commit()
+        db.session.flush()
 
         audit_service.record(
             action="report_deleted",
