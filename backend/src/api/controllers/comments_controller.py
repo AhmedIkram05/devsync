@@ -4,6 +4,7 @@ import logging
 
 from flask import jsonify, request
 from flask_jwt_extended import get_jwt, get_jwt_identity
+from sqlalchemy.orm import joinedload
 
 from ...auth.rbac import Role  # Changed to relative import
 from ...db.models import Comment, Task, User, db  # Changed to relative import
@@ -14,6 +15,7 @@ from ...services.notification_service import (
 from ...services.notification_service import (
     run_notification as _run_notification,
 )
+from ..query_params import get_pagination_args, paginate
 from ..validators.comment_validator import validate_comment_data  # Changed to relative import
 
 logger = logging.getLogger(__name__)
@@ -24,13 +26,15 @@ def get_task_comments(task_id):
     # Check if task exists
     Task.query.get_or_404(task_id)
 
-    # Get comments for this task
-    comments = Comment.query.filter_by(task_id=task_id).order_by(Comment.created_at).all()
+    # Get comments for this task, eager-loading the author to avoid N+1 queries
+    page, per_page = get_pagination_args()
+    query = Comment.query.options(joinedload(Comment.user)).filter_by(task_id=task_id).order_by(Comment.created_at)
+    comments, pagination = paginate(query, page, per_page)
 
     # Get user info for each comment
     comments_data = []
     for comment in comments:
-        user = User.query.get(comment.user_id)
+        user = comment.user
 
         updated_at = getattr(comment, "updated_at", None)
         comment_data = {
@@ -45,7 +49,7 @@ def get_task_comments(task_id):
         }
         comments_data.append(comment_data)
 
-    return jsonify({"comments": comments_data})
+    return jsonify({"comments": comments_data, "pagination": pagination})
 
 
 @transactional

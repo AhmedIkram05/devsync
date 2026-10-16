@@ -16,6 +16,7 @@ from ...services import audit_service, settings_service
 from ...services.notification_service import NotificationService
 from ...services.notification_service import run_notification as _run_notification
 from ...services.task_rules import get_project_scope_ids, is_task_overdue
+from ..query_params import apply_sort, clean_search, get_pagination_args, paginate
 from ..validators.task_validator import validate_task_data  # Changed to relative import
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,15 @@ MEMBER_ROLES = {
 TASK_MANAGER_ROLES = {
     Role.TEAM_LEAD.value,
     Role.ADMIN.value,
+}
+
+TASK_SORT_FIELDS = {
+    "created_at": Task.created_at,
+    "updated_at": Task.updated_at,
+    "deadline": Task.deadline,
+    "priority": Task.priority,
+    "title": Task.title,
+    "status": Task.status,
 }
 
 
@@ -87,6 +97,9 @@ def get_all_tasks():
     status = request.args.get("status")
     assigned_to = request.args.get("assigned_to")
     created_by = request.args.get("created_by")
+    project_id = _coerce_int(request.args.get("project_id"))
+    priority = request.args.get("priority")
+    search = clean_search(request.args.get("search"))
 
     # Start with base query
     query = Task.query
@@ -98,6 +111,12 @@ def get_all_tasks():
         query = query.filter(Task.assigned_to == assigned_to)
     if created_by:
         query = query.filter(Task.created_by == created_by)
+    if project_id:
+        query = query.filter(Task.project_id == project_id)
+    if priority:
+        query = query.filter(Task.priority == priority)
+    if search:
+        query = query.filter(or_(Task.title.ilike(f"%{search}%"), Task.description.ilike(f"%{search}%")))
 
     # Apply role-based filtering: non-admins only see tasks in their own
     # projects, plus tasks assigned to or created by them.
@@ -108,7 +127,9 @@ def get_all_tasks():
             scope_criteria.append(Task.project_id.in_(scope_ids))
         query = query.filter(or_(*scope_criteria))
 
-    tasks = query.all()
+    query = apply_sort(query, request.args.get("sort"), TASK_SORT_FIELDS, default="-created_at")
+    page, per_page = get_pagination_args()
+    tasks, pagination = paginate(query, page, per_page)
 
     # Convert tasks to JSON response
     tasks_data = [_serialize_task(task) for task in tasks]
@@ -134,7 +155,7 @@ def get_all_tasks():
                 due_date=None,
             )
 
-    return jsonify({"tasks": tasks_data})
+    return jsonify({"tasks": tasks_data, "pagination": pagination})
 
 
 def get_task_by_id(task_id):

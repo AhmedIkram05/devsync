@@ -10,8 +10,7 @@ from sqlalchemy.orm import joinedload
 from ...auth.rbac import Role  # Changed to relative import
 from ...db.db_connection import db
 from ...db.models import GitHubRepository, Project, Task, TaskGitHubLink, User  # Changed to relative import
-from ...services import settings_service
-from ...services.task_rules import count_overdue_tasks, get_project_scope_ids
+from ...services.task_rules import OVERDUE_EXCLUDED_STATUSES, get_project_scope_ids
 from .helpers import safe_query_all as _safe_query_all  # noqa: F401 (back-compat re-export)
 
 # Configure logging
@@ -19,6 +18,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 COMPLETED_TASK_STATUSES = {"done", "completed"}
+TEAM_LEAD_ACTIVE_PROJECT_STATUSES = {"active", "on_hold"}
+IN_REVIEW_TASK_STATUSES = {"review", "in_review", "in-review"}
 
 
 def _is_completed_status(status):
@@ -362,6 +363,173 @@ def get_client_dashboard():
         return jsonify({"message": "An error occurred while loading the dashboard"}), 500
 
 
+def _grouped_counts(rows):
+    """Turn (key, count) GROUP BY rows into a {key: count} mapping."""
+    return {(key or "unknown"): count for key, count in rows}
+
+
+def _task_status_counts():
+    try:
+        rows = db.session.query(Task.status, func.count(Task.id)).group_by(Task.status).all()
+    except Exception as e:
+        logger.error(f"Error counting tasks by status: {str(e)}")
+        rows = []
+    return _grouped_counts(rows)
+
+
+def _user_role_counts():
+    try:
+        rows = db.session.query(User.role, func.count(User.id)).group_by(User.role).all()
+    except Exception as e:
+        logger.error(f"Error counting users by role: {str(e)}")
+        rows = []
+    counts = _grouped_counts(rows)
+    return {
+        "total": sum(counts.values()),
+        "admin": counts.get(Role.ADMIN.value, 0),
+        "team_lead": counts.get(Role.TEAM_LEAD.value, 0),
+        "developer": counts.get(Role.DEVELOPER.value, 0),
+    }
+
+
+def _count_overdue_tasks(project_ids):
+    """Count overdue tasks (past deadline, not completed/review) within scope."""
+    today = datetime.now().date()
+    try:
+        query = Task.query.filter(
+            Task.deadline.isnot(None),
+            Task.deadline < today,
+            ~Task.status.in_(OVERDUE_EXCLUDED_STATUSES),
+        )
+        if project_ids is not None:
+            query = query.filter(Task.project_id.in_(project_ids))
+        return query.count()
+    except Exception as e:
+        logger.error(f"Error counting overdue tasks: {str(e)}")
+        return 0
+
+
+def _admin_task_stats(project_ids):
+    status_counts = _task_status_counts()
+    return {
+        "total": sum(status_counts.values()),
+        "backlog": status_counts.get("backlog", 0),
+        "todo": status_counts.get("todo", 0),
+        "in_progress": status_counts.get("in_progress", 0),
+        "review": status_counts.get("review", 0),
+        "done": status_counts.get("done", 0) + status_counts.get("completed", 0),
+        "overdue": _count_overdue_tasks(project_ids),
+    }
+
+
+def _my_assigned_tasks(user_id):
+    try:
+        return (
+            Task.query.options(joinedload(Task.project))
+            .filter_by(assigned_to=user_id)
+            .order_by(Task.updated_at.desc())
+            .limit(50)
+            .all()
+        )
+    except Exception as e:
+        logger.error(f"Error fetching assigned tasks for admin dashboard: {str(e)}")
+        return []
+
+
+def _project_task_counts(project_ids):
+    if not project_ids:
+        return {}
+    try:
+        rows = (
+            db.session.query(Task.project_id, func.count(Task.id))
+            .filter(Task.project_id.in_(project_ids))
+            .group_by(Task.project_id)
+            .all()
+        )
+    except Exception as e:
+        logger.error(f"Error counting tasks per project: {str(e)}")
+        rows = []
+    return {project_id: count for project_id, count in rows}
+
+
+def _recent_projects():
+    try:
+        projects = Project.query.order_by(Project.updated_at.desc()).limit(3).all()
+    except Exception as e:
+        logger.error(f"Error fetching recent projects for admin dashboard: {str(e)}")
+        return []
+    task_counts = _project_task_counts([p.id for p in projects])
+    return [
+        {
+            "id": p.id,
+            "name": p.name,
+            "status": p.status,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+            "task_count": task_counts.get(p.id, 0),
+        }
+        for p in projects
+    ]
+
+
+def _team_lead_project_ids(user_id):
+    """IDs of active/on-hold projects the team lead owns or is a member of."""
+    try:
+        projects = Project.query.all()
+    except Exception as e:
+        logger.error(f"Error fetching projects for TL dashboard: {str(e)}")
+        return []
+    scoped_ids = []
+    for project in projects:
+        status = (getattr(project, "status", None) or "").lower().replace("-", "_")
+        if status not in TEAM_LEAD_ACTIVE_PROJECT_STATUSES:
+            continue
+        members = getattr(project, "team_members", []) or []
+        if hasattr(members, "all"):
+            members = members.all()
+        is_member = any(
+            (getattr(m, "id", None) == user_id or getattr(m, "user_id", None) == user_id)
+            for m in members
+            if m is not None
+        )
+        if is_member or getattr(project, "created_by", None) == user_id:
+            scoped_ids.append(project.id)
+    return scoped_ids
+
+
+def _count_scoped_tasks(project_ids, *criteria):
+    if not project_ids:
+        return 0
+    try:
+        return Task.query.filter(Task.project_id.in_(project_ids), *criteria).count()
+    except Exception as e:
+        logger.error(f"Error counting scoped tasks: {str(e)}")
+        return 0
+
+
+def _compute_team_lead_kpis(user_id):
+    project_ids = _team_lead_project_ids(user_id)
+    today = datetime.now().date()
+    week_later = today + timedelta(days=7)
+    normalized_status = func.lower(func.replace(Task.status, "-", "_"))
+    not_completed = ~normalized_status.in_(OVERDUE_EXCLUDED_STATUSES)
+    return {
+        "in_review_tasks": _count_scoped_tasks(project_ids, func.lower(Task.status).in_(IN_REVIEW_TASK_STATUSES)),
+        "due_soon_tasks": _count_scoped_tasks(
+            project_ids,
+            Task.deadline.isnot(None),
+            Task.deadline.between(today, week_later),
+            not_completed,
+        ),
+        "overdue_not_complete_tasks": _count_scoped_tasks(
+            project_ids,
+            Task.deadline.isnot(None),
+            Task.deadline < today,
+            not_completed,
+        ),
+        "current_projects": len(project_ids),
+    }
+
+
 def get_admin_dashboard():
     """Controller function to get admin dashboard data"""
     try:
@@ -377,184 +545,25 @@ def get_admin_dashboard():
         # Log the request details for debugging
         logger.info(f"Getting admin dashboard for user ID: {user_id}")
 
-        settings_service.cleanup_completed_projects()
-
         # Get basic user info
         user = User.query.get(user_id)
         if not user:
             logger.error(f"User not found: {user_id}")
             return jsonify({"message": "User not found"}), 404
 
-        # Get all tasks (guard against schema mismatches in local DB)
-        try:
-            all_tasks = Task.query.options(joinedload(Task.project)).all()
-        except Exception as e:
-            logger.error(f"Error querying tasks for admin dashboard (fallback to empty): {str(e)}")
-            all_tasks = []
-
         admin_project_ids = get_project_scope_ids(user_id, user_role)
 
-        # Get user counts by role
-        try:
-            users = User.query.all()
-        except Exception as e:
-            logger.error(f"Error querying users for admin dashboard (fallback to empty): {str(e)}")
-            users = []
-        user_counts = {
-            "total": len(users),
-            "admin": len([u for u in users if u.role == Role.ADMIN.value]),
-            "team_lead": len([u for u in users if u.role == Role.TEAM_LEAD.value]),
-            "developer": len([u for u in users if u.role == Role.DEVELOPER.value]),
-        }
-
-        # Calculate task statistics
-        task_stats = {
-            "total": len(all_tasks),
-            "backlog": len([t for t in all_tasks if t.status == "backlog"]),
-            "todo": len([t for t in all_tasks if t.status == "todo"]),
-            "in_progress": len([t for t in all_tasks if t.status == "in_progress"]),
-            "review": len([t for t in all_tasks if t.status == "review"]),
-            "done": len([t for t in all_tasks if _is_completed_task(t)]),
-            "overdue": count_overdue_tasks(all_tasks, project_ids=admin_project_ids),
-        }
-
-        # Get user's assigned tasks for "My Tasks" section
-        user_assigned_tasks = [t for t in all_tasks if getattr(t, "assigned_to", None) == user_id]
-        user_assigned_tasks_sorted = sorted(
-            user_assigned_tasks,
-            key=lambda t: getattr(t, "updated_at", None) or getattr(t, "created_at", None) or datetime.min,
-            reverse=True,
-        )
-
-        # For Team Leads: calculate scoped KPIs for managing projects
-        team_lead_kpis = {}
-        if user_role == Role.TEAM_LEAD.value:
-            # Get all projects
-            try:
-                all_projects = Project.query.all()
-            except Exception as e:
-                logger.error(f"Error fetching projects for TL dashboard: {str(e)}")
-                all_projects = []
-
-            # Find projects with active or on-hold status that TL is on
-            scoped_projects = []
-            for project in all_projects:
-                project_status = getattr(project, "status", "").lower().replace("-", "_")
-                if project_status not in ["active", "on_hold"]:
-                    continue
-
-                # Check if TL is on the project
-                team_members = getattr(project, "team_members", []) or []
-                if hasattr(team_members, "all"):
-                    team_members = team_members.all()
-
-                is_member = any(
-                    (getattr(m, "id", None) == user_id or getattr(m, "user_id", None) == user_id)
-                    for m in team_members
-                    if m is not None
-                )
-                is_creator = getattr(project, "created_by", None) == user_id
-
-                if is_member or is_creator:
-                    scoped_projects.append(project)
-
-            # Calculate TL-specific KPIs
-            scoped_project_ids = set(p.id for p in scoped_projects)
-            scoped_tasks = [t for t in all_tasks if getattr(t, "project_id", None) in scoped_project_ids]
-
-            # KPI 1: Total in review tasks
-            in_review_count = len(
-                [t for t in scoped_tasks if getattr(t, "status", "").lower() in ["review", "in_review", "in-review"]]
-            )
-
-            # KPI 2: Total tasks due soon (within 7 days)
-            today = datetime.now().date()
-            week_later = today + timedelta(days=7)
-            due_soon_count = 0
-            for t in scoped_tasks:
-                deadline = getattr(t, "deadline", None)
-                if deadline is None:
-                    continue
-                if hasattr(deadline, "date"):
-                    deadline = deadline.date()
-                elif isinstance(deadline, str):
-                    try:
-                        deadline = datetime.fromisoformat(deadline).date()
-                    except (ValueError, TypeError):
-                        continue
-                else:
-                    continue
-
-                task_status = getattr(t, "status", "").lower().replace("-", "_")
-                if task_status in ["done", "completed", "review", "in_review"]:
-                    continue
-
-                if today <= deadline <= week_later:
-                    due_soon_count += 1
-
-            # KPI 3: Total overdue AND NOT (completed OR in-review)
-            overdue_not_complete_count = 0
-            for t in scoped_tasks:
-                deadline = getattr(t, "deadline", None)
-                if deadline is None:
-                    continue
-                if hasattr(deadline, "date"):
-                    deadline = deadline.date()
-                elif isinstance(deadline, str):
-                    try:
-                        deadline = datetime.fromisoformat(deadline).date()
-                    except (ValueError, TypeError):
-                        continue
-                else:
-                    continue
-
-                if deadline >= today:
-                    continue
-
-                task_status = getattr(t, "status", "").lower().replace("-", "_")
-                if task_status in ["done", "completed", "review", "in_review"]:
-                    continue
-
-                overdue_not_complete_count += 1
-
-            # KPI 4: Total current projects (active or on-hold)
-            current_projects_count = len(scoped_projects)
-
-            team_lead_kpis = {
-                "in_review_tasks": in_review_count,
-                "due_soon_tasks": due_soon_count,
-                "overdue_not_complete_tasks": overdue_not_complete_count,
-                "current_projects": current_projects_count,
-            }
-
-        # Format response data
         dashboard_data = {
-            "users": user_counts,
-            "tasks": task_stats,
+            "users": _user_role_counts(),
+            "tasks": _admin_task_stats(admin_project_ids),
             "projects": {"total": Project.query.count()},
-            "my_assigned_tasks": [_task_to_dashboard_item(t) for t in user_assigned_tasks_sorted],
+            "my_assigned_tasks": [_task_to_dashboard_item(t) for t in _my_assigned_tasks(user_id)],
         }
 
-        # Add Team Lead KPIs if applicable
-        if team_lead_kpis:
-            dashboard_data["team_lead_kpis"] = team_lead_kpis
+        if user_role == Role.TEAM_LEAD.value:
+            dashboard_data["team_lead_kpis"] = _compute_team_lead_kpis(user_id)
 
-        # Include recent projects (top 3 by updated_at)
-        try:
-            recent_projects_query = Project.query.order_by(Project.updated_at.desc()).limit(3).all()
-            dashboard_data["recentProjects"] = [
-                {
-                    "id": p.id,
-                    "name": p.name,
-                    "status": p.status,
-                    "created_at": p.created_at.isoformat() if p.created_at else None,
-                    "task_count": len(p.tasks) if getattr(p, "tasks", None) is not None else 0,
-                }
-                for p in recent_projects_query
-            ]
-        except Exception as e:
-            logger.error(f"Error fetching recent projects for admin dashboard: {str(e)}")
-            dashboard_data["recentProjects"] = []
+        dashboard_data["recentProjects"] = _recent_projects()
 
         return jsonify(dashboard_data)
     except Exception:

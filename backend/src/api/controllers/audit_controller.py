@@ -36,8 +36,6 @@ def _serialize_audit_log(log, actor_name_map=None):
 
 def get_audit_logs():
     """Get paginated and filtered audit logs"""
-    settings_service.cleanup_old_audit_logs()
-
     action = request.args.get("action")
     actor_id = request.args.get("actor")
     from_date = request.args.get("from")

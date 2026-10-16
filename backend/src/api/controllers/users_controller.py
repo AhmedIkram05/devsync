@@ -21,7 +21,15 @@ from ...db.models import (
 from ...db.models.models import project_members
 from ...db.transaction import transactional
 from ...services import audit_service
+from ..query_params import apply_sort, clean_search, get_pagination_args, paginate
 from ..validators.user_validator import validate_profile_update, validate_user_data
+
+USER_SORT_FIELDS = {
+    "name": User.name,
+    "email": User.email,
+    "role": User.role,
+    "created_at": User.created_at,
+}
 
 
 def _cleanup_user_dependencies(user_id, replacement_user_id):
@@ -55,7 +63,22 @@ def _cleanup_user_dependencies(user_id, replacement_user_id):
 
 def get_all_users():
     """Controller function to get all users"""
-    users = User.query.all()
+    page, per_page = get_pagination_args()
+
+    query = User.query
+
+    role = request.args.get("role")
+    if role:
+        query = query.filter(User.role == role)
+
+    search = clean_search(request.args.get("search"))
+    if search:
+        like = f"%{search}%"
+        query = query.filter(db.or_(User.name.ilike(like), User.email.ilike(like)))
+
+    query = apply_sort(query, request.args.get("sort"), USER_SORT_FIELDS, default="name")
+
+    users, pagination = paginate(query, page, per_page)
 
     users_data = [
         {
@@ -70,7 +93,7 @@ def get_all_users():
         for user in users
     ]
 
-    return jsonify({"users": users_data})
+    return jsonify({"users": users_data, "pagination": pagination})
 
 
 @transactional
