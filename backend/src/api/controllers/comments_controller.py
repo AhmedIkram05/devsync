@@ -7,6 +7,7 @@ from flask_jwt_extended import get_jwt, get_jwt_identity
 
 from ...auth.rbac import Role  # Changed to relative import
 from ...db.models import Comment, Task, User, db  # Changed to relative import
+from ...db.transaction import transactional
 from ...services.notification_service import (
     NotificationService,
 )
@@ -47,6 +48,7 @@ def get_task_comments(task_id):
     return jsonify({"comments": comments_data})
 
 
+@transactional
 def add_comment(task_id):
     """Controller function to add a comment to a task"""
     data = request.get_json()
@@ -65,7 +67,7 @@ def add_comment(task_id):
     new_comment = Comment(content=data["content"], task_id=task_id, user_id=user_id)
 
     db.session.add(new_comment)
-    db.session.commit()
+    db.session.flush()
 
     mentioned_user_ids = data.get("mentioned_user_ids") or data.get("mentioned_users") or []
     recipient_user_ids = {
@@ -105,6 +107,7 @@ def add_comment(task_id):
     ), 201
 
 
+@transactional
 def update_comment(comment_id):
     """Controller function to update a comment"""
     data = request.get_json()
@@ -127,7 +130,7 @@ def update_comment(comment_id):
     # Update comment content
     comment.content = data["content"]
 
-    db.session.commit()
+    db.session.flush()
 
     return jsonify(
         {
@@ -141,6 +144,7 @@ def update_comment(comment_id):
     )
 
 
+@transactional
 def delete_comment(comment_id):
     """Controller function to delete a comment"""
     comment = Comment.query.get_or_404(comment_id)
@@ -154,6 +158,6 @@ def delete_comment(comment_id):
         return jsonify({"message": "You can only delete your own comments"}), 403
 
     db.session.delete(comment)
-    db.session.commit()
+    db.session.flush()
 
     return jsonify({"message": "Comment deleted successfully"})

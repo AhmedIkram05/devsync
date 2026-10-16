@@ -7,6 +7,7 @@ from src.socketio_server import emit_dashboard_refresh
 
 from ...auth.rbac import Role
 from ...db.models import Project, Task, User, db
+from ...db.transaction import transactional
 from ...services import audit_service, settings_service
 from ..validators.admin_validator import validate_system_settings, validate_user_role_update
 from .helpers import safe_query_all as _safe_query_all
@@ -60,6 +61,7 @@ def get_system_settings():
     return jsonify({"settings": settings})
 
 
+@transactional
 def update_system_settings():
     """Controller function to update system settings"""
     data = request.get_json()
@@ -84,6 +86,7 @@ def update_system_settings():
     return jsonify({"message": "System settings updated successfully", "settings": data})
 
 
+@transactional
 def update_user_role(user_id):
     """Controller function to update a user's role"""
     user = User.query.get(user_id)
@@ -100,7 +103,7 @@ def update_user_role(user_id):
     # Update user role
     old_role = user.role
     user.role = data["role"]
-    db.session.commit()
+    db.session.flush()
 
     # Role change invalidates existing tokens so stale claims cannot persist.
     from ...auth.token_blocklist import revoke_all_user_tokens
