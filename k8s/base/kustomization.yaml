@@ -16,6 +16,7 @@ resources:
 - managedcertificate.yaml
 - backendconfig.yaml
 - migrate-job.yaml
+- maintenance-cronjob.yaml
 - postgres.yaml
 - resourcequota.yaml
 - limitrange.yaml
