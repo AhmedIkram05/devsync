@@ -22,6 +22,30 @@ def _task(**kwargs):
     return SimpleNamespace(**defaults)
 
 
+def _route_db_query(mock_db, mock_task, mock_user, *, task_status_rows=(), user_role_rows=(), project_task_rows=()):
+    """Route db.session.query(col, ...) aggregate calls by their first column."""
+    task_status_q = MagicMock()
+    task_status_q.group_by.return_value.all.return_value = list(task_status_rows)
+
+    user_role_q = MagicMock()
+    user_role_q.group_by.return_value.all.return_value = list(user_role_rows)
+
+    project_task_q = MagicMock()
+    project_task_q.filter.return_value.group_by.return_value.all.return_value = list(project_task_rows)
+
+    def router(*args):
+        first = args[0]
+        if first is mock_task.status:
+            return task_status_q
+        if first is mock_user.role:
+            return user_role_q
+        if first is mock_task.project_id:
+            return project_task_q
+        return MagicMock()
+
+    mock_db.session.query.side_effect = router
+
+
 def test_dashboard_helpers_basic():
     from backend.src.api.controllers import dashboard_controller as dc
 
@@ -255,53 +279,50 @@ def test_get_admin_dashboard_unauthorized(mock_identity, mock_jwt, app):
     assert status == 403
 
 
-@patch("backend.src.api.controllers.dashboard_controller.settings_service.cleanup_completed_projects")
 @patch("backend.src.api.controllers.dashboard_controller.get_project_scope_ids", return_value=set())
-@patch("backend.src.api.controllers.dashboard_controller.count_overdue_tasks", return_value=0)
 @patch("backend.src.api.controllers.dashboard_controller.joinedload", side_effect=lambda rel: rel)
 @patch("backend.src.api.controllers.dashboard_controller.Project")
 @patch("backend.src.api.controllers.dashboard_controller.Task")
 @patch("backend.src.api.controllers.dashboard_controller.User")
+@patch("backend.src.api.controllers.dashboard_controller.db")
 @patch("backend.src.api.controllers.dashboard_controller.get_jwt", return_value={"role": "admin"})
 @patch("backend.src.api.controllers.dashboard_controller.get_jwt_identity", return_value={"user_id": 1})
 def test_get_admin_dashboard_success(
     mock_identity,
     mock_jwt,
+    mock_db,
     mock_user,
     mock_task,
     mock_project,
     mock_joinedload,
-    mock_overdue,
     mock_scope,
-    mock_cleanup,
     app,
 ):
-    user = SimpleNamespace(id=1)
-    mock_user.query.get.return_value = user
-    mock_user.query.all.return_value = [SimpleNamespace(role="admin")]
-    mock_task.query.options.return_value = mock_task.query
+    mock_user.query.get.return_value = SimpleNamespace(id=1)
+    _route_db_query(
+        mock_db,
+        mock_task,
+        mock_user,
+        task_status_rows=[("todo", 1), ("done", 1), ("completed", 1)],
+        user_role_rows=[("admin", 1)],
+        project_task_rows=[(1, 2)],
+    )
 
     now = datetime.now()
     task = _task(status="todo", updated_at=now, created_at=now, assigned_to=1)
-    mock_task.query.all.return_value = [task]
+    assigned_q = mock_task.query.options.return_value
+    assigned_q.filter_by.return_value.order_by.return_value.limit.return_value.all.return_value = [task]
 
-    project = SimpleNamespace(
-        id=1,
-        name="P1",
-        status="active",
-        created_at=now,
-        updated_at=now,
-        tasks=[task],
-        team_members=SimpleNamespace(all=lambda: []),
-        created_by=1,
-    )
+    # Admin overdue count is a separate scoped .filter().filter().count() query.
+    mock_task.query.filter.return_value.filter.return_value.count.return_value = 0
+
+    project = SimpleNamespace(id=1, name="P1", status="active", created_at=now, updated_at=now)
     mock_project.query.count.return_value = 1
     recent_q = MagicMock()
     limit_q = MagicMock()
     mock_project.query.order_by.return_value = recent_q
     recent_q.limit.return_value = limit_q
     limit_q.all.return_value = [project]
-    mock_project.query.all.return_value = [project]
 
     with app.app_context():
         from backend.src.api.controllers.dashboard_controller import get_admin_dashboard
@@ -309,9 +330,17 @@ def test_get_admin_dashboard_success(
         response = get_admin_dashboard()
         data = response.get_json()
 
-    assert data["tasks"]["total"] == 1
+    assert data["users"]["total"] == 1
+    assert data["users"]["admin"] == 1
+    assert data["tasks"]["total"] == 3
+    assert data["tasks"]["todo"] == 1
+    # "done" and "completed" merge into one bucket.
+    assert data["tasks"]["done"] == 2
+    assert data["tasks"]["overdue"] == 0
     assert data["projects"]["total"] == 1
     assert len(data["my_assigned_tasks"]) == 1
+    assert data["recentProjects"][0]["task_count"] == 2
+    assert "team_lead_kpis" not in data
 
 
 @patch("backend.src.api.controllers.dashboard_controller.Project")
@@ -397,28 +426,29 @@ def test_get_client_dashboard_developer_path_with_github_activity_error(
     assert len(data["projects"]) == 0
 
 
-@patch("backend.src.api.controllers.dashboard_controller.settings_service.cleanup_completed_projects")
 @patch("backend.src.api.controllers.dashboard_controller.get_project_scope_ids", return_value=set())
-@patch("backend.src.api.controllers.dashboard_controller.count_overdue_tasks", return_value=0)
 @patch("backend.src.api.controllers.dashboard_controller.Project")
 @patch("backend.src.api.controllers.dashboard_controller.Task")
 @patch("backend.src.api.controllers.dashboard_controller.User")
+@patch("backend.src.api.controllers.dashboard_controller.db")
 @patch("backend.src.api.controllers.dashboard_controller.get_jwt", return_value={"role": "admin"})
 @patch("backend.src.api.controllers.dashboard_controller.get_jwt_identity", return_value={"user_id": 1})
 def test_get_admin_dashboard_handles_query_fallbacks(
     mock_identity,
     mock_jwt,
+    mock_db,
     mock_user,
     mock_task,
     mock_project,
-    mock_overdue,
     mock_scope,
-    mock_cleanup,
     app,
 ):
     mock_user.query.get.return_value = SimpleNamespace(id=1)
-    mock_user.query.all.side_effect = Exception("users unavailable")
-    mock_task.query.all.side_effect = Exception("tasks unavailable")
+    # Aggregations share one session factory: failing it degrades both counts to zero.
+    mock_db.session.query.side_effect = Exception("db unavailable")
+    mock_task.query.filter.return_value.filter.return_value.count.return_value = 0
+    assigned_q = mock_task.query.options.return_value
+    assigned_q.filter_by.return_value.order_by.return_value.limit.return_value.all.return_value = []
     mock_project.query.count.return_value = 0
     mock_project.query.order_by.side_effect = Exception("recent projects unavailable")
 
@@ -457,45 +487,41 @@ def test_get_project_dashboard_zero_completion(mock_project, mock_get_tasks, moc
     assert data["task_stats"]["total"] == 0
 
 
-@patch("backend.src.api.controllers.dashboard_controller.settings_service.cleanup_completed_projects")
 @patch("backend.src.api.controllers.dashboard_controller.get_project_scope_ids", return_value=set())
-@patch("backend.src.api.controllers.dashboard_controller.count_overdue_tasks", return_value=0)
 @patch("backend.src.api.controllers.dashboard_controller.joinedload", side_effect=lambda rel: rel)
 @patch("backend.src.api.controllers.dashboard_controller.Project")
 @patch("backend.src.api.controllers.dashboard_controller.Task")
 @patch("backend.src.api.controllers.dashboard_controller.User")
+@patch("backend.src.api.controllers.dashboard_controller.db")
 @patch("backend.src.api.controllers.dashboard_controller.get_jwt", return_value={"role": "team_lead"})
 @patch("backend.src.api.controllers.dashboard_controller.get_jwt_identity", return_value={"user_id": 2})
-def test_get_admin_dashboard_team_lead_kpis_with_deadline_parsing(
+def test_get_admin_dashboard_team_lead_kpis(
     mock_identity,
     mock_jwt,
+    mock_db,
     mock_user,
     mock_task,
     mock_project,
     mock_joinedload,
-    mock_overdue,
     mock_scope,
-    mock_cleanup,
     app,
 ):
-    now = datetime.now().date()
-    today_plus_2 = now + timedelta(days=2)
-    today_plus_5 = now + timedelta(days=5)
-    yesterday = now - timedelta(days=1)
+    now = datetime.now()
+    # A real column returns a SQL expression from `<`; MagicMock returns NotImplemented.
+    mock_task.deadline.__lt__.return_value = MagicMock()
+    mock_user.query.get.return_value = SimpleNamespace(id=2)
+    _route_db_query(
+        mock_db,
+        mock_task,
+        mock_user,
+        task_status_rows=[("todo", 4)],
+        user_role_rows=[("team_lead", 1)],
+        project_task_rows=[(10, 2)],
+    )
 
-    user = SimpleNamespace(id=2)
-    mock_user.query.get.return_value = user
-    mock_user.query.all.return_value = [SimpleNamespace(role="team_lead")]
-
+    # Only active/on-hold projects the TL created or is a member of are scoped.
     scoped_project_created = SimpleNamespace(
-        id=10,
-        status="active",
-        created_by=2,
-        team_members=[],
-        name="Created Project",
-        created_at=datetime.now(),
-        updated_at=datetime.now(),
-        tasks=[],
+        id=10, status="active", created_by=2, team_members=[], name="Created Project", created_at=now
     )
     scoped_project_member = SimpleNamespace(
         id=11,
@@ -503,107 +529,44 @@ def test_get_admin_dashboard_team_lead_kpis_with_deadline_parsing(
         created_by=99,
         team_members=[SimpleNamespace(id=2)],
         name="Member Project",
-        created_at=datetime.now(),
-        updated_at=datetime.now(),
-        tasks=[],
+        created_at=now,
     )
     ignored_project = SimpleNamespace(
-        id=12,
-        status="completed",
-        created_by=2,
-        team_members=[],
-        name="Closed Project",
-        created_at=datetime.now(),
-        updated_at=datetime.now(),
-        tasks=[],
+        id=12, status="completed", created_by=2, team_members=[], name="Closed Project", created_at=now
     )
     mock_project.query.all.return_value = [scoped_project_created, scoped_project_member, ignored_project]
     mock_project.query.count.return_value = 3
-    recent_q = MagicMock()
-    limit_q = MagicMock()
-    mock_project.query.order_by.return_value = recent_q
-    recent_q.limit.return_value = limit_q
-    limit_q.all.return_value = [scoped_project_created, scoped_project_member, ignored_project]
+    mock_project.query.order_by.return_value.limit.return_value.all.return_value = [scoped_project_created]
 
-    tasks = [
-        SimpleNamespace(
-            id=1,
-            project_id=10,
-            status="review",
-            deadline=today_plus_2,
-            updated_at=datetime.now(),
-            created_at=datetime.now(),
-            title="Review 1",
-            assigned_to=2,
-        ),
-        SimpleNamespace(
-            id=2,
-            project_id=10,
-            status="in_review",
-            deadline=today_plus_5.isoformat(),
-            updated_at=datetime.now(),
-            created_at=datetime.now(),
-            title="Review 2",
-            assigned_to=2,
-        ),
-        SimpleNamespace(
-            id=3,
-            project_id=10,
-            status="todo",
-            deadline=now + timedelta(days=3),
-            updated_at=datetime.now(),
-            created_at=datetime.now(),
-            title="Due Soon",
-            assigned_to=2,
-        ),
-        SimpleNamespace(
-            id=4,
-            project_id=11,
-            status="todo",
-            deadline=yesterday,
-            updated_at=datetime.now(),
-            created_at=datetime.now(),
-            title="Overdue",
-            assigned_to=2,
-        ),
-        SimpleNamespace(
-            id=5,
-            project_id=11,
-            status="done",
-            deadline=yesterday,
-            updated_at=datetime.now(),
-            created_at=datetime.now(),
-            title="Done",
-            assigned_to=2,
-        ),
-        SimpleNamespace(
-            id=6,
-            project_id=11,
-            status="completed",
-            deadline="not-a-date",
-            updated_at=datetime.now(),
-            created_at=datetime.now(),
-            title="Bad Date",
-            assigned_to=2,
-        ),
-        SimpleNamespace(
-            id=7,
-            project_id=12,
-            status="todo",
-            deadline=now + timedelta(days=1),
-            updated_at=datetime.now(),
-            created_at=datetime.now(),
-            title="Ignored Project Task",
-            assigned_to=2,
-        ),
-    ]
-    mock_task.query.all.return_value = tasks
-    mock_task.query.options.return_value = mock_task.query
+    # Admin overdue count uses .filter().filter().count(); TL KPIs use the first-level .count().
+    mock_task.query.filter.return_value.filter.return_value.count.return_value = 0
+    assigned_q = mock_task.query.options.return_value
+    assigned_q.filter_by.return_value.order_by.return_value.limit.return_value.all.return_value = []
+    # Evaluated in order: in_review, due_soon, overdue_not_complete.
+    mock_task.query.filter.return_value.count.side_effect = [2, 1, 3]
+
+    with app.app_context():
+        from backend.src.api.controllers.dashboard_controller import get_admin_dashboard
+
+        data = get_admin_dashboard().get_json()
+
+    kpis = data["team_lead_kpis"]
+    assert kpis["in_review_tasks"] == 2
+    assert kpis["due_soon_tasks"] == 1
+    assert kpis["overdue_not_complete_tasks"] == 3
+    assert kpis["current_projects"] == 2
+
+
+@patch("backend.src.api.controllers.dashboard_controller.get_jwt", return_value={"role": "admin"})
+@patch("backend.src.api.controllers.dashboard_controller.get_jwt_identity", return_value={"user_id": 1})
+@patch("backend.src.api.controllers.dashboard_controller.User")
+def test_get_admin_dashboard_user_not_found(mock_user, mock_identity, mock_jwt, app):
+    mock_user.query.get.return_value = None
 
     with app.app_context():
         from backend.src.api.controllers.dashboard_controller import get_admin_dashboard
 
         response, status = get_admin_dashboard()
 
-    assert status == 500
-    assert response.get_json()["message"] == "An error occurred while loading the dashboard"
+    assert status == 404
+    assert response.get_json()["message"] == "User not found"

@@ -54,8 +54,11 @@ def mock_user():
 
 def test_get_all_users(app, mock_db, mock_user):
     with app.test_request_context(), patch("backend.src.api.controllers.users_controller.User.query") as mock_query:
-        # Configure the mock query
-        mock_query.all.return_value = [mock_user]
+        # Configure the paginated chain: User.query.order_by(...).paginate(...)
+        paginated = mock_query.order_by.return_value.paginate.return_value
+        paginated.items = [mock_user]
+        paginated.total = 1
+        paginated.pages = 1
 
         # Import the function locally to use patched modules
         from backend.src.api.controllers.users_controller import get_all_users
@@ -69,6 +72,29 @@ def test_get_all_users(app, mock_db, mock_user):
         assert len(data["users"]) == 1
         assert data["users"][0]["name"] == "Test User"
         assert data["users"][0]["email"] == "test@example.com"
+        assert "pagination" in data
+
+
+def test_get_all_users_role_and_search_filters(app, mock_db, mock_user):
+    with (
+        app.test_request_context("/?role=admin&search=ali"),
+        patch("backend.src.api.controllers.users_controller.User.query") as mock_query,
+    ):
+        # Keep the filter chain returning the same mock so both filters are recorded.
+        mock_query.filter.return_value = mock_query
+        paginated = mock_query.order_by.return_value.paginate.return_value
+        paginated.items = [mock_user]
+        paginated.total = 1
+        paginated.pages = 1
+
+        from backend.src.api.controllers.users_controller import get_all_users
+
+        response = get_all_users()
+
+        data = response.get_json()
+        assert "users" in data
+        assert mock_query.filter.call_count == 2
+        assert mock_db.or_.called
 
 
 def test_get_user_by_id(app, mock_db, mock_user):

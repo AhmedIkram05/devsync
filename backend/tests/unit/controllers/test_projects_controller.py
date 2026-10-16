@@ -247,11 +247,21 @@ def test_delete_project_with_tasks(app, mock_jwt_identity, mock_jwt, mock_db):
             mock_db.session.commit.assert_called_once()
 
 
+def _page_result(items, total=None, pages=None):
+    """Fake ``.paginate()`` result for the query_params helper."""
+    result = MagicMock()
+    result.items = items
+    result.total = total if total is not None else len(items)
+    result.pages = pages if pages is not None else (1 if items else 0)
+    return result
+
+
 def test_list_projects(app, mock_jwt_identity, mock_jwt):
     with app.test_request_context():
         with (
             patch("backend.src.api.controllers.projects_controller.Project.query") as mock_query,
             patch("backend.src.api.controllers.projects_controller.User.query"),
+            patch("backend.src.api.controllers.projects_controller._team_members_by_project") as mock_members,
         ):
             # Set up mocks
             project = MagicMock()
@@ -266,7 +276,8 @@ def test_list_projects(app, mock_jwt_identity, mock_jwt):
             project.updated_at = MagicMock()
             project.updated_at.isoformat.return_value = "2023-01-02T00:00:00"
 
-            mock_query.all.return_value = [project]
+            mock_query.order_by.return_value.paginate.return_value = _page_result([project])
+            mock_members.return_value = {1: [{"id": 2, "name": "Dev One", "role": "developer"}]}
 
             # Import locally to use patched modules
             from backend.src.api.controllers.projects_controller import get_all_projects
@@ -276,10 +287,12 @@ def test_list_projects(app, mock_jwt_identity, mock_jwt):
 
             # Assert results
             data = response.get_json()
-            assert "projects" in data
             assert isinstance(data["projects"], list)
             assert len(data["projects"]) == 1
             assert data["projects"][0]["name"] == "Test Project"
+            assert data["projects"][0]["team_members"] == [{"id": 2, "name": "Dev One", "role": "developer"}]
+            assert data["pagination"] == {"page": 1, "per_page": 100, "total": 1, "pages": 1}
+            mock_members.assert_called_once_with([1])
 
 
 def test_get_all_projects_developer_scope(app, mock_db):
@@ -299,15 +312,15 @@ def test_get_all_projects_developer_scope(app, mock_db):
 
     user = MagicMock()
     user.projects = MagicMock()
-    user.projects.all.return_value = [user_project]
+    user.projects.order_by.return_value.paginate.return_value = _page_result([user_project])
 
     with app.test_request_context():
         with (
             patch("backend.src.api.controllers.projects_controller.get_jwt_identity", return_value={"user_id": 2}),
             patch("backend.src.api.controllers.projects_controller.get_jwt", return_value={"role": "developer"}),
-            patch("backend.src.api.controllers.projects_controller.settings_service.cleanup_completed_projects"),
             patch("backend.src.api.controllers.projects_controller.User") as mock_user_class,
             patch("backend.src.api.controllers.projects_controller.Project.query") as mock_query,
+            patch("backend.src.api.controllers.projects_controller._team_members_by_project", return_value={}),
         ):
             mock_user_class.query.get.return_value = user
             mock_query.all.side_effect = AssertionError("developer path should not query all projects")
@@ -319,6 +332,78 @@ def test_get_all_projects_developer_scope(app, mock_db):
     data = response.get_json()
     assert len(data["projects"]) == 1
     assert data["projects"][0]["id"] == 11
+    assert data["pagination"] == {"page": 1, "per_page": 100, "total": 1, "pages": 1}
+    user.projects.order_by.assert_called_once()
+
+
+def test_get_all_projects_applies_status_and_search(app, mock_jwt_identity, mock_jwt):
+    with app.test_request_context("/?status=active&search=demo&page=2&per_page=5"):
+        with (
+            patch("backend.src.api.controllers.projects_controller.Project.query") as mock_query,
+            patch("backend.src.api.controllers.projects_controller.User.query"),
+            patch("backend.src.api.controllers.projects_controller._team_members_by_project", return_value={1: []}),
+        ):
+            project = MagicMock()
+            project.id = 1
+            project.name = "Demo Project"
+            project.description = "demo body"
+            project.status = "active"
+            project.github_repo = None
+            project.created_by = 1
+            project.created_at = MagicMock()
+            project.created_at.isoformat.return_value = "2023-01-01T00:00:00"
+            project.updated_at = MagicMock()
+            project.updated_at.isoformat.return_value = "2023-01-02T00:00:00"
+
+            # Two filters (status + search) are chained before ordering/paginating.
+            first_filter = mock_query.filter.return_value
+            filtered = first_filter.filter.return_value
+            filtered.order_by.return_value.paginate.return_value = _page_result([project], total=7, pages=2)
+
+            from backend.src.api.controllers.projects_controller import get_all_projects
+
+            response = get_all_projects()
+
+    data = response.get_json()
+    assert mock_query.filter.call_count == 1
+    assert first_filter.filter.call_count == 1
+    assert data["projects"][0]["id"] == 1
+    assert data["pagination"] == {"page": 2, "per_page": 5, "total": 7, "pages": 2}
+
+
+def test_get_all_projects_falls_back_to_relationship_team_members(app, mock_jwt_identity, mock_jwt):
+    """Projects missing from the batch map still serialize from the relationship."""
+    with app.test_request_context():
+        with (
+            patch("backend.src.api.controllers.projects_controller.Project.query") as mock_query,
+            patch("backend.src.api.controllers.projects_controller.User.query"),
+            patch("backend.src.api.controllers.projects_controller._team_members_by_project", return_value={}),
+        ):
+            project = MagicMock()
+            project.id = 1
+            project.name = "Test Project"
+            project.description = "Test description"
+            project.status = "active"
+            project.github_repo = None
+            project.created_by = 1
+            project.created_at = MagicMock()
+            project.created_at.isoformat.return_value = "2023-01-01T00:00:00"
+            project.updated_at = MagicMock()
+            project.updated_at.isoformat.return_value = "2023-01-02T00:00:00"
+            member = MagicMock()
+            member.id = 2
+            member.name = "Dev One"
+            member.role = "developer"
+            project.team_members = MagicMock()
+            project.team_members.all.return_value = [member]
+
+            mock_query.order_by.return_value.paginate.return_value = _page_result([project])
+
+            from backend.src.api.controllers.projects_controller import get_all_projects
+
+            response = get_all_projects()
+
+    assert response.get_json()["projects"][0]["team_members"] == [{"id": 2, "name": "Dev One", "role": "developer"}]
 
 
 def test_get_project_by_id_denies_unassigned_developer(app):
@@ -498,7 +583,7 @@ def test_get_project_tasks_returns_serialized_tasks(app, mock_jwt_identity, mock
             patch("backend.src.api.controllers.projects_controller.Task.query") as mock_task_query,
         ):
             mock_query.get_or_404.return_value = project
-            mock_task_query.filter_by.return_value.all.return_value = tasks
+            mock_task_query.filter_by.return_value.order_by.return_value.paginate.return_value = _page_result(tasks)
 
             from backend.src.api.controllers.projects_controller import get_project_tasks
 
@@ -529,12 +614,14 @@ def test_get_project_tasks_scopes_query_to_project(app, mock_jwt_identity, mock_
             patch("backend.src.api.controllers.projects_controller.Task.query") as mock_task_query,
         ):
             mock_query.get_or_404.return_value = project
-            mock_task_query.filter_by.return_value.all.return_value = []
+            mock_task_query.filter_by.return_value.order_by.return_value.paginate.return_value = _page_result([])
 
             response = get_project_tasks(6)
 
     mock_task_query.filter_by.assert_called_once_with(project_id=6)
-    assert response.get_json() == {"tasks": []}
+    data = response.get_json()
+    assert data["tasks"] == []
+    assert data["pagination"] == {"page": 1, "per_page": 100, "total": 0, "pages": 0}
 
 
 def test_get_project_tasks_allows_assigned_developer(app, mock_jwt_identity):
@@ -561,7 +648,9 @@ def test_get_project_tasks_allows_assigned_developer(app, mock_jwt_identity):
         ):
             mock_query.get_or_404.return_value = project
             mock_user_class.query.get.return_value = user
-            mock_task_query.filter_by.return_value.all.return_value = [_task_row(3)]
+            mock_task_query.filter_by.return_value.order_by.return_value.paginate.return_value = _page_result(
+                [_task_row(3)]
+            )
 
             from backend.src.api.controllers.projects_controller import get_project_tasks
 

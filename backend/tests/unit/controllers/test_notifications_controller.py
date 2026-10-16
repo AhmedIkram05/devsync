@@ -79,6 +79,12 @@ def test_get_user_notifications(mock_get_jwt_identity, mock_db_session, app_cont
         }
 
         mock_order.all.return_value = [notification]
+        paginated = mock_order.paginate.return_value
+        paginated.items = [notification]
+        paginated.total = 1
+        paginated.pages = 1
+        # unread_count is the total for the user, not derived from the page.
+        mock_filter.count.return_value = 5
 
         # Import inside test to use patched modules
         from src.api.controllers.notifications_controller import get_user_notifications
@@ -89,8 +95,11 @@ def test_get_user_notifications(mock_get_jwt_identity, mock_db_session, app_cont
         data = response.get_json()
         assert "notifications" in data
         assert "unread_count" in data
+        assert "pagination" in data
         assert len(data["notifications"]) == 1
-        assert data["unread_count"] == 1
+        assert data["unread_count"] == 5
+        assert data["pagination"] == {"page": 1, "per_page": 100, "total": 1, "pages": 1}
+        mock_order.paginate.assert_called_once_with(page=1, per_page=100, error_out=False)
 
 
 def test_create_notification(mock_db_session, app_context):

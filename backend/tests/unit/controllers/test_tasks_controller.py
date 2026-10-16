@@ -85,8 +85,13 @@ def test_get_all_tasks_admin(app, mock_jwt_identity, mock_jwt):
             # Configure the mock query
             mock_filtered_query = MagicMock()
             mock_query.filter.return_value = mock_filtered_query
-            mock_filtered_query.all.return_value = [task1]
-            mock_query.all.return_value = [task1]
+            ordered = MagicMock()
+            mock_filtered_query.order_by.return_value = ordered
+            paginated = MagicMock()
+            paginated.items = [task1]
+            paginated.total = 1
+            paginated.pages = 1
+            ordered.paginate.return_value = paginated
 
             # Import the function locally to use patched modules
             from backend.src.api.controllers.tasks_controller import get_all_tasks
@@ -100,6 +105,9 @@ def test_get_all_tasks_admin(app, mock_jwt_identity, mock_jwt):
             assert len(data["tasks"]) == 1
             assert data["tasks"][0]["title"] == "Task 1"
             assert data["tasks"][0]["status"] == "in_progress"
+            assert data["pagination"]["total"] == 1
+            ordered.paginate.assert_called_once_with(page=1, per_page=100, error_out=False)
+            mock_query.all.assert_not_called()
 
 
 def test_get_all_tasks_developer(app, mock_jwt_identity, mock_jwt):
@@ -111,10 +119,16 @@ def test_get_all_tasks_developer(app, mock_jwt_identity, mock_jwt):
         patch("backend.src.api.controllers.tasks_controller.Task.query") as mock_query,
         patch("backend.src.api.controllers.tasks_controller.get_user_project_ids", return_value={5}) as mock_scope,
     ):
-        # Non-admins get a membership-scoped filter before .all()
+        # Non-admins get a membership-scoped filter before pagination
         filter_mock = MagicMock()
         mock_query.filter.return_value = filter_mock
-        filter_mock.all.return_value = []
+        ordered = MagicMock()
+        filter_mock.order_by.return_value = ordered
+        paginated = MagicMock()
+        paginated.items = []
+        paginated.total = 0
+        paginated.pages = 0
+        ordered.paginate.return_value = paginated
 
         # Import the function locally to use patched modules
         from backend.src.api.controllers.tasks_controller import get_all_tasks
@@ -122,16 +136,65 @@ def test_get_all_tasks_developer(app, mock_jwt_identity, mock_jwt):
         # Call the function
         response = get_all_tasks()
 
-        # Membership scope is resolved and the list is filtered (no unscoped .all())
+        # Membership scope is resolved and the list is filtered then paginated (no unscoped .all())
         mock_scope.assert_called_once()
         mock_query.filter.assert_called()
-        filter_mock.all.assert_called_once()
+        ordered.paginate.assert_called_once()
         mock_query.all.assert_not_called()
 
         # Assert the results
         data = response.get_json()
         assert "tasks" in data
         assert isinstance(data["tasks"], list)
+        assert data["pagination"] == {"page": 1, "per_page": 100, "total": 0, "pages": 0}
+
+
+def test_get_all_tasks_applies_filters_sort_and_pagination(app, mock_jwt_identity, mock_jwt):
+    with app.test_request_context("?project_id=7&priority=high&search=foo&sort=-deadline&page=2&per_page=5"):
+        with patch("backend.src.api.controllers.tasks_controller.Task.query") as mock_query:
+            task1 = MagicMock()
+            task1.id = 1
+            task1.title = "Foo Task"
+            task1.description = "Description"
+            task1.status = "todo"
+            task1.progress = 0
+            task1.assigned_to = 2
+            task1.created_by = 1
+            task1.deadline = None
+            task1.created_at = MagicMock()
+            task1.created_at.isoformat.return_value = "2023-01-01T00:00:00"
+            task1.updated_at = MagicMock()
+            task1.updated_at.isoformat.return_value = "2023-01-02T00:00:00"
+
+            # project_id -> priority -> search filters are applied in order
+            q1, q2, q3 = MagicMock(), MagicMock(), MagicMock()
+            mock_query.filter.return_value = q1
+            q1.filter.return_value = q2
+            q2.filter.return_value = q3
+
+            ordered = MagicMock()
+            q3.order_by.return_value = ordered
+            paginated = MagicMock()
+            paginated.items = [task1]
+            paginated.total = 1
+            paginated.pages = 1
+            ordered.paginate.return_value = paginated
+
+            from backend.src.api.controllers.tasks_controller import get_all_tasks
+
+            response = get_all_tasks()
+
+            data = response.get_json()
+            assert data["pagination"] == {"page": 2, "per_page": 5, "total": 1, "pages": 1}
+            assert data["tasks"][0]["title"] == "Foo Task"
+
+            # project_id, priority and search each add a filter clause
+            mock_query.filter.assert_called_once()
+            q1.filter.assert_called_once()
+            q2.filter.assert_called_once()
+            # sort applies an ORDER BY
+            q3.order_by.assert_called_once()
+            ordered.paginate.assert_called_once_with(page=2, per_page=5, error_out=False)
 
 
 def test_get_task_by_id(app, mock_jwt_identity, mock_jwt, mock_task):
