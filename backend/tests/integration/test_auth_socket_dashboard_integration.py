@@ -490,31 +490,23 @@ def test_dashboard_client_route_scopes_team_leads_to_their_projects(client, app,
     assert payload["tasks_due_soon"][0]["id"] == 2
 
 
-def test_dashboard_admin_route_returns_user_and_task_totals(client, app, monkeypatch):
-    from src.db.models import Task, db
+def test_dashboard_admin_route_returns_user_and_task_totals(client, app):
+    from src.db.models import Project, Task, User, db
 
-    admin_user = SimpleNamespace(id=1, name="Admin User", role="admin")
-    users = [
-        SimpleNamespace(role="admin"),
-        SimpleNamespace(role="developer"),
-        SimpleNamespace(role="team_lead"),
-    ]
-
-    class StubUser:
-        query = MagicMock()
-
-    class StubProject:
-        query = MagicMock()
-
-    StubUser.query.get.return_value = admin_user
-    StubUser.query.all.return_value = users
-    StubProject.query.count.return_value = 4
-
-    # Task stats run a real .all() now — seed the rows instead of stubbing.
+    # Admin dashboard now aggregates with GROUP BY, so seed real rows (users +
+    # projects + tasks) instead of stubbing the model classes — the counts come
+    # from real SQL.
     with app.app_context():
         db.create_all()
         db.session.add_all(
             [
+                User(id=1, name="Admin User", email="admin@example.com", password="x", role="admin"),
+                User(id=2, name="Dev User", email="dev@example.com", password="x", role="developer"),
+                User(id=3, name="Lead User", email="lead@example.com", password="x", role="team_lead"),
+                Project(id=1, name="P1", status="active", created_by=1),
+                Project(id=2, name="P2", status="active", created_by=1),
+                Project(id=3, name="P3", status="active", created_by=1),
+                Project(id=4, name="P4", status="active", created_by=1),
                 Task(id=1, title="B", status="backlog", created_by=1, assigned_to=2),
                 Task(id=2, title="T", status="todo", created_by=1, assigned_to=2),
                 Task(id=3, title="P", status="in_progress", created_by=1, assigned_to=2),
@@ -524,9 +516,6 @@ def test_dashboard_admin_route_returns_user_and_task_totals(client, app, monkeyp
             ]
         )
         db.session.commit()
-
-    monkeypatch.setattr(dashboard_controller, "User", StubUser)
-    monkeypatch.setattr(dashboard_controller, "Project", StubProject)
 
     set_access_cookie(client, app, role="admin", user_id=1)
     response = client.get("/api/v1/dashboard/admin")
