@@ -155,7 +155,11 @@ class GitHubClient:
         client_id = current_app.config.get("GITHUB_CLIENT_ID")
         redirect_uri = current_app.config.get("GITHUB_REDIRECT_URI")
 
-        logger.info(f"Creating GitHub auth URL with client_id: {client_id}, redirect_uri: {redirect_uri}")
+        logger.info(
+            "Creating GitHub auth URL with client_id: %s, redirect_uri: %s",
+            sanitize_for_log(client_id),
+            sanitize_for_log(redirect_uri),
+        )
 
         # Include required scopes for your app
         scopes = "repo user"
@@ -198,21 +202,15 @@ class GitHubClient:
 
                     logger.info("Successfully obtained access token from GitHub")
                     if "access_token" in response_json:
-                        token_preview = (
-                            response_json["access_token"][:10] + "..." if response_json["access_token"] else "None"
-                        )
-                        logger.info(f"Access token (first 10 chars): {token_preview}")
                         return response_json
                     else:
                         logger.error("No access_token in response even though status was 200")
-                        logger.error(f"Response keys: {response_json.keys()}")
                         return None
                 except Exception as e:
                     logger.error(f"Error parsing JSON response: {str(e)}")
-                    logger.error(f"Raw response content: {response.text}")
                     return None
             else:
-                logger.error(f"Non-200 status code. Raw response: {response.text}")
+                logger.error("GitHub token exchange failed with non-200 status: %s", status_code)
                 return None
         except Exception as e:
             logger.error(f"Exception during token exchange request: {str(e)}")

@@ -7,6 +7,7 @@ from flask import request
 from flask_jwt_extended import get_jwt, get_jwt_identity
 
 from ..db.models import AuditLog, db
+from ..db.transaction import commit_or_flush
 from ..socketio_server import emit_dashboard_refresh
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,7 @@ def record(action, *, actor=None, resource_type=None, resource_id=None, metadata
         )
 
         db.session.add(audit_entry)
-        db.session.commit()
+        commit_or_flush(db)
         emit_dashboard_refresh(
             "audit_log_recorded",
             resource_type=resource_type,
