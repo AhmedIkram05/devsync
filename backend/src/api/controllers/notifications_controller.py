@@ -9,6 +9,7 @@ from ...auth.rbac import Role
 from ...db.models import Notification, db  # Changed to relative import
 from ...db.transaction import transactional
 from ...services.notification_service import NotificationService
+from ..query_params import get_pagination_args, paginate
 from ..validators.notification_validator import validate_notification_data  # Changed to relative import
 
 
@@ -17,13 +18,16 @@ def get_user_notifications():
     user_id = get_jwt_identity()["user_id"]
 
     # Get notifications for this user, order by created_at desc (newest first)
-    notifications = Notification.query.filter_by(user_id=user_id).order_by(Notification.created_at.desc()).all()
+    page, per_page = get_pagination_args()
+    query = Notification.query.filter_by(user_id=user_id).order_by(Notification.created_at.desc())
+    notifications, pagination = paginate(query, page, per_page)
 
     notifications_data = [notification.to_dict() for notification in notifications]
 
-    return jsonify(
-        {"notifications": notifications_data, "unread_count": len([n for n in notifications if not n.is_read])}
-    )
+    # Total unread for the user, independent of the current page.
+    unread_count = Notification.query.filter_by(user_id=user_id, is_read=False).count()
+
+    return jsonify({"notifications": notifications_data, "unread_count": unread_count, "pagination": pagination})
 
 
 @transactional

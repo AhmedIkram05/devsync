@@ -2,13 +2,31 @@
 
 from flask import jsonify, request
 from flask_jwt_extended import get_jwt, get_jwt_identity
+from sqlalchemy import or_
 
 from ...auth.rbac import Role  # Changed to relative import
 from ...db.models import Project, Task, User, db  # Changed to relative import
+from ...db.models.models import project_members
 from ...db.transaction import transactional
-from ...services import audit_service, settings_service
+from ...services import audit_service
 from ...socketio_server import emit_dashboard_refresh
+from ..query_params import apply_sort, clean_search, get_pagination_args, paginate
 from ..validators.project_validator import validate_project_data  # Changed to relative import
+
+PROJECT_SORT_FIELDS = {
+    "name": Project.name,
+    "status": Project.status,
+    "created_at": Project.created_at,
+    "updated_at": Project.updated_at,
+}
+
+TASK_SORT_FIELDS = {
+    "created_at": Task.created_at,
+    "updated_at": Task.updated_at,
+    "deadline": Task.deadline,
+    "title": Task.title,
+    "status": Task.status,
+}
 
 
 def _relationship_items(value):
@@ -19,46 +37,80 @@ def _relationship_items(value):
     return list(value)
 
 
+def _team_members_by_project(project_ids):
+    """One query for every project's members on the page (avoids N+1 on the
+    dynamic ``team_members`` relationship)."""
+    if not project_ids:
+        return {}
+    rows = (
+        db.session.query(project_members.c.project_id, User.id, User.name, User.role)
+        .join(User, User.id == project_members.c.user_id)
+        .filter(project_members.c.project_id.in_(project_ids))
+        .all()
+    )
+    grouped = {project_id: [] for project_id in project_ids}
+    for project_id, uid, name, role in rows:
+        grouped[project_id].append({"id": uid, "name": name, "role": role})
+    return grouped
+
+
+def _apply_project_filters(query, status, search):
+    if status:
+        query = query.filter(Project.status == status)
+    if search:
+        pattern = f"%{search}%"
+        query = query.filter(or_(Project.name.ilike(pattern), Project.description.ilike(pattern)))
+    return query
+
+
+def _serialize_project(project, member_map):
+    members = member_map.get(project.id)
+    if members is None:
+        members = [
+            {"id": member.id, "name": member.name, "role": member.role}
+            for member in _relationship_items(project.team_members)
+        ]
+    return {
+        "id": project.id,
+        "name": project.name,
+        "description": project.description,
+        "status": project.status,
+        "github_repo": project.github_repo,
+        "created_by": project.created_by,
+        "team_members": members,
+        "created_at": project.created_at.isoformat() if project.created_at else None,
+        "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+    }
+
+
 def get_all_projects():
     """Controller function to get all projects visible to the user"""
     user_id = get_jwt_identity()["user_id"]
     claims = get_jwt()
     user_role = claims.get("role")
 
-    settings_service.cleanup_completed_projects()
+    page, per_page = get_pagination_args()
+    status = clean_search(request.args.get("status"))
+    search = clean_search(request.args.get("search"))
 
     # Apply role-based access control for projects
     if user_role in [Role.ADMIN.value, Role.TEAM_LEAD.value]:
         # Admins and team leads can see all projects
-        projects = Project.query.all()
+        query = Project.query
     else:
         # Developers can only see projects they're assigned to
         user = User.query.get(user_id)
-        projects = user.projects.all()  # Assuming a many-to-many relationship exists
+        query = user.projects
 
-    projects_data = [
-        {
-            "id": project.id,
-            "name": project.name,
-            "description": project.description,
-            "status": project.status,
-            "github_repo": project.github_repo,
-            "created_by": project.created_by,
-            "team_members": [
-                {
-                    "id": member.id,
-                    "name": member.name,
-                    "role": member.role,
-                }
-                for member in _relationship_items(project.team_members)
-            ],
-            "created_at": project.created_at.isoformat() if project.created_at else None,
-            "updated_at": project.updated_at.isoformat() if project.updated_at else None,
-        }
-        for project in projects
-    ]
+    query = _apply_project_filters(query, status, search)
+    query = apply_sort(query, request.args.get("sort"), PROJECT_SORT_FIELDS, "-updated_at")
+    projects, pagination = paginate(query, page, per_page)
 
-    return jsonify({"projects": projects_data})
+    member_map = _team_members_by_project([project.id for project in projects])
+
+    projects_data = [_serialize_project(project, member_map) for project in projects]
+
+    return jsonify({"projects": projects_data, "pagination": pagination})
 
 
 def get_project_by_id(project_id):
@@ -241,7 +293,14 @@ def get_project_tasks(project_id):
             return jsonify({"message": "You do not have access to this project"}), 403
 
     # Get tasks for this project
-    tasks = Task.query.filter_by(project_id=project_id).all()
+    page, per_page = get_pagination_args()
+    status = clean_search(request.args.get("status"))
+
+    query = Task.query.filter_by(project_id=project_id)
+    if status:
+        query = query.filter(Task.status == status)
+    query = apply_sort(query, request.args.get("sort"), TASK_SORT_FIELDS, "-created_at")
+    tasks, pagination = paginate(query, page, per_page)
 
     tasks_data = [
         {
@@ -260,4 +319,4 @@ def get_project_tasks(project_id):
         for task in tasks
     ]
 
-    return jsonify({"tasks": tasks_data})
+    return jsonify({"tasks": tasks_data, "pagination": pagination})

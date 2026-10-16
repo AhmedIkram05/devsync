@@ -1,0 +1,103 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: devsync-maintenance
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 300
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 600
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app: devsync-maintenance
+            app.kubernetes.io/part-of: devsync
+        spec:
+          serviceAccountName: devsync-ksa
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10000
+            seccompProfile:
+              type: RuntimeDefault
+          # Deliberately NO wait-for-db init container. The managed-db overlay
+          # (what CD applies) deletes the devsync-postgres Service and strips the
+          # same probe from the backend/migrate pods, so polling devsync-postgres
+          # would dead-DNS fail on every run. A daily job on a long-lived cluster
+          # does not race DB boot; backoffLimit plus the script's per-task error
+          # handling cover a transient DB outage.
+          containers:
+          - name: maintenance
+            # Bare name = the kustomize image selector (devsync-backend) matches;
+            # workflows/Makefile pin the full AR digest at deploy time.
+            image: devsync-backend
+            imagePullPolicy: IfNotPresent
+            command:
+            - python
+            - -m
+            - src.db.scripts.run_maintenance
+            envFrom:
+            - configMapRef:
+                name: devsync-config
+            env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: devsync-app-secrets
+                  key: DATABASE_URL
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: devsync-app-secrets
+                  key: JWT_SECRET_KEY
+            # Optional: mirrors backend-deployment; app derives from JWT if absent.
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: devsync-app-secrets
+                  key: SECRET_KEY
+                  optional: true
+            - name: GITHUB_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: devsync-app-secrets
+                  key: GITHUB_CLIENT_ID
+            - name: GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: devsync-app-secrets
+                  key: GITHUB_CLIENT_SECRET
+            - name: FERNET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: devsync-app-secrets
+                  key: FERNET_KEY
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                - ALL
+            volumeMounts:
+            # Read-only root: stdlib/gunicorn may mkstemp in /tmp (same as BE pod)
+            - name: tmp
+              mountPath: /tmp
+          volumes:
+          - name: tmp
+            emptyDir: {}
