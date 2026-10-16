@@ -14,6 +14,7 @@ from flask_jwt_extended import (
 )
 
 from ..db.models import User, db  # Fix import path
+from ..db.transaction import transactional
 from ..services import audit_service, settings_service
 from .helpers import generate_tokens, hash_password, verify_password
 from .rbac import Role
@@ -28,6 +29,7 @@ def _identity_user_id(identity):
     return identity
 
 
+@transactional
 def register_user():
     """Function to register a new user.
 
@@ -35,11 +37,14 @@ def register_user():
     All new accounts are created with the 'developer' role.
     Admins can promote users after registration via PUT /admin/users/<id>/role.
     """
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
 
-    # Validate required fields (role is no longer required from the client)
-    if not all(k in data for k in ["name", "email", "password"]):
-        return jsonify({"message": "Missing required fields"}), 400
+    # Validate required fields and format (role is no longer required from the client)
+    from ..api.validators.auth_validator import validate_registration_data
+
+    validation_result = validate_registration_data(data)
+    if validation_result:
+        return validation_result
 
     # Check if email already exists
     existing_user = User.query.filter_by(email=data["email"]).first()
@@ -68,7 +73,7 @@ def register_user():
         )
 
         db.session.add(new_user)
-        db.session.commit()
+        db.session.flush()
 
         # Record audit log
         audit_service.record(
@@ -108,28 +113,28 @@ def register_user():
 
 def login():
     """Function to authenticate a user and create a session"""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
 
     # Validate required fields
     if not all(k in data for k in ["email", "password"]):
         return jsonify({"message": "Missing email or password"}), 400
 
     # Find user by email
-    print(f"Attempting to login user: {data['email']}")
+    logger.debug("Login attempt")
     user = User.query.filter_by(email=data["email"]).first()
 
     # Check if user exists and password is correct
     if not user:
-        print(f"User not found: {data['email']}")
+        logger.info("Login failed: unknown user")
         return jsonify({"message": "Invalid email or password"}), 401
 
     if not verify_password(data["password"], user.password):
-        print(f"Invalid password for user: {data['email']}")
+        logger.info("Login failed: invalid credentials")
         return jsonify({"message": "Invalid email or password"}), 401
 
     # Generate tokens
     tokens = generate_tokens(user.id, {"role": user.role})
-    print(f"Login successful for user: {user.email}, role: {user.role}")
+    logger.info("Login successful for user_id=%s role=%s", user.id, user.role)
 
     # Check for GitHub connection
     from ..db.models.models import GitHubToken
@@ -249,7 +254,7 @@ def logout_user():
 # Add a dedicated token endpoint for the frontend to use
 def get_token():
     """Function to get a token for an already authenticated user"""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
 
     # Validate required fields
     if not all(k in data for k in ["email", "password"]):
