@@ -54,6 +54,32 @@ resource "google_container_cluster" "devsync" {
     workload_pool = "${var.project_id}.svc.id.goog"
   }
 
+  # NetworkPolicy enforcement is intentionally NOT managed here.
+  #
+  # addons_config.network_policy_config (the GKE Network Policy add-on) was
+  # enabled in PR #205 to make the nine policies in k8s/base/networkpolicy.yaml
+  # actually bind. It does not work here: GKE installs calico-typha and the
+  # calico-node DaemonSet but never tigera-operator, so the
+  # projectcalico.org/ds-ready=true node label is never applied, calico-node
+  # never schedules (DESIRED 0), and felix never programs the datapath. Nothing
+  # is enforced — proven by probe: external :80 reachable while the policy
+  # allows only :443.
+  #
+  # The block was dropped in PR #206. Note what that does and does not do:
+  # removing the block only stops Terraform managing the field, it does NOT
+  # disable the add-on. The cluster still has it enabled and still inert, and
+  # it cannot be turned off — --update-addons=NetworkPolicy=DISABLED returns
+  # "Node pool devsync-pool requires recreation" — so it stays parked until the
+  # rebuild, where DPv2 replaces it wholesale.
+  #
+  # Real enforcement needs datapath_provider = "ADVANCED_DATAPATH" in the staged
+  # rebuild above, create-time-only for Standard clusters. DPv2 and
+  # network_policy_config are mutually exclusive — GKE rejects the add-on with
+  # "Enabling NetworkPolicy for clusters with DatapathProvider=ADVANCED_DATAPATH
+  # is not allowed" — so do NOT re-add that block on a DPv2 cluster.
+  #
+  # Full diagnosis: docs/audit-2026-10-09.md "Infra blockers".
+
   # Boot pattern: one default-pool node to seed, then it is removed in favor
   # of the managed devsync-pool below.
   remove_default_node_pool = true
