@@ -16,7 +16,7 @@ from src.socketio_server import connected_users, project_rooms
 
 
 @pytest.fixture
-def app_and_socket(monkeypatch):
+def app_and_socket(monkeypatch, rate_limiter_redis):
     monkeypatch.setenv("FLASK_ENV", "testing")
 
     app, socketio = create_app(

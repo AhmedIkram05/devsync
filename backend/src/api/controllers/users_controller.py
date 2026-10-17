@@ -1,11 +1,12 @@
 # User controller - business logic
 
 from flask import jsonify, request
-from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import get_jwt, get_jwt_identity
 
 from src.socketio_server import emit_dashboard_refresh
 
 from ...auth.helpers import hash_password, verify_password
+from ...auth.rbac import has_permission
 from ...db.models import (
     AuditLog,
     Comment,
@@ -80,18 +81,23 @@ def get_all_users():
 
     users, pagination = paginate(query, page, per_page)
 
-    users_data = [
-        {
+    # Email and GitHub handle are PII: only roles that may view all users (team lead+)
+    # get them. Developers still need id/name/role/avatar for the UI user pickers.
+    include_pii = has_permission(get_jwt().get("role"), "can_view_all_users")
+
+    users_data = []
+    for user in users:
+        user_data = {
             "id": user.id,
             "name": user.name,
-            "email": user.email,
             "role": user.role,
-            "github_username": user.github_username,
             "avatar": getattr(user, "avatar", None),
             "created_at": user.created_at.isoformat() if user.created_at else None,
         }
-        for user in users
-    ]
+        if include_pii:
+            user_data["email"] = user.email
+            user_data["github_username"] = user.github_username
+        users_data.append(user_data)
 
     return jsonify({"users": users_data, "pagination": pagination})
 

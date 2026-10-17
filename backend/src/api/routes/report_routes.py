@@ -2,16 +2,11 @@
 
 from flask_jwt_extended import jwt_required
 
-from ...auth.rbac import Role
+from ...auth.rbac import require_permission
 from ..controllers.report_controller import delete_report, get_report_by_id, get_reports, save_report
-from ..middlewares import role_required
 from ..middlewares.api_usage_logger import log_api_usage
 from ..middlewares.request_logger import log_request
 from ..middlewares.validation_middleware import validate_json
-
-# Only Team Lead and Admin can generate and view reports
-REPORT_ROLES = [Role.TEAM_LEAD, Role.ADMIN]
-AUTHENTICATED_ROLES = [Role.DEVELOPER, Role.TEAM_LEAD, Role.ADMIN]
 
 
 def register_routes(bp):
@@ -19,7 +14,7 @@ def register_routes(bp):
 
     @bp.route("/reports", methods=["POST"])
     @jwt_required()
-    @role_required(REPORT_ROLES)
+    @require_permission("can_generate_reports")
     @validate_json()
     @log_api_usage()
     @log_request()
@@ -29,7 +24,7 @@ def register_routes(bp):
 
     @bp.route("/reports", methods=["GET"])
     @jwt_required()
-    @role_required(REPORT_ROLES)
+    @require_permission("can_generate_reports")
     @log_api_usage()
     @log_request()
     def get_reports_route():
@@ -38,7 +33,7 @@ def register_routes(bp):
 
     @bp.route("/reports/<int:report_id>", methods=["GET"])
     @jwt_required()
-    @role_required(REPORT_ROLES)
+    @require_permission("can_generate_reports")
     @log_api_usage()
     @log_request()
     def get_report_route(report_id):
@@ -47,7 +42,7 @@ def register_routes(bp):
 
     @bp.route("/reports/<int:report_id>", methods=["DELETE"])
     @jwt_required()
-    @role_required(REPORT_ROLES)
+    @require_permission("can_generate_reports")
     @log_api_usage()
     @log_request()
     def delete_report_route(report_id):

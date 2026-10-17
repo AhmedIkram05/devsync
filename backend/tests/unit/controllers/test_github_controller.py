@@ -259,8 +259,10 @@ class TestGitHubController(unittest.TestCase):
     @patch("backend.src.api.controllers.github_controller.GitHubToken")
     @patch("backend.src.api.controllers.github_controller.GitHubClient")
     @patch("backend.src.api.controllers.github_controller.db")
+    @patch("backend.src.api.controllers.github_controller.audit_service.record")
     def test_link_task_with_github(
         self,
+        mock_audit_record,
         mock_db,
         mock_github_client,
         mock_token_class,
@@ -302,6 +304,12 @@ class TestGitHubController(unittest.TestCase):
         mock_db.session.add.assert_called_once()
         mock_db.session.commit.assert_called_once()
         mock_client_instance.create_issue_comment.assert_called_once()
+        mock_audit_record.assert_called_once_with(
+            action="task_github_linked",
+            resource_type="task",
+            resource_id=10,
+            metadata={"repo_id": 1, "issue_number": 42, "pull_request_number": None},
+        )
 
     @patch("backend.src.api.controllers.github_controller.GitHubClient")
     @patch("backend.src.api.controllers.github_controller.consume_oauth_state")

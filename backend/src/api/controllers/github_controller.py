@@ -20,6 +20,7 @@ from ...db.models import (
     db,
 )
 from ...db.transaction import transactional
+from ...services import audit_service
 from ...services.github_client import GitHubClient
 from ...services.redis_client import get_redis
 from ..middlewares.error_handler import error_response
@@ -696,6 +697,17 @@ def link_task_with_github(task_id):
 
     db.session.flush()
 
+    audit_service.record(
+        action="task_github_linked",
+        resource_type="task",
+        resource_id=task_id,
+        metadata={
+            "repo_id": data.get("repo_id"),
+            "issue_number": data.get("issue_number"),
+            "pull_request_number": data.get("pull_request_number"),
+        },
+    )
+
     # If we have a GitHub token, add a comment to the issue/PR referencing this task
     token = GitHubToken.query.filter_by(user_id=user_id).first()
     if token and (data.get("issue_number") or data.get("pull_request_number")):
@@ -783,6 +795,12 @@ def delete_task_github_link(task_id, link_id):
     db.session.delete(link)
     db.session.flush()
 
+    audit_service.record(
+        action="task_github_link_unlinked",
+        resource_type="task_github_link",
+        resource_id=link_id,
+    )
+
     return jsonify({"message": "GitHub link removed from task"})
 
 
@@ -805,5 +823,11 @@ def disconnect_github_account():
     user.github_username = None
     user.github_connected = False
     db.session.flush()
+
+    audit_service.record(
+        action="github_account_disconnected",
+        resource_type="user",
+        resource_id=user_id,
+    )
 
     return jsonify({"message": "GitHub account disconnected successfully"})

@@ -16,6 +16,13 @@ DEFAULT_SETTINGS = {
 
 SUPPORTED_SETTINGS = set(DEFAULT_SETTINGS.keys())
 
+# Retention cleanups run in bounded batches so one pass never issues a single
+# unbounded DELETE that locks the whole table for a long transaction. A backlog
+# larger than RETENTION_BATCH_SIZE * RETENTION_MAX_BATCHES is finished by the
+# next scheduled run.
+RETENTION_BATCH_SIZE = 1000
+RETENTION_MAX_BATCHES = 100
+
 
 def _to_bool(value, default):
     if isinstance(value, bool):
@@ -101,8 +108,14 @@ def get_int_setting(key, default=0):
     return _to_int(get_settings().get(key, default), default)
 
 
-def cleanup_old_audit_logs(retention_days=None):
-    """Delete audit logs older than the configured retention window."""
+def cleanup_old_audit_logs(retention_days=None, dry_run=False):
+    """Delete audit logs older than the retention window, in bounded batches.
+
+    At most RETENTION_BATCH_SIZE rows are deleted per iteration and the loop
+    stops after RETENTION_MAX_BATCHES iterations. With dry_run=True nothing is
+    deleted and nothing is committed; the returned count is what would have
+    been removed, itself capped by those same two limits.
+    """
     try:
         days = (
             get_int_setting("audit_log_retention_days", DEFAULT_SETTINGS["audit_log_retention_days"])
@@ -113,16 +126,48 @@ def cleanup_old_audit_logs(retention_days=None):
             return 0
 
         cutoff = datetime.now(UTC) - timedelta(days=days)
-        deleted_count = AuditLog.query.filter(AuditLog.created_at < cutoff).delete(synchronize_session=False)
-        commit_or_flush(db)
+
+        if dry_run:
+            return min(
+                AuditLog.query.filter(AuditLog.created_at < cutoff).count(),
+                RETENTION_BATCH_SIZE * RETENTION_MAX_BATCHES,
+            )
+
+        deleted_count = 0
+        for _ in range(RETENTION_MAX_BATCHES):
+            expired_ids = [
+                row_id
+                for (row_id,) in db.session.query(AuditLog.id)
+                .filter(AuditLog.created_at < cutoff)
+                .order_by(AuditLog.id)
+                .limit(RETENTION_BATCH_SIZE)
+                .all()
+            ]
+            if not expired_ids:
+                break
+
+            AuditLog.query.filter(AuditLog.id.in_(expired_ids)).delete(synchronize_session=False)
+            deleted_count += len(expired_ids)
+
+            if len(expired_ids) < RETENTION_BATCH_SIZE:
+                break
+
+        if deleted_count:
+            commit_or_flush(db)
         return deleted_count
     except Exception:
         db.session.rollback()
         return 0
 
 
-def cleanup_completed_projects(retention_days=None):
-    """Delete completed projects and their dependent records after the retention window."""
+def cleanup_completed_projects(retention_days=None, dry_run=False):
+    """Delete completed projects and their dependents, in bounded batches.
+
+    At most RETENTION_BATCH_SIZE projects are processed per iteration and the
+    loop stops after RETENTION_MAX_BATCHES iterations. With dry_run=True no row
+    is deleted and nothing is committed; the returned count is what would have
+    been removed, capped by those same two limits.
+    """
     try:
         days = (
             get_int_setting("project_retention_days", DEFAULT_SETTINGS["project_retention_days"])
@@ -133,20 +178,39 @@ def cleanup_completed_projects(retention_days=None):
             return 0
 
         cutoff = datetime.now(UTC) - timedelta(days=days)
-        completed_projects = Project.query.filter(Project.status == "completed", Project.updated_at < cutoff).all()
+
+        if dry_run:
+            return min(
+                Project.query.filter(Project.status == "completed", Project.updated_at < cutoff).count(),
+                RETENTION_BATCH_SIZE * RETENTION_MAX_BATCHES,
+            )
 
         deleted_projects = 0
-        for project in completed_projects:
-            task_ids = [task.id for task in (project.tasks or [])]
+        for _ in range(RETENTION_MAX_BATCHES):
+            batch = (
+                Project.query.filter(Project.status == "completed", Project.updated_at < cutoff)
+                .order_by(Project.id)
+                .limit(RETENTION_BATCH_SIZE)
+                .all()
+            )
+            if not batch:
+                break
 
-            if task_ids:
-                TaskGitHubLink.query.filter(TaskGitHubLink.task_id.in_(task_ids)).delete(synchronize_session=False)
-                Comment.query.filter(Comment.task_id.in_(task_ids)).delete(synchronize_session=False)
-                Notification.query.filter(Notification.task_id.in_(task_ids)).delete(synchronize_session=False)
-                Task.query.filter(Task.id.in_(task_ids)).delete(synchronize_session=False)
+            for project in batch:
+                task_ids = [task.id for task in (project.tasks or [])]
 
-            db.session.delete(project)
-            deleted_projects += 1
+                if task_ids:
+                    TaskGitHubLink.query.filter(TaskGitHubLink.task_id.in_(task_ids)).delete(synchronize_session=False)
+                    Comment.query.filter(Comment.task_id.in_(task_ids)).delete(synchronize_session=False)
+                    Notification.query.filter(Notification.task_id.in_(task_ids)).delete(synchronize_session=False)
+                    Task.query.filter(Task.id.in_(task_ids)).delete(synchronize_session=False)
+
+                db.session.delete(project)
+
+            deleted_projects += len(batch)
+
+            if len(batch) < RETENTION_BATCH_SIZE:
+                break
 
         if deleted_projects:
             commit_or_flush(db)
@@ -157,11 +221,16 @@ def cleanup_completed_projects(retention_days=None):
         return 0
 
 
-def run_retention_cleanup(audit_retention_days=None, project_retention_days=None):
-    """Run all retention cleanups and return a summary."""
-    audit_deleted = cleanup_old_audit_logs(audit_retention_days)
-    project_deleted = cleanup_completed_projects(project_retention_days)
+def run_retention_cleanup(audit_retention_days=None, project_retention_days=None, dry_run=False):
+    """Run all retention cleanups and return a summary.
+
+    dry_run=True forwards to both cleanups, which report what they would remove
+    without deleting or committing.
+    """
+    audit_deleted = cleanup_old_audit_logs(audit_retention_days, dry_run=dry_run)
+    project_deleted = cleanup_completed_projects(project_retention_days, dry_run=dry_run)
     return {
         "audit_logs_deleted": audit_deleted,
         "projects_deleted": project_deleted,
+        "dry_run": bool(dry_run),
     }

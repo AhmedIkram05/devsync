@@ -1,7 +1,17 @@
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from backend.src.services import settings_service
+
+
+def _audit_id_chain(mock_db):
+    """Mock the object .limit() is called on: db.session.query(AuditLog.id).filter(...).order_by(...)."""
+    return mock_db.session.query.return_value.filter.return_value.order_by.return_value
+
+
+def _project_batch(mock_project):
+    """Mock the object .order_by() is called on: Project.query.filter(...)."""
+    return mock_project.query.filter.return_value.order_by.return_value
 
 
 def test_to_bool_conversions():
@@ -95,12 +105,77 @@ def test_get_int_setting_uses_default_and_normalization(mock_get_settings):
 def test_cleanup_old_audit_logs_happy_path(mock_audit_log, mock_db):
     mock_audit_log.created_at = MagicMock()
     mock_audit_log.created_at.__lt__.return_value = True
-    mock_audit_log.query.filter.return_value.delete.return_value = 7
+    ids = _audit_id_chain(mock_db)
+    ids.limit.return_value.all.side_effect = [[(4,), (5,)], []]
 
     deleted = settings_service.cleanup_old_audit_logs(retention_days=30)
 
-    assert deleted == 7
+    assert deleted == 2
+    ids.limit.assert_called_with(settings_service.RETENTION_BATCH_SIZE)
+    mock_audit_log.query.filter.return_value.delete.assert_called_once()
     mock_db.session.commit.assert_called_once()
+
+
+@patch("backend.src.services.settings_service.RETENTION_BATCH_SIZE", 2)
+@patch("backend.src.services.settings_service.db")
+@patch("backend.src.services.settings_service.AuditLog")
+def test_cleanup_old_audit_logs_deletes_in_bounded_batches(mock_audit_log, mock_db):
+    mock_audit_log.created_at = MagicMock()
+    mock_audit_log.created_at.__lt__.return_value = True
+    ids = _audit_id_chain(mock_db)
+    ids.limit.return_value.all.side_effect = [[(1,), (2,)], [(3,), (4,)], [(5,)]]
+
+    deleted = settings_service.cleanup_old_audit_logs(retention_days=30)
+
+    assert deleted == 5
+    assert ids.limit.call_count == 3
+    assert ids.limit.call_args_list == [call(2), call(2), call(2)]
+    assert mock_audit_log.query.filter.return_value.delete.call_count == 3
+
+
+@patch("backend.src.services.settings_service.RETENTION_BATCH_SIZE", 2)
+@patch("backend.src.services.settings_service.RETENTION_MAX_BATCHES", 3)
+@patch("backend.src.services.settings_service.db")
+@patch("backend.src.services.settings_service.AuditLog")
+def test_cleanup_old_audit_logs_stops_at_max_batches(mock_audit_log, mock_db):
+    mock_audit_log.created_at = MagicMock()
+    mock_audit_log.created_at.__lt__.return_value = True
+    ids = _audit_id_chain(mock_db)
+    ids.limit.return_value.all.return_value = [(1,), (2,)]
+
+    deleted = settings_service.cleanup_old_audit_logs(retention_days=30)
+
+    assert deleted == 6
+    assert ids.limit.return_value.all.call_count == settings_service.RETENTION_MAX_BATCHES
+    assert mock_audit_log.query.filter.return_value.delete.call_count == settings_service.RETENTION_MAX_BATCHES
+
+
+@patch("backend.src.services.settings_service.db")
+@patch("backend.src.services.settings_service.AuditLog")
+def test_cleanup_old_audit_logs_dry_run_counts_without_deleting(mock_audit_log, mock_db):
+    mock_audit_log.created_at = MagicMock()
+    mock_audit_log.created_at.__lt__.return_value = True
+    mock_audit_log.query.filter.return_value.count.return_value = 42
+
+    deleted = settings_service.cleanup_old_audit_logs(retention_days=30, dry_run=True)
+
+    assert deleted == 42
+    mock_db.session.query.assert_not_called()
+    mock_audit_log.query.filter.return_value.delete.assert_not_called()
+    mock_db.session.commit.assert_not_called()
+    mock_db.session.rollback.assert_not_called()
+
+
+@patch("backend.src.services.settings_service.db")
+@patch("backend.src.services.settings_service.AuditLog")
+def test_cleanup_old_audit_logs_dry_run_count_is_capped(mock_audit_log, mock_db):
+    mock_audit_log.created_at = MagicMock()
+    mock_audit_log.created_at.__lt__.return_value = True
+    mock_audit_log.query.filter.return_value.count.return_value = 10**9
+
+    deleted = settings_service.cleanup_old_audit_logs(retention_days=30, dry_run=True)
+
+    assert deleted == settings_service.RETENTION_BATCH_SIZE * settings_service.RETENTION_MAX_BATCHES
 
 
 @patch("backend.src.services.settings_service.AuditLog")
@@ -113,7 +188,7 @@ def test_cleanup_old_audit_logs_non_positive_days_returns_zero(mock_audit_log):
 @patch("backend.src.services.settings_service.db")
 @patch("backend.src.services.settings_service.AuditLog")
 def test_cleanup_old_audit_logs_rolls_back_on_error(mock_audit_log, mock_db):
-    mock_audit_log.query.filter.side_effect = Exception("db failed")
+    mock_db.session.query.side_effect = Exception("db failed")
 
     deleted = settings_service.cleanup_old_audit_logs(retention_days=30)
 
@@ -140,17 +215,99 @@ def test_cleanup_completed_projects_happy_path(
     mock_project.updated_at = MagicMock()
     mock_project.updated_at.__lt__.return_value = True
     project = SimpleNamespace(id=1, tasks=[SimpleNamespace(id=11), SimpleNamespace(id=12)])
-    mock_project.query.filter.return_value.all.return_value = [project]
+    batch = _project_batch(mock_project)
+    batch.limit.return_value.all.side_effect = [[project], []]
 
     deleted = settings_service.cleanup_completed_projects(retention_days=30)
 
     assert deleted == 1
+    batch.limit.assert_called_with(settings_service.RETENTION_BATCH_SIZE)
     mock_task_github_link.query.filter.return_value.delete.assert_called_once()
     mock_comment.query.filter.return_value.delete.assert_called_once()
     mock_notification.query.filter.return_value.delete.assert_called_once()
     mock_task.query.filter.return_value.delete.assert_called_once()
     mock_db.session.delete.assert_called_once_with(project)
     mock_db.session.commit.assert_called_once()
+
+
+@patch("backend.src.services.settings_service.RETENTION_BATCH_SIZE", 2)
+@patch("backend.src.services.settings_service.db")
+@patch("backend.src.services.settings_service.Task")
+@patch("backend.src.services.settings_service.Notification")
+@patch("backend.src.services.settings_service.Comment")
+@patch("backend.src.services.settings_service.TaskGitHubLink")
+@patch("backend.src.services.settings_service.Project")
+def test_cleanup_completed_projects_processes_bounded_batches(
+    mock_project,
+    mock_task_github_link,
+    mock_comment,
+    mock_notification,
+    mock_task,
+    mock_db,
+):
+    mock_project.status = MagicMock()
+    mock_project.status.__eq__.return_value = True
+    mock_project.updated_at = MagicMock()
+    mock_project.updated_at.__lt__.return_value = True
+    first = SimpleNamespace(id=1, tasks=[])
+    second = SimpleNamespace(id=2, tasks=[])
+    third = SimpleNamespace(id=3, tasks=[])
+    batch = _project_batch(mock_project)
+    batch.limit.return_value.all.side_effect = [[first, second], [third], []]
+
+    deleted = settings_service.cleanup_completed_projects(retention_days=30)
+
+    assert deleted == 3
+    assert batch.limit.call_args_list == [call(2), call(2)]
+    assert mock_db.session.delete.call_args_list == [call(first), call(second), call(third)]
+    mock_db.session.commit.assert_called_once()
+
+
+@patch("backend.src.services.settings_service.RETENTION_BATCH_SIZE", 2)
+@patch("backend.src.services.settings_service.RETENTION_MAX_BATCHES", 3)
+@patch("backend.src.services.settings_service.db")
+@patch("backend.src.services.settings_service.Task")
+@patch("backend.src.services.settings_service.Notification")
+@patch("backend.src.services.settings_service.Comment")
+@patch("backend.src.services.settings_service.TaskGitHubLink")
+@patch("backend.src.services.settings_service.Project")
+def test_cleanup_completed_projects_stops_at_max_batches(
+    mock_project,
+    mock_task_github_link,
+    mock_comment,
+    mock_notification,
+    mock_task,
+    mock_db,
+):
+    mock_project.status = MagicMock()
+    mock_project.status.__eq__.return_value = True
+    mock_project.updated_at = MagicMock()
+    mock_project.updated_at.__lt__.return_value = True
+    batch = _project_batch(mock_project)
+    batch.limit.return_value.all.return_value = [SimpleNamespace(id=1, tasks=[]), SimpleNamespace(id=2, tasks=[])]
+
+    deleted = settings_service.cleanup_completed_projects(retention_days=30)
+
+    assert deleted == 2 * settings_service.RETENTION_MAX_BATCHES
+    assert batch.limit.return_value.all.call_count == settings_service.RETENTION_MAX_BATCHES
+
+
+@patch("backend.src.services.settings_service.db")
+@patch("backend.src.services.settings_service.Project")
+def test_cleanup_completed_projects_dry_run_counts_without_deleting(mock_project, mock_db):
+    mock_project.status = MagicMock()
+    mock_project.status.__eq__.return_value = True
+    mock_project.updated_at = MagicMock()
+    mock_project.updated_at.__lt__.return_value = True
+    mock_project.query.filter.return_value.count.return_value = 9
+
+    deleted = settings_service.cleanup_completed_projects(retention_days=30, dry_run=True)
+
+    assert deleted == 9
+    _project_batch(mock_project).limit.assert_not_called()
+    mock_db.session.delete.assert_not_called()
+    mock_db.session.commit.assert_not_called()
+    mock_db.session.rollback.assert_not_called()
 
 
 @patch("backend.src.services.settings_service.Project")
@@ -176,6 +333,16 @@ def test_cleanup_completed_projects_rolls_back_on_error(mock_project, mock_db):
 def test_run_retention_cleanup_summary(mock_cleanup_projects, mock_cleanup_audit):
     summary = settings_service.run_retention_cleanup(audit_retention_days=14, project_retention_days=60)
 
-    assert summary == {"audit_logs_deleted": 3, "projects_deleted": 2}
-    mock_cleanup_audit.assert_called_once_with(14)
-    mock_cleanup_projects.assert_called_once_with(60)
+    assert summary == {"audit_logs_deleted": 3, "projects_deleted": 2, "dry_run": False}
+    mock_cleanup_audit.assert_called_once_with(14, dry_run=False)
+    mock_cleanup_projects.assert_called_once_with(60, dry_run=False)
+
+
+@patch("backend.src.services.settings_service.cleanup_old_audit_logs", return_value=11)
+@patch("backend.src.services.settings_service.cleanup_completed_projects", return_value=4)
+def test_run_retention_cleanup_forwards_dry_run(mock_cleanup_projects, mock_cleanup_audit):
+    summary = settings_service.run_retention_cleanup(dry_run=True)
+
+    assert summary == {"audit_logs_deleted": 11, "projects_deleted": 4, "dry_run": True}
+    mock_cleanup_audit.assert_called_once_with(None, dry_run=True)
+    mock_cleanup_projects.assert_called_once_with(None, dry_run=True)

@@ -28,6 +28,7 @@ def app(monkeypatch):
     monkeypatch.setattr(admin_routes, "jwt_required", passthrough_decorator)
     monkeypatch.setattr(admin_routes, "admin_required", passthrough_decorator)
     monkeypatch.setattr(admin_routes, "role_at_least", passthrough_decorator)
+    monkeypatch.setattr(admin_routes, "require_permission", passthrough_decorator, raising=False)
     monkeypatch.setattr(admin_routes, "validate_json", passthrough_decorator)
     monkeypatch.setattr(admin_routes, "rate_limit", passthrough_decorator)
 
@@ -95,16 +96,36 @@ def test_update_user_role_route_calls_controller(monkeypatch, client):
 
 
 def test_run_retention_cleanup_returns_200_on_success(monkeypatch, client):
-    monkeypatch.setattr(
-        admin_routes.settings_service,
-        "run_retention_cleanup",
-        MagicMock(return_value={"audit_logs_deleted": 3, "projects_deleted": 1}),
-    )
+    run_cleanup = MagicMock(return_value={"audit_logs_deleted": 3, "projects_deleted": 1})
+    monkeypatch.setattr(admin_routes.settings_service, "run_retention_cleanup", run_cleanup)
 
     response = client.post("/api/v1/admin/settings/retention/run")
 
     assert response.status_code == 200
     assert response.get_json()["message"] == "Retention cleanup completed"
+    assert response.get_json()["dry_run"] is False
+    run_cleanup.assert_called_once_with(dry_run=False)
+
+
+def test_run_retention_cleanup_threads_dry_run_flag(monkeypatch, client):
+    run_cleanup = MagicMock(return_value={"audit_logs_deleted": 0, "projects_deleted": 0})
+    monkeypatch.setattr(admin_routes.settings_service, "run_retention_cleanup", run_cleanup)
+
+    response = client.post("/api/v1/admin/settings/retention/run?dry_run=TRUE")
+
+    assert response.status_code == 200
+    assert response.get_json()["dry_run"] is True
+    run_cleanup.assert_called_once_with(dry_run=True)
+
+
+def test_run_retention_cleanup_treats_non_truthy_dry_run_as_false(monkeypatch, client):
+    run_cleanup = MagicMock(return_value={})
+    monkeypatch.setattr(admin_routes.settings_service, "run_retention_cleanup", run_cleanup)
+
+    response = client.post("/api/v1/admin/settings/retention/run?dry_run=nope")
+
+    assert response.get_json()["dry_run"] is False
+    run_cleanup.assert_called_once_with(dry_run=False)
 
 
 def test_run_retention_cleanup_reports_failure_as_500(monkeypatch, client):
@@ -122,4 +143,5 @@ def test_run_retention_cleanup_reports_failure_as_500(monkeypatch, client):
     assert payload["status"] == "error"
     assert payload["message"] == "Retention cleanup failed"
     assert payload["result"] is None
+    assert payload["dry_run"] is False
     assert "error" not in payload

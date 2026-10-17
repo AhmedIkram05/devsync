@@ -1,12 +1,23 @@
 """Middleware to implement rate limiting for API requests
 
 D1: the bucket of record is Redis (INCR/EXPIRE per client + endpoint, one
-shared bucket across all backend pods). When REDIS_URL is unset or Redis is
-unreachable the in-memory dict path below takes over verbatim (fail-open
+shared bucket across all other backend pods). When REDIS_URL is unset or Redis
+is unreachable the in-memory dict path below takes over verbatim (fail-open
 per-pod behaviour, same messages and defaults).
+
+`fail_closed=True` flips that fallback to a deny: if Redis cannot answer, the
+request is counted as over-limit instead of being waved through on a per-pod
+window. That is what credential endpoints (login/register/token) want — a
+per-pod window does nothing when the fleet scales out. The global
+`before_request` limiter deliberately stays fail-open so a Redis outage cannot
+503 the whole app.
+
+`requests_per_window <= 0` disables limiting entirely (the k6 load job sets
+RATE_LIMIT_REQUESTS_PER_WINDOW=0) and never denies.
 """
 
 import logging
+import os
 import threading
 import time
 from collections import defaultdict
@@ -83,15 +94,42 @@ def _redis_hit(client_id, endpoint, requests_per_window, window_seconds):
         return None
 
 
-def _record_hit(client_id, endpoint, requests_per_window, window_seconds):
+def _limiter_disabled():
+    """True when the deploy has switched the limiter off entirely.
+
+    ``RATE_LIMIT_REQUESTS_PER_WINDOW=0`` is the documented escape hatch the
+    load-test job sets so the app can be saturated instead of its throttle. It
+    must also neutralise the per-route fail_closed limits: otherwise a Redis-less
+    load-test environment 429s every credential request before any request is
+    even counted. Never set this outside a load-test environment.
+    """
+    try:
+        return int(os.getenv("RATE_LIMIT_REQUESTS_PER_WINDOW", "300")) <= 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _record_hit(client_id, endpoint, requests_per_window, window_seconds, fail_closed=False):
     """Count one request; True = limit exceeded.
 
-    Redis first (shared across pods); unset/dead Redis falls back to the
-    per-pod in-memory sliding window with identical limits and boundaries.
+    requests_per_window <= 0 — or ``RATE_LIMIT_REQUESTS_PER_WINDOW=0`` — disables
+    the limiter outright: nothing is counted, nothing is denied.
+
+    Redis first (shared across pods). With fail_closed=True an unset/dead
+    Redis denies instead of falling back, so credential endpoints stay limited
+    across the fleet; with fail_closed=False the per-pod in-memory sliding
+    window takes over with identical limits and boundaries.
     """
+    if requests_per_window <= 0 or _limiter_disabled():
+        return False
+
     verdict = _redis_hit(client_id, endpoint, requests_per_window, window_seconds)
     if verdict is not None:
         return verdict
+
+    if fail_closed:
+        logger.warning("rate limiter fail-closed: Redis unavailable, denying %s for %s", client_id, endpoint)
+        return True
 
     # In-memory fallback (remove Redis entirely and this path is the app).
     clean_old_requests(client_id, endpoint, window_seconds)
@@ -104,7 +142,7 @@ def _record_hit(client_id, endpoint, requests_per_window, window_seconds):
     return False
 
 
-def rate_limit(requests_per_window=100, window_seconds=60, by_endpoint=True):
+def rate_limit(requests_per_window=100, window_seconds=60, by_endpoint=True, fail_closed=False):
     """
     Decorator to apply rate limiting to an endpoint
 
@@ -112,6 +150,8 @@ def rate_limit(requests_per_window=100, window_seconds=60, by_endpoint=True):
         requests_per_window: Maximum number of requests allowed in the time window
         window_seconds: Time window in seconds
         by_endpoint: Whether to limit by specific endpoint or globally for the client
+        fail_closed: Deny when Redis is unavailable instead of using the per-pod
+            in-memory window
     """
 
     def decorator(f):
@@ -120,7 +160,7 @@ def rate_limit(requests_per_window=100, window_seconds=60, by_endpoint=True):
             client_id = get_client_identifier()
             endpoint = request.endpoint if by_endpoint else "global"
 
-            if _record_hit(client_id, endpoint, requests_per_window, window_seconds):
+            if _record_hit(client_id, endpoint, requests_per_window, window_seconds, fail_closed=fail_closed):
                 return error_response(
                     "Rate limit exceeded. Please try again later.",
                     "rate_limited",
@@ -143,6 +183,8 @@ def apply_global_rate_limit(app, requests_per_window=300, window_seconds=60):
     calls at once) could 429 itself. Bucketing by endpoint keeps a chatty
     page from starving other calls, while the per-endpoint decorator stays
     for strict routes (e.g. login).
+
+    Stays fail-open on purpose: a Redis outage must not 503 every route.
     """
 
     @app.before_request

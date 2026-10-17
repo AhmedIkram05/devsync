@@ -52,8 +52,16 @@ def mock_user():
     return user
 
 
+def _patch_jwt_role(role):
+    return patch("backend.src.api.controllers.users_controller.get_jwt", return_value={"role": role})
+
+
 def test_get_all_users(app, mock_db, mock_user):
-    with app.test_request_context(), patch("backend.src.api.controllers.users_controller.User.query") as mock_query:
+    with (
+        app.test_request_context(),
+        patch("backend.src.api.controllers.users_controller.User.query") as mock_query,
+        _patch_jwt_role("team_lead"),
+    ):
         # Configure the paginated chain: User.query.order_by(...).paginate(...)
         paginated = mock_query.order_by.return_value.paginate.return_value
         paginated.items = [mock_user]
@@ -72,13 +80,42 @@ def test_get_all_users(app, mock_db, mock_user):
         assert len(data["users"]) == 1
         assert data["users"][0]["name"] == "Test User"
         assert data["users"][0]["email"] == "test@example.com"
+        assert data["users"][0]["github_username"] == "testuser"
         assert "pagination" in data
+
+
+def test_get_all_users_omits_pii_for_developer(app, mock_db, mock_user):
+    """Developers may list users for the pickers, but must not harvest emails."""
+    with (
+        app.test_request_context(),
+        patch("backend.src.api.controllers.users_controller.User.query") as mock_query,
+        _patch_jwt_role("developer"),
+    ):
+        paginated = mock_query.order_by.return_value.paginate.return_value
+        paginated.items = [mock_user]
+        paginated.total = 1
+        paginated.pages = 1
+
+        from backend.src.api.controllers.users_controller import get_all_users
+
+        data = get_all_users().get_json()
+
+    user = data["users"][0]
+    assert "email" not in user
+    assert "github_username" not in user
+    assert user["id"] == 1
+    assert user["name"] == "Test User"
+    assert user["role"] == "developer"
+    assert user["avatar"] == "avatar_url"
+    assert user["created_at"] == "2023-01-01T00:00:00"
+    assert "pagination" in data
 
 
 def test_get_all_users_role_and_search_filters(app, mock_db, mock_user):
     with (
         app.test_request_context("/?role=admin&search=ali"),
         patch("backend.src.api.controllers.users_controller.User.query") as mock_query,
+        _patch_jwt_role("team_lead"),
     ):
         # Keep the filter chain returning the same mock so both filters are recorded.
         mock_query.filter.return_value = mock_query
