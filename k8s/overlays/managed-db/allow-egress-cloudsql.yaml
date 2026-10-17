@@ -10,7 +10,9 @@ spec:
     matchExpressions:
     - key: app
       operator: In
-      values: [devsync-backend, devsync-migrate]
+      # devsync-maintenance included: the retention CronJob writes to the DB
+      # too, and it matches none of the base selectors.
+      values: [devsync-backend, devsync-migrate, devsync-maintenance]
   policyTypes:
   - Egress
   egress:
