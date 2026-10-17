@@ -1,4 +1,33 @@
 # Default-deny + least-privilege egress for the devsync namespace.
+#
+# ENFORCEMENT NOTE — THESE POLICIES ARE NOT ENFORCED TODAY.
+# The cluster runs stock GKE CNI with datapathProvider unset, so every policy
+# below binds at admission and nothing enforces it: pod traffic is unrestricted
+# (Active Assist NETWORK_POLICIES_UNRECONCILED). Full diagnosis, including why
+# the Network Policy add-on cannot enforce them here, is in
+# docs/audit-2026-10-09.md "Infra blockers".
+#
+# The add-on was enabled in PR #205 and abandoned in #206: GKE installs
+# calico-typha and the calico-node DaemonSet but never tigera-operator, so the
+# projectcalico.org/ds-ready=true node label is never applied, calico-node stays
+# at DESIRED 0, and felix never programs the datapath. Proven by a
+# port-differential probe — external :80 stayed reachable while policy allows
+# only :443. It cannot be switched off either: GKE answers
+# --update-addons=NetworkPolicy=DISABLED with "Node pool devsync-pool requires
+# recreation", so it stays parked and inert until the rebuild.
+#
+# Real enforcement requires Dataplane V2, create-time-only for Standard clusters
+# ("You can't modify this setting for an existing cluster") — i.e. the rebuild
+# staged in infra/terraform/modules/gke/main.tf, which also goes zonal→regional.
+# DPv2 supersedes the add-on entirely (GKE rejects network_policy_config with
+# datapathProvider=ADVANCED_DATAPATH) and unlocks enable_fqdn_network_policy,
+# which is what eventually replaces the 0.0.0.0/0 backend rule below with
+# GitHub's published CIDRs/FQDNs.
+#
+# Until then these rules are correct only by review: nothing will report a
+# missing or wrong one at runtime. allow-maintenance-egress exists for exactly
+# that reason — the maintenance CronJob matched no selector, a gap no
+# enforcement was around to reveal.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
