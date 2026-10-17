@@ -42,3 +42,29 @@ def client(app):
 def runner(app):
     """Create a test CLI runner for the app"""
     return app.test_cli_runner()
+
+
+@pytest.fixture
+def rate_limiter_redis(monkeypatch):
+    """Fresh Redis double for the rate limiter (opt-in; not autouse).
+
+    /auth/* is fail-closed, so with no Redis reachable every auth request is
+    denied. Each test gets its own counters, so the real limiter still runs and
+    still enforces its budget without leaking state between tests. Tests that
+    assert the fail-closed behaviour must NOT request this fixture.
+    """
+
+    class _FakeRedis:
+        def __init__(self):
+            self.counts = {}
+
+        def incr(self, key):
+            self.counts[key] = self.counts.get(key, 0) + 1
+            return self.counts[key]
+
+        def expire(self, key, seconds):
+            return True
+
+    fake = _FakeRedis()
+    monkeypatch.setattr("src.api.middlewares.rate_limiter.get_redis", lambda: fake)
+    return fake
