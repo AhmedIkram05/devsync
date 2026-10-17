@@ -39,6 +39,7 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
 from sqlalchemy import text
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 PUBLIC_ROUTES = [
     "/api/v1/auth/register",
@@ -61,6 +62,13 @@ def is_public_route(path):
     return any(path == route or path.startswith(route + "/") for route in PUBLIC_ROUTES)
 
 
+def _proxy_x_for():
+    try:
+        return max(int(os.getenv("PROXYFIX_X_FOR", "1")), 0)
+    except (TypeError, ValueError):
+        return 1
+
+
 def _apply_jwt_expiry(app):
     """Derive Flask-JWT-Extended timedeltas from the single Config source."""
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(
@@ -74,6 +82,10 @@ def _apply_jwt_expiry(app):
 def create_app(config_class=None):
     setup_json_logging()
     app = Flask(__name__)
+    # Trust exactly the GKE/GCE LB hop so request.remote_addr is the real client
+    # IP (rate limiting + audit hashing depend on it). Overridable when the
+    # proxy chain changes; a wrong depth makes the header spoofable.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_proxy_x_for())
     app.config.from_object(config_class or get_config())
     app_env = os.getenv("FLASK_ENV", "development").lower()
 
