@@ -1,13 +1,4 @@
 # Default-deny + least-privilege egress for the devsync namespace.
-#
-# ENFORCEMENT NOTE: enforced by the GKE Network Policy add-on (Projected
-# Calico). Dataplane V2 cannot be enabled on an existing Standard cluster
-# ("only when you create a new GKE cluster"), so the add-on is the
-# enforcement path here. DPv2 stays staged in
-# infra/terraform/modules/gke/main.tf for the rebuild window, where it takes
-# over enforcement and unlocks enable_fqdn_network_policy — that is what
-# eventually replaces the 0.0.0.0/0 backend rule with GitHub's published
-# CIDRs/FQDNs.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
