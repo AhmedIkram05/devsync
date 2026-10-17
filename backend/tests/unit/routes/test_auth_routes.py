@@ -28,6 +28,9 @@ def app(monkeypatch):
 
     monkeypatch.setattr(auth_routes, "jwt_required", passthrough_decorator)
     monkeypatch.setattr(auth_routes, "validate_json", passthrough_decorator)
+    # /auth/* is fail-closed by design: with no Redis the limiter denies every
+    # request. Route behaviour is covered here; the limiter itself is not.
+    monkeypatch.setattr(auth_routes, "rate_limit", passthrough_decorator)
 
     bp = Blueprint("api", __name__, url_prefix="/api/v1")
     auth_routes.register_routes(bp)
