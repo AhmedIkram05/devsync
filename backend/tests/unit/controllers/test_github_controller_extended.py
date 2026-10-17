@@ -317,6 +317,27 @@ def test_delete_task_github_link_wrong_task(mock_task, mock_link, mock_db, app):
 
 
 @patch("backend.src.api.controllers.github_controller.db")
+@patch("backend.src.api.controllers.github_controller.audit_service.record")
+@patch("backend.src.api.controllers.github_controller.TaskGitHubLink")
+@patch("backend.src.api.controllers.github_controller.Task")
+def test_delete_task_github_link_success(mock_task, mock_link, mock_audit_record, mock_db, app):
+    mock_task.query.get_or_404.return_value = SimpleNamespace(id=1)
+    mock_link.query.get_or_404.return_value = SimpleNamespace(task_id=1)
+
+    with app.app_context():
+        from backend.src.api.controllers.github_controller import delete_task_github_link
+
+        response = delete_task_github_link(1, 2)
+
+    assert response.get_json()["message"] == "GitHub link removed from task"
+    mock_audit_record.assert_called_once_with(
+        action="task_github_link_unlinked",
+        resource_type="task_github_link",
+        resource_id=2,
+    )
+
+
+@patch("backend.src.api.controllers.github_controller.db")
 @patch("backend.src.api.controllers.github_controller.User")
 @patch("backend.src.api.controllers.github_controller.GitHubToken")
 @patch("backend.src.api.controllers.github_controller.get_jwt_identity", return_value="abc")
@@ -330,10 +351,11 @@ def test_disconnect_github_account_invalid_identity(mock_identity, mock_token, m
 
 
 @patch("backend.src.api.controllers.github_controller.db")
+@patch("backend.src.api.controllers.github_controller.audit_service.record")
 @patch("backend.src.api.controllers.github_controller.User")
 @patch("backend.src.api.controllers.github_controller.GitHubToken")
 @patch("backend.src.api.controllers.github_controller.get_jwt_identity", return_value={"user_id": 5})
-def test_disconnect_github_account_success(mock_identity, mock_token, mock_user, mock_db, app):
+def test_disconnect_github_account_success(mock_identity, mock_token, mock_user, mock_audit_record, mock_db, app):
     user = SimpleNamespace(github_username="octocat", github_connected=True)
     mock_user.query.get.return_value = user
 
@@ -346,6 +368,11 @@ def test_disconnect_github_account_success(mock_identity, mock_token, mock_user,
     assert user.github_username is None
     assert user.github_connected is False
     mock_db.session.commit.assert_called_once()
+    mock_audit_record.assert_called_once_with(
+        action="github_account_disconnected",
+        resource_type="user",
+        resource_id=5,
+    )
 
 
 @patch("backend.src.api.controllers.github_controller.get_jwt_identity", return_value={"user_id": 1})

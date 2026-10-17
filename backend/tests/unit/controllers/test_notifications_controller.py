@@ -113,6 +113,7 @@ def test_create_notification(mock_db_session, app_context):
         patch("src.api.controllers.notifications_controller.NotificationService.send_to_user") as mock_send_to_user,
         patch("src.api.controllers.notifications_controller.get_jwt_identity") as mock_identity,
         patch("src.api.controllers.notifications_controller.get_jwt") as mock_claims,
+        patch("src.api.controllers.notifications_controller.audit_service.record") as mock_audit,
     ):
         # Setup mocks
         mock_validate.return_value = None  # No validation errors
@@ -149,6 +150,12 @@ def test_create_notification(mock_db_session, app_context):
             reference_id=2,
             task_id=2,
         )
+        mock_audit.assert_called_once_with(
+            action="notification_created",
+            resource_type="notification",
+            resource_id=1,
+            metadata={"target_user_id": 1},
+        )
 
 
 def test_create_notification_team_lead_may_target_other_user(mock_db_session, app_context):
@@ -178,7 +185,10 @@ def test_create_notification_team_lead_may_target_other_user(mock_db_session, ap
 
 
 def test_mark_notification_read(mock_get_jwt_identity, mock_db_session, mock_notification, app_context):
-    with patch("src.api.controllers.notifications_controller.Notification.query") as mock_query:
+    with (
+        patch("src.api.controllers.notifications_controller.Notification.query") as mock_query,
+        patch("src.api.controllers.notifications_controller.audit_service.record") as mock_audit,
+    ):
         mock_query.get_or_404.return_value = mock_notification
 
         # Import inside test to use patched modules
@@ -191,13 +201,22 @@ def test_mark_notification_read(mock_get_jwt_identity, mock_db_session, mock_not
         assert mock_notification.read_at is not None
         mock_db_session.commit.assert_called_once()
 
+        mock_audit.assert_called_once_with(
+            action="notification_read",
+            resource_type="notification",
+            resource_id=1,
+        )
+
         # Verify response
         data = response.get_json()
         assert data["message"] == "Notification marked as read"
 
 
 def test_mark_all_notifications_read(mock_get_jwt_identity, mock_db_session, app_context):
-    with patch("src.api.controllers.notifications_controller.Notification.query") as mock_query:
+    with (
+        patch("src.api.controllers.notifications_controller.Notification.query") as mock_query,
+        patch("src.api.controllers.notifications_controller.audit_service.record") as mock_audit,
+    ):
         mock_filter = MagicMock()
         mock_query.filter_by.return_value = mock_filter
 
@@ -210,13 +229,22 @@ def test_mark_all_notifications_read(mock_get_jwt_identity, mock_db_session, app
         mock_filter.update.assert_called_once()
         mock_db_session.commit.assert_called_once()
 
+        mock_audit.assert_called_once_with(
+            action="notifications_all_read",
+            resource_type="notification",
+            resource_id=None,
+        )
+
         # Verify response
         data = response.get_json()
         assert data["message"] == "All notifications marked as read"
 
 
 def test_delete_notification(mock_get_jwt_identity, mock_db_session, mock_notification, app_context):
-    with patch("src.api.controllers.notifications_controller.Notification.query") as mock_query:
+    with (
+        patch("src.api.controllers.notifications_controller.Notification.query") as mock_query,
+        patch("src.api.controllers.notifications_controller.audit_service.record") as mock_audit,
+    ):
         mock_query.get_or_404.return_value = mock_notification
 
         # Import inside test to use patched modules
@@ -227,6 +255,12 @@ def test_delete_notification(mock_get_jwt_identity, mock_db_session, mock_notifi
         # Verify notification was deleted
         mock_db_session.delete.assert_called_once_with(mock_notification)
         mock_db_session.commit.assert_called_once()
+
+        mock_audit.assert_called_once_with(
+            action="notification_deleted",
+            resource_type="notification",
+            resource_id=1,
+        )
 
         # Verify response
         data = response.get_json()
