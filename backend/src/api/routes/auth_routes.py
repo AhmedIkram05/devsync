@@ -6,6 +6,7 @@ from flask_jwt_extended import jwt_required
 # Import the actual authentication logic from auth folder
 from ...auth.auth import get_token, login, logout_user, refresh_token, register_user  # Added get_token
 from ...auth.rbac import ROLE_PERMISSIONS
+from ..middlewares.rate_limiter import rate_limit  # Changed to relative import
 from ..middlewares.validation_middleware import validate_json  # Changed to relative import
 from ..validators.auth_validator import validate_login_data, validate_registration_data  # Changed to relative import
 
@@ -14,6 +15,7 @@ def register_routes(bp):
     """Register all authentication routes with the provided Blueprint"""
 
     @bp.route("/auth/login", methods=["POST"])
+    @rate_limit(requests_per_window=5, window_seconds=60, fail_closed=True)
     @validate_json()
     def login_route():
         """Route for user login"""
@@ -24,6 +26,7 @@ def register_routes(bp):
         return login()
 
     @bp.route("/auth/register", methods=["POST"])
+    @rate_limit(requests_per_window=5, window_seconds=60, fail_closed=True)
     @validate_json()
     def register_route():
         """Route for user registration"""
@@ -34,6 +37,7 @@ def register_routes(bp):
         return register_user()
 
     @bp.route("/auth/refresh", methods=["POST"])
+    @rate_limit(requests_per_window=10, window_seconds=60, fail_closed=True)
     @jwt_required(refresh=True)
     def refresh():
         """Route for refreshing access token"""
@@ -54,6 +58,7 @@ def register_routes(bp):
         return get_current_user_profile()
 
     @bp.route("/auth/token", methods=["POST"])
+    @rate_limit(requests_per_window=5, window_seconds=60, fail_closed=True)
     @validate_json()
     def token_route():
         """Route to get an authentication token directly"""
