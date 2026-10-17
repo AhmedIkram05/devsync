@@ -15,10 +15,12 @@ from src.api.routes import (
     dashboard_routes,
     github_routes,
     projects_routes,
+    report_routes,
     tasks_routes,
     users_routes,
 )
 from src.app import create_app
+from src.db.models import Comment, Project, Task, User, db
 
 
 @pytest.fixture
@@ -276,34 +278,130 @@ def test_project_tasks_route_requires_auth_and_passes_project_id(client, app, mo
     handler.assert_called_once_with(42)
 
 
+def test_reports_route_requires_report_permission(client, app, monkeypatch):
+    handler = MagicMock(return_value=({"reports": []}, 200))
+    monkeypatch.setattr(report_routes, "get_reports", handler)
+
+    unauthorized_response = client.get("/api/v1/reports")
+    assert unauthorized_response.status_code == 401
+    assert handler.call_count == 0
+
+    forbidden_response = client.get("/api/v1/reports", headers=auth_headers(client, app, "developer"))
+    assert forbidden_response.status_code == 403
+    assert forbidden_response.get_json()["message"] == "Insufficient permissions"
+    assert handler.call_count == 0
+
+    team_lead_response = client.get("/api/v1/reports", headers=auth_headers(client, app, "team_lead"))
+    assert team_lead_response.status_code == 200
+    assert team_lead_response.get_json() == {"reports": []}
+    handler.assert_called_once_with()
+
+
+def test_users_list_hides_pii_from_developers(client, app):
+    """The user picker needs the list, but emails belong to can_view_all_users (team lead+)."""
+    with app.app_context():
+        db.create_all()
+        db.session.add_all(
+            [
+                User(id=1, name="Dev", email="dev@example.com", password="x", role="developer"),
+                User(id=2, name="Lead", email="lead@example.com", password="x", role="team_lead"),
+            ]
+        )
+        db.session.commit()
+
+    dev_payload = client.get("/api/v1/users", headers=auth_headers(client, app, "developer")).get_json()
+    assert {u["name"] for u in dev_payload["users"]} == {"Dev", "Lead"}
+    for user in dev_payload["users"]:
+        assert "email" not in user
+        assert "github_username" not in user
+        assert set(user) == {"id", "name", "role", "avatar", "created_at"}
+
+    lead_payload = client.get("/api/v1/users", headers=auth_headers(client, app, "team_lead")).get_json()
+    assert {u["email"] for u in lead_payload["users"]} == {"dev@example.com", "lead@example.com"}
+
+
+def _seed_comments_app(app):
+    with app.app_context():
+        db.create_all()
+        db.session.add_all(
+            [
+                User(id=1, name="Member", email="member@example.com", password="x", role="developer"),
+                User(id=2, name="Outsider", email="outsider@example.com", password="x", role="developer"),
+                User(id=3, name="Admin", email="admin@example.com", password="x", role="admin"),
+                Project(id=50, name="Project 50", created_by=1),
+                Task(id=10, title="Task 10", status="todo", project_id=50, assigned_to=1, created_by=1),
+                Comment(id=100, task_id=10, user_id=2, content="outsider comment"),
+            ]
+        )
+        db.session.commit()
+
+
+def test_task_comments_require_project_membership(client, app, monkeypatch):
+    handler = MagicMock(return_value=({"comments": []}, 200))
+    monkeypatch.setattr(comments_routes, "get_task_comments", handler)
+    _seed_comments_app(app)
+
+    member_response = client.get("/api/v1/tasks/10/comments", headers=auth_headers(client, app, "developer", 1))
+    assert member_response.status_code == 200
+    handler.assert_called_once_with(10)
+
+    outsider_response = client.get("/api/v1/tasks/10/comments", headers=auth_headers(client, app, "developer", 2))
+    assert outsider_response.status_code == 404
+    assert handler.call_count == 1
+
+    admin_response = client.get("/api/v1/tasks/10/comments", headers=auth_headers(client, app, "admin", 3))
+    assert admin_response.status_code == 200
+
+
+def test_comment_detail_routes_reject_non_members(client, app, monkeypatch):
+    update_handler = MagicMock(return_value=({"message": "Comment updated successfully"}, 200))
+    delete_handler = MagicMock(return_value=({"message": "Comment deleted successfully"}, 200))
+    monkeypatch.setattr(comments_routes, "update_comment", update_handler)
+    monkeypatch.setattr(comments_routes, "delete_comment", delete_handler)
+    _seed_comments_app(app)
+
+    outsider_put = client.put(
+        "/api/v1/comments/100",
+        headers=auth_headers(client, app, "developer", 2),
+        json={"content": "outsider rewrite"},
+    )
+    assert outsider_put.status_code == 404
+    assert update_handler.call_count == 0
+
+    outsider_delete = client.delete("/api/v1/comments/100", headers=auth_headers(client, app, "developer", 1))
+    assert outsider_delete.status_code == 200
+    delete_handler.assert_called_once_with(100)
+
+
 def test_comments_routes_enforce_auth_and_json_contract(client, app, monkeypatch):
     get_comments_handler = MagicMock(return_value=({"comments": []}, 200))
     create_comment_handler = MagicMock(return_value=({"id": 1, "content": "hello"}, 201))
     monkeypatch.setattr(comments_routes, "get_task_comments", get_comments_handler)
     monkeypatch.setattr(comments_routes, "add_comment", create_comment_handler)
+    _seed_comments_app(app)
 
-    unauthorized_get_response = client.get("/api/v1/tasks/7/comments")
+    unauthorized_get_response = client.get("/api/v1/tasks/10/comments")
     assert unauthorized_get_response.status_code == 401
     assert get_comments_handler.call_count == 0
 
-    allowed_get_response = client.get("/api/v1/tasks/7/comments", headers=auth_headers(client, app, "developer"))
+    allowed_get_response = client.get("/api/v1/tasks/10/comments", headers=auth_headers(client, app, "developer", 1))
     assert allowed_get_response.status_code == 200
     assert allowed_get_response.get_json() == {"comments": []}
-    get_comments_handler.assert_called_once_with(7)
+    get_comments_handler.assert_called_once_with(10)
 
-    missing_json_response = client.post("/api/v1/tasks/7/comments", headers=auth_headers(client, app, "developer"))
+    missing_json_response = client.post("/api/v1/tasks/10/comments", headers=auth_headers(client, app, "developer", 1))
     assert missing_json_response.status_code == 400
     assert missing_json_response.get_json()["message"] == "Missing JSON in request body"
     assert create_comment_handler.call_count == 0
 
     allowed_create_response = client.post(
-        "/api/v1/tasks/7/comments",
-        headers=auth_headers(client, app, "developer"),
+        "/api/v1/tasks/10/comments",
+        headers=auth_headers(client, app, "developer", 1),
         json={"content": "hello"},
     )
     assert allowed_create_response.status_code == 201
     assert allowed_create_response.get_json()["content"] == "hello"
-    create_comment_handler.assert_called_once_with(7)
+    create_comment_handler.assert_called_once_with(10)
 
 
 def test_github_exchange_rejects_missing_or_invalid_state(client, app, monkeypatch):
