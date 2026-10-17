@@ -17,6 +17,7 @@ RATE_LIMIT_REQUESTS_PER_WINDOW=0) and never denies.
 """
 
 import logging
+import os
 import threading
 import time
 from collections import defaultdict
@@ -93,18 +94,33 @@ def _redis_hit(client_id, endpoint, requests_per_window, window_seconds):
         return None
 
 
+def _limiter_disabled():
+    """True when the deploy has switched the limiter off entirely.
+
+    ``RATE_LIMIT_REQUESTS_PER_WINDOW=0`` is the documented escape hatch the
+    load-test job sets so the app can be saturated instead of its throttle. It
+    must also neutralise the per-route fail_closed limits: otherwise a Redis-less
+    load-test environment 429s every credential request before any request is
+    even counted. Never set this outside a load-test environment.
+    """
+    try:
+        return int(os.getenv("RATE_LIMIT_REQUESTS_PER_WINDOW", "300")) <= 0
+    except (TypeError, ValueError):
+        return False
+
+
 def _record_hit(client_id, endpoint, requests_per_window, window_seconds, fail_closed=False):
     """Count one request; True = limit exceeded.
 
-    requests_per_window <= 0 disables the limiter outright — nothing is
-    counted, nothing is denied (the load-test job relies on this).
+    requests_per_window <= 0 — or ``RATE_LIMIT_REQUESTS_PER_WINDOW=0`` — disables
+    the limiter outright: nothing is counted, nothing is denied.
 
     Redis first (shared across pods). With fail_closed=True an unset/dead
     Redis denies instead of falling back, so credential endpoints stay limited
     across the fleet; with fail_closed=False the per-pod in-memory sliding
     window takes over with identical limits and boundaries.
     """
-    if requests_per_window <= 0:
+    if requests_per_window <= 0 or _limiter_disabled():
         return False
 
     verdict = _redis_hit(client_id, endpoint, requests_per_window, window_seconds)

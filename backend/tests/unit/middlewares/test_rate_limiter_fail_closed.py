@@ -137,3 +137,25 @@ def test_auth_login_denied_when_redis_down(limiter_setup, auth_client):
 
     assert response.status_code == 429
     assert response.get_json()["status"] == "error"
+
+
+def test_limiter_disabled_env_neutralises_fail_closed(monkeypatch):
+    """The load-test escape hatch must also switch off the fail-closed limits.
+
+    CI's k6 job sets RATE_LIMIT_REQUESTS_PER_WINDOW=0 so the app can be
+    saturated instead of throttled. Without this, a Redis-less load-test
+    environment 429s every /auth/* request (k6 setup died with
+    "register HTTP 429, login HTTP 429").
+    """
+    monkeypatch.setenv("RATE_LIMIT_REQUESTS_PER_WINDOW", "0")
+    redis_client_module._client = FakeRedis(fail=True)
+    assert rate_limiter._limiter_disabled() is True
+    with patch("src.api.middlewares.rate_limiter.get_jwt_identity", return_value=None):
+        assert _record_hit("u", "api.login_route", 5, 60, fail_closed=True) is False
+        assert _record_hit("u", "api.register_route", 5, 60, fail_closed=True) is False
+
+
+def test_limiter_enabled_env_keeps_fail_closed(monkeypatch):
+    """Sanity check that the guard does not fire on a normal deploy."""
+    monkeypatch.setenv("RATE_LIMIT_REQUESTS_PER_WINDOW", "300")
+    assert rate_limiter._limiter_disabled() is False
