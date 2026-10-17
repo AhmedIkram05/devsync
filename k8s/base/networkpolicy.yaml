@@ -1,14 +1,13 @@
 # Default-deny + least-privilege egress for the devsync namespace.
 #
-# ENFORCEMENT NOTE: these policies bind at admission but only get enforced
-# once the cluster runs Dataplane V2 — create-time-only for Standard
-# clusters (infra/terraform/modules/gke/main.tf carries the staged
-# datapath_provider line for the planned rebuild window; until then this
-# file is dormant-but-ready, same posture as allow-egress-cloudsql).
-# Narrowing shipped now so the rebuild activates least-privilege egress
-# the moment DPv2 lands — and FQDN egress (enable_fqdn_network_policy)
-# becomes available to replace the 0.0.0.0/0 backend rule with GitHub's
-# published CIDRs/FQDNs.
+# ENFORCEMENT NOTE: enforced by the GKE Network Policy add-on (Projected
+# Calico). Dataplane V2 cannot be enabled on an existing Standard cluster
+# ("only when you create a new GKE cluster"), so the add-on is the
+# enforcement path here. DPv2 stays staged in
+# infra/terraform/modules/gke/main.tf for the rebuild window, where it takes
+# over enforcement and unlocks enable_fqdn_network_policy — that is what
+# eventually replaces the 0.0.0.0/0 backend rule with GitHub's published
+# CIDRs/FQDNs.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -123,6 +122,36 @@ spec:
     ports:
     - protocol: TCP
       port: 6379
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-maintenance-egress
+  namespace: devsync
+  labels:
+    app.kubernetes.io/part-of: devsync
+spec:
+  # The daily maintenance CronJob runs with app=devsync-maintenance, which
+  # matches none of the selectors above — under default-deny it would get DNS
+  # only and fail its DB connection every night at 03:00. It is not listed in
+  # allow-internal because that policy would also hand it ingress from the
+  # frontend and egress to the backend, which it never uses.
+  podSelector:
+    matchLabels:
+      app: devsync-maintenance
+  policyTypes:
+  - Egress
+  egress:
+  # Retention cleanup is pure state work: no internet egress, no ingress.
+  # Redis is deliberately absent — settings/maintenance services never touch
+  # it. The managed-db overlay adds the Cloud SQL CIDR for this same pod.
+  - to:
+    - podSelector:
+        matchLabels:
+          app: devsync-postgres
+    ports:
+    - protocol: TCP
+      port: 5432
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

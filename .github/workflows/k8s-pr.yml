@@ -283,6 +283,11 @@ jobs:
         env:
           TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+          # Binary Authorization attestor key (cosign public key PEM), required
+          # by binauthz.tf. Without it terraform aborts on the missing
+          # required variable and every infra PR gets "PLAN ERROR" with no
+          # diff — which the step below used to report as a passing check.
+          TF_VAR_binauthz_public_key: ${{ secrets.COSIGN_PUBLIC_KEY }}
         run: |
           rc=0
           terraform plan -input=false -refresh=false -no-color -detailed-exitcode -out=tfplan > /tmp/tfplan.txt 2>&1 || rc=$?
@@ -305,6 +310,14 @@ jobs:
             echo '```'
             echo "TFPLAN_EOF"
           } >> "$GITHUB_OUTPUT"
+          # Fail closed: a plan that errors leaves reviewers with no diff at
+          # all, so it must not read as a green check. Matches k8s-cd.yml,
+          # which already exits 1 on plan failure. rc=2 is expected here —
+          # infra changes are the whole point of the job.
+          if [ "$rc" = 1 ]; then
+            echo "::error::terraform plan failed (exit ${rc}) — see the comment above"
+            exit 1
+          fi
 
       - name: Report plan on PR
         if: ${{ always() && steps.tf.outputs.tf == 'true' }}

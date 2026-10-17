@@ -20,9 +20,11 @@ resource "google_container_cluster" "devsync" {
   #
   #   # Regional control plane + pools across all zone replicas:
   #   location = var.region
-  #   # Dataplane V2: real NetworkPolicy enforcement (k8s/base netpols are
-  #   # dormant until this) + eBPF + enable_fqdn_network_policy becomes
-  #   # available. Create-time-only for Standard clusters.
+  #   # Dataplane V2: supersedes the Network Policy add-on set above
+  #   # (eBPF, same NetworkPolicy objects, no Calico) and
+  #   # enable_fqdn_network_policy becomes available to replace the
+  #   # 0.0.0.0/0 backend rule in k8s/base/networkpolicy.yaml.
+  #   # Create-time-only for Standard clusters.
   #   datapath_provider = "ADVANCED_DATAPATH"
   #
   # Note: lifecycle.prevent_destroy below must be lifted (or state moved) for
@@ -50,6 +52,26 @@ resource "google_container_cluster" "devsync" {
 
   workload_identity_config {
     workload_pool = "${var.project_id}.svc.id.goog"
+  }
+
+  # NetworkPolicy enforcement: the GKE Network Policy add-on (Projected
+  # Calico). GKE ships this add-on DISABLED, which silently left the nine
+  # policies in k8s/base/networkpolicy.yaml — default-deny included —
+  # binding at admission and enforcing nothing (Active Assist
+  # NETWORK_POLICIES_UNRECONCILED, P2). Unlike the staged DPv2 block above,
+  # addons_config is an in-place cluster field — and prevent_destroy below
+  # stays in force, so if a future provider version ever made this ForceNew
+  # the apply would abort rather than rebuild the cluster.
+  #
+  # Why the add-on and not Dataplane V2: DPv2 is create-time-only for
+  # Standard clusters ("You can't modify this setting for an existing
+  # cluster"), and the staged rebuild above is a separate, later decision.
+  # Calico programs policy on the existing GKE CNI, so no node replacement.
+  # DPv2 supersedes this when the rebuild happens.
+  addons_config {
+    network_policy_config {
+      disabled = false
+    }
   }
 
   # Boot pattern: one default-pool node to seed, then it is removed in favor
