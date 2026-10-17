@@ -1,9 +1,9 @@
 """Admin API routes"""
 
-from flask import current_app, jsonify
+from flask import current_app, jsonify, request
 from flask_jwt_extended import jwt_required
 
-from ...auth.rbac import Role, role_at_least
+from ...auth.rbac import Role, require_permission, role_at_least
 from ...services import settings_service
 from ..controllers.admin_controller import (
     get_system_settings,
@@ -31,7 +31,7 @@ def register_routes(bp):
 
     @bp.route("/admin/stats", methods=["GET"])
     @jwt_required()
-    @role_at_least(Role.TEAM_LEAD)
+    @require_permission("can_view_system_stats")
     @rate_limit(requests_per_window=20, window_seconds=60)
     def system_stats():
         """Route to get system statistics"""
@@ -59,12 +59,15 @@ def register_routes(bp):
     @rate_limit(requests_per_window=5, window_seconds=60)
     def run_retention_cleanup():
         """Route to run all retention cleanups immediately"""
+        # Equivalent dry-run entry point offline: python -m src.db.scripts.run_maintenance --dry-run
+        dry_run = request.args.get("dry_run", "").strip().lower() in {"true", "1", "yes", "on"}
         try:
-            result = settings_service.run_retention_cleanup()
+            result = settings_service.run_retention_cleanup(dry_run=dry_run)
             return jsonify(
                 {
                     "message": "Retention cleanup completed",
                     "result": result,
+                    "dry_run": dry_run,
                 }
             ), 200
         except Exception:
@@ -74,6 +77,7 @@ def register_routes(bp):
                     "status": "error",
                     "message": "Retention cleanup failed",
                     "result": None,
+                    "dry_run": dry_run,
                 }
             ), 500
 
