@@ -54,26 +54,6 @@ resource "google_container_cluster" "devsync" {
     workload_pool = "${var.project_id}.svc.id.goog"
   }
 
-  # NetworkPolicy enforcement: the GKE Network Policy add-on (Projected
-  # Calico). GKE ships this add-on DISABLED, which silently left the nine
-  # policies in k8s/base/networkpolicy.yaml — default-deny included —
-  # binding at admission and enforcing nothing (Active Assist
-  # NETWORK_POLICIES_UNRECONCILED, P2). Unlike the staged DPv2 block above,
-  # addons_config is an in-place cluster field — and prevent_destroy below
-  # stays in force, so if a future provider version ever made this ForceNew
-  # the apply would abort rather than rebuild the cluster.
-  #
-  # Why the add-on and not Dataplane V2: DPv2 is create-time-only for
-  # Standard clusters ("You can't modify this setting for an existing
-  # cluster"), and the staged rebuild above is a separate, later decision.
-  # Calico programs policy on the existing GKE CNI, so no node replacement.
-  # DPv2 supersedes this when the rebuild happens.
-  addons_config {
-    network_policy_config {
-      disabled = false
-    }
-  }
-
   # Boot pattern: one default-pool node to seed, then it is removed in favor
   # of the managed devsync-pool below.
   remove_default_node_pool = true
