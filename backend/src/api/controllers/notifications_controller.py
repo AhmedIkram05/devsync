@@ -8,6 +8,7 @@ from flask_jwt_extended import get_jwt, get_jwt_identity
 from ...auth.rbac import Role
 from ...db.models import Notification, db  # Changed to relative import
 from ...db.transaction import transactional
+from ...services import audit_service
 from ...services.notification_service import NotificationService
 from ..query_params import get_pagination_args, paginate
 from ..validators.notification_validator import validate_notification_data  # Changed to relative import
@@ -78,6 +79,14 @@ def create_notification():
         new_notification.read_at = datetime.now(UTC)
         db.session.flush()
 
+    if new_notification is not None:
+        audit_service.record(
+            action="notification_created",
+            resource_type="notification",
+            resource_id=new_notification.id,
+            metadata={"target_user_id": target_user_id},
+        )
+
     return jsonify({"message": "Notification created successfully", "notification": new_notification.to_dict()}), 201
 
 
@@ -98,6 +107,12 @@ def mark_notification_read(notification_id):
     notification.read_at = datetime.now(UTC)
     db.session.flush()
 
+    audit_service.record(
+        action="notification_read",
+        resource_type="notification",
+        resource_id=notification_id,
+    )
+
     return jsonify({"message": "Notification marked as read"})
 
 
@@ -113,6 +128,12 @@ def mark_all_notifications_read():
     )
 
     db.session.flush()
+
+    audit_service.record(
+        action="notifications_all_read",
+        resource_type="notification",
+        resource_id=None,
+    )
 
     return jsonify({"message": "All notifications marked as read"})
 
@@ -132,5 +153,11 @@ def delete_notification(notification_id):
     # Delete notification
     db.session.delete(notification)
     db.session.flush()
+
+    audit_service.record(
+        action="notification_deleted",
+        resource_type="notification",
+        resource_id=notification_id,
+    )
 
     return jsonify({"message": "Notification deleted"})
