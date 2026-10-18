@@ -9,6 +9,7 @@ import re
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
+from email.utils import parsedate_to_datetime
 from urllib.parse import parse_qs, urlparse
 
 import requests
@@ -75,6 +76,11 @@ class GitHubClient:
     BASE_API_URL = "https://api.github.com"
     AUTH_URL = "https://github.com/login/oauth/authorize"
     TOKEN_URL = "https://github.com/login/oauth/access_token"
+    # Single source for every GitHub HTTP call's timeout (seconds).
+    REQUEST_TIMEOUT = 10
+    # Cap on how long a request may block waiting out a rate limit before it
+    # gives up and degrades gracefully instead of pinning a worker/DB session.
+    MAX_RATE_LIMIT_SLEEP_SECONDS = 30
 
     def __init__(self, access_token=None):
         self.access_token = access_token
@@ -186,7 +192,9 @@ class GitHubClient:
 
         logger.info("Making POST request to GitHub for token exchange...")
         try:
-            response = requests.post(GitHubClient.TOKEN_URL, data=data, headers=headers, timeout=10)
+            response = requests.post(
+                GitHubClient.TOKEN_URL, data=data, headers=headers, timeout=GitHubClient.REQUEST_TIMEOUT
+            )
 
             status_code = response.status_code
             logger.info(f"GitHub token exchange response status: {status_code}")
@@ -225,35 +233,77 @@ class GitHubClient:
 
         return headers
 
+    @staticmethod
+    def _rate_limit_sleep_seconds(response):
+        """Seconds to wait before retrying, from ``Retry-After`` or the reset epoch.
+
+        ``Retry-After`` wins (GitHub's secondary/abuse limits use it and may
+        send seconds or an HTTP-date); the primary limit's ``X-RateLimit-Reset``
+        epoch is the fallback. None when neither header is usable.
+        """
+        retry_after = response.headers.get("Retry-After")
+        if retry_after is not None:
+            try:
+                return max(int(retry_after), 0)
+            except (TypeError, ValueError):
+                try:
+                    retry_dt = parsedate_to_datetime(str(retry_after))
+                    return max(int(retry_dt.timestamp() - time.time()), 0)
+                except (TypeError, ValueError, OverflowError):
+                    return None
+
+        reset = response.headers.get("X-RateLimit-Reset")
+        if reset is not None:
+            try:
+                return max(int(reset) - int(time.time()), 0)
+            except (TypeError, ValueError):
+                return None
+        return None
+
     def _handle_rate_limit(self, response):
-        """Extract and handle rate limit information from response"""
+        """Handle rate-limit headers; sleep + retry only when the wait is short.
+
+        Returns True when the caller should retry the request.
+        """
         # Extract rate limit headers
         remaining = response.headers.get("X-RateLimit-Remaining")
         reset = response.headers.get("X-RateLimit-Reset")
 
         if remaining is not None:
-            self.remaining_rate_limit = int(remaining)
+            try:
+                self.remaining_rate_limit = int(remaining)
+            except (TypeError, ValueError):
+                self.remaining_rate_limit = None
 
         if reset is not None:
-            self.rate_limit_reset = int(reset)
+            try:
+                self.rate_limit_reset = int(reset)
+            except (TypeError, ValueError):
+                self.rate_limit_reset = None
 
         # Check if we're close to hitting the rate limit
         if self.remaining_rate_limit is not None and self.remaining_rate_limit < 10:
-            logger.warning(f"GitHub API rate limit running low: {self.remaining_rate_limit} requests remaining")
+            logger.warning("GitHub API rate limit running low: %s requests remaining", self.remaining_rate_limit)
 
-        # Handle rate limit exceeded
-        if response.status_code == 403 and "rate limit exceeded" in response.text.lower():
-            if self.rate_limit_reset:
-                now = int(time.time())
-                sleep_time = max(0, self.rate_limit_reset - now)
+        # 429 = secondary/abuse limit; 403 + "rate limit exceeded" = primary limit.
+        if response.status_code == 429 or (
+            response.status_code == 403 and "rate limit exceeded" in response.text.lower()
+        ):
+            sleep_time = self._rate_limit_sleep_seconds(response)
+            if sleep_time is not None and 0 < sleep_time <= self.MAX_RATE_LIMIT_SLEEP_SECONDS:
+                logger.warning(
+                    "GitHub rate limit hit (%s); sleeping %ss before retry", response.status_code, sleep_time
+                )
+                time.sleep(sleep_time)
+                return True  # Retry
 
-                if sleep_time > 0 and sleep_time < 300:  # Only sleep for reasonable times (<5 min)
-                    logger.warning(f"Rate limit exceeded. Sleeping for {sleep_time} seconds")
-                    time.sleep(sleep_time)
-                    return True  # Retry
-
-            # If we can't sleep (or shouldn't), fail this request gracefully.
-            logger.warning("GitHub API rate limit exceeded and retry window is too long; returning fallback response")
+            # A longer wait is not worth pinning this request; fail gracefully.
+            logger.warning(
+                "GitHub rate limit hit (%s) with wait %s > %ss; failing fast instead of blocking",
+                response.status_code,
+                sleep_time,
+                self.MAX_RATE_LIMIT_SLEEP_SECONDS,
+            )
             return False
 
         return False
@@ -288,7 +338,7 @@ class GitHubClient:
                 assert url.startswith(self.BASE_API_URL)
                 request_kwargs = {
                     "headers": self.get_headers(),
-                    "timeout": 10,
+                    "timeout": self.REQUEST_TIMEOUT,
                     **kwargs,
                 }
 
@@ -345,7 +395,13 @@ class GitHubClient:
         return self._make_request("GET", f"{self.BASE_API_URL}/user", use_cache=True, cache_ttl=300)
 
     def get_user_repositories(self, page=1, per_page=30):
-        """Get repositories for the authenticated user"""
+        """Get repositories for the authenticated user.
+
+        Pagination is clamped here (the single choke point for every caller):
+        ``page >= 1`` and ``per_page`` within GitHub's 1..100 bounds.
+        """
+        page = 1 if page is None else max(int(page), 1)
+        per_page = 30 if per_page is None else min(max(int(per_page), 1), 100)
         return (
             self._make_request(
                 "GET",
@@ -512,7 +568,7 @@ class GitHubClient:
                     url,
                     params=params,
                     headers=self.get_headers(),
-                    timeout=10,
+                    timeout=self.REQUEST_TIMEOUT,
                 )
 
                 if self._handle_rate_limit(response):
@@ -520,7 +576,7 @@ class GitHubClient:
                         url,
                         params=params,
                         headers=self.get_headers(),
-                        timeout=10,
+                        timeout=self.REQUEST_TIMEOUT,
                     )
 
                 if not 200 <= response.status_code < 300:

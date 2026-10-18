@@ -286,64 +286,23 @@ def get_github_repositories():
     api_time = time.time() - api_start
     logger.info(f"[PERF] GitHub API call took {api_time:.2f}s - got {len(repositories)} repos")
 
-    # Keep a local mapping so downstream endpoints can reference stable local repository IDs.
-    github_ids = [repo["id"] for repo in repositories]
-    existing_repos = {}
-    if github_ids:
-        db_query_start = time.time()
-        stored_repos = GitHubRepository.query.filter(GitHubRepository.github_id.in_(github_ids)).all()
-        db_query_time = time.time() - db_query_start
-        logger.info(
-            f"[PERF] Database query for existing repos took {db_query_time:.2f}s - found {len(stored_repos)} existing"
-        )
-        existing_repos = {stored_repo.github_id: stored_repo for stored_repo in stored_repos}
-
-    formatted_repos = []
-    should_commit = False
-    new_repos = []
-    loop_start = time.time()
-
-    # Collect repos that need activity fetching
-    repos_needing_activity = []
-    repo_data_map = {}  # Map to store local_repo and repo data
-
-    for repo in repositories:
-        local_repo = existing_repos.get(repo["id"])
-        if not local_repo:
-            local_repo = GitHubRepository(
-                repo_name=repo["full_name"],
-                repo_url=repo["html_url"],
-                github_id=repo["id"],
-            )
-            new_repos.append(local_repo)
-            db.session.add(local_repo)
-            should_commit = True
-        else:
-            # Keep local metadata up to date when repository names/URLs change.
-            if local_repo.repo_name != repo["full_name"] or local_repo.repo_url != repo["html_url"]:
-                local_repo.repo_name = repo["full_name"]
-                local_repo.repo_url = repo["html_url"]
-                should_commit = True
-
-        owner = repo["owner"]["login"]
-        repo_name = repo["name"]
-
-        # Store metadata for later use
-        repo_data_map[f"{owner}/{repo_name}"] = {
-            "local_repo": local_repo,
-            "repo": repo,
-        }
-
-        # Queue for concurrent fetching if activity is requested
-        if include_activity:
-            repos_needing_activity.append(
-                {
-                    "owner": owner,
-                    "repo_name": repo_name,
-                    "fallback_open_issues": repo.get("open_issues_count", 0),
-                    "since_days": activity_window_days,
-                }
-            )
+    # All GitHub network IO happens here, before the database phase: the
+    # transaction must not straddle the slow (rate-limit-aware) activity fetch.
+    # Activity inputs come from the API payload alone, so no DB read is needed
+    # to start them.
+    repos_needing_activity = (
+        [
+            {
+                "owner": repo["owner"]["login"],
+                "repo_name": repo["name"],
+                "fallback_open_issues": repo.get("open_issues_count", 0),
+                "since_days": activity_window_days,
+            }
+            for repo in repositories
+        ]
+        if include_activity
+        else []
+    )
 
     # Fetch activity metrics concurrently
     activity_results = {}
@@ -382,6 +341,48 @@ def get_github_repositories():
         logger.info(
             f"[PERF] Concurrent activity fetch took {activity_fetch_time:.2f}s for {len(repos_needing_activity)} repos"
         )
+
+    # ── Database phase: no network IO from here on. ──
+    # Keep a local mapping so downstream endpoints can reference stable local repository IDs.
+    github_ids = [repo["id"] for repo in repositories]
+    existing_repos = {}
+    if github_ids:
+        db_query_start = time.time()
+        stored_repos = GitHubRepository.query.filter(GitHubRepository.github_id.in_(github_ids)).all()
+        db_query_time = time.time() - db_query_start
+        logger.info(
+            f"[PERF] Database query for existing repos took {db_query_time:.2f}s - found {len(stored_repos)} existing"
+        )
+        existing_repos = {stored_repo.github_id: stored_repo for stored_repo in stored_repos}
+
+    formatted_repos = []
+    should_commit = False
+    new_repos = []
+    loop_start = time.time()
+    repo_data_map = {}  # Map to store local_repo and repo data
+
+    for repo in repositories:
+        local_repo = existing_repos.get(repo["id"])
+        if not local_repo:
+            local_repo = GitHubRepository(
+                repo_name=repo["full_name"],
+                repo_url=repo["html_url"],
+                github_id=repo["id"],
+            )
+            new_repos.append(local_repo)
+            db.session.add(local_repo)
+            should_commit = True
+        else:
+            # Keep local metadata up to date when repository names/URLs change.
+            if local_repo.repo_name != repo["full_name"] or local_repo.repo_url != repo["html_url"]:
+                local_repo.repo_name = repo["full_name"]
+                local_repo.repo_url = repo["html_url"]
+                should_commit = True
+
+        repo_data_map[f"{repo['owner']['login']}/{repo['name']}"] = {
+            "local_repo": local_repo,
+            "repo": repo,
+        }
 
     # Now build formatted repos with activity metrics
     for repo in repositories:
@@ -462,9 +463,6 @@ def get_github_repositories():
                 "forks_count": repo.get("forks_count", 0),
             }
         )
-
-    if should_commit:
-        db.session.flush()
 
     total_time = time.time() - start_time
     logger.info(f"[PERF] get_github_repositories COMPLETE - total time: {total_time:.2f}s")
