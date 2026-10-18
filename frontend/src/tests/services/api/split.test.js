@@ -28,19 +28,19 @@ describe('api split import parity', () => {
 
   test('new modules expose expected method keys', () => {
     expect(Object.keys(tasksSplit)).toEqual(expect.arrayContaining([
-      'getAllTasks', 'getTaskById', 'createTask', 'updateTask', 'deleteTask',
+      'getAllTasks', 'getTasksPaginated', 'getTaskById', 'createTask', 'updateTask', 'deleteTask',
     ]));
     expect(Object.keys(projectsSplit)).toEqual(expect.arrayContaining([
-      'getAllProjects', 'getProjectById', 'createProject',
+      'getAllProjects', 'getAllProjectsPaginated', 'getProjectById', 'getProjectTasksPaginated', 'createProject',
     ]));
     expect(Object.keys(dashboardSplit)).toEqual(expect.arrayContaining([
       'getAdminDashboardStats', 'getBasicDashboardStats', 'getReportData',
     ]));
     expect(Object.keys(reportsSplit)).toEqual(expect.arrayContaining([
-      'saveReport', 'getSavedReports', 'deleteReport',
+      'saveReport', 'getSavedReports', 'getSavedReportsPaginated', 'deleteReport',
     ]));
     expect(Object.keys(adminSplit)).toEqual(expect.arrayContaining([
-      'getAllUsers', 'createUser', 'deleteUser',
+      'getAllUsers', 'getUsersPaginated', 'createUser', 'deleteUser',
     ]));
   });
 });
