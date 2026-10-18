@@ -58,7 +58,10 @@ describe('Admin Flows', () => {
     cy.intercept('GET', '**/api/v1/users', { statusCode: 200, body: [{ id: 1, name: 'Admin', role: 'admin' }] });
     cy.intercept('GET', '**/api/v1/audit-logs*', { statusCode: 200, body: { logs: [] } });
     // Return 5 active projects so _activeProjectsCount = 5 (AdminDashboard computes KPIs from all projects)
-    cy.intercept('GET', '**/api/v1/projects', {
+    // AdminProjects now requests `projects?page=&per_page=` (server pagination),
+    // so the glob needs a trailing `*` to match the query string. `*` does not
+    // cross `/`, so `/projects/<id>/…` still stays unmatched.
+    cy.intercept('GET', '**/api/v1/projects*', {
       statusCode: 200,
       body: Array.from({ length: 5 }, (_, i) => ({
         id: i + 1, name: `Project ${i + 1}`, status: 'active', team_members: [1], created_by: 1
@@ -95,7 +98,7 @@ describe('Admin Flows', () => {
 
   it('creates a new project and manages it', () => {
     // Navigate to projects
-    cy.intercept('GET', '**/api/v1/projects', {
+    cy.intercept('GET', '**/api/v1/projects*', {
       statusCode: 200,
       body: [{ id: 1, name: 'Alpha', description: 'desc', status: 'active', priority: 'high' }]
     }).as('getProjects');
@@ -140,7 +143,7 @@ describe('Admin Flows', () => {
 
     // Override GET to return the new list once the form redirects back
     // (no project wrapper in the POST body, so it lands on /admin/projects)
-    cy.intercept('GET', '**/api/v1/projects', {
+    cy.intercept('GET', '**/api/v1/projects*', {
       statusCode: 200,
       body: [
         { id: 1, name: 'Alpha', description: 'desc', status: 'active', priority: 'high' },

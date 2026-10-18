@@ -50,8 +50,10 @@ describe('Client Task Flows', () => {
     });
     cy.intercept('GET', '**/api/v1/projects', { statusCode: 200, body: [] });
 
-    // Stub the tasks list
-    cy.intercept('GET', '**/api/v1/tasks', {
+    // Stub the tasks list. TaskList now requests `tasks?page=&per_page=`
+    // (server pagination), so the glob needs a trailing `*` for the query
+    // string; it still won't match `/tasks/<id>`.
+    cy.intercept('GET', '**/api/v1/tasks*', {
       statusCode: 200,
       body: [
         { id: 10, title: 'Learn Cypress', description: 'Write E2E tests', status: 'todo', priority: 'high', progress: 0, deadline: '2099-01-01T00:00:00Z' },
