@@ -252,6 +252,72 @@ class TestGitHubController(unittest.TestCase):
         self.assertEqual(result["repositories"][0]["recent_commits"], 0)
         mock_client_instance.get_repository_activity_summary.assert_not_called()
 
+    @patch("backend.src.api.controllers.github_controller.db")
+    @patch("backend.src.api.controllers.github_controller.GitHubRepository")
+    @patch("backend.src.api.controllers.github_controller.GitHubToken")
+    @patch("backend.src.api.controllers.github_controller.GitHubClient")
+    def test_get_github_repositories_fetches_activity_before_db_writes(
+        self, mock_github_client, mock_token_class, mock_repo_class, mock_db
+    ):
+        """The slow GitHub activity fetch must run before any DB write, so the
+        request transaction never straddles network IO."""
+        mock_token = MagicMock()
+        mock_token.access_token = encrypt_token("test-access-token")
+        mock_token_class.query.filter_by.return_value.first.return_value = mock_token
+
+        mock_repo_class.query.filter.return_value.all.return_value = []
+        mock_local_repo = MagicMock()
+        mock_local_repo.id = 101
+        mock_repo_class.return_value = mock_local_repo
+
+        order = []
+
+        mock_client_instance = MagicMock()
+        mock_github_client.return_value = mock_client_instance
+        mock_client_instance.get_user_repositories.return_value = [
+            {
+                "id": 1,
+                "name": "repo1",
+                "full_name": "user/repo1",
+                "owner": {"login": "user"},
+                "html_url": "https://github.com/user/repo1",
+                "description": "Test repo 1",
+                "private": False,
+                "fork": False,
+                "created_at": "2023-01-01T00:00:00Z",
+                "updated_at": "2023-01-02T00:00:00Z",
+                "pushed_at": "2023-01-03T00:00:00Z",
+                "language": "Python",
+                "default_branch": "main",
+                "open_issues_count": 5,
+            }
+        ]
+        mock_client_instance.get_repository_activity_summary.side_effect = lambda *a, **k: (
+            order.append("activity"),
+            {"open_issues": 4, "total_prs": 2, "recent_commits": 7},
+        )[1]
+        mock_db.session.add.side_effect = lambda *a, **k: order.append("add")
+        mock_db.session.flush.side_effect = lambda *a, **k: order.append("flush")
+
+        class MockArgs:
+            def get(self, key, default=None, type=None):
+                if key == "page":
+                    return 1 if type else "1"
+                if key == "per_page":
+                    return 10 if type else "10"
+                if key == "include_activity":
+                    return "true"
+                return default
+
+        mock_request.args = MockArgs()
+
+        get_github_repositories()
+
+        self.assertIn("activity", order)
+        self.assertIn("add", order)
+        self.assertLess(order.index("activity"), order.index("add"))
+        self.assertLess(order.index("activity"), order.index("flush"))
+
     @patch("backend.src.api.controllers.github_controller.validate_task_github_link")
     @patch("backend.src.api.controllers.github_controller.Task")
     @patch("backend.src.api.controllers.github_controller.GitHubRepository")
