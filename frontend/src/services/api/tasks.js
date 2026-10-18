@@ -1,35 +1,51 @@
 import { fetchWithAuth } from './client';
 
+// Builds the `tasks` endpoint from a query string or an object of params.
+const buildTasksEndpoint = (params) => {
+  let endpoint = 'tasks';
+
+  if (params) {
+    if (typeof params === 'string') {
+      endpoint = `tasks${params.startsWith('?') ? params : `?${params}`}`;
+    } else if (typeof params === 'object') {
+      const queryParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          queryParams.set(key, String(value));
+        }
+      });
+      const queryString = queryParams.toString();
+      if (queryString) {
+        endpoint = `tasks?${queryString}`;
+      }
+    }
+  }
+
+  return endpoint;
+};
+
 // Task related API calls (moved from services/utils/api.js, no behavior change)
 const taskService = {
-  getAllTasks: async (params = null) => {
+  // Pagination-aware list: returns { items, pagination }. `pagination` is the
+  // backend sibling object (or null when the response has none).
+  getTasksPaginated: async (params = null) => {
     try {
-      let endpoint = 'tasks';
-
-      if (params) {
-        if (typeof params === 'string') {
-          endpoint = `tasks${params.startsWith('?') ? params : `?${params}`}`;
-        } else if (typeof params === 'object') {
-          const queryParams = new URLSearchParams();
-          Object.entries(params).forEach(([key, value]) => {
-            if (value !== undefined && value !== null && value !== '') {
-              queryParams.set(key, String(value));
-            }
-          });
-          const queryString = queryParams.toString();
-          if (queryString) {
-            endpoint = `tasks?${queryString}`;
-          }
-        }
-      }
-
-      const response = await fetchWithAuth(endpoint);
+      const response = await fetchWithAuth(buildTasksEndpoint(params));
       const tasks = response?.tasks ?? response;
-      return Array.isArray(tasks) ? tasks : [];
+      return {
+        items: Array.isArray(tasks) ? tasks : [],
+        pagination: response?.pagination ?? null,
+      };
     } catch (error) {
       console.error("Failed to fetch tasks:", error);
-      return [];
+      return { items: [], pagination: null };
     }
+  },
+
+  // Back-compat array-returning wrapper.
+  getAllTasks: async (params = null) => {
+    const { items } = await taskService.getTasksPaginated(params);
+    return items;
   },
 
   getTaskById: async (taskId) => {

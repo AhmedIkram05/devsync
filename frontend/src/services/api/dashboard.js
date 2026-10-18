@@ -50,6 +50,47 @@ const toSafeMetricValue = (value, fallback = 0) => {
   return Number.isFinite(numericValue) ? numericValue : fallback;
 };
 
+// List endpoints cap at 100 rows per page. Aggregates (report totals, developer
+// stats) must see every row, so page through to the last page instead of
+// silently counting only the first 100.
+const PAGE_SIZE = 100;
+
+const fetchAllTaskPages = async () => {
+  const first = await taskService.getTasksPaginated({ page: 1, per_page: PAGE_SIZE });
+  const items = [...first.items];
+  const pages = first.pagination?.pages || 1;
+
+  if (pages > 1) {
+    const rest = await Promise.all(
+      Array.from({ length: pages - 1 }, (_, index) =>
+        taskService.getTasksPaginated({ page: index + 2, per_page: PAGE_SIZE })
+      )
+    );
+    rest.forEach((page) => items.push(...page.items));
+  }
+
+  return items;
+};
+
+const fetchAllUsers = async () => {
+  const first = await fetchWithAuth('users?page=1&per_page=' + PAGE_SIZE);
+  const users = Array.isArray(first?.users) ? [...first.users] : [];
+  const pages = first?.pagination?.pages || 1;
+
+  if (pages > 1) {
+    const rest = await Promise.all(
+      Array.from({ length: pages - 1 }, (_, index) =>
+        fetchWithAuth(`users?page=${index + 2}&per_page=${PAGE_SIZE}`)
+      )
+    );
+    rest.forEach((page) => {
+      if (Array.isArray(page?.users)) users.push(...page.users);
+    });
+  }
+
+  return { users };
+};
+
 const normalizeGithubRepository = (repository = {}) => {
   const openIssues = toSafeMetricValue(
     repository.open_issues ?? repository.open_issues_count,
@@ -274,8 +315,8 @@ const getReportDataFromNetwork = async (reportType = 'tasks', dateRange = 'week'
 
   const rangeStart = getDateRangeStart(dateRange);
   const [tasks, usersResponse] = await Promise.all([
-    taskService.getAllTasks(),
-    fetchWithAuth('users').catch(() => ({ users: [] }))
+    fetchAllTaskPages(),
+    fetchAllUsers().catch(() => ({ users: [] }))
   ]);
 
   const users = Array.isArray(usersResponse?.users) ? usersResponse.users : [];
@@ -362,8 +403,8 @@ const dashboardService = {
   getDeveloperProgressStats: async (options = {}) => {
     try {
       const [usersResponse, tasks, projects] = await Promise.all([
-        fetchWithAuth('users'),
-        taskService.getAllTasks(),
+        fetchAllUsers(),
+        fetchAllTaskPages(),
         projectService.getAllProjects()
       ]);
 

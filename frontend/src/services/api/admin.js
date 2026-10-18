@@ -2,15 +2,32 @@ import { fetchWithAuth } from './client';
 
 // Admin user management service (moved from services/utils/api.js, no behavior change)
 const adminUserService = {
-  getAllUsers: async () => {
+  // Pagination-aware list: returns { items, pagination }.
+  getUsersPaginated: async (params = {}) => {
     try {
-      const response = await fetchWithAuth('admin/users');
+      const queryParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          queryParams.set(key, String(value));
+        }
+      });
+      const queryString = queryParams.toString();
+      const response = await fetchWithAuth(queryString ? `admin/users?${queryString}` : 'admin/users');
       const users = response?.users ?? response;
-      return Array.isArray(users) ? users : [];
+      return {
+        items: Array.isArray(users) ? users : [],
+        pagination: response?.pagination ?? null,
+      };
     } catch (error) {
       console.error('Failed to fetch admin users:', error);
-      return [];
+      return { items: [], pagination: null };
     }
+  },
+
+  // Back-compat array-returning wrapper.
+  getAllUsers: async () => {
+    const { items } = await adminUserService.getUsersPaginated();
+    return items;
   },
 
   createUser: async (data) => {
