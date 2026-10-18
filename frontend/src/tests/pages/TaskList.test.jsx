@@ -16,6 +16,7 @@ jest.mock('react-router-dom', () => ({
 jest.mock('../../services/utils/api', () => ({
   taskService: {
     getAllTasks: jest.fn(),
+    getTasksPaginated: jest.fn(),
     updateTask: jest.fn(),
   },
   userService: {
@@ -39,6 +40,11 @@ describe('TaskList page', () => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
     mockNavigate.mockReset();
     taskService.getAllTasks.mockReset();
+    taskService.getTasksPaginated.mockReset();
+    taskService.getTasksPaginated.mockImplementation(async (params) => ({
+      items: await taskService.getAllTasks(params),
+      pagination: null,
+    }));
     taskService.updateTask.mockReset();
   });
 
@@ -311,7 +317,11 @@ describe('TaskList page', () => {
     );
 
     expect(await screen.findByText('Deep Linked Task')).toBeInTheDocument();
-    expect(taskService.getAllTasks).toHaveBeenCalledWith({ assigned_to: '5' });
+    expect(taskService.getTasksPaginated).toHaveBeenCalledWith({
+      page: 1,
+      per_page: 100,
+      assigned_to: '5',
+    });
     expect(screen.getByRole('button', { name: 'My Tasks' })).toHaveClass('bg-rose-500');
   });
 

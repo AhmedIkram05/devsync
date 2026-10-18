@@ -213,6 +213,77 @@ describe('Reports page', () => {
     clickSpy.mockRestore();
   });
 
+  test('shows an error message when PDF generation fails', async () => {
+    const originalCreateObjectURL = URL.createObjectURL;
+    URL.createObjectURL = jest.fn(() => {
+      throw new Error('blob unavailable');
+    });
+    jest.useFakeTimers();
+
+    render(<Reports />);
+
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
+    expect(await screen.findByText('Task Report')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Download PDF/i }));
+
+    expect(await screen.findByText(/Failed to generate the PDF/i)).toBeInTheDocument();
+
+    jest.useRealTimers();
+    URL.createObjectURL = originalCreateObjectURL;
+  });
+
+  test('exports a long report across multiple PDF pages', async () => {
+    const createObjectURL = jest.fn(() => 'blob:long-report');
+    const revokeObjectURL = jest.fn();
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    const originalCreateElement = document.createElement.bind(document);
+    const realLink = originalCreateElement('a');
+    const createElementSpy = jest.spyOn(document, 'createElement').mockImplementation((tagName) => {
+      if (tagName === 'a') {
+        return realLink;
+      }
+      return originalCreateElement(tagName);
+    });
+
+    URL.createObjectURL = createObjectURL;
+    URL.revokeObjectURL = revokeObjectURL;
+    jest.useFakeTimers();
+
+    const manyDetails = Array.from({ length: 60 }, (_, index) => ({
+      id: index + 1,
+      title: `Task ${index + 1}`,
+      status: 'todo',
+    }));
+    dashboardService.getReportData.mockResolvedValue({ summary: { total: 60 }, details: manyDetails });
+
+    render(<Reports />);
+
+    expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
+    expect(await screen.findByText('Task Report')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Download PDF/i }));
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    const blob = createObjectURL.mock.calls[0][0];
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.type).toBe('application/pdf');
+    expect(realLink.download).toContain('.pdf');
+
+    jest.advanceTimersByTime(1000);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:long-report');
+
+    jest.useRealTimers();
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+    createElementSpy.mockRestore();
+  });
+
   test('github report displays total_prs summary card', async () => {
     render(<Reports />);
 

@@ -41,6 +41,10 @@ describe('ProjectDetails page - branches', () => {
     api.projectService = {
       getProjectById: jest.fn().mockResolvedValue(mockProject),
       getProjectTasks: jest.fn().mockResolvedValue(mockTasks),
+      getProjectTasksPaginated: jest.fn().mockImplementation(async (projectId, params) => ({
+        items: await api.projectService.getProjectTasks(projectId),
+        pagination: null,
+      })),
       updateProject: jest.fn().mockResolvedValue({ success: true })
     };
   });

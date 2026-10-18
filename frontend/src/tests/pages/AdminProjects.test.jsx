@@ -9,6 +9,7 @@ import { projectService } from '../../services/utils/api';
 jest.mock('../../services/utils/api', () => ({
   projectService: {
     getAllProjects: jest.fn(),
+    getAllProjectsPaginated: jest.fn(),
   },
 }));
 
@@ -35,6 +36,11 @@ describe('AdminProjects page', () => {
     });
 
     projectService.getAllProjects.mockReset();
+    projectService.getAllProjectsPaginated.mockReset();
+    projectService.getAllProjectsPaginated.mockImplementation(async (params) => ({
+      items: await projectService.getAllProjects(params),
+      pagination: null,
+    }));
     projectService.getAllProjects.mockResolvedValue([
       {
         id: 1,

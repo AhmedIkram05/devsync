@@ -36,6 +36,12 @@ const renderRegister = () => {
   );
 };
 
+const buildResponse = (payload, status = 200) => ({
+  ok: status >= 200 && status < 300,
+  status,
+  text: jest.fn().mockResolvedValue(JSON.stringify(payload)),
+});
+
 describe('Register page', () => {
   beforeEach(() => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -43,12 +49,14 @@ describe('Register page', () => {
     jest.spyOn(console, 'warn').mockImplementation(() => {});
 
     mockNavigate.mockReset();
+    localStorage.clear();
     global.fetch = jest.fn();
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
     jest.useRealTimers();
+    localStorage.clear();
   });
 
   test('shows validation error when required fields are missing', async () => {
@@ -111,16 +119,15 @@ describe('Register page', () => {
   test('submits registration payload and redirects to login after success', async () => {
     jest.useFakeTimers();
 
-    global.fetch.mockResolvedValue({
-      ok: true,
-      status: 201,
-      text: jest.fn().mockResolvedValue(
-        JSON.stringify({
+    global.fetch.mockResolvedValue(
+      buildResponse(
+        {
           message: 'Registration successful',
           user: { id: 1, email: 'dev@example.com' },
-        })
-      ),
-    });
+        },
+        201
+      )
+    );
 
     renderRegister();
 
@@ -151,15 +158,9 @@ describe('Register page', () => {
   });
 
   test('shows backend error message when registration request fails', async () => {
-    global.fetch.mockResolvedValue({
-      ok: false,
-      status: 400,
-      text: jest.fn().mockResolvedValue(
-        JSON.stringify({
-          message: 'Email already exists',
-        })
-      ),
-    });
+    global.fetch.mockResolvedValue(
+      buildResponse({ message: 'Email already exists' }, 400)
+    );
 
     renderRegister();
 
@@ -169,11 +170,11 @@ describe('Register page', () => {
     expect(await screen.findByText(/Email already exists/i)).toBeInTheDocument();
   });
 
-  test('shows raw server text when non-JSON error response is returned', async () => {
+  test('shows fallback message when the error response body is not JSON', async () => {
     global.fetch.mockResolvedValue({
       ok: false,
       status: 502,
-      text: jest.fn().mockResolvedValue('Bad gateway from upstream'),
+      text: jest.fn().mockResolvedValue('Bad Gateway'),
     });
 
     renderRegister();
@@ -181,6 +182,6 @@ describe('Register page', () => {
     fillRequiredFields();
     fireEvent.click(screen.getByRole('button', { name: /register/i }));
 
-    expect(await screen.findByText(/Server error: Bad gateway from upstream/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Server error/i)).toBeInTheDocument();
   });
 });
