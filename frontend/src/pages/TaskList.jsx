@@ -1,14 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { taskService } from '../services/utils/api';
-import { fetchTaskList, fetchTaskListLookups } from '../services/taskListService';
+import { fetchTaskListPage, fetchTaskListLookups } from '../services/taskListService';
 import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
+import Pagination from '../components/Pagination';
+
+const PER_PAGE = 100;
 
 const TaskList = () => {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
   const [tasks, setTasks] = useState([]);
+  const [pagination, setPagination] = useState(null);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState(null);
@@ -47,18 +52,27 @@ const TaskList = () => {
     fetchUsersAndProjects();
     if (initialAssignee) {
       setFilters((prev) => ({ ...prev, scope: 'my' }));
-      fetchTasks({ assigned_to: initialAssignee });
+      fetchTasks({ assigned_to: initialAssignee }, 1);
       return;
     }
 
-    fetchTasks();
+    fetchTasks(null, 1);
+    // Bootstrap-only: fetchTasks is redefined each render, so depending on it
+    // would refetch on every page change instead of just on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const fetchTasks = async (params = null) => {
+  const fetchTasks = async (params = null, pageOverride = null) => {
     try {
       setLoading(true);
-      const tasksData = await fetchTaskList(params);
-      setTasks(Array.isArray(tasksData) ? tasksData : []);
+      const requestPage = pageOverride ?? page;
+      const { items, pagination: meta } = await fetchTaskListPage({
+        page: requestPage,
+        per_page: PER_PAGE,
+        ...(params || {}),
+      });
+      setTasks(Array.isArray(items) ? items : []);
+      setPagination(meta);
       setError(null);
     } catch (err) {
       console.error('Failed to fetch tasks:', err);
@@ -66,6 +80,11 @@ const TaskList = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handlePageChange = (nextPage) => {
+    setPage(nextPage);
+    fetchTasks(null, nextPage);
   };
 
   const handleUpdateStatus = async (taskId, newStatus) => {
@@ -542,6 +561,8 @@ const TaskList = () => {
               </table>
             </div>
           )}
+
+          <Pagination pagination={pagination} onPageChange={handlePageChange} />
         </div>
       </div>
     </div>

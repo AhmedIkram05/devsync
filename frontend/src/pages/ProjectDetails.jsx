@@ -1,10 +1,38 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
+import Pagination from '../components/Pagination';
 import { projectService } from '../services/utils/api';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../utils/rbac';
 import { formatDate } from '../utils/dates';
+
+const PER_PAGE = 100;
+
+// The backend paginates project tasks but exposes no completed-count aggregate.
+// Read every page once so the Completion % / Total Tasks badges stay accurate
+// past the 100-row page cap, instead of silently reporting the first page only.
+const fetchAllProjectTasks = async (projectId) => {
+  let pageNumber = 1;
+  let items = [];
+  let pagination = null;
+
+  for (;;) {
+    const result = await projectService.getProjectTasksPaginated(projectId, {
+      page: pageNumber,
+      per_page: PER_PAGE,
+    });
+    const pageItems = Array.isArray(result?.items) ? result.items : [];
+    items = items.concat(pageItems);
+    pagination = result?.pagination ?? pagination;
+
+    const pages = pagination?.pages ?? 1;
+    if (pageNumber >= pages || pageItems.length === 0) break;
+    pageNumber += 1;
+  }
+
+  return { items, pagination };
+};
 
 const statusBadgeClass = (status) => {
   const statusMap = {
@@ -54,6 +82,8 @@ const ProjectDetails = () => {
 
   const [project, setProject] = useState(null);
   const [tasks, setTasks] = useState([]);
+  const [pagination, setPagination] = useState(null);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -67,25 +97,28 @@ const ProjectDetails = () => {
       setLoading(true);
       setError(null);
 
-      const [projectData, projectTasks] = await Promise.all([
+      const [projectData, taskData] = await Promise.all([
         projectService.getProjectById(id),
-        projectService.getProjectTasks(id)
+        fetchAllProjectTasks(id)
       ]);
 
       if (!projectData) {
         setError('Project not found or you do not have access.');
         setProject(null);
         setTasks([]);
+        setPagination(null);
         return;
       }
 
       setProject(projectData);
-      setTasks(Array.isArray(projectTasks) ? projectTasks : []);
+      setTasks(taskData.items);
+      setPagination(taskData.pagination);
     } catch (err) {
       console.error('Failed to load project details:', err);
       setError('Failed to load project details. Please try again.');
       setProject(null);
       setTasks([]);
+      setPagination(null);
     } finally {
       setLoading(false);
     }
@@ -96,7 +129,7 @@ const ProjectDetails = () => {
   }, [loadProjectDetails]);
 
   const summary = useMemo(() => {
-    const totalTasks = tasks.length;
+    const totalTasks = pagination?.total ?? tasks.length;
     const completedTasks = tasks.filter((task) => task.status === 'done' || task.status === 'completed').length;
     const completionPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
@@ -105,7 +138,17 @@ const ProjectDetails = () => {
       completedTasks,
       completionPercentage
     };
-  }, [tasks]);
+  }, [tasks, pagination]);
+
+  const perPage = pagination?.per_page || PER_PAGE;
+  const pageTasks = useMemo(() => {
+    const start = (page - 1) * perPage;
+    return tasks.slice(start, start + perPage);
+  }, [tasks, page, perPage]);
+
+  const handlePageChange = (nextPage) => {
+    setPage(nextPage);
+  };
 
   if (loading) {
     return (
@@ -201,7 +244,7 @@ const ProjectDetails = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-slate-900/40 divide-y divide-slate-700/70">
-                    {tasks.map((task) => (
+                    {pageTasks.map((task) => (
                       <tr key={task.id} className="hover:bg-slate-800/40">
                         <td className="px-4 py-3">
                           <div className="font-medium text-slate-100">{task.title}</div>
@@ -228,6 +271,8 @@ const ProjectDetails = () => {
                 </table>
               </div>
             )}
+
+            <Pagination pagination={pagination} onPageChange={handlePageChange} />
           </div>
 
           <div className="bg-slate-900/70 border border-slate-800/70 rounded-2xl shadow-md p-6">

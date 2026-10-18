@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { dashboardService, projectService, userService, auditLogService, taskService, reportService } from '../services/utils/api';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -105,13 +105,20 @@ const AdminDashboard = () => {
   const [loading, setLoading]             = useState(true);
   const [error, setError]                 = useState(null);
 
+  // Keep the rendered dashboard in place on background re-fetches (task-updated
+  // events, auth churn) — only the first load shows the full-page spinner.
+  const hasLoadedRef = useRef(false);
+
   const fetchDashboardData = useCallback(async (range = 'week') => {
     try {
-      setLoading(true);
+      if (!hasLoadedRef.current) {
+        setLoading(true);
+      }
 
       // Base dashboard stats
       const data = await dashboardService.getAdminDashboardStats(range);
       setDashboardData(data);
+      hasLoadedRef.current = true;
 
       // Team users
       try {
@@ -232,7 +239,10 @@ const AdminDashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentUser]);
+    // Primitive deps: AuthContext emits a new user object on each auth event,
+    // which would otherwise re-create this callback and re-run the effects.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.role, currentUser?.id]);
 
   useEffect(() => { fetchDashboardData(); }, [fetchDashboardData]);
 

@@ -1,21 +1,41 @@
-import { useState } from "react";
 import { Link, Navigate } from "react-router-dom";
+import { useFormik } from "formik";
 import { useAuth } from "../context/AuthContext";
 import { logger } from "../utils/logger";
+import { loginSchema } from "../utils/validation";
 
 const Login = () => {
   const { login, loading, error: authError } = useAuth();
-  const [credentials, setCredentials] = useState({
-    email: "",
-    password: "",
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [loginError, setLoginError] = useState("");
-  
+
   // Check for existing user in localStorage
   const storedUser = localStorage.getItem('user');
   const currentUser = storedUser ? JSON.parse(storedUser) : null;
-  
+
+  const formik = useFormik({
+    initialValues: {
+      email: "",
+      password: "",
+    },
+    validationSchema: loginSchema,
+    onSubmit: async (values, { setSubmitting, setStatus }) => {
+      setStatus(undefined);
+      try {
+        logger.log("Attempting login with:", values.email);
+
+        // Use auth context login which will handle GitHub prompts if needed
+        await login(values);
+
+        // No need to navigate - AuthContext will handle that after login
+
+      } catch (err) {
+        console.error("Login error:", err.message);
+        setStatus(err.message || "Invalid email or password");
+      } finally {
+        setSubmitting(false);
+      }
+    },
+  });
+
   // If user is already logged in, redirect to dashboard
   if (currentUser) {
     return currentUser.role === "admin" ? (
@@ -24,42 +44,17 @@ const Login = () => {
       <Navigate to="/BasicDashboard" replace />
     );
   }
-  
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setCredentials({
-      ...credentials,
-      [name]: value,
-    });
-  };
-  
-  // Updated login handler that uses the AuthContext
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoginError("");
-    
-    if (!credentials.email || !credentials.password) {
-      setLoginError("Please enter both email and password");
-      return;
-    }
-    
-    try {
-      setIsSubmitting(true);
-      logger.log("Attempting login with:", credentials.email);
-      
-      // Use auth context login which will handle GitHub prompts if needed
-      await login(credentials);
-      
-      // No need to navigate - AuthContext will handle that after login
-      
-    } catch (err) {
-      console.error("Login error:", err.message);
-      setLoginError(err.message || "Invalid email or password");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-  
+
+  const showFieldError = (field) =>
+    formik.errors[field] && (formik.touched[field] || formik.submitCount > 0);
+
+  // Formik blocks onSubmit while the form is invalid, so surface the Cypress
+  // contract message from the top-level banner instead.
+  const bannerMessage =
+    formik.submitCount > 0 && (!formik.values.email.trim() || !formik.values.password.trim())
+      ? "Please enter both email and password"
+      : formik.status || authError;
+
   // Rest of the component remains unchanged
   return (
     <div className="flex justify-center items-center min-h-screen bg-slate-950 font-['Space_Grotesk']">
@@ -70,13 +65,13 @@ const Login = () => {
           <h2 className="text-sm text-slate-400 mt-2">Sign in to continue</h2>
         </div>
         
-        {(loginError || authError) && (
+        {bannerMessage && (
           <div className="bg-rose-500/10 border border-rose-400/40 text-rose-200 px-4 py-3 rounded mb-4">
-            {loginError || authError}
+            {bannerMessage}
           </div>
         )}
         
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={formik.handleSubmit} noValidate>
           <div className="mb-4">
             <label htmlFor="login-email" className="block text-slate-300 text-sm font-medium mb-2">
               Email Address
@@ -85,11 +80,15 @@ const Login = () => {
               id="login-email"
               type="email"
               name="email"
-              value={credentials.email}
-              onChange={handleChange}
+              value={formik.values.email}
+              onChange={formik.handleChange}
+              onBlur={formik.handleBlur}
               className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
               placeholder="you@example.com"
             />
+            {showFieldError("email") && (
+              <p className="mt-1 text-xs text-rose-300">{formik.errors.email}</p>
+            )}
           </div>
           
           <div className="mb-6">
@@ -100,20 +99,24 @@ const Login = () => {
               id="login-password"
               type="password"
               name="password"
-              value={credentials.password}
-              onChange={handleChange}
+              value={formik.values.password}
+              onChange={formik.handleChange}
+              onBlur={formik.handleBlur}
               className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
               placeholder="********"
             />
+            {showFieldError("password") && (
+              <p className="mt-1 text-xs text-rose-300">{formik.errors.password}</p>
+            )}
           </div>
           
           <div className="flex items-center justify-between mb-6">
             <button
               type="submit"
               className="w-full rounded-full bg-rose-500/90 py-2 px-4 text-white font-semibold hover:bg-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
-              disabled={isSubmitting || loading}
+              disabled={formik.isSubmitting || loading}
             >
-              {isSubmitting || loading ? "Signing In..." : "Sign In"}
+              {formik.isSubmitting || loading ? "Signing In..." : "Sign In"}
             </button>
           </div>
           

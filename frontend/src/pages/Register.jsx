@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useFormik } from "formik";
+import { registerSchema, getErrorMessage } from "../utils/validation";
 
 const API_BASE_URL = (() => {
   const configuredBaseUrl = process.env.REACT_APP_API_URL;
@@ -14,96 +16,79 @@ const API_BASE_URL = (() => {
 
 const Register = () => {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
-  });
-  const [formError, setFormError] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData({
-      ...formData,
-      [name]: value,
-    });
-  };
+  const formik = useFormik({
+    initialValues: {
+      name: "",
+      email: "",
+      password: "",
+      confirmPassword: "",
+    },
+    validationSchema: registerSchema,
+    onSubmit: async (values, { setSubmitting, setStatus, resetForm }) => {
+      setStatus(undefined);
+      setSuccessMessage("");
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setFormError("");
-    setSuccessMessage("");
-
-    // Form validation
-    if (!formData.name || !formData.email || !formData.password) {
-      setFormError("Please fill all required fields");
-      return;
-    }
-
-    if (formData.password !== formData.confirmPassword) {
-      setFormError("Passwords don't match");
-      return;
-    }
-
-    // Updated to match backend requirement of 8 characters
-    if (formData.password.length < 8) {
-      setFormError("Password must be at least 8 characters");
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      
-      // Remove confirmPassword before sending to API
-      const { confirmPassword, ...userData } = formData;
-
-      // Actual API call to register
-      const response = await fetch(`${API_BASE_URL}/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(userData),
-      });
-
-      const responseText = await response.text();
-      
-      let responseData;
       try {
-        responseData = JSON.parse(responseText);
-      } catch (error) {
-        console.error("Error parsing response:", error);
-        throw new Error(`Server error: ${responseText || response.status}`);
-      }
+        // Remove confirmPassword before sending to API
+        const { confirmPassword, ...userData } = values;
 
-      if (!response.ok) {
-        throw new Error(responseData.message || `Registration failed with status ${response.status}`);
-      }
+        const response = await fetch(`${API_BASE_URL}/auth/register`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(userData),
+        });
 
-      setSuccessMessage("Registration successful! Redirecting to login...");
-      
-      // Reset form
-      setFormData({
-        name: "",
-        email: "",
-        password: "",
-        confirmPassword: "",
-      });
-      
-      // Redirect to login page after success
-      setTimeout(() => {
-        navigate('/login');
-      }, 2000);
-    } catch (err) {
-      console.error("Registration error:", err);
-      setFormError(err.message || "Registration failed. Please try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+        const responseText = await response.text();
+
+        let responseData;
+        try {
+          responseData = JSON.parse(responseText);
+        } catch (parseError) {
+          console.error("Error parsing response:", parseError);
+          throw new Error(`Server error: ${responseText || response.status}`);
+        }
+
+        if (!response.ok) {
+          throw new Error(responseData.message || `Registration failed with status ${response.status}`);
+        }
+
+        setSuccessMessage("Registration successful! Redirecting to login...");
+
+        // Reset form
+        resetForm();
+
+        // Redirect to login page after success
+        setTimeout(() => {
+          navigate('/login');
+        }, 2000);
+      } catch (err) {
+        console.error("Registration error:", err);
+        setStatus(getErrorMessage(err, "Registration failed. Please try again."));
+      } finally {
+        setSubmitting(false);
+      }
+    },
+  });
+
+  const showFieldError = (field) =>
+    formik.errors[field] && (formik.touched[field] || formik.submitCount > 0);
+
+  // Formik blocks onSubmit while the form is invalid, so surface the Cypress
+  // contract message from the top-level banner instead.
+  const hasEmptyRequiredField =
+    !formik.values.name.trim() ||
+    !formik.values.email.trim() ||
+    !formik.values.password.trim() ||
+    !formik.values.confirmPassword.trim();
+
+  const bannerMessage =
+    formik.submitCount > 0 && hasEmptyRequiredField
+      ? "Please fill all required fields"
+      : formik.status;
 
   return (
     <div className="flex justify-center items-center min-h-screen bg-slate-950 font-['Space_Grotesk']">
@@ -114,9 +99,9 @@ const Register = () => {
           <p className="text-sm text-slate-400 mt-2">Join the workspace and start syncing.</p>
         </div>
         
-        {formError && (
+        {bannerMessage && (
           <div className="bg-rose-500/10 border border-rose-400/40 text-rose-200 px-4 py-3 rounded mb-4">
-            {formError}
+            {bannerMessage}
           </div>
         )}
         
@@ -126,7 +111,7 @@ const Register = () => {
           </div>
         )}
         
-        <form onSubmit={handleSubmit} noValidate>
+        <form onSubmit={formik.handleSubmit} noValidate>
           <div className="mb-4">
             <label htmlFor="register-name" className="block text-slate-300 text-sm font-medium mb-2">
               Full Name*
@@ -135,12 +120,15 @@ const Register = () => {
               id="register-name"
               type="text"
               name="name"
-              value={formData.name}
-              onChange={handleChange}
+              value={formik.values.name}
+              onChange={formik.handleChange}
+              onBlur={formik.handleBlur}
               className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
               placeholder="John Doe"
-              required
             />
+            {showFieldError("name") && (
+              <p className="mt-1 text-xs text-rose-300">{formik.errors.name}</p>
+            )}
           </div>
           
           <div className="mb-4">
@@ -151,12 +139,15 @@ const Register = () => {
               id="register-email"
               type="email"
               name="email"
-              value={formData.email}
-              onChange={handleChange}
+              value={formik.values.email}
+              onChange={formik.handleChange}
+              onBlur={formik.handleBlur}
               className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
               placeholder="john@example.com"
-              required
             />
+            {showFieldError("email") && (
+              <p className="mt-1 text-xs text-rose-300">{formik.errors.email}</p>
+            )}
           </div>
           
           <div className="mb-4">
@@ -167,12 +158,15 @@ const Register = () => {
               id="register-password"
               type="password"
               name="password"
-              value={formData.password}
-              onChange={handleChange}
+              value={formik.values.password}
+              onChange={formik.handleChange}
+              onBlur={formik.handleBlur}
               className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
               placeholder="********"
-              required
             />
+            {showFieldError("password") && (
+              <p className="mt-1 text-xs text-rose-300">{formik.errors.password}</p>
+            )}
             <p className="text-xs text-slate-400 mt-1">Must be at least 8 characters</p>
           </div>
           
@@ -184,21 +178,24 @@ const Register = () => {
               id="register-confirm-password"
               type="password"
               name="confirmPassword"
-              value={formData.confirmPassword}
-              onChange={handleChange}
+              value={formik.values.confirmPassword}
+              onChange={formik.handleChange}
+              onBlur={formik.handleBlur}
               className="w-full rounded-lg border border-slate-700/60 bg-slate-950/60 py-2 px-3 text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
               placeholder="********"
-              required
             />
+            {showFieldError("confirmPassword") && (
+              <p className="mt-1 text-xs text-rose-300">{formik.errors.confirmPassword}</p>
+            )}
           </div>
           
           <div className="flex items-center justify-between">
             <button
               type="submit"
               className="w-full rounded-full bg-rose-500/90 py-2 px-4 text-white font-semibold hover:bg-rose-400 focus:outline-none focus:ring-2 focus:ring-rose-400/60"
-              disabled={isSubmitting}
+              disabled={formik.isSubmitting}
             >
-              {isSubmitting ? "Creating Account..." : "Register"}
+              {formik.isSubmitting ? "Creating Account..." : "Register"}
             </button>
           </div>
         </form>

@@ -1,9 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import LoadingSpinner from '../components/LoadingSpinner';
+import Pagination from '../components/Pagination';
 import { useAuth } from '../context/AuthContext';
 import { projectService } from '../services/utils/api';
 import { formatDate } from '../utils/dates';
+
+const PER_PAGE = 100;
 
 const statusClasses = {
   completed: 'bg-sky-500/20 text-sky-300 border border-sky-400/40',
@@ -25,28 +28,39 @@ const statusLabels = {
 const AdminProjects = () => {
   const { currentUser } = useAuth();
   const [projects, setProjects] = useState([]);
+  const [pagination, setPagination] = useState(null);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const dashboardPath = currentUser?.role === 'admin' ? '/admin' : '/BasicDashboard';
 
-  const loadProjects = async () => {
+  const loadProjects = useCallback(async (pageToLoad) => {
     try {
       setLoading(true);
       setError(null);
-      const data = await projectService.getAllProjects();
-      setProjects(Array.isArray(data) ? data : []);
+      const { items, pagination: meta } = await projectService.getAllProjectsPaginated({
+        page: pageToLoad,
+        per_page: PER_PAGE,
+      });
+      setProjects(Array.isArray(items) ? items : []);
+      setPagination(meta);
     } catch (err) {
       console.error('Failed to load projects:', err);
       setError('Failed to load projects. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadProjects();
-  }, []);
+    loadProjects(1);
+  }, [loadProjects]);
+
+  const handlePageChange = (nextPage) => {
+    setPage(nextPage);
+    loadProjects(nextPage);
+  };
 
   const filteredProjects = useMemo(() => {
     const normalized = search.trim().toLowerCase();
@@ -81,7 +95,7 @@ const AdminProjects = () => {
             </div>
             <div className="flex items-center gap-3">
               <button
-                onClick={loadProjects}
+                onClick={() => loadProjects(page)}
                 className="inline-flex items-center px-4 py-2 rounded-full bg-slate-800/80 text-slate-200 hover:bg-slate-700/80 border border-slate-700/70"
               >
                 Refresh
@@ -195,6 +209,8 @@ const AdminProjects = () => {
               </table>
             </div>
           )}
+
+          <Pagination pagination={pagination} onPageChange={handlePageChange} />
         </div>
       </div>
     </div>

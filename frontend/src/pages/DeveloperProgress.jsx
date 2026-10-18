@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { dashboardService } from '../services/utils/api';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -12,15 +12,22 @@ const DeveloperProgress = () => {
   const { currentUser, is } = useAuth();
   const isTeamLead = is('team_lead');
 
+  // Only show the full-page spinner on the first load; a background re-fetch
+  // (auth events, permission refresh) keeps the rendered cards in place.
+  const hasLoadedRef = useRef(false);
+
   useEffect(() => {
     const fetchDevelopersProgress = async () => {
       try {
-        setLoading(true);
-        
+        if (!hasLoadedRef.current) {
+          setLoading(true);
+        }
+
         // Fetch developers with their tasks and progress stats
         const developersData = await dashboardService.getDeveloperProgressStats({ currentUser });
         setDevelopers(developersData || []);
-        
+        hasLoadedRef.current = true;
+
       } catch (err) {
         console.error('Failed to fetch developer progress:', err);
         setError('Failed to load developer progress data. Please try again.');
@@ -28,9 +35,13 @@ const DeveloperProgress = () => {
         setLoading(false);
       }
     };
-    
+
     fetchDevelopersProgress();
-  }, [currentUser]);
+    // Key on the id (primitive), not the object identity — AuthContext hands
+    // out a new user object on each auth event, which re-ran this effect and
+    // swapped the page for a spinner.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
 
   // Filter developers based on selected filter
   const filteredDevelopers = developers.filter(developer => {
