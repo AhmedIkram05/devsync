@@ -46,12 +46,20 @@ const fetchTaskListLookups = async () => {
   };
 };
 
-const fetchTaskList = async (params = null) => {
+// Pagination-aware fetch: returns { items, pagination } for the current page.
+const fetchTaskListPage = async (params = null) => {
   const { taskService } = getServices();
-  const tasksData = await taskService.getAllTasks(params);
-  return Array.isArray(tasksData) ? tasksData : [];
+  const result = await taskService.getTasksPaginated(params);
+  const items = Array.isArray(result?.items) ? result.items : [];
+  return { items, pagination: result?.pagination ?? null };
 };
 
-const taskListService = { fetchTaskList, fetchTaskListLookups };
-export { fetchTaskList, fetchTaskListLookups, buildUserMap, buildProjectMap };
+// Back-compat array-returning wrapper.
+const fetchTaskList = async (params = null) => {
+  const { items } = await fetchTaskListPage(params);
+  return items;
+};
+
+const taskListService = { fetchTaskList, fetchTaskListPage, fetchTaskListLookups };
+export { fetchTaskList, fetchTaskListPage, fetchTaskListLookups, buildUserMap, buildProjectMap };
 export default taskListService;

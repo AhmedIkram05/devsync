@@ -23,6 +23,15 @@ const fetchSavedReportsList = async () => {
   return response;
 };
 
-const reportViewService = { fetchReportViewData, fetchSavedReportsList };
-export { fetchReportViewData, fetchSavedReportsList };
+// Pagination-aware saved-reports fetch: returns { items, pagination }. Reports.jsx
+// is intentionally untouched, so this is exposed for consumers that opt in.
+const fetchSavedReportsPage = async (params = {}) => {
+  const { reportService } = getServices();
+  const result = await reportService.getSavedReportsPaginated(params);
+  const items = Array.isArray(result?.items) ? result.items : [];
+  return { items, pagination: result?.pagination ?? null };
+};
+
+const reportViewService = { fetchReportViewData, fetchSavedReportsList, fetchSavedReportsPage };
+export { fetchReportViewData, fetchSavedReportsList, fetchSavedReportsPage };
 export default reportViewService;
