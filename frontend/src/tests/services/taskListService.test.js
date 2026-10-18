@@ -2,11 +2,12 @@ import {
   buildUserMap,
   buildProjectMap,
   fetchTaskList,
+  fetchTaskListPage,
   fetchTaskListLookups,
 } from '../../services/taskListService';
 
 jest.mock('../../services/utils/api', () => ({
-  taskService: { getAllTasks: jest.fn() },
+  taskService: { getAllTasks: jest.fn(), getTasksPaginated: jest.fn() },
   userService: { getAllUsers: jest.fn() },
   projectService: { getAllProjects: jest.fn() },
 }));
@@ -28,13 +29,23 @@ describe('taskListService branch coverage', () => {
     expect(buildProjectMap(undefined)).toEqual({});
   });
 
-  test('fetchTaskList defaults params and coerces non-array payloads', async () => {
-    taskService.getAllTasks.mockResolvedValueOnce([{ id: 1 }]);
-    await expect(fetchTaskList()).resolves.toEqual([{ id: 1 }]);
-    expect(taskService.getAllTasks).toHaveBeenCalledWith(null);
+  test('fetchTaskListPage returns items + pagination and defaults params', async () => {
+    const pagination = { page: 1, per_page: 100, total: 1, pages: 1 };
+    taskService.getTasksPaginated.mockResolvedValueOnce({ items: [{ id: 1 }], pagination });
+    await expect(fetchTaskListPage()).resolves.toEqual({ items: [{ id: 1 }], pagination });
+    expect(taskService.getTasksPaginated).toHaveBeenCalledWith(null);
 
-    taskService.getAllTasks.mockResolvedValueOnce({ tasks: [{ id: 2 }] });
-    await expect(fetchTaskList({ status: 'todo' })).resolves.toEqual([]);
+    taskService.getTasksPaginated.mockResolvedValueOnce({ items: null, pagination: null });
+    await expect(fetchTaskListPage({ status: 'todo' })).resolves.toEqual({ items: [], pagination: null });
+  });
+
+  test('fetchTaskList delegates to the paginated fetch and returns items only', async () => {
+    taskService.getTasksPaginated.mockResolvedValueOnce({
+      items: [{ id: 3 }],
+      pagination: { page: 2, per_page: 100, total: 101, pages: 2 },
+    });
+    await expect(fetchTaskList({ page: 2 })).resolves.toEqual([{ id: 3 }]);
+    expect(taskService.getTasksPaginated).toHaveBeenCalledWith({ page: 2 });
   });
 
   test('fetchTaskListLookups degrades to empty maps when lookups fail', async () => {
