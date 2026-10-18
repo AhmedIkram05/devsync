@@ -84,24 +84,24 @@ const buildPdfLines = (report) => {
     });
   }
 
-  lines.push('', 'Details (top items):');
+  lines.push('', 'Details:');
 
   if (details.length === 0) {
     lines.push('No detail data.');
   } else if (report.type === 'tasks') {
-    details.slice(0, 8).forEach((task) => {
+    details.forEach((task) => {
       lines.push(`- ${task.title || 'Untitled'} [${task.status || 'unknown'}]`);
     });
   } else if (report.type === 'developers') {
-    details.slice(0, 8).forEach((developer) => {
+    details.forEach((developer) => {
       lines.push(`- ${developer.name || 'Unknown'} (${developer.email || 'n/a'}) tasks: ${developer.total_tasks || 0}`);
     });
   } else if (report.type === 'github') {
-    details.slice(0, 8).forEach((repo) => {
+    details.forEach((repo) => {
       lines.push(`- ${repo.name || 'Repo'} (${repo.owner || 'owner'}) issues: ${repo.open_issues || 0} prs: ${repo.total_prs || 0}`);
     });
   } else {
-    details.slice(0, 8).forEach((item) => {
+    details.forEach((item) => {
       lines.push(`- ${item.name || item.title || 'Item'}`);
     });
   }
@@ -165,29 +165,59 @@ const Reports = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reportType, setReportType] = useState('tasks');
+  // The type the currently-loaded reportData actually belongs to. Kept separate
+  // from reportType so switching type/range can leave the previous chart mounted
+  // until the new payload lands, instead of blanking the page.
+  const [loadedReportType, setLoadedReportType] = useState('tasks');
   const [dateRange, setDateRange] = useState('week');
   const [generatedReports, setGeneratedReports] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [pdfError, setPdfError] = useState(null);
   const reportCacheRef = useRef({});
   const latestRequestRef = useRef(0);
 
 
+  // Max text lines per PDF page (16pt leading from a 720pt top margin on a
+  // 792pt-tall page). Longer reports continue on extra pages instead of
+  // silently clipping below the MediaBox.
+  const PDF_LINES_PER_PAGE = 45;
+
   const createPdfBlob = (lines) => {
-    const textStream = [
-      'BT', '/F1 12 Tf', '72 720 Td',
-      ...lines.flatMap((line, index) =>
-        index === 0 ? [`(${line}) Tj`] : ['0 -16 Td', `(${line}) Tj`]
-      ),
-      'ET'
-    ].join('\n');
+    const pages = [];
+    for (let start = 0; start < lines.length; start += PDF_LINES_PER_PAGE) {
+      pages.push(lines.slice(start, start + PDF_LINES_PER_PAGE));
+    }
+    if (pages.length === 0) {
+      pages.push(['DevSync Report']);
+    }
+
+    // Object ids: 1 Catalog, 2 Pages, then per page a (content, page) pair,
+    // then a single shared Font as the last object.
+    const contentIds = pages.map((_, index) => 3 + index * 2);
+    const pageIds = pages.map((_, index) => 4 + index * 2);
+    const fontId = 3 + pages.length * 2;
 
     const objects = [
       '<< /Type /Catalog /Pages 2 0 R >>',
-      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
-      `<< /Length ${textStream.length} >>\nstream\n${textStream}\nendstream`,
-      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+      `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pages.length} >>`
     ];
+
+    pages.forEach((pageLines, index) => {
+      const textStream = [
+        'BT', '/F1 12 Tf', '72 720 Td',
+        ...pageLines.flatMap((line, lineIndex) =>
+          lineIndex === 0 ? [`(${line}) Tj`] : ['0 -16 Td', `(${line}) Tj`]
+        ),
+        'ET'
+      ].join('\n');
+
+      objects.push(`<< /Length ${textStream.length} >>\nstream\n${textStream}\nendstream`);
+      objects.push(
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contentIds[index]} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> >> >>`
+      );
+    });
+
+    objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
 
     let pdf = '%PDF-1.4\n';
     const offsets = [0];
@@ -216,6 +246,7 @@ const Reports = () => {
 
     if (cachedReport && reportType !== 'github' && !forceRefresh) {
       setReportData(cachedReport);
+      setLoadedReportType(reportType);
       setLoading(false);
       setError(null);
       return cachedReport;
@@ -235,6 +266,7 @@ const Reports = () => {
       }
       reportCacheRef.current[cacheKey] = data;
       setReportData(data);
+      setLoadedReportType(reportType);
       return data;
     } catch (err) {
       if (requestId !== latestRequestRef.current) {
@@ -327,67 +359,22 @@ const Reports = () => {
   };
 
   const handleDownloadPdf = (report) => {
-    const lines = buildPdfLines(report);
-    const blob = createPdfBlob(lines);
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `devsync-${report.type}-${report.dateRange}-${report.id}.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  };
-
-  const buildTimeBuckets = (range) => {
-    const now = new Date();
-    const buckets = [];
-
-    if (range === 'week') {
-      const start = new Date(now);
-      start.setDate(now.getDate() - 6);
-      start.setHours(0, 0, 0, 0);
-      for (let i = 0; i < 7; i++) {
-        const bucketStart = new Date(start);
-        bucketStart.setDate(start.getDate() + i);
-        const bucketEnd = new Date(bucketStart);
-        bucketEnd.setDate(bucketStart.getDate() + 1);
-        buckets.push({
-          label: bucketStart.toLocaleDateString('en-US', { weekday: 'short' }),
-          start: bucketStart,
-          end: bucketEnd
-        });
-      }
-      return buckets;
+    try {
+      setPdfError(null);
+      const lines = buildPdfLines(report);
+      const blob = createPdfBlob(lines);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `devsync-${report.type}-${report.dateRange}-${report.id}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error('Failed to generate PDF:', err);
+      setPdfError('Failed to generate the PDF. Please try again.');
     }
-
-    if (range === 'month') {
-      const start = new Date(now);
-      start.setDate(now.getDate() - 27);
-      start.setHours(0, 0, 0, 0);
-      for (let i = 0; i < 4; i++) {
-        const bucketStart = new Date(start);
-        bucketStart.setDate(start.getDate() + i * 7);
-        const bucketEnd = new Date(bucketStart);
-        bucketEnd.setDate(bucketStart.getDate() + 7);
-        buckets.push({ label: `Week ${i + 1}`, start: bucketStart, end: bucketEnd });
-      }
-      return buckets;
-    }
-
-    const monthsToShow = range === 'quarter' ? 3 : 12;
-    for (let i = 0; i < monthsToShow; i++) {
-      const monthOffset = monthsToShow - 1 - i;
-      const bucketStart = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
-      const bucketEnd = new Date(now.getFullYear(), now.getMonth() - monthOffset + 1, 1);
-      buckets.push({
-        label: bucketStart.toLocaleDateString('en-US', { month: 'short' }),
-        start: bucketStart,
-        end: bucketEnd
-      });
-    }
-
-    return buckets;
   };
 
   const buildTaskTrend = (tasks, range) => {
@@ -602,6 +589,9 @@ const Reports = () => {
   const renderCharts = () => {
     if (!reportData) return null;
 
+    // Render against the type that produced the loaded data, not the (possibly
+    // newer) selection — keeps the previous charts mounted during a switch.
+    const reportType = loadedReportType;
     const { summary, details } = reportData;
     const summarySnapshot = buildSummarySnapshot(reportType, summary, details);
     const dateRangeLabel = getDateRangeLabel(dateRange);
@@ -808,6 +798,9 @@ const Reports = () => {
               <h2 className="text-lg font-semibold text-slate-100">Generated Reports</h2>
               <span className="text-xs text-slate-400 uppercase tracking-wide">PDF downloads</span>
             </div>
+            {pdfError && (
+              <p className="px-6 pt-3 text-xs text-rose-300">{pdfError}</p>
+            )}
             <div className="flex-1 min-h-0 overflow-y-auto p-6 pr-4">
               {generatedReports.length === 0 ? (
                 <p className="text-sm text-slate-400">

@@ -12,6 +12,7 @@ jest.mock('../../context/AuthContext', () => ({
 jest.mock('../../services/utils/api', () => ({
   adminUserService: {
     getAllUsers: jest.fn(),
+    getUsersPaginated: jest.fn(),
     createUser: jest.fn(),
     updateUser: jest.fn(),
     updateUserRole: jest.fn(),
@@ -31,6 +32,10 @@ describe('AdminUsers', () => {
       { id: 2, name: 'Developer One', email: 'dev1@example.com', role: 'developer' },
       { id: 3, name: 'Team Lead One', email: 'lead@example.com', role: 'team_lead' },
     ]);
+    adminUserService.getUsersPaginated.mockImplementation(async (params) => ({
+      items: await adminUserService.getAllUsers(params),
+      pagination: null,
+    }));
 
     adminUserService.createUser.mockResolvedValue({
       user: {

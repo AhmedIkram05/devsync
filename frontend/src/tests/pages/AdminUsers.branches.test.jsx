@@ -26,6 +26,10 @@ describe('AdminUsers page - branches', () => {
 
     api.adminUserService = {
       getAllUsers: jest.fn().mockResolvedValue(mockUsers),
+      getUsersPaginated: jest.fn().mockImplementation(async (params) => ({
+        items: await api.adminUserService.getAllUsers(params),
+        pagination: null,
+      })),
       updateUserRole: jest.fn().mockResolvedValue({ success: true }),
       createUser: jest.fn().mockResolvedValue({ user: { id: 4, name: 'New', email: 'new@test.com', role: 'developer' } }),
       updateUser: jest.fn().mockResolvedValue({ success: true }),

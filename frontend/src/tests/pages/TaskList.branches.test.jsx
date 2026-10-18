@@ -56,6 +56,10 @@ describe('TaskList page branch coverage', () => {
 
     api.taskService = {
       getAllTasks: jest.fn().mockResolvedValue(mockTasks),
+      getTasksPaginated: jest.fn().mockImplementation(async (params) => ({
+        items: await api.taskService.getAllTasks(params),
+        pagination: null,
+      })),
       updateTask: jest.fn().mockResolvedValue({ success: true })
     };
 

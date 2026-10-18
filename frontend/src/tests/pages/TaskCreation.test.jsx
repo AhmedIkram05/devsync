@@ -127,6 +127,33 @@ describe('TaskCreation page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /submit mock task/i }));
 
-    expect(await screen.findByText(/Failed to create task. Please try again./i)).toBeInTheDocument();
+    expect(await screen.findByText(/create failed/i)).toBeInTheDocument();
+  });
+
+  test('surfaces the backend error message from the response envelope', async () => {
+    taskService.createTask.mockRejectedValueOnce({
+      data: { message: 'Deadline cannot be in the past' },
+    });
+
+    render(<TaskCreation />);
+
+    expect(await screen.findByText('Submit mock task')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /submit mock task/i }));
+
+    expect(await screen.findByText(/Deadline cannot be in the past/i)).toBeInTheDocument();
+  });
+
+  test('does not navigate when the success envelope is missing the task id', async () => {
+    taskService.createTask.mockResolvedValueOnce({});
+
+    render(<TaskCreation />);
+
+    expect(await screen.findByText('Submit mock task')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /submit mock task/i }));
+
+    expect(await screen.findByText(/did not return its id/i)).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

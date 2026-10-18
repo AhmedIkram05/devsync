@@ -1,10 +1,10 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import TaskForm from '../../components/TaskForm';
 
 describe('TaskForm component', () => {
-  test('renders default create form and submits entered values', () => {
+  test('renders default create form and submits entered values', async () => {
     const onSubmit = jest.fn();
 
     render(
@@ -45,14 +45,16 @@ describe('TaskForm component', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /create task/i }));
 
-    expect(onSubmit).toHaveBeenCalledWith({
-      title: 'Implement report export',
-      description: 'Support csv and json formats',
-      assignee: '2',
-      project: '11',
-      deadline: '2099-01-15',
-      status: 'in_progress',
-      priority: 'high',
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith({
+        title: 'Implement report export',
+        description: 'Support csv and json formats',
+        assignee: '2',
+        project: '11',
+        deadline: '2099-01-15',
+        status: 'in_progress',
+        priority: 'high',
+      });
     });
   });
 
@@ -86,5 +88,34 @@ describe('TaskForm component', () => {
     expect(screen.getByLabelText(/Priority/i)).toHaveValue('low');
 
     expect(screen.getByRole('button', { name: /update task/i })).toBeInTheDocument();
+  });
+
+  test('blocks submission and shows inline errors for missing required fields', async () => {
+    const onSubmit = jest.fn();
+
+    render(<TaskForm onSubmit={onSubmit} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /create task/i }));
+
+    expect(await screen.findByText('Title is required')).toBeInTheDocument();
+    expect(screen.getByText('Description is required')).toBeInTheDocument();
+    expect(screen.getByText('Project is required')).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  test('rejects whitespace-only title and description', async () => {
+    const onSubmit = jest.fn();
+
+    render(<TaskForm onSubmit={onSubmit} projects={[{ id: 1, name: 'Core' }]} />);
+
+    fireEvent.change(screen.getByLabelText(/Task Title/i), { target: { value: '   ' } });
+    fireEvent.change(screen.getByLabelText(/Description/i), { target: { value: '   ' } });
+    fireEvent.change(screen.getByLabelText(/Project/i), { target: { value: '1' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /create task/i }));
+
+    expect(await screen.findByText('Title is required')).toBeInTheDocument();
+    expect(screen.getByText('Description is required')).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 });

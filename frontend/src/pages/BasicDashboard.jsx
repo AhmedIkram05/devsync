@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { dashboardService } from '../services/utils/api';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -71,11 +71,18 @@ const BasicDashboard = () => {
     ? 'Track your own work and keep an eye on the team without switching into the admin console.'
     : 'View your tasks, projects, and GitHub activity';
 
+  // Keep the rendered dashboard in place on any re-fetch (StrictMode double
+  // mount, manual Refresh, auth-event re-fetch) — only the first load spins.
+  const hasLoadedRef = useRef(false);
+
   const fetchDashboardData = useCallback(async () => {
     try {
-      setLoading(true);
+      if (!hasLoadedRef.current) {
+        setLoading(true);
+      }
       const data = await dashboardService.getBasicDashboardStats();
       setDashboardData(data);
+      hasLoadedRef.current = true;
       
       setError(null);
     } catch (err) {

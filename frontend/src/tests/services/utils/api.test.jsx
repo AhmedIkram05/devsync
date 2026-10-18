@@ -241,12 +241,12 @@ describe('api service branches', () => {
       { id: 4, name: 'Guest', role: 'viewer' },
     ] };
 
-    jest.spyOn(taskService, 'getAllTasks').mockResolvedValue([
+    jest.spyOn(taskService, 'getTasksPaginated').mockResolvedValue({ items: [
       { id: 10, assigned_to: 1, status: 'done', updated_at: '2026-01-01T00:00:00.000Z' },
       { id: 11, assigned_to: 2, status: 'in_progress', updated_at: '2026-01-02T00:00:00.000Z' },
       { id: 12, assigned_to: 3, status: 'completed', updated_at: '2026-01-03T00:00:00.000Z' },
       { id: 13, assigned_to: 4, status: 'todo', updated_at: '2026-01-04T00:00:00.000Z' },
-    ]);
+    ], pagination: null });
     jest.spyOn(projectService, 'getAllProjects').mockResolvedValue([]);
     global.fetch.mockResolvedValue(makeResponse({ body: usersResponse }));
 
@@ -323,11 +323,11 @@ describe('api service branches', () => {
   });
 
   test('dashboard report data builds task and developer summaries', async () => {
-    jest.spyOn(taskService, 'getAllTasks').mockResolvedValue([
+    jest.spyOn(taskService, 'getTasksPaginated').mockResolvedValue({ items: [
       { id: 1, title: 'A', status: 'done', assigned_to: 1, created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
       { id: 2, title: 'B', status: 'in_progress', assigned_to: 2, created_at: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(), deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() },
       { id: 3, title: 'C', status: 'completed', assigned_to: 2, created_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString() },
-    ]);
+    ], pagination: null });
     global.fetch.mockResolvedValue(makeResponse({ body: { users: [
       { id: 1, name: 'Admin', role: 'admin' },
       { id: 2, name: 'Dev', role: 'developer' },

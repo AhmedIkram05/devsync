@@ -69,6 +69,11 @@ describe('NotificationContext under Cypress (window.Cypress truthy)', () => {
   });
 
   test('skips the debounced retry for a near-immediate non-forced refresh', async () => {
+    // Freeze the clock so "near-immediate" is deterministic: the minimum-fetch
+    // window is wall-clock based, and a loaded coverage run can otherwise let
+    // >50ms elapse between the mount fetch and the click.
+    jest.spyOn(Date, 'now').mockReturnValue(1700000000000);
+
     notificationService.getNotifications.mockResolvedValue([]);
 
     render(

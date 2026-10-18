@@ -23,6 +23,7 @@ jest.mock('../../services/utils/api', () => ({
   projectService: {
     getProjectById: jest.fn(),
     getProjectTasks: jest.fn(),
+    getProjectTasksPaginated: jest.fn(),
   },
 }));
 
@@ -50,6 +51,11 @@ describe('ProjectDetails page', () => {
 
     projectService.getProjectById.mockReset();
     projectService.getProjectTasks.mockReset();
+    projectService.getProjectTasksPaginated.mockReset();
+    projectService.getProjectTasksPaginated.mockImplementation(async (projectId, params) => ({
+      items: await projectService.getProjectTasks(projectId),
+      pagination: null,
+    }));
   });
 
   afterEach(() => {

@@ -4,6 +4,7 @@ import TaskForm from "../components/TaskForm";
 import { taskService } from "../services/utils/api";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { useAuth } from '../context/AuthContext';
+import { getErrorMessage } from "../utils/validation";
 
 const TaskCreation = () => {
   const navigate = useNavigate();
@@ -55,14 +56,20 @@ const TaskCreation = () => {
       
       // Call backend API to create task
       const response = await taskService.createTask(taskData);
-      
+
+      // Guard against a response envelope missing the created task id
+      const createdTaskId = response?.task?.id;
+      if (!createdTaskId) {
+        throw new Error("Task was created but the server did not return its id.");
+      }
+
       // Navigate to the task details page or back to the task list
-      navigate(`/tasks/${response.task.id}`, {
+      navigate(`/tasks/${createdTaskId}`, {
         state: { message: 'Task created successfully!' }
       });
     } catch (err) {
       console.error("Failed to create task:", err);
-      setError("Failed to create task. Please try again.");
+      setError(getErrorMessage(err, "Failed to create task. Please try again."));
     } finally {
       setLoading(false);
     }

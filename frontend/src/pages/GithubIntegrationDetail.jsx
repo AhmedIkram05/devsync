@@ -56,13 +56,18 @@ function GitHubIntegrationDetail() {
 
         setRepository(currentRepo);
 
+        // Issues and pulls are independent of each other — fetch them together
+        // instead of chaining two extra serial round-trips.
         setLoadingIssues(true);
-        const issuesResponse = await githubService.getIssues(repoId);
+        setLoadingPullRequests(true);
+        const [issuesResponse, pullsResponse] = await Promise.all([
+          githubService.getIssues(repoId),
+          githubService.getPullRequests(repoId),
+        ]);
+
         const issuesData = issuesResponse.issues || issuesResponse || [];
         setIssues(issuesData);
 
-        setLoadingPullRequests(true);
-        const pullsResponse = await githubService.getPullRequests(repoId);
         const pullsData = pullsResponse.pull_requests || pullsResponse || [];
         setPullRequests(pullsData);
 

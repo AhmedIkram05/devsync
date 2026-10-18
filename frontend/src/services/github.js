@@ -60,16 +60,33 @@ const generateFallbackState = () => {
   return `oauth-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 };
 
+// Collapse concurrent GET /github/status calls into one request. AuthContext
+// and GitHubIntegration both verify on mount, which previously fired two
+// identical status requests per page load. The in-flight promise is cleared
+// once it settles so later mounts/refreshes still hit the network.
+let inFlightConnectionStatus = null;
+
 // GitHub integration API service
 export const githubService = {
   // Check GitHub connection status
   checkConnectionStatus: async () => {
+    if (inFlightConnectionStatus) {
+      return inFlightConnectionStatus;
+    }
+    const request = (async () => {
+      try {
+        const data = await fetchWithAuth(`${BASE_URL}/status`);
+        return data;
+      } catch (error) {
+        console.error('Error checking GitHub connection status:', error);
+        return { connected: false, error: error.message };
+      }
+    })();
+    inFlightConnectionStatus = request;
     try {
-      const data = await fetchWithAuth(`${BASE_URL}/status`);
-      return data;
-    } catch (error) {
-      console.error('Error checking GitHub connection status:', error);
-      return { connected: false, error: error.message };
+      return await request;
+    } finally {
+      inFlightConnectionStatus = null;
     }
   },
   

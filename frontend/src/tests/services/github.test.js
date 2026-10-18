@@ -482,3 +482,43 @@ describe('githubService', () => {
     await expect(githubService.disconnectAccount()).rejects.toThrow('disconnect failed');
   });
 });
+
+describe('githubService.checkConnectionStatus deduplication', () => {
+  beforeEach(() => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    localStorage.clear();
+    global.fetch = jest.fn();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('collapses concurrent status checks into a single request', async () => {
+    global.fetch.mockResolvedValue(jsonResponse({ connected: true, username: 'octocat' }));
+
+    const [first, second] = await Promise.all([
+      githubService.checkConnection(),
+      githubService.checkConnection(),
+    ]);
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(first).toEqual({ connected: true, username: 'octocat' });
+    expect(second).toEqual({ connected: true, username: 'octocat' });
+  });
+
+  test('does not collapse sequential status checks', async () => {
+    global.fetch.mockResolvedValue(jsonResponse({ connected: false }));
+
+    await githubService.checkConnection();
+    await githubService.checkConnection();
+
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  test('returns a disconnected fallback when the status request fails', async () => {
+    global.fetch.mockRejectedValue(new Error('offline'));
+
+    await expect(githubService.checkConnection()).resolves.toMatchObject({ connected: false });
+  });
+});

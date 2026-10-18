@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { adminUserService } from '../services/utils/api';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS, ROLES } from '../utils/rbac';
+import Pagination from '../components/Pagination';
+
+const PER_PAGE = 100;
 
 const AdminUsers = () => {
   const { currentUser, can, is } = useAuth();
@@ -10,6 +13,7 @@ const AdminUsers = () => {
     : (typeof is === 'function' ? is('admin') : currentUser?.role === 'admin');
   const [users, setUsers] = useState([]);
   const [filteredUsers, setFilteredUsers] = useState([]);
+  const [pagination, setPagination] = useState(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
@@ -21,12 +25,17 @@ const AdminUsers = () => {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  const fetchUsers = useCallback(async () => {
+  const fetchUsers = useCallback(async (pageToLoad = 1) => {
     setLoading(true);
     try {
-      const data = await adminUserService.getAllUsers();
+      const { items, pagination: meta } = await adminUserService.getUsersPaginated({
+        page: pageToLoad,
+        per_page: PER_PAGE,
+      });
+      const data = Array.isArray(items) ? items : [];
       setUsers(data);
       setFilteredUsers(data);
+      setPagination(meta);
     } catch (err) {
       setError('Failed to fetch users');
     } finally {
@@ -35,8 +44,12 @@ const AdminUsers = () => {
   }, []);
 
   useEffect(() => {
-    fetchUsers();
+    fetchUsers(1);
   }, [fetchUsers]);
+
+  const handlePageChange = (nextPage) => {
+    fetchUsers(nextPage);
+  };
 
   useEffect(() => {
     if (!showCreateModal && !editingUser && !deleteConfirm) return;
@@ -186,6 +199,7 @@ const AdminUsers = () => {
         {loading ? (
           <div className="text-center py-12 text-slate-400">Loading users...</div>
         ) : (
+          <>
           <div className="overflow-x-auto rounded-xl border border-slate-800/80">
             <table className="w-full text-left">
               <thead className="bg-slate-900/80 text-slate-400 text-sm uppercase">
@@ -253,6 +267,8 @@ const AdminUsers = () => {
               </tbody>
             </table>
           </div>
+          <Pagination pagination={pagination} onPageChange={handlePageChange} />
+          </>
         )}
 
         {/* Create Modal */}

@@ -43,6 +43,18 @@ const reportService = {
     }
   },
 
+  // Pagination-aware view of the saved-reports list: returns { items, pagination }
+  // from the same response getSavedReports already returns (kept intact for
+  // existing callers that read `.reports` / `.message` / `.error`).
+  getSavedReportsPaginated: async (filter = {}) => {
+    const response = await reportService.getSavedReports(filter);
+    const reports = response?.reports;
+    return {
+      items: Array.isArray(reports) ? reports : [],
+      pagination: response?.pagination ?? null,
+    };
+  },
+
   getReportById: async (reportId) => {
     try {
       const response = await fetchWithAuth(`reports/${reportId}`);

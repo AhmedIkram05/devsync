@@ -1,15 +1,36 @@
 import { fetchWithAuth } from './client';
 
+const buildQueryString = (params = {}) => {
+  const queryParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      queryParams.set(key, String(value));
+    }
+  });
+  return queryParams.toString();
+};
+
 const projectService = {
-  getAllProjects: async () => {
+  // Pagination-aware list: returns { items, pagination }.
+  getAllProjectsPaginated: async (params = {}) => {
     try {
-      const response = await fetchWithAuth('projects');
+      const queryString = buildQueryString(params);
+      const response = await fetchWithAuth(queryString ? `projects?${queryString}` : 'projects');
       const projects = response?.projects ?? response;
-      return Array.isArray(projects) ? projects : [];
+      return {
+        items: Array.isArray(projects) ? projects : [],
+        pagination: response?.pagination ?? null,
+      };
     } catch (error) {
       console.error('Failed to fetch projects:', error);
-      return [];
+      return { items: [], pagination: null };
     }
+  },
+
+  // Back-compat array-returning wrapper.
+  getAllProjects: async () => {
+    const { items } = await projectService.getAllProjectsPaginated();
+    return items;
   },
 
   getProjectById: async (projectId) => {
@@ -22,15 +43,28 @@ const projectService = {
     }
   },
 
-  getProjectTasks: async (projectId) => {
+  // Pagination-aware project-task list: returns { items, pagination }.
+  getProjectTasksPaginated: async (projectId, params = {}) => {
     try {
-      const response = await fetchWithAuth(`projects/${projectId}/tasks`);
+      const queryString = buildQueryString(params);
+      const response = await fetchWithAuth(
+        queryString ? `projects/${projectId}/tasks?${queryString}` : `projects/${projectId}/tasks`
+      );
       const tasks = response?.tasks ?? response;
-      return Array.isArray(tasks) ? tasks : [];
+      return {
+        items: Array.isArray(tasks) ? tasks : [],
+        pagination: response?.pagination ?? null,
+      };
     } catch (error) {
       console.error('Failed to fetch tasks for project:', projectId, error);
-      return [];
+      return { items: [], pagination: null };
     }
+  },
+
+  // Back-compat array-returning wrapper.
+  getProjectTasks: async (projectId) => {
+    const { items } = await projectService.getProjectTasksPaginated(projectId);
+    return items;
   },
 
   createProject: async (projectData) => {

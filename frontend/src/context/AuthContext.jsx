@@ -1,4 +1,4 @@
-import { createContext, useState, useContext, useEffect, useRef } from 'react';
+import { createContext, useState, useContext, useEffect, useRef, useCallback, useMemo } from 'react';
 import { authApi } from '../services/utils/auth';
 import { fetchWithAuth } from '../services/api/client';
 import { githubService } from '../services/github';
@@ -89,14 +89,14 @@ export const AuthProvider = ({ children }) => {
   const location = useLocation();
 
   // Verify the cookie session against the server — never trust localStorage alone.
-  const verifyToken = async () => {
+  const verifyToken = useCallback(async () => {
     try {
       const session = await authApi.verifySession();
       return Boolean(session && session.user && session.user.id);
     } catch {
       return false;
     }
-  };
+  }, []);
 
   // Load the user from the server session on component mount
   useEffect(() => {
@@ -184,7 +184,7 @@ export const AuthProvider = ({ children }) => {
   }, [navigate]);
 
   // Function to connect GitHub account
-  const connectGitHub = async () => {
+  const connectGitHub = useCallback(async () => {
     try {
       setError(null); // Clear previous errors
       setAuthInProgress(true);
@@ -206,9 +206,9 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setAuthInProgress(false);
     }
-  };
+  }, [navigate]);
 
-  const login = async (credentials) => {
+  const login = useCallback(async (credentials) => {
     try {
       setError(null);
       setLoading(true);
@@ -292,17 +292,17 @@ export const AuthProvider = ({ children }) => {
       setLoading(false);
       setAuthInProgress(false);
     }
-  };
+  }, [navigate, location]);
 
-  const handleGithubPromptResponse = (connect) => {
+  const handleGithubPromptResponse = useCallback((connect) => {
     setShowGithubPrompt(false);
     if (connect) {
       // User wants to connect GitHub now
       connectGitHub();
     }
-  };
+  }, [connectGitHub]);
 
-  const register = async (userData) => {
+  const register = useCallback(async (userData) => {
     try {
       setError(null);
       setAuthInProgress(true);
@@ -317,9 +317,9 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setAuthInProgress(false);
     }
-  };
+  }, [navigate]);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       setAuthInProgress(true);
       await authApi.logout();
@@ -337,10 +337,10 @@ export const AuthProvider = ({ children }) => {
       setAuthInProgress(false);
       navigate("/login", { replace: true });
     }
-  };
+  }, [navigate]);
 
   // Function to update current user (used after GitHub connection)
-  const updateUser = (userData) => {
+  const updateUser = useCallback((userData) => {
     if (!userData) {
       console.warn("Attempted to update user with null/undefined data");
       return;
@@ -374,7 +374,7 @@ export const AuthProvider = ({ children }) => {
         setShowGithubPrompt(false);
       }
     }
-  };
+  }, []);
 
   const currentUserId = currentUser?.id;
   const currentGithubConnected = Boolean(currentUser?.github_connected);
@@ -403,7 +403,7 @@ export const AuthProvider = ({ children }) => {
       }
     };
     verify();
-  }, [currentUserId, currentGithubConnected]);
+  }, [currentUserId, currentGithubConnected, updateUser]);
 
   useEffect(() => {
     const canAccessReports = currentUser?.role && REPORT_WARMUP_ROLES.has(currentUser.role);
@@ -451,10 +451,13 @@ export const AuthProvider = ({ children }) => {
   }, [currentUserId, currentUser?.role, currentUser?.github_connected, githubConnected]);
 
   // RBAC Helpers
-  const can = (permission) => hasPermission(permissions, permission);
-  const is = (role) => hasRole(currentUser?.role, role);
+  const can = useCallback((permission) => hasPermission(permissions, permission), [permissions]);
+  const is = useCallback((role) => hasRole(currentUser?.role, role), [currentUser?.role]);
 
-  const value = {
+  // Memoize the context value so a provider re-render does not re-render every
+  // consumer and re-fire their effects — that churn swapped dashboards for
+  // spinners on each auth event (flicker).
+  const value = useMemo(() => ({
     currentUser,
     setCurrentUser: updateUser,
     permissions,
@@ -474,7 +477,25 @@ export const AuthProvider = ({ children }) => {
     handleGithubPromptResponse,
     setShowGithubPrompt,
     authInProgress
-  };
+  }), [
+    currentUser,
+    updateUser,
+    permissions,
+    permissionsLoading,
+    can,
+    is,
+    login,
+    register,
+    logout,
+    verifyToken,
+    loading,
+    error,
+    githubConnected,
+    connectGitHub,
+    showGithubPrompt,
+    handleGithubPromptResponse,
+    authInProgress
+  ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
