@@ -271,14 +271,68 @@ class TestGitHubClient(unittest.TestCase):
         mock_response.text = "Rate limit exceeded"
         mock_response.headers = {
             "X-RateLimit-Remaining": "0",
-            "X-RateLimit-Reset": "1100",  # 100 seconds from now
+            "X-RateLimit-Reset": "1010",  # 10 seconds from now (within the cap)
         }
 
         result = self.client._handle_rate_limit(mock_response)
 
-        # It should sleep for 100 seconds and return True (retry)
-        mock_sleep.assert_called_with(100)
+        # Short reset: sleep it out and ask the caller to retry.
+        mock_sleep.assert_called_with(10)
         self.assertTrue(result)
+
+    @patch("backend.src.services.github_client.time.sleep")
+    def test_handle_rate_limit_429_honours_retry_after(self, mock_sleep):
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_response.text = "You have exceeded a secondary rate limit"
+        mock_response.headers = {"Retry-After": "5"}
+
+        result = self.client._handle_rate_limit(mock_response)
+
+        mock_sleep.assert_called_with(5)
+        self.assertTrue(result)
+
+    @patch("backend.src.services.github_client.time.sleep")
+    def test_handle_rate_limit_429_long_retry_after_fails_fast(self, mock_sleep):
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_response.text = "secondary rate limit"
+        mock_response.headers = {"Retry-After": "600"}
+
+        result = self.client._handle_rate_limit(mock_response)
+
+        mock_sleep.assert_not_called()
+        self.assertFalse(result)
+
+    def test_request_timeout_constant_is_single_source(self):
+        self.assertEqual(GitHubClient.REQUEST_TIMEOUT, 10)
+
+    @patch("backend.src.services.github_client.requests.get")
+    def test_get_user_repositories_clamps_pagination(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+        mock_get.return_value = mock_response
+
+        # Out-of-range page/per_page are clamped at the client choke point.
+        self.client.get_user_repositories(page=0, per_page=500)
+
+        called_params = mock_get.call_args.kwargs["params"]
+        self.assertEqual(called_params["page"], 1)
+        self.assertEqual(called_params["per_page"], 100)
+
+    @patch("backend.src.services.github_client.requests.get")
+    def test_get_user_repositories_clamps_negative_per_page(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+        mock_get.return_value = mock_response
+
+        self.client.get_user_repositories(page=-3, per_page=0)
+
+        called_params = mock_get.call_args.kwargs["params"]
+        self.assertEqual(called_params["page"], 1)
+        self.assertEqual(called_params["per_page"], 1)
 
     @patch("backend.src.services.github_client.time.time")
     def test_handle_rate_limit_exceeded_returns_false(self, mock_time):
