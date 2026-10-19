@@ -62,6 +62,12 @@ spec:
         - name: data
           mountPath: /data
       volumes:
+      # emptyDir: persistence is deliberately OFF (see --save "" --appendonly no
+      # above). Redis backs notification pub/sub and the rate-limit counters
+      # only, and the database is the system of record, so a restart costs a
+      # re-fetch and a reset rate-limit window - not data. A PVC would add a
+      # stateful dependency to a single-replica cache without removing the
+      # single point of failure.
       - name: data
         emptyDir: {}
 ---
