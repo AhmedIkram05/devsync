@@ -32,7 +32,9 @@ spec:
           type: RuntimeDefault
       containers:
       - name: postgres
-        image: postgres:16
+        # Digest-pinned. "postgres:16" resolved to 16.15 (verified identical
+        # digest), so this pins the patch line without changing the image.
+        image: postgres:16.15@sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d
         imagePullPolicy: IfNotPresent
         # Routine LOG-level lines (checkpoint start/complete etc.) are pure
         # noise in Cloud Logging, which labels every postgres stderr line
