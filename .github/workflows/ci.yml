@@ -606,3 +606,15 @@ jobs:
           kustomize build k8s/overlays/prod | kubeconform -strict -ignore-missing-schemas
           kustomize build k8s/overlays/managed-db | kubeconform -strict -ignore-missing-schemas
           kustomize build k8s/overlays/pr | kubeconform -strict -ignore-missing-schemas
+
+      # prod/patch-db-prod.yaml builds DATABASE_URL from $(POSTGRES_PASSWORD),
+      # which the kubelet only expands from an entry EARLIER in the same env
+      # list. Reorder or merge those entries and the DSN silently becomes the
+      # literal "$(POSTGRES_PASSWORD)" - so the invariant is asserted here.
+      - name: Guard kubelet $(VAR) env expansion order
+        run: |
+          python3 -m pip install --quiet pyyaml
+          for overlay in prod managed-db pr; do
+            kustomize build "k8s/overlays/$overlay" \
+              | python3 .github/scripts/check_env_expansion.py "$overlay"
+          done
