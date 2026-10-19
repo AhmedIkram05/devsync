@@ -29,7 +29,11 @@ RUN apk upgrade --no-cache
 # template into /etc/nginx/conf.d and nginx needs writable cache/run paths;
 # k8s mounts emptyDirs over them, this keeps the image self-sufficient
 # standalone (docker compose / docker run).
-RUN chown -R nginx:nginx /var/cache/nginx /var/run /etc/nginx/conf.d /usr/share/nginx/html
+# /run is listed explicitly: on Alpine /var/run is a symlink to /run, and
+# `chown -R` does not traverse a symlink passed as an argument, so chowning
+# only /var/run leaves the real directory root-owned and nginx cannot write its
+# pid file (/run/nginx.pid) — `nginx -t` then fails with EACCES.
+RUN chown -R nginx:nginx /var/cache/nginx /var/run /run /etc/nginx/conf.d /usr/share/nginx/html
 
 # Copy built assets from build stage
 COPY --from=build /app/build /usr/share/nginx/html
