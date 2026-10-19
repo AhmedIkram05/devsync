@@ -26,7 +26,9 @@ spec:
         fsGroup: 999
       containers:
       - name: redis
-        image: redis:7-alpine
+        # Digest-pinned. Was "redis:7-alpine" (floating): this digest is the
+        # exact image the cluster was already running, so adopting it is a no-op.
+        image: redis:7.4-alpine3.21@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
         imagePullPolicy: IfNotPresent
         command: ["redis-server", "--dir", "/data", "--save", "", "--appendonly", "no"]
         ports:
@@ -60,6 +62,12 @@ spec:
         - name: data
           mountPath: /data
       volumes:
+      # emptyDir: persistence is deliberately OFF (see --save "" --appendonly no
+      # above). Redis backs notification pub/sub and the rate-limit counters
+      # only, and the database is the system of record, so a restart costs a
+      # re-fetch and a reset rate-limit window - not data. A PVC would add a
+      # stateful dependency to a single-replica cache without removing the
+      # single point of failure.
       - name: data
         emptyDir: {}
 ---

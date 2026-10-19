@@ -29,3 +29,10 @@ spec:
   selector:
     matchLabels:
       app: devsync-backend
+# devsync-redis and devsync-postgres deliberately have NO PodDisruptionBudget.
+# Both run a single replica, where a PDB cannot help: minAvailable:1 yields
+# disruptionsAllowed 0 (blocking node drains forever) and maxUnavailable:1
+# simply permits the only pod to be evicted. Their availability is handled
+# instead by the Recreate strategy (redis) and by the database being external
+# in production - the prod and managed-db overlays drop the in-cluster
+# StatefulSet in favour of Cloud SQL.

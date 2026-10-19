@@ -405,9 +405,6 @@ jobs:
           terraform init -input=false -backend-config=bucket="$GCP_TF_STATE_BUCKET"
           terraform apply -input=false -auto-approve tfplan
 
-      - name: Resolve GCP_PROJECT_ID placeholders in k8s/base
-        uses: ./.github/actions/resolve-gcp-placeholders
-
   # Migrate + deploy were two jobs applying the SAME rendered prod overlay
   # (migrate's apply already ships the Deployments; deploy re-applied it).
   # One rollout job = one graph box, one runner boot, one apply — with
@@ -468,47 +465,34 @@ jobs:
             cosign verify --key env://COSIGN_PUBLIC_KEY "$ref"
           done
 
-      - name: Resolve GCP_PROJECT_ID placeholders in k8s/base
-        uses: ./.github/actions/resolve-gcp-placeholders
-
       - name: Pin digests + apply overlay
         run: |
           set -euo pipefail
-          # GKE control-plane throttling (ENHANCE_YOUR_CALM / 429) is
-          # transient: retry kubectl API calls with exponential backoff
-          # instead of failing the deploy (exact failure of run 38083180131).
-          kubectl_retry() {
-            local attempts=6 delay=5 out rc
-            for ((i = 1; i <= attempts; i++)); do
-              out="$("$@" 2>&1)" && { printf '%s\n' "$out"; return 0; }
-              rc=$?
-              case "$out" in
-                *ENHANCE_YOUR_CALM*|*TooManyRequests*|*ResourceExhausted*)
-                  if [ "$i" -eq "$attempts" ]; then printf '%s\n' "$out" >&2; return "$rc"; fi
-                  echo "kubectl throttled (attempt $i/$attempts), retrying in ${delay}s..." >&2
-                  sleep "$delay"
-                  delay=$((delay * 2))
-                  ;;
-                *)
-                  printf '%s\n' "$out" >&2
-                  return "$rc"
-                  ;;
-              esac
-            done
-          }
+          # Shared retry helper: GKE throttling is transient (see the script).
+          . "$GITHUB_WORKSPACE/.github/scripts/kubectl_retry.sh"
           cd k8s/overlays/managed-db
           kustomize edit set image "devsync-backend=${BACKEND_IMG}"
           kustomize edit set image "devsync-frontend=${FRONTEND_IMG}"
           # Tripwire: a pin that silently no-ops would ship bare-name images
           # (exact failure mode of run 34696085848). Assert the render.
-          RENDER="$(kubectl kustomize .)"
+          # GCP_PROJECT_ID is a deploy-time token in k8s/base (the
+          # ClusterSecretStore projectID and the KSA annotation). Substituted on
+          # the RENDER — never with sed -i on tracked sources: that left the
+          # working tree dirty, and since every job gets its own checkout the old
+          # per-job source edit could never carry into another job anyway.
+          RENDER="$(kubectl kustomize . | sed "s/GCP_PROJECT_ID/${GCP_PROJECT_ID}/g")"
+          # A survived token means the substitution silently missed; fail loudly.
+          echo "$RENDER" | grep -q "GCP_PROJECT_ID" && { echo '::error::unresolved GCP_PROJECT_ID placeholder in render'; exit 1; } || true
           echo "$RENDER" | grep -Fqw "image: ${BACKEND_IMG}" || { echo '::error::backend image not pinned'; exit 1; }
           echo "$RENDER" | grep -Fqw "image: ${FRONTEND_IMG}" || { echo '::error::frontend image not pinned'; exit 1; }
           # Render to a file: retried kubectl calls re-read it (a re-run
           # would otherwise see an already-consumed stdin pipe as empty).
           echo "$RENDER" > /tmp/k8s-render.yaml
           # Completed Job specs are immutable — drop before re-applying with new digests.
-          kubectl_retry kubectl delete job devsync-migrate -n "$NAMESPACE" --ignore-not-found=true
+          # --wait + foreground cascade: a background delete returns immediately and
+          # leaves the old migrate pod (activeDeadlineSeconds 600) running, so a
+          # retried Job could overlap it and run two upgrade() calls at once.
+          kubectl_retry kubectl delete job devsync-migrate -n "$NAMESPACE" --ignore-not-found=true --wait=true --cascade=foreground
           # Plan preview (the K8s analog of terraform plan): server-side
           # dry-run fails closed on invalid objects; the diff lands in the
           # step summary for review. Runs after the delete so the preview
@@ -520,12 +504,34 @@ jobs:
           set -e
           if [ "$code" -gt 1 ]; then echo '::error::kubectl diff failed'; cat /tmp/k8s-diff-migrate.txt; exit "$code"; fi
           { echo '### K8s preview (prod overlay)'; echo '```'; head -c 12000 /tmp/k8s-diff-migrate.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          kubectl_retry kubectl apply -f /tmp/k8s-render.yaml
+          # Two-phase apply, so no new app pod starts against the pre-migration
+          # schema: everything except the app Deployments goes first, and the
+          # Deployments are applied by the post-migration step below.
+          python3 - <<'SPLIT'
+          import pathlib, re
+
+          docs = [d for d in re.split(r"(?m)^---\s*$", pathlib.Path("/tmp/k8s-render.yaml").read_text()) if d.strip()]
+          groups = {"deploy": [], "rest": []}
+          for doc in docs:
+              groups["deploy" if re.search(r"(?m)^kind:\s*Deployment\s*$", doc) else "rest"].append(doc)
+          pathlib.Path("/tmp/k8s-deploy.yaml").write_text("---\n" + "---\n".join(groups["deploy"]))
+          pathlib.Path("/tmp/k8s-nondeploy.yaml").write_text("---\n" + "---\n".join(groups["rest"]))
+          print(f"render split: {len(groups['rest'])} non-Deployment docs, {len(groups['deploy'])} Deployment docs")
+          SPLIT
+          kubectl_retry kubectl apply -f /tmp/k8s-nondeploy.yaml
 
       - name: Wait for migrate Job Complete (600s)
         run: |
           kubectl wait --for=condition=complete job/devsync-migrate -n "$NAMESPACE" --timeout=600s
           kubectl logs job/devsync-migrate -n "$NAMESPACE" --tail=50
+
+      - name: Apply app workloads (post-migration)
+        run: |
+          set -euo pipefail
+          . "$GITHUB_WORKSPACE/.github/scripts/kubectl_retry.sh"
+          # Only now do the app Deployments roll. Applying them alongside the
+          # migrate Job let new pods serve traffic against the old schema.
+          kubectl_retry kubectl apply -f /tmp/k8s-deploy.yaml
 
       - name: Wait for Deployments Available (10m)
         run: |

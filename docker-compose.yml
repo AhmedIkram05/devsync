@@ -5,6 +5,14 @@ services:
       dockerfile: Dockerfile
     container_name: devsync-backend
     restart: on-failure
+    # Bounds so one runaway container cannot OOM the host (compose v2 honours
+    # deploy.resources.limits). Sized for local dev - enough for the dev server
+    # under the Jest/Cypress suites, not a production profile.
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2g
     depends_on:
       devsync-postgres:
         condition: service_healthy
@@ -40,6 +48,11 @@ services:
       dockerfile: Dockerfile
     container_name: devsync-frontend
     restart: on-failure
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512m
     depends_on:
       backend:
         condition: service_healthy
@@ -47,13 +60,23 @@ services:
       - API_UPSTREAM=http://backend:8000
     ports:
       - "${DEVSYNC_FRONTEND_PORT:-3000}:80"
+    # The image runs its non-root nginx (USER nginx, uid 101). k8s grants
+    # NET_BIND_SERVICE for :80 (frontend-deployment.yaml); compose instead
+    # lowers the unprivileged port floor so uid 101 can bind :80.
+    sysctls:
+      - net.ipv4.ip_unprivileged_port_start=0
     networks:
       - devsync-network
 
   devsync-redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine3.21@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     container_name: devsync-redis
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512m
     networks:
       - devsync-network
     # Same shape as k8s/base/redis.yaml: ephemeral queue/ratelimiter state,
@@ -66,9 +89,14 @@ services:
       retries: 10
 
   devsync-postgres:
-    image: postgres:16
+    image: postgres:16.15@sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d
     container_name: devsync-postgres
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2g
     networks:
       - devsync-network
     environment:

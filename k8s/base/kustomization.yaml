@@ -18,6 +18,7 @@ resources:
 - migrate-job.yaml
 - maintenance-cronjob.yaml
 - postgres.yaml
+- redis.yaml
 - resourcequota.yaml
 - limitrange.yaml
 - networkpolicy.yaml
