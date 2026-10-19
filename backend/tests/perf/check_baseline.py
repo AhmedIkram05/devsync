@@ -10,8 +10,9 @@ infrastructure noise, not code signal.
 Metric extraction matches the real `k6 --summary-export` schema (verified
 against grafana/k6 v0.5x):
     - trend metrics (http_req_duration): percentiles at the top level
-      ({"avg","min","med","max","p(90)","p(95)"}); p(99) is NOT exported,
-      so the p99 tripwire only applies when a baseline has it.
+      ({"avg","min","med","max","p(90)","p(95)","p(99)"}). p(99) is not a
+      default k6 trend stat; api-load.js requests it via `summaryTrendStats`,
+      so it is present for runs of that script and the p99 tripwire applies.
     - rate metrics (http_req_failed): "value" is the real 0..1 rate. The
       "passes"/"fails" fields on this metric are NOT trustworthy (k6 reports
       fails==total on zero-failure runs); never use them.
@@ -48,7 +49,7 @@ def extract_metrics(summary_path):
 
     duration = metrics.get("http_req_duration") or {}
     p95 = duration.get("p(95)")
-    p99 = duration.get("p(99)")  # absent in k6 exports by default
+    p99 = duration.get("p(99)")  # present when the script sets summaryTrendStats
 
     error_rate = (metrics.get("http_req_failed") or {}).get("value")  # 0..1
     rps = (metrics.get("http_reqs") or {}).get("rate")
@@ -94,6 +95,13 @@ def main():
         base = json.load(fh)
 
     failures = []
+    if base.get("p99_ms") and current["p99_ms"] is None:
+        # Loud on purpose: a baseline with p99 but no p(99) in the summary means
+        # the tripwire is silently unarmed, which is how it went unnoticed before.
+        print(
+            "WARNING: baseline has p99_ms but the summary has no p(99) - p99 tripwire UNARMED. "
+            "api-load.js must declare summaryTrendStats including 'p(99)'."
+        )
     if base.get("p95_ms") and current["p95_ms"] > base["p95_ms"] * P95_BLOWUP_FACTOR:
         failures.append(f"p95 {current['p95_ms']:.0f}ms > {P95_BLOWUP_FACTOR}x baseline ({base['p95_ms']:.0f}ms)")
     if base.get("p99_ms") and current["p99_ms"] and current["p99_ms"] > base["p99_ms"] * P99_BLOWUP_FACTOR:

@@ -18,15 +18,21 @@ import { check, sleep } from 'k6';
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8000';
 
 export const options = {
+  // p(99) is not one of k6's default trend stats, so it has to be requested
+  // explicitly - without it `--summary-export` omits the percentile and
+  // check_baseline.py's p99 regression tripwire can never be armed.
+  summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   thresholds: {
     // Error budget: <1% of requests may fail outright.
     http_req_failed: ['rate<0.01'],
+    // check() results are reported but never gate the run unless a threshold
+    // is declared for them: without this line a run could fail every check and
+    // still exit 0.
+    checks: ['rate>0.99'],
     // Latency ceilings sized for the CI stack (single gevent worker, shared
     // runner). The committed CI run measures p95 ~79ms for the load-gated
     // endpoints at 10 VUs, so the 500ms p95 / 1000ms p99 ceilings still admit
     // ~6-10x CI noise before failing.
-    // Note: k6 does not export p(99) in --summary-export, so check_baseline.py
-    // tracks p95 only; this p99 threshold still gates the run in CI.
     http_req_duration: ['p(95)<500', 'p(99)<1000'],
   },
 };
