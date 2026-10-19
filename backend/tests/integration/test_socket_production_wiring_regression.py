@@ -20,6 +20,7 @@ import os
 import socket
 import subprocess
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
@@ -68,10 +69,23 @@ class _ThreadedWSGIServer(ThreadingMixIn, WSGIServer):
 
 
 port = int(sys.argv[1])
-httpd = make_server("127.0.0.1", port, app.wsgi_app, server_class=_ThreadedWSGIServer)
+try:
+    httpd = make_server("127.0.0.1", port, app.wsgi_app, server_class=_ThreadedWSGIServer)
+except OSError as exc:
+    # Port raced away between the parent's probe and this bind; signal the
+    # parent to retry with a fresh port instead of failing the test.
+    print(f"BIND-FAILED {port} {exc}", flush=True)
+    os._exit(3)
 print(f"READY {port}", flush=True)
 httpd.serve_forever()
 """
+
+
+class _PortInUseError(Exception):
+    """Child could not bind the probed port (TOCTOU) — retry with a fresh one."""
+
+
+_BIND_ATTEMPTS = 5
 
 
 def _free_port():
@@ -89,6 +103,26 @@ def _http(method, url, body=None, timeout=15):
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.status, resp.read().decode()
+
+
+def _wait_until_serving(base, timeout=15):
+    """READY is printed before serve_forever() accepts connections.
+
+    Poll the engine.io handshake until it stops raising a connection error,
+    bounded by `timeout`, so a slow thread start on a loaded CI runner does not
+    flake the probe that immediately follows.
+    """
+    deadline = time.monotonic() + timeout
+    last_error = None
+    while time.monotonic() < deadline:
+        try:
+            status, _ = _http("GET", f"{base}/socket.io/?EIO=4&transport=polling", timeout=2)
+            if status == 200:
+                return
+        except Exception as exc:  # connection refused / not accepting yet
+            last_error = exc
+        time.sleep(0.05)
+    raise AssertionError(f"engine.io endpoint never became ready at {base}: {last_error}")
 
 
 def _run_child(port):
@@ -110,12 +144,16 @@ def _run_child(port):
             if line.startswith("WIRING-BROKEN"):
                 proc.kill()
                 raise AssertionError(line.strip())
+            if line.startswith("BIND-FAILED"):
+                proc.kill()
+                raise _PortInUseError(line.strip())
             if line.startswith("TOKEN "):
                 token = line.split(None, 1)[1].strip()
             if line.startswith("READY "):
                 break
         else:
             raise AssertionError("child died before READY")
+        _wait_until_serving(f"http://127.0.0.1:{port}")
         yield token
     finally:
         proc.kill()
@@ -133,14 +171,22 @@ def _connect_result(base, payload):
 
 
 def test_prod_wiring_rejects_unauth_over_real_http():
-    port = _free_port()
-    base = f"http://127.0.0.1:{port}"
-    for token in _run_child(port):
-        bare = _connect_result(base, "40")
-        assert bare.startswith("44"), f"bare connect must be refused (44), got: {bare[:120]}"
+    last_error = None
+    for _ in range(_BIND_ATTEMPTS):
+        port = _free_port()
+        base = f"http://127.0.0.1:{port}"
+        try:
+            for token in _run_child(port):
+                bare = _connect_result(base, "40")
+                assert bare.startswith("44"), f"bare connect must be refused (44), got: {bare[:120]}"
 
-        garbage = _connect_result(base, '40{"token":"garbage-token-xyz"}')
-        assert garbage.startswith("44"), f"garbage-token connect must be refused (44), got: {garbage[:120]}"
+                garbage = _connect_result(base, '40{"token":"garbage-token-xyz"}')
+                assert garbage.startswith("44"), f"garbage-token connect must be refused (44), got: {garbage[:120]}"
 
-        authed = _connect_result(base, "40" + json.dumps({"token": token}))
-        assert authed.startswith("40"), f"valid JWT connect must be accepted (40), got: {authed[:120]}"
+                authed = _connect_result(base, "40" + json.dumps({"token": token}))
+                assert authed.startswith("40"), f"valid JWT connect must be accepted (40), got: {authed[:120]}"
+            return
+        except _PortInUseError as exc:
+            last_error = exc
+            continue
+    raise AssertionError(f"could not bind a free port after {_BIND_ATTEMPTS} attempts: {last_error}")

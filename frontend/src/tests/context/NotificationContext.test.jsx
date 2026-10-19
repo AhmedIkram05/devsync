@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import io from 'socket.io-client';
 
 import { NotificationProvider, useNotifications } from '../../context/NotificationContext';
@@ -60,25 +60,22 @@ function NotificationHarness() {
 }
 
 describe('NotificationContext', () => {
-  const socketHandlers = {};
-  const socketMock = {
-    on: jest.fn(),
-    emit: jest.fn(),
-    disconnect: jest.fn(),
-  };
+  let socketHandlers;
+  let socketMock;
 
   beforeEach(() => {
     jest.spyOn(console, 'log').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     jest.spyOn(console, 'error').mockImplementation(() => {});
 
-    Object.keys(socketHandlers).forEach((key) => delete socketHandlers[key]);
-    socketMock.on.mockReset();
-    socketMock.emit.mockReset();
-    socketMock.disconnect.mockReset();
-    socketMock.on.mockImplementation((event, callback) => {
-      socketHandlers[event] = callback;
-    });
+    socketHandlers = {};
+    socketMock = {
+      on: jest.fn((event, callback) => {
+        socketHandlers[event] = callback;
+      }),
+      emit: jest.fn(),
+      disconnect: jest.fn(),
+    };
 
     io.mockReturnValue(socketMock);
     useAuth.mockReturnValue({ currentUser: { id: 1, token: 'token-1' } });
@@ -91,6 +88,9 @@ describe('NotificationContext', () => {
   });
 
   afterEach(() => {
+    // Unmount before the next test rebuilds the mock, so a late effect from a
+    // prior test cannot re-register handlers on a shared mock object.
+    cleanup();
     jest.useRealTimers();
     jest.restoreAllMocks();
   });
@@ -241,9 +241,9 @@ describe('NotificationContext', () => {
         </NotificationProvider>
       );
 
-      await waitFor(() => {
-        expect(notificationService.getNotifications).toHaveBeenCalled();
-      });
+      await act(async () => {});
+
+      expect(notificationService.getNotifications).toHaveBeenCalled();
 
       act(() => {
         socketHandlers.connect_error(new Error('socket down'));
@@ -360,7 +360,10 @@ describe('NotificationContext', () => {
         </NotificationProvider>
       );
 
-      await waitFor(() => expect(notificationService.getNotifications).toHaveBeenCalledTimes(1));
+      // The mount fetch is invoked synchronously by the effect; flush it
+      // without waitFor, which polls on real timers while fake timers are active.
+      await act(async () => {});
+      expect(notificationService.getNotifications).toHaveBeenCalledTimes(1);
 
       // Rapid-fire refresh clicks
       fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
@@ -370,9 +373,11 @@ describe('NotificationContext', () => {
       expect(notificationService.getNotifications).toHaveBeenCalledTimes(1);
 
       // Advance timers past the debounce window so the scheduled refresh fires quickly
-      jest.advanceTimersByTime(100);
+      await act(async () => {
+        jest.advanceTimersByTime(100);
+      });
 
-      await waitFor(() => expect(notificationService.getNotifications).toHaveBeenCalledTimes(2));
+      expect(notificationService.getNotifications).toHaveBeenCalledTimes(2);
     } finally {
       jest.clearAllTimers();
       jest.useRealTimers();
@@ -512,6 +517,10 @@ describe('NotificationContext', () => {
   });
 
   test('refetches after unmount/remount (mounted flag reset)', async () => {
+    // Freeze the clock so the 50ms minimum-fetch window cannot be crossed by
+    // wall-clock drift between mount and remount on a loaded CI runner.
+    jest.spyOn(Date, 'now').mockReturnValue(1700000000000);
+
     notificationService.getNotifications.mockResolvedValue([
       { id: 1, read: false, message: 'First mount' },
     ]);
