@@ -69,11 +69,6 @@ def handle_404_error(error):
     return error_response("Resource not found", "not_found", 404)
 
 
-def handle_validation_error(error):
-    """Handler for validation errors"""
-    return error_response("Validation error", "validation_error", 400, details={"errors": error.messages})
-
-
 def handle_http_exception(error):
     """Handler for Werkzeug HTTPExceptions (405, 401, 403, 409, 429, ...).
 
@@ -124,6 +119,3 @@ def register_error_handlers(app):
     app.register_error_handler(404, handle_404_error)
     app.register_error_handler(HTTPException, handle_http_exception)
     app.register_error_handler(Exception, handle_generic_error)
-
-    # Register additional error handlers as needed
-    # app.register_error_handler(ValidationError, handle_validation_error)

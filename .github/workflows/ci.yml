@@ -143,7 +143,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15-alpine
+        image: postgres:16-alpine
         env:
           POSTGRES_USER: devsync
           POSTGRES_PASSWORD: devsync
@@ -185,7 +185,7 @@ jobs:
             -n auto \
             -x \
             --cov=backend/src --cov-report=term-missing --cov-report=xml:backend/coverage.xml \
-            ${{ github.ref == 'refs/heads/main' && '--cov-fail-under=80' || '' }}
+            --cov-fail-under=80
 
       - name: Run integration tests
         env:
@@ -267,8 +267,9 @@ jobs:
         working-directory: frontend
         env:
           # shellcheck does not grok inline ${{ }} in run blocks — carry the
-          # flag via env instead. Threshold stays enforced on main only.
-          COVERAGE_THRESHOLD_FLAG: ${{ github.ref == 'refs/heads/main' && '--coverageThreshold={"global":{"branches":75,"functions":85,"lines":85,"statements":85}}' || '' }}
+          # flag via env instead. Enforced on pull requests and main alike, so a
+          # coverage regression fails the PR that introduces it.
+          COVERAGE_THRESHOLD_FLAG: '--coverageThreshold={"global":{"branches":75,"functions":85,"lines":85,"statements":85}}'
         run: |
           # shellcheck disable=SC2086
           CI=true npm test -- \
@@ -302,7 +303,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15-alpine
+        image: postgres:16-alpine
         env:
           POSTGRES_USER: devsync
           POSTGRES_PASSWORD: devsync
@@ -409,7 +410,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:15-alpine
+        image: postgres:16-alpine
         env:
           POSTGRES_USER: devsync
           POSTGRES_PASSWORD: devsync
