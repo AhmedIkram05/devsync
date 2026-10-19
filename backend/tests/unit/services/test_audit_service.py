@@ -92,3 +92,33 @@ def test_audit_outside_managed_transaction_commits_and_rolls_back_on_error(mock_
     mock_db.session.commit.side_effect = RuntimeError("audit insert failed")
     _run_record(mock_db, app=app, managed=False)
     mock_db.session.rollback.assert_called_once()
+
+
+def test_record_explicit_actor_sets_user_id_and_role(mock_db, app):
+    with patch.object(audit_service, "db", mock_db):
+        with app.test_request_context("/audit-test", environ_base={"REMOTE_ADDR": REMOTE_IP}):
+            audit_service.record("x", actor={"user_id": 9, "role": "admin"})
+
+    entry = mock_db.session.add.call_args[0][0]
+    assert entry.actor_user_id == 9
+    assert entry.actor_role == "admin"
+
+
+def test_record_emits_dashboard_refresh_scoped_to_project(mock_db, app):
+    with patch.object(audit_service, "db", mock_db):
+        with patch.object(audit_service, "emit_dashboard_refresh") as emit:
+            with app.test_request_context("/audit-test", environ_base={"REMOTE_ADDR": REMOTE_IP}):
+                audit_service.record(
+                    "task_created",
+                    resource_type="task",
+                    resource_id=7,
+                    metadata={"project_id": 42},
+                )
+
+    emit.assert_called_once_with(
+        "audit_log_recorded",
+        resource_type="task",
+        resource_id=7,
+        payload={"action": "task_created", "metadata": {"project_id": 42}},
+        project_id=42,
+    )

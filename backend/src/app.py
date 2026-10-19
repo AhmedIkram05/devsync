@@ -317,11 +317,6 @@ def create_app(config_class=None):
             app.logger.warning("blocklist check failed (fail-open): %s", exc)
             return False
 
-    @app.before_request
-    def handle_auth_exemptions():
-        if request.method == "OPTIONS" or is_public_route(request.path):
-            return None
-
     # Initialize API routes (including auth routes)
     init_api(app)
 
