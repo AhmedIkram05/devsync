@@ -146,9 +146,6 @@ jobs:
         with:
           kustomize-version: 5.4.3
 
-      - name: Resolve GCP_PROJECT_ID placeholders in k8s/base
-        uses: ./.github/actions/resolve-gcp-placeholders
-
       - name: Create namespace + app secrets (pr overlay drops ESO)
         run: |
           kubectl create namespace "$PR_NS" --dry-run=client -o yaml | kubectl apply -f -
@@ -175,7 +172,10 @@ jobs:
           kustomize edit set image "devsync-frontend=${AR}/devsync-frontend@${{ needs.build-push.outputs.frontend_digest }}"
           # Tripwire: kustomize silently converts "name=:tag" into a tag-only
           # change, which would ship bare docker.io names. Refuse instead.
-          RENDER="$(kubectl kustomize .)"
+          # GCP_PROJECT_ID is substituted on the RENDER, never by sed -i on
+          # tracked sources (which dirtied the working tree).
+          RENDER="$(kubectl kustomize . | sed "s/GCP_PROJECT_ID/${GCP_PROJECT_ID}/g")"
+          echo "$RENDER" | grep -q "GCP_PROJECT_ID" && { echo "::error::unresolved GCP_PROJECT_ID placeholder in render"; exit 1; } || true
           echo "$RENDER" | grep -Fqw "image: ${AR}/devsync-backend@${{ needs.build-push.outputs.backend_digest }}" || { echo "::error::backend image not digest-pinned from the scanned build"; exit 1; }
           echo "$RENDER" | grep -Fqw "image: ${AR}/devsync-frontend@${{ needs.build-push.outputs.frontend_digest }}" || { echo "::error::frontend image not digest-pinned from the scanned build"; exit 1; }
           # A completed/failed Job's template is immutable; drop it so this run's
