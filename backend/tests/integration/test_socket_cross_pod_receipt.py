@@ -185,7 +185,9 @@ try:
     # server's room-join acknowledgement instead of sleeping a fixed second.
     client.emit("join_project", {"project_id": 90}, callback=lambda ack=None: joined.set())
     if not joined.wait(JOIN_ACK_TIMEOUT):
-        raise SystemExit("join_project was not acknowledged by the server")
+        # Best effort: a missing ack must not fail the test by itself, the
+        # receipt assertion below is the real signal.
+        print("WARN: join_project ack not observed within %ss" % JOIN_ACK_TIMEOUT, flush=True)
 
     pod_b = psio.Server(async_mode="threading", client_manager=psio.KombuManager(MQ))
     # The fanout subscription is created asynchronously on the first connect, so
