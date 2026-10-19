@@ -3,6 +3,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from flask import current_app
+from src.db.migration_lock import migration_lock
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -92,7 +93,10 @@ def run_migrations_online():
 
     connectable = get_engine()
 
-    with connectable.connect() as connection:
+    # Serialise concurrent upgrade() runs (see src/db/migration_lock.py): a
+    # retried migrate Job or an overlapping rollout can otherwise interleave
+    # DDL and corrupt the version table.
+    with migration_lock(connectable), connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=get_metadata(), **conf_args)
 
         with context.begin_transaction():
