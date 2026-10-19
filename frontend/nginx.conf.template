@@ -9,6 +9,30 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Hide the nginx version in responses and error pages.
+    server_tokens off;
+
+    # JSON API only, so bodies are small. File attachments are planned as GCS
+    # signed URLs (browser -> bucket directly), so nginx must never carry file
+    # payloads: 2m is headroom for JSON plus a long comment, not an upload size.
+    client_max_body_size 2m;
+
+    # Slow-client hardening, plus a bounded connect/send to the upstream. Without
+    # these, nginx holds a worker connection for the 60s default while a client
+    # dribbles a body, and waits indefinitely on a stalled backend.
+    client_body_timeout 15s;
+    client_header_timeout 15s;
+    proxy_connect_timeout 10s;
+    proxy_send_timeout 120s;
+
+    # Deliberately no limit_req / limit_conn here: their zones are http-context
+    # directives, and this file is rendered into /etc/nginx/conf.d/default.conf
+    # (a server block nested inside http), so declaring one would stop nginx from
+    # starting. Rate limiting is owned by the backend's Redis-backed limiter
+    # (backend/src/api/middlewares/rate_limiter.py, fail-closed), which answers
+    # with the API's own 429 envelope; a second limiter here would double-count
+    # those requests and break that contract.
+
     # Gzip compression
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript image/svg+xml;
@@ -51,6 +75,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
     }
 
     # Backend health — must proxy, not fall through to the SPA fallback,

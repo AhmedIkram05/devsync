@@ -275,6 +275,14 @@ jobs:
           echo "runtime uid: ${uid}"
           test "${uid}" = "101" || { echo "::error::expected uid 101, got ${uid}"; exit 1; }
 
+      # nginx.conf.template is rendered into /etc/nginx/conf.d/default.conf by
+      # the image entrypoint, so this is the only place the served config can be
+      # syntax-checked (a server fragment cannot be validated standalone, and a
+      # stray http-context directive such as limit_req_zone would stop nginx
+      # from starting). `nginx -t` runs after the entrypoint has substituted it.
+      - name: Validate the rendered nginx config
+        run: docker run --rm devsync-frontend-ci nginx -t
+
   # ── Frontend Tests ────────────────────────────────────────────────────
   frontend-tests:
     name: Frontend tests (Jest)
