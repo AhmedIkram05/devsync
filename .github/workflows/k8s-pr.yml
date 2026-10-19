@@ -17,6 +17,19 @@ name: K8s PR Environment (ephemeral namespace)
 # (dedicated cluster or node pool + taints) is an infra/terraform task, not a
 # workflow-file change.
 #
+# SHARED PREVIEW DATABASE (known constraint): every preview's devsync-app-secrets
+# carries the same secrets.PR_DATABASE_URL, so all PRs migrate ONE external
+# database. Concurrent migrations no longer interleave — the alembic advisory
+# lock in backend/src/db/migration_lock.py serializes them — but two PRs at
+# different revisions still share one schema, so a preview can observe another
+# PR's tables. Per-PR schema isolation (a search_path per namespace) is the fix;
+# deferred because it changes the DSN every preview uses.
+#
+# LIFECYCLE: the normal path deletes the namespace at the end of pr-env. That
+# misses two cases — a run cancelled by the concurrency group, and a PR that is
+# abandoned without ever closing. The hourly `sweep` job reclaims those, and the
+# gc job refuses to reap a namespace a rebuild just deployed into.
+#
 # workflow_dispatch exists to rebuild a stuck/failed preview namespace without
 # push-bumping the PR: pass the PR number via the pr_number input.
 
@@ -28,6 +41,11 @@ on:
       - "frontend/**"
       - "k8s/**"
       - "infra/terraform/**"
+  # Hourly reclaim of leaked previews. Every other job is gated on a
+  # pull_request/workflow_dispatch context, so on this trigger only `sweep`
+  # runs.
+  schedule:
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       pr_number:
@@ -149,6 +167,10 @@ jobs:
       - name: Create namespace + app secrets (pr overlay drops ESO)
         run: |
           kubectl create namespace "$PR_NS" --dry-run=client -o yaml | kubectl apply -f -
+          # Stamp every run so the hourly sweep can tell a leaked preview from
+          # one being rebuilt: a rebuild reuses the namespace, so its
+          # creationTimestamp stays old and would look abandoned.
+          kubectl annotate namespace "$PR_NS" devsync.io/touched-at="$(date -u +%s)" --overwrite
           kubectl create secret generic devsync-app-secrets -n "$PR_NS" \
             --from-literal=DATABASE_URL="${{ secrets.PR_DATABASE_URL }}" \
             --from-literal=JWT_SECRET_KEY="${{ secrets.PR_JWT_SECRET_KEY }}" \
@@ -348,5 +370,59 @@ jobs:
           cluster_name: ${{ env.CLUSTER_NAME }}
           location: ${{ env.CLUSTER_LOCATION }}
 
-      - name: Delete namespace (idempotent)
-        run: kubectl delete namespace "$PR_NS" --ignore-not-found=true --wait=true
+      - name: Delete namespace (idempotent, skipped if a rebuild just touched it)
+        run: |
+          set -euo pipefail
+          touched="$(kubectl get namespace "$PR_NS" -o jsonpath='{.metadata.annotations.devsync\.io/touched-at}' 2>/dev/null || true)"
+          now="$(date -u +%s)"
+          # Closing a PR right after a push can land while a rebuild is still
+          # rolling the same namespace out — deleting here would then reap a
+          # namespace a live run owns. "Recently touched" means a run may own it;
+          # the hourly sweep measures the same stamp and finishes the job.
+          if [ -n "${touched}" ] && [ "$((now - touched))" -lt 1800 ]; then
+            echo "::warning::${PR_NS} was deployed into $((now - touched))s ago; a rebuild may own it - leaving it to the sweep"
+            exit 0
+          fi
+          kubectl delete namespace "$PR_NS" --ignore-not-found=true --wait=true
+
+  sweep:
+    # Safety net for the two leaks the close-event gc cannot catch: a run
+    # cancelled by the concurrency group, and a PR abandoned without closing.
+    # Reaps only pr-<number> namespaces idle longer than the TTL.
+    name: Sweep leaked PR namespaces
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/get-gke-credentials@3da1e46a907576cefaa90c484278bb5b259dd395 # v3.0.0
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          location: ${{ env.CLUSTER_LOCATION }}
+
+      - name: Reclaim leaked pr-<n> namespaces
+        run: |
+          set -euo pipefail
+          # Longer than any single run can hold a namespace (build 25m + pr-env
+          # 20m), so a preview in flight is never mistaken for a leak.
+          ttl_seconds=$((3 * 60 * 60))
+          kubectl get namespace -o json > /tmp/namespaces.json
+          mapfile -t stale < <(python3 .github/scripts/stale_pr_namespaces.py \
+            --ttl-seconds "$ttl_seconds" < /tmp/namespaces.json)
+          if [ "${#stale[@]}" -eq 0 ]; then
+            echo "No leaked PR namespaces."
+            exit 0
+          fi
+          for namespace in "${stale[@]}"; do
+            echo "Reclaiming ${namespace}"
+            kubectl delete namespace "$namespace" --ignore-not-found=true --wait=false
+          done
+          echo "Reclaimed ${#stale[@]} namespace(s)." >> "$GITHUB_STEP_SUMMARY"
