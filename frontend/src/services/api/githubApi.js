@@ -13,8 +13,6 @@ const API_BASE_URL = (() => {
 
 const BASE_URL = `${API_BASE_URL}/github`;
 
-export { fetchWithAuth };
-
 export const githubApi = {
   // Initialize GitHub OAuth flow
   initiateAuth: async () => {

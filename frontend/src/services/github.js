@@ -16,8 +16,6 @@ const API_BASE_URL = (() => {
 
 const BASE_URL = `${API_BASE_URL}/github`;
 
-export { fetchWithAuth };
-
 // Session-scoped OAuth CSRF storage (tab-isolated, cleared on tab close).
 // Single owner of the exchange is GitHubCallback.jsx; AuthContext and
 // GitHubIntegration must not initiate or complete the flow.

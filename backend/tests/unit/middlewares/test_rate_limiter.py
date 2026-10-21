@@ -12,6 +12,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 # Import after path setup
 from backend.src.api.middlewares import setup_middlewares
 from backend.src.api.middlewares.rate_limiter import (
+    _window_bucket,
     apply_global_rate_limit,
     clean_old_requests,
     get_client_identifier,
@@ -229,3 +230,15 @@ def test_global_rate_limit_skips_health(reset_rate_limit_data):
         for _ in range(5):
             with test_app.test_request_context(path="/health"):
                 assert before_funcs[0]() is None
+
+
+def test_window_bucket_is_stable_per_client_endpoint_and_window():
+    """Same (client, endpoint, window) → identical key; a different window → a different key."""
+    first = _window_bucket("client", "endpoint", 60)
+    second = _window_bucket("client", "endpoint", 60)
+    other_window = _window_bucket("client", "endpoint", 3600)
+    other_client = _window_bucket("other-client", "endpoint", 60)
+
+    assert first == second
+    assert first != other_window
+    assert first != other_client

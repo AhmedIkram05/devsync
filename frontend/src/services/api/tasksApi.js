@@ -13,8 +13,6 @@ const API_BASE_URL = (() => {
 
 const BASE_URL = `${API_BASE_URL}/tasks`;
 
-export { fetchWithAuth };
-
 export const tasksApi = {
   // Get all tasks
   getAllTasks: async () => {

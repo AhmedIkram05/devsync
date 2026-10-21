@@ -1,7 +1,11 @@
 # ===== Build Stage =====
-FROM python:3.14-slim-bookworm AS build
+# Base images are digest-pinned (patch tag + digest) so a re-push of a tag
+# cannot change what we build. python:3.14-slim-bookworm resolved to 3.14.8.
+FROM python:3.14.8-slim-bookworm@sha256:48b13b003dda20b16f9442b8475aa05fe21bf6579a8c881db92ffb4d8fd20f83 AS build
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uv/bin/uv
+# uv is digest-only pinned: no numbered release tag matches the digest that
+# ":latest" points at (checked 0.5.10-0.9.0), so the digest is the exact ref.
+COPY --from=ghcr.io/astral-sh/uv@sha256:4a1f3666816dafadd20ceb71eac9a7d56d7ef30279f7d64048519ab901ada336 /uv /uv/bin/uv
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -26,9 +30,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     VIRTUAL_ENV=/opt/venv /uv/bin/uv pip install -r requirements.txt
 
 # ===== Runtime Stage =====
-FROM python:3.14-slim-bookworm
+FROM python:3.14.8-slim-bookworm@sha256:48b13b003dda20b16f9442b8475aa05fe21bf6579a8c881db92ffb4d8fd20f83
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uv/bin/uv
+COPY --from=ghcr.io/astral-sh/uv@sha256:4a1f3666816dafadd20ceb71eac9a7d56d7ef30279f7d64048519ab901ada336 /uv /uv/bin/uv
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

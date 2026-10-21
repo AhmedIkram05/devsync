@@ -76,3 +76,39 @@ module "iam" {
   # destroy+create that would trip the CD no-destroy guard (verified by
   # plan). Nothing in this module references the cluster.
 }
+
+# ── The Terraform state bucket itself ─────────────────────────────────────────
+# It has to exist before this backend can be configured, so it was created out of
+# band during bootstrap and is adopted here. Leaving it unmanaged meant a rebuild
+# would silently orphan the bucket - and the project already has a second state
+# bucket (swe-...-terraform-state) belonging to another project, so which bucket
+# is authoritative should not be a matter of tribal memory.
+import {
+  to = google_storage_bucket.tf_state
+  id = "${var.project_id}-tfstate"
+}
+
+resource "google_storage_bucket" "tf_state" {
+  name                        = "${var.project_id}-tfstate"
+  location                    = "US-CENTRAL1"
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  force_destroy               = false
+
+  # Object versioning is what makes a bad apply recoverable.
+  versioning {
+    enabled = true
+  }
+
+  # Matches the bucket's live policy (the GCS default). Stated explicitly so a
+  # provider default change cannot silently propose an update.
+  soft_delete_policy {
+    retention_duration_seconds = 604800
+  }
+
+  lifecycle {
+    # Load-bearing: without it a `terraform destroy` deletes the bucket holding
+    # this configuration's own state.
+    prevent_destroy = true
+  }
+}

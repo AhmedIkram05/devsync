@@ -9,6 +9,10 @@ spec:
   hard:
     requests.cpu: "4"
     requests.memory: 8Gi
-    limits.cpu: "8"
+    # 10, not 8: at HPA maximum (backend 4x1000m + frontend 6x500m + postgres
+    # 1000m + redis 250m = 8.25 CPU) an 8 CPU cap rejects the scale-up pods that
+    # the autoscaler just decided to add. 10 also leaves headroom for the
+    # migrate Job and the maintenance CronJob (LimitRange default 500m each).
+    limits.cpu: "10"
     limits.memory: 16Gi
     pods: "20"

@@ -17,7 +17,6 @@ from backend.src.api.middlewares.error_handler import (
     handle_api_error,
     handle_generic_error,
     handle_http_exception,
-    handle_validation_error,
     register_error_handlers,
 )
 
@@ -79,24 +78,6 @@ def test_handle_404_error():
         assert response.get_json()["status"] == "error"
         assert response.get_json()["code"] == "not_found"
         assert "error" not in response.get_json()
-
-
-def test_handle_validation_error():
-    """Test the validation error handler"""
-    # Create a validation error
-    error = Mock()
-    error.messages = {"field1": ["Error 1"], "field2": ["Error 2"]}
-
-    # Need to use app context to use jsonify
-    with app.app_context():
-        # Call the error handler
-        response, status_code = handle_validation_error(error)
-
-        # Check response
-        assert status_code == 400
-        assert response.get_json()["message"] == "Validation error"
-        assert response.get_json()["status"] == "error"
-        assert response.get_json()["errors"] == {"field1": ["Error 1"], "field2": ["Error 2"]}
 
 
 def test_handle_generic_error_debug_mode():

@@ -50,6 +50,10 @@ describe('NotificationContext under Cypress (window.Cypress truthy)', () => {
   });
 
   afterEach(() => {
+    // window.Cypress is set at module scope so the module-level `isCypress`
+    // const captures it at import time. Delete the global here so it does not
+    // leak into the rest of the worker; the captured const is unaffected.
+    delete window.Cypress;
     jest.restoreAllMocks();
   });
 
