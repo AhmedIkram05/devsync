@@ -9,7 +9,7 @@ from sqlalchemy import or_
 
 from src.socketio_server import emit_dashboard_refresh
 
-from ...auth.rbac import Role, get_user_project_ids  # Changed to relative import
+from ...auth.rbac import Role, get_user_project_ids, _is_project_member_or_creator  # Changed to relative import
 from ...db.models import Project, Task, User, db  # Changed to relative import
 from ...db.transaction import transactional
 from ...services import audit_service, settings_service
@@ -229,6 +229,12 @@ def create_new_task():
 
     project_id = _coerce_int(data.get("project_id"))
 
+    # Creating into a project requires membership (or being its creator);
+    # admins bypass. Keeps task creation no wider than the list endpoint's
+    # project-membership visibility boundary.
+    if project_id is not None and user_role != Role.ADMIN.value and not _is_project_member_or_creator(user_id, project_id):
+        return jsonify({"message": "You are not a member of this project"}), 403
+
     if user_role == Role.DEVELOPER.value and data.get("assigned_to") not in (None, "", user_id, str(user_id)):
         return jsonify({"message": "Developers can only create tasks assigned to themselves"}), 403
 
@@ -313,6 +319,15 @@ def update_task_by_id(task_id):
     if not can_update_task:
         return jsonify({"message": "You can only update tasks assigned to you"}), 403
 
+    # Non task-managers (developers) may only touch tasks inside projects they
+    # belong to (or created). TL/admin mutation scope stays global by design.
+    if (
+        user_role not in TASK_MANAGER_ROLES
+        and task.project_id is not None
+        and not _is_project_member_or_creator(user_id, task.project_id)
+    ):
+        return jsonify({"message": "You are not a member of this project"}), 403
+
     # Track which fields changed for notification
     changed_fields = {}
 
@@ -343,6 +358,9 @@ def update_task_by_id(task_id):
         task.deadline = data["deadline"]
     if "project_id" in data:
         new_project_id = _coerce_int(data["project_id"])
+        # Moving a task between projects is an assignment-level action.
+        if not can_assign_task and new_project_id != task.project_id:
+            return jsonify({"message": "You do not have permission to move tasks between projects"}), 403
         if task.project_id != new_project_id:
             changed_fields["project_id"] = (task.project_id, new_project_id)
         task.project_id = new_project_id
@@ -415,6 +433,15 @@ def delete_task_by_id(task_id):
     can_delete_task = user_role in TASK_MANAGER_ROLES or task.assigned_to == user_id or task.created_by == user_id
     if not can_delete_task:
         return jsonify({"message": "You can only delete tasks assigned to you"}), 403
+
+    # Same project-scope boundary as update: non task-managers must belong to
+    # the task's project (or have created it). TL/admin scope stays global.
+    if (
+        user_role not in TASK_MANAGER_ROLES
+        and task.project_id is not None
+        and not _is_project_member_or_creator(user_id, task.project_id)
+    ):
+        return jsonify({"message": "You are not a member of this project"}), 403
 
     db.session.delete(task)
     db.session.flush()
