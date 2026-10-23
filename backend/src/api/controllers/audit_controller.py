@@ -4,6 +4,7 @@ from flask import jsonify, request
 
 from ...db.models import AuditLog, User
 from ...services import settings_service
+from ..query_params import get_pagination_args
 
 
 def _build_actor_name_map(logs):
@@ -41,8 +42,7 @@ def get_audit_logs():
     from_date = request.args.get("from")
     to_date = request.args.get("to")
 
-    page = request.args.get("page", 1, type=int)
-    per_page = request.args.get("per_page", 50, type=int)
+    page, per_page = get_pagination_args(default_per_page=50)
 
     query = AuditLog.query
 

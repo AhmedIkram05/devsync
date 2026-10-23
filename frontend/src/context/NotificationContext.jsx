@@ -44,9 +44,9 @@ export const NotificationProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const [rateLimited, setRateLimited] = useState(false);
   const [serverDown, setServerDown] = useState(false);
-  
+
   const { currentUser } = useAuth();
-  
+
   const socketRef = useRef(null);
   const lastFetchTimeRef = useRef(0);
   const refreshTimeoutRef = useRef(null);
@@ -55,6 +55,20 @@ export const NotificationProvider = ({ children }) => {
   const isMountedRef = useRef(true);
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
+
+  // Ref mirrors of serverDown/rateLimited: retry timers must survive the state
+  // flips they trigger, so the socket effect cannot depend on these states
+  // (its cleanup clears the very timers that recovery scheduled).
+  const serverDownRef = useRef(false);
+  const rateLimitedRef = useRef(false);
+  const setServerDownState = (value) => {
+    serverDownRef.current = value;
+    setServerDown(value);
+  };
+  const setRateLimitedState = (value) => {
+    rateLimitedRef.current = value;
+    setRateLimited(value);
+  };
   
   // Debounced refresh notifications function with rate limiting
   const refreshNotifications = useCallback(async (force = false) => {
@@ -64,13 +78,13 @@ export const NotificationProvider = ({ children }) => {
     }
     
     // If server is detected as down and not a forced refresh, skip
-    if (serverDown && !force) {
+    if (serverDownRef.current && !force) {
       logger.log('Skipping notification refresh as server appears to be down');
       return;
     }
 
     // If rate limited and not forced, skip this refresh
-    if (rateLimited && !force) {
+    if (rateLimitedRef.current && !force) {
       logger.log('Skipping notification refresh due to rate limiting');
       return;
     }
@@ -121,17 +135,17 @@ export const NotificationProvider = ({ children }) => {
       
       // Check if we received a connection error
       if (data && data.isConnectionError) {
-        setServerDown(true);
+        setServerDownState(true);
         setError("Server appears to be offline. Notifications will refresh when the connection is restored.");
         return;
       }
       
       // If we got here, the server is up
-      setServerDown(false);
+      setServerDownState(false);
       
       // Reset rate limited flag on successful fetch
-      if (rateLimited) {
-        setRateLimited(false);
+      if (rateLimitedRef.current) {
+        setRateLimitedState(false);
       }
       
       if (Array.isArray(data)) {
@@ -151,7 +165,7 @@ export const NotificationProvider = ({ children }) => {
           error.message.includes('Network Error') ||
           error.message.includes('server is down')
       )) {
-        setServerDown(true);
+        setServerDownState(true);
         setError("Server connection failed. Notifications will refresh when the connection is restored.");
 
         // Under Cypress skip the auto-retry loop (re-render churn); manual retry via checkServerStatus.
@@ -175,7 +189,7 @@ export const NotificationProvider = ({ children }) => {
       // Handle rate limiting error specifically
       if (error.status === 429 || (error.message && error.message.includes('429'))) {
         logger.warn('Rate limited when fetching notifications. Will try again later.');
-        setRateLimited(true);
+        setRateLimitedState(true);
 
         // Under Cypress skip the auto-retry loop (re-render churn).
         if (isCypress) {
@@ -197,7 +211,7 @@ export const NotificationProvider = ({ children }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser, rateLimited, serverDown]);
+  }, [currentUser]);
   
   useEffect(() => {
     lastFetchTimeRef.current = 0;
@@ -214,7 +228,7 @@ export const NotificationProvider = ({ children }) => {
       }
       
       // Don't try to connect if we know the server is down
-      if (serverDown) {
+      if (serverDownRef.current) {
         logger.log('Not connecting to WebSocket - server appears to be down');
         return;
       }
@@ -279,7 +293,7 @@ export const NotificationProvider = ({ children }) => {
         socketConnection.on('connect', () => {
           logger.log('Socket.IO connected');
           setIsConnected(true);
-          setServerDown(false); // Clear server down flag on successful connection
+          setServerDownState(false); // Clear server down flag on successful connection
           reconnectAttemptsRef.current = 0; // Reset reconnect counter
           if (reconnectTimeoutRef.current) {
             clearTimeout(reconnectTimeoutRef.current);
@@ -330,7 +344,7 @@ export const NotificationProvider = ({ children }) => {
           // After max attempts, stop trying and mark server as down
           if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
             console.error('Maximum WebSocket reconnection attempts reached - marking server as down');
-            setServerDown(true);
+            setServerDownState(true);
             
             // Close the socket to prevent further automatic reconnect attempts
             if (socketRef.current) {
@@ -351,7 +365,7 @@ export const NotificationProvider = ({ children }) => {
                   return;
                 }
                 logger.log('Checking if server is back online...');
-                setServerDown(false); // Reset the flag to allow reconnection attempts
+                setServerDownState(false); // Reset the flag to allow reconnection attempts
                 reconnectAttemptsRef.current = 0; // Reset counter
                 connectSocket(); // Try to connect again
                 refreshNotifications(true); // Also refresh notifications
@@ -428,11 +442,11 @@ export const NotificationProvider = ({ children }) => {
     // Only try to connect if we have a user and the server is not known to be down
     // Under Cypress skip socket connect (tests use REST intercepts); keep the
     // single mount fetch so pages load deterministically with no polling churn.
-    if (currentUser && !serverDown) {
+    if (currentUser && !serverDownRef.current) {
       if (!isCypress) {
         connectSocket();
       }
-      if (!rateLimited) {
+      if (!rateLimitedRef.current) {
         refreshNotifications(true); // Initial fetch with force=true
       }
     }
@@ -460,7 +474,7 @@ export const NotificationProvider = ({ children }) => {
         heartbeatIntervalRef.current = null;
       }
     };
-  }, [currentUser, refreshNotifications, serverDown, rateLimited]);
+  }, [currentUser, refreshNotifications]);
   
   // Calculate unread count
   const unreadCount = notifications.filter(notification => !isNotificationRead(notification)).length;

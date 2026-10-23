@@ -8,6 +8,7 @@ function Notifications({ notifications = [], onNotificationUpdate, onMarkRead, o
     isLoading,
     error,
     rateLimited,
+    serverDown,
     refreshNotifications,
     markAsRead: markContextAsRead,
     deleteNotification: deleteContextNotification
@@ -67,6 +68,29 @@ function Notifications({ notifications = [], onNotificationUpdate, onMarkRead, o
           <h3 className="font-semibold">Rate limit exceeded</h3>
           <p className="mt-1">Too many notification requests. Please wait a moment.</p>
           <button 
+            onClick={() => refreshNotifications(true)}
+            className="mt-2 text-sm font-medium text-rose-300 hover:text-rose-200"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Server-down banner must show even when a stale notification list exists,
+  // otherwise the user sees frozen counts with no way to recover.
+  if (serverDown) {
+    return (
+      <div className="bg-slate-900/70 p-4 rounded-xl border border-slate-800/80">
+        <div className="bg-rose-500/10 border border-rose-400/40 text-rose-200 px-4 py-3 rounded mb-4">
+          <div className="flex">
+            <svg className="h-5 w-5 text-rose-300 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p>Notifications are unavailable because the server appears to be offline.</p>
+          </div>
+          <button
             onClick={() => refreshNotifications(true)}
             className="mt-2 text-sm font-medium text-rose-300 hover:text-rose-200"
           >

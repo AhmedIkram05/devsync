@@ -278,6 +278,26 @@ def test_get_audit_logs_uses_default_pagination(app, monkeypatch, fake_models):
     assert seen == {"page": 1, "per_page": 50, "error_out": False}
 
 
+def test_get_audit_logs_clamps_per_page(app, monkeypatch, fake_models):
+    """per_page must be hard-capped like every other list endpoint."""
+    monkeypatch.setattr(audit_controller.settings_service, "cleanup_old_audit_logs", lambda: 0)
+    seen = {}
+
+    original_paginate = fake_models.query.paginate
+
+    def recording_paginate(*args, **kwargs):
+        seen.update(kwargs)
+        return original_paginate(*args, **kwargs)
+
+    monkeypatch.setattr(fake_models.query, "paginate", recording_paginate)
+
+    with app.test_request_context("/api/v1/admin/audit-logs?per_page=999999"):
+        audit_controller.get_audit_logs()
+
+    assert seen["per_page"] == 100
+    assert seen["page"] == 1
+
+
 def test_cleanup_audit_logs_reports_deleted_count(app, monkeypatch):
     monkeypatch.setattr(audit_controller.settings_service, "cleanup_old_audit_logs", lambda: 12)
 
