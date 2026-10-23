@@ -41,9 +41,10 @@ on:
       - "frontend/**"
       - "k8s/**"
       - "infra/terraform/**"
-  # Hourly reclaim of leaked previews. Every other job is gated on a
-  # pull_request/workflow_dispatch context, so on this trigger only `sweep`
-  # runs.
+  # Hourly reclaim of leaked previews. Every cloud job is gated on the
+  # deploy-switch output (plus its pull_request/workflow_dispatch context),
+  # so on this trigger only `sweep` runs while the switch is on — and only
+  # `deploy-switch` runs while it is off (run still concludes green).
   schedule:
     - cron: "17 * * * *"
   workflow_dispatch:
@@ -71,9 +72,23 @@ env:
   PR_NS: pr-${{ github.event.pull_request.number || inputs.pr_number }}
 
 jobs:
+  # Master switch anchor: no `if`, always succeeds. Converts the
+  # GKE_DEPLOY_ENABLED repo variable into an output every cloud job below
+  # consumes. With the switch off, the cluster jobs skip (grey, not red)
+  # while this job keeps every run — including the hourly sweep — green.
+  deploy-switch:
+    name: Deploy switch
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.eval.outputs.enabled }}
+    steps:
+      - id: eval
+        run: echo "enabled=${{ vars.GKE_DEPLOY_ENABLED == 'true' }}" >> "$GITHUB_OUTPUT"
+
   build-push:
     name: Build + push PR images (AR, Trivy gate)
-    if: (github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)) && github.actor != 'dependabot[bot]'
+    needs: deploy-switch
+    if: needs.deploy-switch.outputs.enabled == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)) && github.actor != 'dependabot[bot]'
     outputs:
       backend_digest: ${{ steps.build-backend.outputs.digest }}
       frontend_digest: ${{ steps.build-frontend.outputs.digest }}
@@ -140,8 +155,8 @@ jobs:
 
   pr-env:
     name: Deploy PR #${{ github.event.pull_request.number || inputs.pr_number }} + smoke
-    needs: build-push
-    if: (github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)) && github.actor != 'dependabot[bot]'
+    needs: [deploy-switch, build-push]
+    if: needs.deploy-switch.outputs.enabled == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)) && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -243,8 +258,8 @@ jobs:
 
   comment:
     name: Sticky PR comment
-    needs: pr-env
-    if: ${{ always() && (github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)) && github.actor != 'dependabot[bot]' }}
+    needs: [deploy-switch, build-push, pr-env]
+    if: ${{ always() && needs.deploy-switch.outputs.enabled == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)) && github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -261,7 +276,8 @@ jobs:
 
   tf-plan:
     name: Terraform plan (infra/terraform diffs)
-    if: (github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)) && github.actor != 'dependabot[bot]'
+    needs: deploy-switch
+    if: needs.deploy-switch.outputs.enabled == 'true' && (github.event_name == 'workflow_dispatch' || (github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository)) && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -354,7 +370,8 @@ jobs:
     # in-flight runs) and manually re-run edges where the always() delete
     # never executed.
     name: Sweep leftover seats for PR #${{ github.event.pull_request.number }} on close
-    if: github.event.action == 'closed'
+    needs: deploy-switch
+    if: needs.deploy-switch.outputs.enabled == 'true' && github.event.action == 'closed'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -390,7 +407,8 @@ jobs:
     # cancelled by the concurrency group, and a PR abandoned without closing.
     # Reaps only pr-<number> namespaces idle longer than the TTL.
     name: Sweep leaked PR namespaces
-    if: github.event_name == 'schedule'
+    needs: deploy-switch
+    if: needs.deploy-switch.outputs.enabled == 'true' && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
