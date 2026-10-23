@@ -58,5 +58,5 @@ pydantic==2.14.1
 pyAml==26.7.0
 
 # Force fixed vendored copies (setuptools vendors jaraco.context + wheel)
-setuptools==84.0.0
+setuptools==84.1.0
 wheel==0.48.0
