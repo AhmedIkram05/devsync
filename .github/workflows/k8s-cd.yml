@@ -44,6 +44,23 @@ env:
   LIVE_HOST: gcp.devsyncapp.me
 
 jobs:
+  # ── Deploy switch (master switch → output) ────────────────────────────
+  # Converts the GKE_DEPLOY_ENABLED repo variable into an output the CD
+  # chain consumes. The job has no `if` and always succeeds, so a disabled
+  # pipeline concludes as a green run (badge shows passing) instead of a
+  # skipped one — it also anchors runs whose only other root job (`changes`)
+  # skips (CI failure on main, superseded head_sha). Unset/false keeps the
+  # cloud jobs skipped (grey, not red); set the variable to true to restore
+  # deploys.
+  deploy-switch:
+    name: Deploy switch
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.eval.outputs.enabled }}
+    steps:
+      - id: eval
+        run: echo "enabled=${{ vars.GKE_DEPLOY_ENABLED == 'true' }}" >> "$GITHUB_OUTPUT"
+
   # ── Gate: CI green on main + relevant paths ────────────────────────────
   changes:
     name: Gate — CI success on main + path filter
@@ -78,13 +95,14 @@ jobs:
 
   build-push:
     name: Build + push images (AR, Trivy gate)
-    needs: changes
+    needs: [deploy-switch, changes]
     # GKE master switch: the standing-cluster pipeline below (build-push,
     # sign/slsa, tf-plan/apply, rollout, verify) needs the GKE cluster and
-    # Artifact Registry alive. Gated on the GKE_DEPLOY_ENABLED repo variable
-    # (the workflow-level `changes` job stays cloud-free and ungated);
-    # unset/false = skipped (grey, not red).
-    if: vars.GKE_DEPLOY_ENABLED == 'true' && needs.changes.outputs.app == 'true'
+    # Artifact Registry alive. Gated on the deploy-switch output (evaluated
+    # from the GKE_DEPLOY_ENABLED repo variable; the workflow-level `changes`
+    # job stays cloud-free and ungated); off = skipped (grey, not red) while
+    # deploy-switch keeps the run itself green.
+    if: needs.deploy-switch.outputs.enabled == 'true' && needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     # ONLY consumer left of these outputs: the SLSA generator (a reusable
@@ -304,8 +322,8 @@ jobs:
   # runs ONLY that file (stale plan = Terraform errors, never applies).
   tf-plan:
     name: Terraform Plan
-    needs: [changes]
-    if: vars.GKE_DEPLOY_ENABLED == 'true' && needs.changes.outputs.app == 'true'
+    needs: [deploy-switch, changes]
+    if: needs.deploy-switch.outputs.enabled == 'true' && needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
