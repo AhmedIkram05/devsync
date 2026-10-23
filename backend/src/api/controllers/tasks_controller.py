@@ -9,7 +9,7 @@ from sqlalchemy import or_
 
 from src.socketio_server import emit_dashboard_refresh
 
-from ...auth.rbac import Role, get_user_project_ids, _is_project_member_or_creator  # Changed to relative import
+from ...auth.rbac import Role, _is_project_member_or_creator, get_user_project_ids  # Changed to relative import
 from ...db.models import Project, Task, User, db  # Changed to relative import
 from ...db.transaction import transactional
 from ...services import audit_service, settings_service
@@ -232,7 +232,11 @@ def create_new_task():
     # Creating into a project requires membership (or being its creator);
     # admins bypass. Keeps task creation no wider than the list endpoint's
     # project-membership visibility boundary.
-    if project_id is not None and user_role != Role.ADMIN.value and not _is_project_member_or_creator(user_id, project_id):
+    if (
+        project_id is not None
+        and user_role != Role.ADMIN.value
+        and not _is_project_member_or_creator(user_id, project_id)
+    ):
         return jsonify({"message": "You are not a member of this project"}), 403
 
     if user_role == Role.DEVELOPER.value and data.get("assigned_to") not in (None, "", user_id, str(user_id)):

@@ -59,7 +59,9 @@ def seeded(app):
             ]
         )
         db.session.flush()
-        db.session.execute(project_members.insert(), [{"project_id": 50, "user_id": 1}, {"project_id": 50, "user_id": 5}])
+        db.session.execute(
+            project_members.insert(), [{"project_id": 50, "user_id": 1}, {"project_id": 50, "user_id": 5}]
+        )
         db.session.commit()
     return app
 

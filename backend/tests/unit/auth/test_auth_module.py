@@ -342,6 +342,72 @@ def test_refresh_reuse_detected_revokes_all_and_returns_401(monkeypatch):
     assert audit_record.call_args.kwargs.get("action") == "refresh_reuse_detected"
 
 
+def _patch_refresh_harness(monkeypatch, user_id, clock):
+    """Shared mocks for refresh_token unit tests with a controllable clock."""
+    monkeypatch.setattr(auth_module, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(auth_module, "_recent_rotations", {})
+    monkeypatch.setattr(auth_module, "get_jwt_identity", MagicMock(return_value={"user_id": user_id}))
+    monkeypatch.setattr(auth_module, "revoke_jwt_payload", MagicMock())
+    monkeypatch.setattr(auth_module, "create_access_token", MagicMock(return_value="access-x"))
+    monkeypatch.setattr(auth_module, "create_refresh_token", MagicMock(return_value="refresh-x"))
+    monkeypatch.setattr(auth_module, "set_access_cookies", MagicMock())
+    monkeypatch.setattr(auth_module, "set_refresh_cookies", MagicMock())
+
+
+def test_refresh_race_allows_one_reuse_within_grace_window(monkeypatch):
+    """Two tabs racing the same refresh token both get a pair; the winner survives."""
+    app = build_test_app()
+    clock = {"now": 1000.0}
+    _patch_refresh_harness(monkeypatch, 42, clock)
+    revoke_all = MagicMock()
+    monkeypatch.setattr(auth_module, "revoke_all_user_tokens", revoke_all)
+    monkeypatch.setattr(auth_module, "get_jwt", MagicMock(return_value={"jti": "race-jti", "role": "developer"}))
+
+    # Tab A rotates the shared refresh token.
+    monkeypatch.setattr(auth_module, "is_token_revoked", MagicMock(return_value=False))
+    with app.test_request_context():
+        first = auth_module.refresh_token()
+    assert first.get_json()["message"] == "Token refreshed successfully"
+
+    # Tab B presents the same (now revoked) jti moments later.
+    monkeypatch.setattr(auth_module, "is_token_revoked", MagicMock(return_value=True))
+    with app.test_request_context():
+        second = auth_module.refresh_token()
+    assert second.get_json()["message"] == "Token refreshed successfully"
+    revoke_all.assert_not_called()
+
+    # A second reuse of the same jti is real theft: fail closed.
+    with app.test_request_context():
+        _, status = auth_module.refresh_token()
+    assert status == 401
+    revoke_all.assert_called_once_with(42)
+
+
+def test_refresh_reuse_after_grace_window_fails_closed(monkeypatch):
+    """Reuse after the grace window is treated as theft: revoke all + 401."""
+    app = build_test_app()
+    clock = {"now": 1000.0}
+    _patch_refresh_harness(monkeypatch, 42, clock)
+    revoke_all = MagicMock()
+    audit_record = MagicMock()
+    monkeypatch.setattr(auth_module, "revoke_all_user_tokens", revoke_all)
+    monkeypatch.setattr(auth_module.audit_service, "record", audit_record)
+    monkeypatch.setattr(auth_module, "get_jwt", MagicMock(return_value={"jti": "late-jti", "role": "developer"}))
+
+    monkeypatch.setattr(auth_module, "is_token_revoked", MagicMock(return_value=False))
+    with app.test_request_context():
+        first = auth_module.refresh_token()
+    assert first.get_json()["message"] == "Token refreshed successfully"
+
+    clock["now"] += 11
+    monkeypatch.setattr(auth_module, "is_token_revoked", MagicMock(return_value=True))
+    with app.test_request_context():
+        _, status = auth_module.refresh_token()
+    assert status == 401
+    revoke_all.assert_called_once_with(42)
+    assert audit_record.call_args.kwargs.get("action") == "refresh_reuse_detected"
+
+
 def test_logout_revokes_token_and_clears_cookies(monkeypatch):
     app = build_test_app()
     revoke_payload = MagicMock()

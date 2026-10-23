@@ -1,6 +1,7 @@
 # This file contains the routes for user authentication
 
 import logging
+from time import monotonic
 
 from flask import jsonify, request
 from flask_jwt_extended import (
@@ -170,33 +171,69 @@ def login():
     return resp
 
 
+# Multi-tab grace window: tabs of the same session race the 15-minute access
+# expiry and can present the same refresh jti within milliseconds of each
+# other. One reuse of a just-rotated jti is served a fresh pair instead of
+# tripping reuse detection, which would revoke the winning session and log
+# every tab out. Anything else (a second reuse, or reuse after the window)
+# still fails closed. In-memory is sufficient: the window is seconds long and
+# a stolen token replayed on another pod after rotation is denied by the
+# normal blocklist check.
+_ROTATION_GRACE_SECONDS = 10
+_recent_rotations = {}
+
+
+def _remember_rotation(jti):
+    now = monotonic()
+    for stale_jti, rotated_at in list(_recent_rotations.items()):
+        if now - rotated_at > _ROTATION_GRACE_SECONDS:
+            _recent_rotations.pop(stale_jti, None)
+    _recent_rotations[jti] = now
+
+
+def _consume_rotation_grace(jti):
+    """True for the ONE reuse of a jti within the grace window of its rotation."""
+    rotated_at = _recent_rotations.pop(jti, None)
+    return rotated_at is not None and (monotonic() - rotated_at) <= _ROTATION_GRACE_SECONDS
+
+
 def refresh_token():
     """Rotate refresh token: revoke old refresh jti, issue new access+refresh pair.
 
     Reuse detection (fail-closed): presenting an already-revoked refresh jti
-    revokes all user tokens, records an audit event, and returns 401.
+    revokes all user tokens, records an audit event, and returns 401 — except
+    for one reuse within the rotation grace window (multi-tab refresh race).
     """
     claims = get_jwt()
     current_user = get_jwt_identity()
     user_id = _identity_user_id(current_user)
+    jti = claims.get("jti")
 
-    if claims.get("jti") and is_token_revoked(claims):
-        if user_id is not None:
-            revoke_all_user_tokens(user_id)
-        try:
-            audit_service.record(
-                action="refresh_reuse_detected",
-                actor={"user_id": user_id, "role": claims.get("role")},
-                resource_type="user",
-                resource_id=user_id,
-            )
-        except Exception:
-            logger.warning("refresh reuse audit failed", exc_info=True)
-        return jsonify({"message": "Refresh token has been revoked"}), 401
+    reused_in_grace = False
+    if jti and is_token_revoked(claims):
+        if _consume_rotation_grace(jti):
+            # Losing tab of a refresh race: the jti is already revoked, so
+            # fall through and issue a fresh pair without revoking anything.
+            reused_in_grace = True
+            logger.info("Refresh token reuse within grace window (multi-tab race) user_id=%s", user_id)
+        else:
+            if user_id is not None:
+                revoke_all_user_tokens(user_id)
+            try:
+                audit_service.record(
+                    action="refresh_reuse_detected",
+                    actor={"user_id": user_id, "role": claims.get("role")},
+                    resource_type="user",
+                    resource_id=user_id,
+                )
+            except Exception:
+                logger.warning("refresh reuse audit failed", exc_info=True)
+            return jsonify({"message": "Refresh token has been revoked"}), 401
 
     # Rotation: single-use refresh — revoke the presenting jti first.
-    if claims.get("jti"):
+    if jti and not reused_in_grace:
         revoke_jwt_payload(claims)
+        _remember_rotation(jti)
 
     role = claims.get("role")
     if not role and user_id:
