@@ -261,6 +261,44 @@ describe('NotificationContext', () => {
     }
   });
 
+  test('keeps the reconnect timer alive after server-down so recovery still fires', async () => {
+    notificationService.getNotifications.mockResolvedValue([]);
+
+    jest.useFakeTimers();
+    try {
+      render(
+        <NotificationProvider>
+          <NotificationHarness />
+        </NotificationProvider>
+      );
+
+      await waitFor(() => {
+        expect(notificationService.getNotifications).toHaveBeenCalled();
+      });
+
+      act(() => {
+        for (let i = 0; i < 5; i += 1) {
+          socketHandlers.connect_error(new Error('socket down'));
+        }
+      });
+
+      expect(screen.getByTestId('server-down')).toHaveTextContent('true');
+      const callsWhileDown = notificationService.getNotifications.mock.calls.length;
+
+      // The recovery timer scheduled on server-down must survive: the state
+      // flip must not re-run (and clean up) the effect that scheduled it.
+      await act(async () => {
+        jest.advanceTimersByTime(100);
+      });
+
+      expect(screen.getByTestId('server-down')).toHaveTextContent('false');
+      expect(notificationService.getNotifications.mock.calls.length).toBeGreaterThan(callsWhileDown);
+    } finally {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  });
+
   test('returns early for mark-all operations while server is down', async () => {
     notificationService.getNotifications.mockResolvedValue({ isConnectionError: true });
 
