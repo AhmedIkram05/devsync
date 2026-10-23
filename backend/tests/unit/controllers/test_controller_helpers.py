@@ -8,7 +8,7 @@ whenever the helpers do.
 """
 
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 from src.api.controllers import projects_controller, tasks_controller
@@ -146,18 +146,23 @@ def test_task_datetime_passes_through_epoch_int():
 
 
 def test_run_notification_invokes_callback(monkeypatch):
+    savepoint = MagicMock()
+    monkeypatch.setattr(tasks_controller.db.session, "begin_nested", Mock(return_value=savepoint))
     monkeypatch.setattr(tasks_controller.db.session, "rollback", Mock())
     callback = Mock()
 
     tasks_controller._run_notification(callback, 1, 2, key="v")
 
     callback.assert_called_once_with(1, 2, key="v")
+    tasks_controller.db.session.begin_nested.assert_called_once_with()
     tasks_controller.db.session.rollback.assert_not_called()
 
 
-def test_run_notification_swallows_and_rolls_back(monkeypatch):
-    """A failed notification must never fail the task mutation that triggered it."""
+def test_run_notification_swallows_and_rolls_back_to_savepoint(monkeypatch):
+    """A failed notification must never roll back the task mutation that triggered it."""
     rollback = Mock()
+    savepoint = MagicMock()
+    monkeypatch.setattr(tasks_controller.db.session, "begin_nested", Mock(return_value=savepoint))
     monkeypatch.setattr(tasks_controller.db.session, "rollback", rollback)
 
     def boom(*args, **kwargs):
@@ -165,7 +170,8 @@ def test_run_notification_swallows_and_rolls_back(monkeypatch):
 
     tasks_controller._run_notification(boom, 1)  # must not raise
 
-    rollback.assert_called_once()
+    tasks_controller.db.session.begin_nested.assert_called_once_with()
+    rollback.assert_not_called()
 
 
 # --------------------------------------------------------------------------

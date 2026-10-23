@@ -16,9 +16,11 @@ def _ids_match(left, right):
 def run_notification(callback, *args, logger_msg="Failed to create notification", **kwargs):
     """Create notifications without making the primary mutation fail."""
     try:
-        callback(*args, **kwargs)
+        # Savepoint keeps a notification failure from rolling back the caller's
+        # uncommitted primary write (task/comment + audit) inside @transactional.
+        with db.session.begin_nested():
+            callback(*args, **kwargs)
     except Exception:
-        db.session.rollback()
         logger.exception(logger_msg)
 
 
