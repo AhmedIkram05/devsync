@@ -5,6 +5,7 @@ import { PERMISSIONS, ROLES } from '../utils/rbac';
 import Pagination from '../components/Pagination';
 
 const PER_PAGE = 100;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const AdminUsers = () => {
   const { currentUser, can, is } = useAuth();
@@ -12,10 +13,10 @@ const AdminUsers = () => {
     ? can(PERMISSIONS.CAN_MANAGE_USERS)
     : (typeof is === 'function' ? is('admin') : currentUser?.role === 'admin');
   const [users, setUsers] = useState([]);
-  const [filteredUsers, setFilteredUsers] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchTermDebounced, setSearchTermDebounced] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [editingUser, setEditingUser] = useState(null);
   const [editForm, setEditForm] = useState({ name: '', email: '' });
@@ -25,16 +26,23 @@ const AdminUsers = () => {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  const fetchUsers = useCallback(async (pageToLoad = 1) => {
+  // The /admin/users endpoint supports search (name/email) and role, so
+  // filtering happens server-side and pagination stays consistent with it.
+  const userFilterParams = {
+    ...(searchTermDebounced ? { search: searchTermDebounced } : {}),
+    ...(roleFilter !== 'all' ? { role: roleFilter } : {}),
+  };
+
+  const fetchUsers = useCallback(async (pageToLoad = 1, params = null) => {
     setLoading(true);
     try {
       const { items, pagination: meta } = await adminUserService.getUsersPaginated({
         page: pageToLoad,
         per_page: PER_PAGE,
+        ...(params || {}),
       });
       const data = Array.isArray(items) ? items : [];
       setUsers(data);
-      setFilteredUsers(data);
       setPagination(meta);
     } catch (err) {
       setError('Failed to fetch users');
@@ -43,12 +51,21 @@ const AdminUsers = () => {
     }
   }, []);
 
+  // Search is debounced so typing does not fire a request per keystroke.
   useEffect(() => {
-    fetchUsers(1);
-  }, [fetchUsers]);
+    const timer = setTimeout(() => setSearchTermDebounced(searchTerm), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Any filter change refetches from page 1 so pagination meta matches.
+  useEffect(() => {
+    fetchUsers(1, userFilterParams);
+    // fetchUsers is stable; userFilterParams is rebuilt every render on purpose.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchUsers, searchTermDebounced, roleFilter]);
 
   const handlePageChange = (nextPage) => {
-    fetchUsers(nextPage);
+    fetchUsers(nextPage, userFilterParams);
   };
 
   useEffect(() => {
@@ -63,20 +80,6 @@ const AdminUsers = () => {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [showCreateModal, editingUser, deleteConfirm]);
-
-  useEffect(() => {
-    let result = users;
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      result = result.filter(
-        (u) => u.name?.toLowerCase().includes(term) || u.email?.toLowerCase().includes(term)
-      );
-    }
-    if (roleFilter !== 'all') {
-      result = result.filter((u) => u.role === roleFilter);
-    }
-    setFilteredUsers(result);
-  }, [searchTerm, roleFilter, users]);
 
   const handleRoleChange = async (userId, newRole) => {
     if (!canManageUsers) return;
@@ -212,7 +215,7 @@ const AdminUsers = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {filteredUsers.map((user) => (
+                {users.map((user) => (
                   <tr key={user.id} className="hover:bg-slate-800/30 transition">
                     <td className="px-4 py-3 text-sm text-slate-400">{user.id}</td>
                     <td className="px-4 py-3">{user.name}</td>
@@ -257,7 +260,7 @@ const AdminUsers = () => {
                     )}
                   </tr>
                 ))}
-                {filteredUsers.length === 0 && (
+                {users.length === 0 && (
                   <tr>
                       <td colSpan={canManageUsers ? 5 : 4} className="px-4 py-8 text-center text-slate-500">
                       No users found.

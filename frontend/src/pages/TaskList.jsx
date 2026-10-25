@@ -7,6 +7,25 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import Pagination from '../components/Pagination';
 
 const PER_PAGE = 100;
+const SEARCH_DEBOUNCE_MS = 300;
+
+// Maps the active filters onto the /tasks query params the backend supports
+// (status, priority, project_id, assigned_to, search) so filtering and
+// pagination happen server-side. An explicit assignee filter wins over the
+// "my tasks" scope shorthand since both target assigned_to.
+const buildTaskParams = (filters, scopeTarget) => {
+  const params = {};
+  if (filters.status !== 'all') params.status = filters.status;
+  if (filters.priority !== 'all') params.priority = filters.priority;
+  if (filters.project !== 'all') params.project_id = filters.project;
+  if (filters.assignee !== 'all') {
+    params.assigned_to = filters.assignee;
+  } else if (filters.scope === 'my' && scopeTarget !== undefined && scopeTarget !== null) {
+    params.assigned_to = scopeTarget;
+  }
+  if (filters.search) params.search = filters.search;
+  return params;
+};
 
 const TaskList = () => {
   const navigate = useNavigate();
@@ -19,22 +38,34 @@ const TaskList = () => {
   const [error, setError] = useState(null);
   const [userMap, setUserMap] = useState({});
   const [projectMap, setProjectMap] = useState({});
-  const [filters, setFilters] = useState({
-    status: 'all',
-    priority: 'all',
-    search: '',
-    scope: 'all',
-    project: 'all',
-    sortBy: 'recent',
-    assignee: 'all'
+  const [filters, setFilters] = useState(() => {
+    // Deep-linked assignee (?assigned_to= / ?assignee=) starts in "my" scope
+    // so the first fetch already carries the assigned_to filter.
+    const initialUrlParams = new URLSearchParams(window.location.search);
+    const initialAssignee = initialUrlParams.get('assigned_to') || initialUrlParams.get('assignee');
+    return {
+      status: 'all',
+      priority: 'all',
+      search: '',
+      scope: initialAssignee ? 'my' : 'all',
+      project: 'all',
+      sortBy: 'recent',
+      assignee: 'all'
+    };
   });
-  
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
   const canCreateTasks = Boolean(currentUser);
 
   const urlParams = new URLSearchParams(window.location.search);
   const requestedAssignee = urlParams.get('assigned_to') || urlParams.get('assignee');
 
-  // Fetch users and tasks once; honor deep-link assignee query if provided
+  // "my" scope is a shorthand for assigned_to = current user (or deep-linked user).
+  const scopeTarget = filters.scope === 'my' ? (requestedAssignee ?? currentUser?.id ?? null) : null;
+  const serverParams = buildTaskParams({ ...filters, search: debouncedSearch }, scopeTarget);
+  const paramsKey = JSON.stringify(serverParams);
+
+  // Fetch users and project lookups once on mount.
   useEffect(() => {
     const fetchUsersAndProjects = async () => {
       try {
@@ -46,20 +77,7 @@ const TaskList = () => {
       }
     };
 
-    const initialUrlParams = new URLSearchParams(window.location.search);
-    const initialAssignee = initialUrlParams.get('assigned_to') || initialUrlParams.get('assignee');
-
     fetchUsersAndProjects();
-    if (initialAssignee) {
-      setFilters((prev) => ({ ...prev, scope: 'my' }));
-      fetchTasks({ assigned_to: initialAssignee }, 1);
-      return;
-    }
-
-    fetchTasks(null, 1);
-    // Bootstrap-only: fetchTasks is redefined each render, so depending on it
-    // would refetch on every page change instead of just on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchTasks = async (params = null, pageOverride = null) => {
@@ -84,8 +102,24 @@ const TaskList = () => {
 
   const handlePageChange = (nextPage) => {
     setPage(nextPage);
-    fetchTasks(null, nextPage);
+    fetchTasks(serverParams, nextPage);
   };
+
+  // Search is debounced so typing does not fire a request per keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(filters.search), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [filters.search]);
+
+  // Any server-filter change (including scope) refetches from page 1 so the
+  // pagination metadata matches the filtered result set.
+  useEffect(() => {
+    setPage(1);
+    fetchTasks(serverParams, 1);
+    // Keyed on the serialized params: fetchTasks/serverParams are re-created
+    // every render, which would otherwise refetch on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paramsKey]);
 
   const handleUpdateStatus = async (taskId, newStatus) => {
     try {
@@ -160,47 +194,12 @@ const TaskList = () => {
     return priorityMap[priority] || { class: 'bg-gray-100 text-gray-800', text: priority };
   };
 
-  // Filter tasks based on selected filters
-  const filteredTasks = tasks.filter(task => {
-    // Filter by status
-    if (filters.status !== 'all' && task.status !== filters.status) {
-      return false;
-    }
-    
-    // Filter by priority
-    if (filters.priority !== 'all' && task.priority !== filters.priority) {
-      return false;
-    }
-    
-    // Filter by project
-    if (filters.project !== 'all' && Number(task.project_id) !== Number(filters.project)) {
-      return false;
-    }
-    
-    // Filter by search text
-    if (filters.search && !task.title.toLowerCase().includes(filters.search.toLowerCase())) {
-      return false;
-    }
-    
-    // Filter by scope (My Tasks vs All Tasks)
-    if (filters.scope === 'my') {
-      const targetAssigneeId = requestedAssignee ?? currentUser?.id;
-      if (targetAssigneeId === undefined || targetAssigneeId === null) {
-        return false;
-      }
-
-      if (Number(task.assigned_to) !== Number(targetAssigneeId)) {
-        return false;
-      }
-    }
-
-    // Filter by assignee
-    if (filters.assignee !== 'all' && Number(task.assigned_to) !== Number(filters.assignee)) {
-      return false;
-    }
-    
-    return true;
-  }).sort((a, b) => {
+  // Filtering/search/scope are applied server-side via serverParams; only
+  // sorting stays client-side over the fetched page. The "my" scope with no
+  // known target user keeps the old "nothing matches" behavior.
+  const sortedTasks = filters.scope === 'my' && scopeTarget === null
+    ? []
+    : [...tasks].sort((a, b) => {
     switch (filters.sortBy) {
       case 'deadline':
         const deadlineA = a.deadline ? new Date(a.deadline).getTime() : Infinity;
@@ -235,7 +234,7 @@ const TaskList = () => {
             <h1 className="text-2xl font-bold mb-4 md:mb-0 text-slate-100">Tasks</h1>
             <div className="flex flex-col md:flex-row gap-4">
               <button 
-                onClick={() => fetchTasks()}
+                onClick={() => fetchTasks(serverParams)}
                 disabled={updating}
                 className={`inline-flex items-center px-4 py-2 rounded ${
                   updating
@@ -418,7 +417,7 @@ const TaskList = () => {
           </div>
           
           {/* Task List */}
-          {filteredTasks.length === 0 ? (
+          {sortedTasks.length === 0 ? (
             <div className="text-center py-10 text-slate-400 border border-slate-800/70 rounded-lg bg-slate-900/60">
               <svg className="mx-auto h-12 w-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
@@ -467,7 +466,7 @@ const TaskList = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-slate-950/60 divide-y divide-slate-800/70">
-                  {filteredTasks.map((task) => {
+                  {sortedTasks.map((task) => {
                     const statusInfo = getStatusInfo(task.status);
                     const priorityInfo = getPriorityBadge(task.priority);
                     const isTaskOverdue = isOverdue(task.deadline) && task.status !== 'completed';

@@ -20,6 +20,25 @@ jest.mock('../../services/utils/api', () => ({
   },
 }));
 
+// Mirrors the backend /admin/users filtering (role + search over name/email)
+// so fixtures respond to server-side query params the way the endpoint does.
+const applyServerUsers = (users) => async (params = {}) => users.filter((user) => {
+  if (params.role && user.role !== params.role) return false;
+  if (params.search) {
+    const term = String(params.search).toLowerCase();
+    if (!user.name?.toLowerCase().includes(term) && !user.email?.toLowerCase().includes(term)) {
+      return false;
+    }
+  }
+  return true;
+});
+
+const usersFixture = [
+  { id: 1, name: 'Admin User', email: 'admin@example.com', role: 'admin' },
+  { id: 2, name: 'Developer One', email: 'dev1@example.com', role: 'developer' },
+  { id: 3, name: 'Team Lead One', email: 'lead@example.com', role: 'team_lead' },
+];
+
 describe('AdminUsers', () => {
   beforeEach(() => {
     useAuth.mockReturnValue({
@@ -55,6 +74,8 @@ describe('AdminUsers', () => {
   });
 
   test('covers search, role changes, edit, create, and delete flows', async () => {
+    adminUserService.getAllUsers.mockImplementation(applyServerUsers(usersFixture));
+
     render(<AdminUsers />);
 
     expect(await screen.findByText('Developer One')).toBeInTheDocument();
@@ -71,6 +92,8 @@ describe('AdminUsers', () => {
     fireEvent.change(screen.getByPlaceholderText('Search by name or email...'), {
       target: { value: '' },
     });
+
+    await screen.findByText('Developer One');
 
     const developerRow = screen.getByText('Developer One').closest('tr');
     fireEvent.change(within(developerRow).getByRole('combobox'), {
@@ -156,5 +179,63 @@ describe('AdminUsers', () => {
     render(<AdminUsers />);
 
     expect(await screen.findByText('Failed to fetch users')).toBeInTheDocument();
+  });
+
+  test('sends search and role filters to the server and resets to page 1 on filter change', async () => {
+    adminUserService.getAllUsers.mockImplementation(applyServerUsers(usersFixture));
+    adminUserService.getUsersPaginated.mockImplementation(async (params) => ({
+      items: await adminUserService.getAllUsers(params),
+      pagination: { page: params.page, per_page: 100, total: 250, pages: 3 },
+    }));
+
+    render(<AdminUsers />);
+    expect(await screen.findByText('Developer One')).toBeInTheDocument();
+
+    // Move to page 2, then change a filter — the request must go back to page 1
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => {
+      expect(adminUserService.getUsersPaginated).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 2 })
+      );
+    });
+
+    fireEvent.change(screen.getByLabelText('Filter by role'), { target: { value: 'developer' } });
+    await waitFor(() => {
+      expect(adminUserService.getUsersPaginated).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, role: 'developer' })
+      );
+    });
+    expect(await screen.findByText('Developer One')).toBeInTheDocument();
+    expect(screen.queryByText('Team Lead One')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Search by name or email'), { target: { value: 'lead' } });
+    await waitFor(() => {
+      expect(adminUserService.getUsersPaginated).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: 'lead', role: 'developer' })
+      );
+    });
+    // No developer matches "lead" — the server returns an empty page
+    expect(await screen.findByText('No users found.')).toBeInTheDocument();
+  });
+
+  test('debounces search input into a single server request', async () => {
+    adminUserService.getAllUsers.mockImplementation(applyServerUsers(usersFixture));
+
+    render(<AdminUsers />);
+    expect(await screen.findByText('Developer One')).toBeInTheDocument();
+    const callsAfterLoad = adminUserService.getUsersPaginated.mock.calls.length;
+
+    fireEvent.change(screen.getByPlaceholderText('Search by name or email...'), {
+      target: { value: 'lead' },
+    });
+    // Debounce: no request fires while the user is still typing
+    expect(adminUserService.getUsersPaginated.mock.calls.length).toBe(callsAfterLoad);
+
+    await waitFor(() => {
+      expect(adminUserService.getUsersPaginated).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: 'lead' })
+      );
+    });
+    expect(adminUserService.getUsersPaginated.mock.calls.length).toBe(callsAfterLoad + 1);
   });
 });

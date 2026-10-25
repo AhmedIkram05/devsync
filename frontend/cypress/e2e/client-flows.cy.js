@@ -119,7 +119,18 @@ describe('Client Task Flows', () => {
     // Filter by high priority (select by value; label match is case-sensitive).
     // The filter selects are enabled once loading clears, but assert it
     // explicitly with a generous timeout so a slow lookup can't flake select().
+    // Selecting a priority now refetches server-side with ?priority=high
+    // (filtering moved out of the client), so shadow the beforeEach stub with
+    // a query-matched one returning only matching tasks, and wait for that
+    // refetch before asserting.
+    cy.intercept('GET', '**/api/v1/tasks*priority=high*', {
+      statusCode: 200,
+      body: [
+        { id: 10, title: 'Learn Cypress', description: 'Write E2E tests', status: 'todo', priority: 'high', progress: 0, deadline: '2099-01-01T00:00:00Z' }
+      ]
+    }).as('getHighPriorityTasks');
     cy.get('select#priorityFilter', { timeout: 15000 }).should('be.visible').and('not.be.disabled').select('high');
+    cy.wait('@getHighPriorityTasks');
     cy.contains('Learn Cypress').should('be.visible');
     cy.contains('Fix bug').should('not.exist');
   });
