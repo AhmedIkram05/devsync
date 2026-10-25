@@ -34,6 +34,33 @@ class TestGitHubClient(unittest.TestCase):
         self.assertIn("state=test_state", auth_url)
         self.assertIn("scope=repo user", auth_url)
 
+    @patch("backend.src.services.github_client.time.sleep")
+    @patch("backend.src.services.github_client.requests.post")
+    def test_post_is_not_auto_retried_after_network_error(self, mock_post, mock_sleep):
+        """POST is non-idempotent: a transport error must surface, not retry."""
+        mock_post.side_effect = ConnectionError("connection reset")
+
+        with self.assertRaises(ConnectionError):
+            self.client._make_request("POST", f"{GitHubClient.BASE_API_URL}/repos/o/r/issues/1/comments", json={})
+
+        self.assertEqual(mock_post.call_count, 1)
+        mock_sleep.assert_not_called()
+
+    @patch("backend.src.services.github_client.time.sleep")
+    @patch("backend.src.services.github_client.requests.get")
+    def test_get_still_retries_after_network_error(self, mock_get, mock_sleep):
+        """Idempotent GETs keep the existing transport-error retry loop."""
+        ok_response = MagicMock()
+        ok_response.status_code = 200
+        ok_response.json.return_value = {"ok": True}
+        mock_get.side_effect = [ConnectionError("connection reset"), ok_response]
+
+        result = self.client._make_request("GET", f"{GitHubClient.BASE_API_URL}/repos/o/r")
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(mock_get.call_count, 2)
+        mock_sleep.assert_called_once()
+
     @patch("backend.src.services.github_client.requests.post")
     def test_exchange_code_for_token_success(self, mock_post):
         # Mock successful response

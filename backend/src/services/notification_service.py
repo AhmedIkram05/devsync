@@ -13,6 +13,11 @@ def _ids_match(left, right):
     return str(left) == str(right)
 
 
+def _ids_match_key(user_id):
+    """Type-insensitive set key for user ids (same normalization as _ids_match)."""
+    return str(user_id)
+
+
 def run_notification(callback, *args, logger_msg="Failed to create notification", **kwargs):
     """Create notifications without making the primary mutation fail."""
     try:
@@ -59,10 +64,10 @@ class NotificationService:
         db.session.add(notification)
         commit_or_flush(db)
 
-        # Send via Socket.IO if user is connected
-        if user_id in connected_users:
+        # Send via Socket.IO if user is connected (each open tab is its own sid)
+        for sid in connected_users.get(user_id, set()):
             try:
-                socketio.emit("notification", notification.to_dict(), to=connected_users[user_id])
+                socketio.emit("notification", notification.to_dict(), to=sid)
             except Exception:
                 logger.exception("Failed to emit notification %s to user %s", notification.id, user_id)
 
@@ -260,9 +265,17 @@ class NotificationService:
         """Send notification for new comments"""
         excluded_project_user_ids = [commenter_user_id]
 
-        # Notify specifically mentioned users
+        # Notify specifically mentioned users. Mentions are intersected with
+        # the project's members: client-supplied ids must never reach users
+        # outside the task's project (spam vector + cross-project title
+        # disclosure via the "You Were Mentioned" message).
         if mentioned_user_ids:
+            project_member_ids = {
+                _ids_match_key(uid) for uid in NotificationService._project_member_ids(project_id) if uid is not None
+            }
             for user_id in mentioned_user_ids:
+                if _ids_match_key(user_id) not in project_member_ids:
+                    continue
                 if not _ids_match(user_id, commenter_user_id):
                     NotificationService.send_to_user(
                         user_id=user_id,

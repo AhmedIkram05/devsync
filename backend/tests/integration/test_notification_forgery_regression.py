@@ -79,8 +79,28 @@ def test_developer_without_target_notifies_self(app, seeded):
 
 
 def test_team_lead_may_target_other_user(app, seeded):
+    # TLs may only target users who share a project with them.
+    with app.app_context():
+        from src.db.models import Project, db, project_members
+
+        project = Project(id=10, name="Shared", status="active", created_by=3)
+        db.session.add(project)
+        db.session.flush()
+        db.session.execute(
+            project_members.insert(),
+            [{"project_id": 10, "user_id": 3}, {"project_id": 10, "user_id": 2}],
+        )
+        db.session.commit()
+
     client, headers = _authed_client(app, 3, "team_lead")
     resp = client.post("/api/v1/notifications", headers=headers, json={"content": "hello", "user_id": 2})
     assert resp.status_code == 201
     assert _count_for(app, 2) == 1
     assert _count_for(app, 3) == 0
+
+
+def test_team_lead_cannot_target_user_without_shared_project(app, seeded):
+    client, headers = _authed_client(app, 3, "team_lead")
+    resp = client.post("/api/v1/notifications", headers=headers, json={"content": "hello", "user_id": 2})
+    assert resp.status_code == 403
+    assert _count_for(app, 2) == 0

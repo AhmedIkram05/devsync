@@ -139,7 +139,19 @@ export const NotificationProvider = ({ children }) => {
         setError("Server appears to be offline. Notifications will refresh when the connection is restored.");
         return;
       }
-      
+
+      // fetchWithAuth returns { error, status } for non-critical endpoints
+      // instead of throwing. That is a failure, not empty data — treating it
+      // as data used to silently wipe the list on any transient 5xx.
+      if (data && typeof data.error === 'string') {
+        const status = typeof data.status === 'number' ? data.status : null;
+        if (status && status >= 500) {
+          setServerDownState(true);
+        }
+        setError(status ? `Failed to load notifications (HTTP ${status})` : 'Failed to load notifications');
+        return;
+      }
+
       // If we got here, the server is up
       setServerDownState(false);
       

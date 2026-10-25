@@ -409,7 +409,7 @@ def test_dashboard_client_route_returns_computed_task_stats(client, app, monkeyp
     assert payload["tasks"]["total"] == 3
     assert payload["tasks"]["todo"] == 1
     assert payload["tasks"]["done"] == 2
-    assert payload["tasks_due_soon"][0]["id"] == 9
+    assert payload["upcomingDeadlines"][0]["id"] == 9
     assert payload["projects"][0]["name"] == "Project A"
 
 
@@ -487,7 +487,7 @@ def test_dashboard_client_route_scopes_team_leads_to_their_projects(client, app,
     assert payload["tasks"]["done"] == 1
     assert [project["name"] for project in payload["projects"]] == ["Shared Project", "Created Project"]
     assert len(payload["recentTasks"]) == 3
-    assert payload["tasks_due_soon"][0]["id"] == 2
+    assert payload["upcomingDeadlines"][0]["id"] == 2
 
 
 def test_dashboard_admin_route_returns_user_and_task_totals(client, app):
@@ -533,10 +533,10 @@ def test_dashboard_admin_route_returns_user_and_task_totals(client, app):
 
 
 def test_dashboard_project_route_returns_project_metrics(client, app, monkeypatch):
-    from src.db.models import Project, db, project_members
+    from src.db.models import Project, Task, db, project_members
 
-    # The project dashboard now requires membership: seed a real project row
-    # plus a membership row (the controller itself stays stubbed below).
+    # The project dashboard's stats come from one DB-side GROUP BY, so the
+    # task rows must be real; the due-soon/recent helpers stay stubbed below.
     with app.app_context():
         db.create_all()
         db.session.add(
@@ -544,6 +544,12 @@ def test_dashboard_project_route_returns_project_metrics(client, app, monkeypatc
         )
         db.session.flush()
         db.session.execute(project_members.insert(), [{"project_id": 11, "user_id": 1}])
+        db.session.add_all(
+            [
+                Task(id=1, title="Task One", status="done", project_id=11, created_by=1),
+                Task(id=2, title="Task Two", status="todo", project_id=11, created_by=1),
+            ]
+        )
         db.session.commit()
 
     project = SimpleNamespace(
@@ -579,7 +585,6 @@ def test_dashboard_project_route_returns_project_metrics(client, app, monkeypatc
     StubProject.query.get.return_value = project
 
     monkeypatch.setattr(dashboard_controller, "Project", StubProject)
-    monkeypatch.setattr(dashboard_controller, "get_project_tasks", MagicMock(return_value=project_tasks))
     monkeypatch.setattr(dashboard_controller, "get_project_tasks_due_soon", MagicMock(return_value=project_tasks[:1]))
     monkeypatch.setattr(
         dashboard_controller, "get_recent_updated_project_tasks", MagicMock(return_value=project_tasks[:1])

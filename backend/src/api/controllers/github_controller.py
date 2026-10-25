@@ -7,7 +7,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-from flask import current_app, jsonify, redirect, request
+from flask import current_app, has_request_context, jsonify, redirect, request, session
 from flask_jwt_extended import get_jwt_identity
 
 from ...auth.encryption import decrypt_token, encrypt_token
@@ -49,6 +49,37 @@ oauth_states = {}
 
 OAUTH_STATE_PREFIX = "github_oauth_state:"
 OAUTH_STATE_TTL_SECONDS = 600
+
+# The OAuth flow must also be bound to the browser session that started it:
+# state alone proves the callback came through this server, but not that it
+# came from *this browser* — without session binding an attacker can complete
+# their own OAuth from a victim's browser (login CSRF / link injection).
+OAUTH_STATE_SESSION_KEY = "github_oauth_state"
+
+
+def _bind_oauth_state_to_session(state):
+    """Remember the issued state in the initiator's Flask session (cookie)."""
+    if not has_request_context():
+        return
+    try:
+        session[OAUTH_STATE_SESSION_KEY] = state
+    except RuntimeError:  # pragma: no cover - session unavailable
+        logger.warning("Could not bind OAuth state to browser session", exc_info=True)
+
+
+def _oauth_state_matches_session(state):
+    """True when the callback's state is the one this browser session started.
+
+    Skipped only when no request/session is available (non-browser callers,
+    unit tests that call the controller directly).
+    """
+    if not has_request_context():
+        return True
+    try:
+        bound_state = session.pop(OAUTH_STATE_SESSION_KEY, None)
+    except RuntimeError:  # pragma: no cover - session unavailable
+        return True
+    return bound_state == state
 
 
 def store_oauth_state(state, user_id):
@@ -135,6 +166,9 @@ def initiate_github_auth():
 
     # Store state with user_id (single-use, 10 minute TTL in Redis)
     store_oauth_state(state, user_id)
+    # ...and bind it to this browser session so the callback can only be
+    # completed by the browser that started the flow (login-CSRF binding).
+    _bind_oauth_state_to_session(state)
 
     # Check if GitHub OAuth credentials are configured
     if not current_app.config.get("GITHUB_CLIENT_ID") or not current_app.config.get("GITHUB_CLIENT_SECRET"):
@@ -161,6 +195,14 @@ def github_callback():
     # Validate the request
     if not code or not state:
         return error_response("Missing code or state parameter", "bad_request", 400)
+
+    # Session binding first: a state this browser never issued is rejected
+    # before anything is consumed or exchanged.
+    if not _oauth_state_matches_session(state):
+        logger.error("Rejected OAuth callback: state was not initiated from this browser session")
+        return error_response(
+            "Invalid state parameter format - state not initiated from this session", "bad_request", 400
+        )
 
     try:
         # Single-use server-issued state first (Redis SETEX 600, memory fallback)...
@@ -235,9 +277,13 @@ def github_callback():
     return redirect(redirect_url)
 
 
-@transactional
 def get_github_repositories():
-    """Get repositories for the authenticated user. Lazy-loads activity metrics when requested."""
+    """Get repositories for the authenticated user. Lazy-loads activity metrics when requested.
+
+    The GitHub network phase runs with no transaction open: the token read is
+    released before the paginated fetches + activity fan-out, so a slow GitHub
+    call never pins a pooled DB connection for the whole request.
+    """
     start_time = time.time()
 
     user_id = get_jwt_identity()["user_id"]
@@ -253,6 +299,10 @@ def get_github_repositories():
     if not access_token:
         return _relink_response(user_id)
     github_client = GitHubClient(access_token)
+
+    # Release the read connection before the slow network phase below: the
+    # token row is fully consumed here and the session holds nothing else.
+    db.session.rollback()
 
     # Fetch repositories (with pagination support)
     page = request.args.get("page", 1, type=int)
@@ -342,7 +392,18 @@ def get_github_repositories():
             f"[PERF] Concurrent activity fetch took {activity_fetch_time:.2f}s for {len(repos_needing_activity)} repos"
         )
 
-    # ── Database phase: no network IO from here on. ──
+    # ── Database phase: a short transactional section with no network IO. ──
+    formatted_response = _persist_github_repositories(repositories, activity_results, include_activity)
+
+    total_time = time.time() - start_time
+    logger.info(f"[PERF] get_github_repositories COMPLETE - total time: {total_time:.2f}s")
+
+    return jsonify({"repositories": formatted_response})
+
+
+@transactional
+def _persist_github_repositories(repositories, activity_results, include_activity):
+    """Upsert the fetched repositories and build the response payload."""
     # Keep a local mapping so downstream endpoints can reference stable local repository IDs.
     github_ids = [repo["id"] for repo in repositories]
     existing_repos = {}
@@ -464,10 +525,7 @@ def get_github_repositories():
             }
         )
 
-    total_time = time.time() - start_time
-    logger.info(f"[PERF] get_github_repositories COMPLETE - total time: {total_time:.2f}s")
-
-    return jsonify({"repositories": formatted_response})
+    return formatted_response
 
 
 @transactional
@@ -649,9 +707,41 @@ def get_repository_pulls(repo_id):
     return jsonify({"pull_requests": formatted_pulls})
 
 
-@transactional
 def link_task_with_github(task_id):
-    """Link a task with a GitHub issue or PR"""
+    """Link a task with a GitHub issue or PR.
+
+    The local link commits first (transactional section below); the GitHub
+    comment is then posted best-effort OUTSIDE the transaction, so a GitHub
+    outage can no longer roll back the persisted link.
+    """
+    response, comment_context = _persist_task_github_link(task_id)
+
+    if comment_context:
+        try:
+            github_client = GitHubClient(comment_context["access_token"])
+            github_client.create_issue_comment(
+                comment_context["owner"],
+                comment_context["repo_name"],
+                comment_context["number"],
+                comment_context["comment"],
+            )
+        except Exception:
+            # The link is already committed; a failed comment must not fail the request.
+            logger.warning(
+                "GitHub comment post failed after linking task %s", comment_context["task_id"], exc_info=True
+            )
+
+    return response
+
+
+@transactional
+def _persist_task_github_link(task_id):
+    """Validate + persist the task/GitHub link; return (response, comment_context).
+
+    comment_context is None when no comment should be posted (validation or
+    lookup failure, missing issue/PR number, invalid token, or a repo name
+    that is not owner/repo).
+    """
     data = request.get_json() or {}
     user_id = get_jwt_identity()["user_id"]
 
@@ -664,7 +754,7 @@ def link_task_with_github(task_id):
     # Validate link data
     validation_result = validate_task_github_link(data)
     if validation_result:
-        return validation_result
+        return validation_result, None
 
     # Check if task exists
     task = Task.query.get_or_404(task_id)
@@ -706,16 +796,15 @@ def link_task_with_github(task_id):
         },
     )
 
-    # If we have a GitHub token, add a comment to the issue/PR referencing this task
+    # If we have a GitHub token, add a comment to the issue/PR referencing this task.
+    # The POST itself happens after this transaction commits (see the caller).
+    comment_context = None
     token = GitHubToken.query.filter_by(user_id=user_id).first()
     if token and (data.get("issue_number") or data.get("pull_request_number")):
         access_token = _resolve_access_token(token, user_id)
         if not access_token:
             logger.warning("Skipping GitHub comment: token invalid, needs re-link user_id=%s", user_id)
         else:
-            github_client = GitHubClient(access_token)
-
-            # Parse repository name
             repo_parts = repo.repo_name.split("/")
             if len(repo_parts) == 2:
                 owner, repo_name = repo_parts
@@ -725,11 +814,14 @@ def link_task_with_github(task_id):
                 comment = f"This issue is linked to DevSync task #{task.id}: {task.title}\n\n"
                 comment += f"[View in DevSync]({frontend_url}/tasks/{task.id})"
 
-                # Add comment to issue or PR
-                if data.get("issue_number"):
-                    github_client.create_issue_comment(owner, repo_name, data["issue_number"], comment)
-                elif data.get("pull_request_number"):
-                    github_client.create_issue_comment(owner, repo_name, data["pull_request_number"], comment)
+                comment_context = {
+                    "access_token": access_token,
+                    "owner": owner,
+                    "repo_name": repo_name,
+                    "number": data.get("issue_number") or data.get("pull_request_number"),
+                    "comment": comment,
+                    "task_id": task_id,
+                }
 
     return jsonify(
         {
@@ -745,7 +837,7 @@ def link_task_with_github(task_id):
                 "created_at": persisted_link.created_at.isoformat() if persisted_link.created_at else None,
             },
         }
-    )
+    ), comment_context
 
 
 def get_task_github_links(task_id):

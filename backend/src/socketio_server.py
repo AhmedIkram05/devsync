@@ -10,7 +10,7 @@ from jwt.exceptions import InvalidTokenError
 
 from .auth.rbac import Role
 from .auth.token_blocklist import is_token_revoked
-from .db.models import User, db, project_members
+from .db.models import Task, User, db, project_members
 from .services.redis_client import get_redis
 
 
@@ -41,10 +41,36 @@ socketio = SocketIO(cors_allowed_origins=_cors_allowed_origins())
 logger = logging.getLogger(__name__)
 
 # Store for connected users and project rooms
-connected_users = {}  # user_id -> session_id
+connected_users = {}  # user_id -> set of session ids (one user may have several tabs open)
 project_rooms = {}  # project_id -> [user_ids]
 sid_users = {}  # session_id -> user_id
 sid_tokens = {}  # session_id -> decoded JWT payload (re-validated on every event)
+
+
+def _add_user_sid(user_id, sid):
+    """Register *sid* for *user_id* (multi-tab: each tab is its own sid)."""
+    connected_users.setdefault(user_id, set()).add(sid)
+
+
+def _remove_user_sid(user_id, sid):
+    """Drop one sid for *user_id*; True when the user's last tab is gone."""
+    sids = connected_users.get(user_id)
+    if sids is None:
+        return True
+    sids.discard(sid)
+    if sids:
+        return False
+    connected_users.pop(user_id, None)
+    return True
+
+
+def _user_id_for_sid(sid):
+    """Reverse lookup: the user id owning *sid*, or None."""
+    for user_id, sids in connected_users.items():
+        if sid in sids:
+            return user_id
+    return None
+
 
 # D5 presence: small keys with short TTLs; the k8s pod name distinguishes
 # replicas so a reconnect through another pod never deletes the newer key.
@@ -251,28 +277,31 @@ def handle_connect(auth=None):
 
     sid_users[request.sid] = user_id
     sid_tokens[request.sid] = decoded_token
-    connected_users[user_id] = request.sid
+    _add_user_sid(user_id, request.sid)
     print(f"User {user_id} connected with socket ID {request.sid}")
     return True
 
 
 @socketio.on("disconnect")
 def handle_disconnect():
-    """Handle client disconnections"""
+    """Handle client disconnections (per-sid: other tabs of the user stay live)"""
     # Remove user from connected_users
     user_id = sid_users.pop(request.sid, None)
     sid_tokens.pop(request.sid, None)
     if user_id is None:
-        user_id = next((uid for uid, sid in connected_users.items() if sid == request.sid), None)
+        user_id = _user_id_for_sid(request.sid)
 
     if user_id:
-        connected_users.pop(user_id, None)
-        _presence_delete(user_id, request.sid)
+        # Only the last tab closing ends the user's presence and room entries;
+        # with multi-tab sessions, one disconnect must not orphan the others.
+        last_tab_gone = _remove_user_sid(user_id, request.sid)
+        if last_tab_gone:
+            _presence_delete(user_id, request.sid)
 
-        # Remove user from all project rooms
-        for _project_id, members in project_rooms.items():
-            if user_id in members:
-                members.remove(user_id)
+            # Remove user from all project rooms
+            for _project_id, members in project_rooms.items():
+                if user_id in members:
+                    members.remove(user_id)
 
     print("Client disconnected:", request.sid)
 
@@ -282,7 +311,7 @@ def handle_disconnect():
 def handle_register(data, user_id):
     """Register a user's socket connection"""
     sid_users[request.sid] = user_id
-    connected_users[user_id] = request.sid
+    _add_user_sid(user_id, request.sid)
     _presence_set(user_id, request.sid)
     print(f"User {user_id} registered with socket ID {request.sid}")
     return {"status": "success", "message": "Registered successfully"}
@@ -379,6 +408,21 @@ def handle_task_update(data, user_id):
     if _membership_denied(project_id, user_id):
         return {"status": "error", "message": "You are not a member of this project"}
 
+    # A task_id must actually belong to the claimed project before fan-out:
+    # room membership alone would let a member broadcast task ids from any
+    # other project into this room. When the lookup itself fails (DB down) we
+    # keep the pre-existing degraded behaviour — membership was re-verified
+    # above — but a known task with a different project_id is never broadcast.
+    task_id_is_numeric = str(task_id).isdigit()
+    task = None
+    if task_id_is_numeric:
+        try:
+            task = db.session.get(Task, int(task_id))
+        except Exception:
+            logger.warning("task_update: task lookup failed; skipping task-project check", exc_info=True)
+    if task_id_is_numeric and (task is None or str(getattr(task, "project_id", None)) != str(project_id)):
+        return {"status": "error", "message": "Task does not belong to this project"}
+
     # Broadcast to project room
     _safe_emit(
         "task_updated",
@@ -412,9 +456,9 @@ def handle_comment_added(data, user_id):
         to=f"project_{project_id}",
     )
 
-    # Additionally notify specifically mentioned users
+    # Additionally notify specifically mentioned users (all of their tabs).
     for mentioned_user in mentioned_users:
-        if mentioned_user in connected_users:
+        for mentioned_sid in connected_users.get(mentioned_user, set()):
             _safe_emit(
                 "user_mentioned",
                 {
@@ -423,7 +467,7 @@ def handle_comment_added(data, user_id):
                     "mentioned_by": user_id,
                     "timestamp": data.get("timestamp"),
                 },
-                to=connected_users[mentioned_user],
+                to=mentioned_sid,
             )
 
     return {"status": "success", "message": "Comment notification sent"}

@@ -63,3 +63,41 @@ class TestWSGI:
             _fresh_import_wsgi()
 
         mock_create_app.assert_called_once()
+
+    def test_wsgi_patches_psycopg_when_gevent_monkey_patched(self):
+        """The gevent worker monkey-patches sockets before loading the app; the
+        psycopg2 shim must engage exactly then, never in plain threading mode."""
+        # Warm sys.modules first: this test replaces sys.path entirely, so any
+        # first-time import inside the wsgi module would not find site-packages.
+        import gevent.monkey  # noqa: F401
+        import psycogreen.gevent  # noqa: F401
+
+        with (
+            patch.object(sys, "path", ["/usr/lib/python"]),
+            patch("os.path.dirname", return_value="/tmp/devsync-backend/src"),
+            patch("os.path.abspath", return_value="/tmp/devsync-backend"),
+            patch("src.app.create_app", return_value=(MagicMock(), MagicMock())),
+            patch("gevent.monkey.is_module_patched", return_value=True) as mock_is_patched,
+            patch("psycogreen.gevent.patch_psycopg") as mock_patch_psycopg,
+        ):
+            _fresh_import_wsgi()
+
+        mock_is_patched.assert_called_with("socket")
+        mock_patch_psycopg.assert_called_once()
+
+    def test_wsgi_skips_psycopg_patch_outside_gevent(self):
+        """Without gevent monkey-patching (dev server, tests) no patch runs."""
+        import gevent.monkey  # noqa: F401
+        import psycogreen.gevent  # noqa: F401
+
+        with (
+            patch.object(sys, "path", ["/usr/lib/python"]),
+            patch("os.path.dirname", return_value="/tmp/devsync-backend/src"),
+            patch("os.path.abspath", return_value="/tmp/devsync-backend"),
+            patch("src.app.create_app", return_value=(MagicMock(), MagicMock())),
+            patch("gevent.monkey.is_module_patched", return_value=False),
+            patch("psycogreen.gevent.patch_psycopg") as mock_patch_psycopg,
+        ):
+            _fresh_import_wsgi()
+
+        mock_patch_psycopg.assert_not_called()

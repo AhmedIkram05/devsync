@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from flask import jsonify, request
 from flask_jwt_extended import get_jwt, get_jwt_identity
 
-from ...auth.rbac import Role
+from ...auth.rbac import Role, get_user_project_ids
 from ...db.models import Notification, db  # Changed to relative import
 from ...db.transaction import transactional
 from ...services import audit_service
@@ -49,14 +49,22 @@ def create_notification():
         return jsonify({"message": "Invalid user identity"}), 401
 
     # Forgery guard: only team leads and admins may target another user;
-    # everyone else notifies themselves regardless of the payload.
+    # everyone else notifies themselves regardless of the payload. TLs may
+    # only target users who share a project with them — arbitrary targeting
+    # would let a TL push arbitrary title/message text (a phishing channel
+    # into the browser-notification popup) at anyone in the system.
     target_user_id = data.get("user_id", jwt_user_id)
     try:
         target_user_id = int(target_user_id)
     except (TypeError, ValueError):
         return jsonify({"message": "User ID must be an integer"}), 400
-    if get_jwt().get("role") not in (Role.TEAM_LEAD.value, Role.ADMIN.value):
+    role = get_jwt().get("role")
+    if role not in (Role.TEAM_LEAD.value, Role.ADMIN.value):
         target_user_id = jwt_user_id
+    elif role == Role.TEAM_LEAD.value and target_user_id != jwt_user_id:
+        shared_projects = get_user_project_ids(jwt_user_id) & get_user_project_ids(target_user_id)
+        if not shared_projects:
+            return jsonify({"message": "You can only notify users who share a project with you"}), 403
 
     message = data.get("message") or data.get("content")
     title = data.get("title") or message[:80]
