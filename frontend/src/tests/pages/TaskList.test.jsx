@@ -35,9 +35,24 @@ jest.mock('../../components/LoadingSpinner', () => (props) => {
   return <div>{props.message || 'Loading'}</div>;
 });
 
+// Mirrors the backend /tasks filtering (status, priority, project_id,
+// assigned_to, search) so fixtures respond to server-side query params the
+// way the real endpoint does.
+const applyServerTasks = (tasks) => async (params = {}) => tasks.filter((task) => {
+  if (params.status && task.status !== params.status) return false;
+  if (params.priority && task.priority !== params.priority) return false;
+  if (params.project_id && Number(task.project_id) !== Number(params.project_id)) return false;
+  if (params.assigned_to && Number(task.assigned_to) !== Number(params.assigned_to)) return false;
+  if (params.search && !task.title.toLowerCase().includes(params.search.toLowerCase())) return false;
+  return true;
+});
+
 describe('TaskList page', () => {
   beforeEach(() => {
     jest.spyOn(console, 'error').mockImplementation(() => {});
+    // Reset the URL: the scope initializer reads ?assigned_to/?assignee, and a
+    // deep-link test would otherwise leak into later tests in this file.
+    window.history.pushState({}, '', '/tasks');
     mockNavigate.mockReset();
     taskService.getAllTasks.mockReset();
     taskService.getTasksPaginated.mockReset();
@@ -54,7 +69,7 @@ describe('TaskList page', () => {
 
   test('renders tasks, filters results, updates status, and navigates from actions', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 5, role: 'admin' } });
-    taskService.getAllTasks.mockResolvedValue([
+    taskService.getAllTasks.mockImplementation(applyServerTasks([
       {
         id: 1,
         title: 'Alpha Task',
@@ -75,7 +90,7 @@ describe('TaskList page', () => {
         assigned_to: 5,
         deadline: '2099-02-03T00:00:00.000Z',
       },
-    ]);
+    ]));
     taskService.updateTask.mockResolvedValue({});
 
     render(<TaskList />);
@@ -87,7 +102,12 @@ describe('TaskList page', () => {
       target: { value: 'Alpha' },
     });
 
-    expect(screen.getByText('Alpha Task')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(taskService.getTasksPaginated).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: 'Alpha' })
+      );
+    });
+    expect(await screen.findByText('Alpha Task')).toBeInTheDocument();
     expect(screen.queryByText('Beta Task')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /new task/i }));
@@ -233,9 +253,9 @@ describe('TaskList page', () => {
 
   test('clear-filters button is shown when a filter is active, hidden when none', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 5, role: 'developer' } });
-    taskService.getAllTasks.mockResolvedValue([
+    taskService.getAllTasks.mockImplementation(applyServerTasks([
       { id: 1, title: 'Alpha', status: 'todo', priority: 'high', progress: 0, assigned_to: 5, deadline: null },
-    ]);
+    ]));
 
     render(<TaskList />);
     await screen.findByText('Alpha');
@@ -327,10 +347,10 @@ describe('TaskList page', () => {
 
   test('filters by priority', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 5, role: 'admin' } });
-    taskService.getAllTasks.mockResolvedValue([
+    taskService.getAllTasks.mockImplementation(applyServerTasks([
       { id: 1, title: 'High Task', status: 'todo', priority: 'high', progress: 0, assigned_to: 5, deadline: null },
       { id: 2, title: 'Low Task', status: 'todo', priority: 'low', progress: 0, assigned_to: 5, deadline: null },
-    ]);
+    ]));
 
     render(<TaskList />);
     expect(await screen.findByText('High Task')).toBeInTheDocument();
@@ -338,16 +358,21 @@ describe('TaskList page', () => {
     const prioritySelect = screen.getByLabelText('Priority');
     fireEvent.change(prioritySelect, { target: { value: 'high' } });
 
-    expect(screen.getByText('High Task')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(taskService.getTasksPaginated).toHaveBeenLastCalledWith(
+        expect.objectContaining({ priority: 'high' })
+      );
+    });
+    expect(await screen.findByText('High Task')).toBeInTheDocument();
     expect(screen.queryByText('Low Task')).not.toBeInTheDocument();
   });
 
   test('filters by status', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 5, role: 'admin' } });
-    taskService.getAllTasks.mockResolvedValue([
+    taskService.getAllTasks.mockImplementation(applyServerTasks([
       { id: 1, title: 'Todo Task', status: 'todo', priority: 'high', progress: 0, assigned_to: 5, deadline: null },
       { id: 2, title: 'Completed Task', status: 'completed', priority: 'high', progress: 100, assigned_to: 5, deadline: null },
-    ]);
+    ]));
 
     render(<TaskList />);
     expect(await screen.findByText('Todo Task')).toBeInTheDocument();
@@ -355,16 +380,21 @@ describe('TaskList page', () => {
     const statusSelect = screen.getByLabelText('Status');
     fireEvent.change(statusSelect, { target: { value: 'completed' } });
 
+    await waitFor(() => {
+      expect(taskService.getTasksPaginated).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: 'completed' })
+      );
+    });
+    expect(await screen.findByText('Completed Task')).toBeInTheDocument();
     expect(screen.queryByText('Todo Task')).not.toBeInTheDocument();
-    expect(screen.getByText('Completed Task')).toBeInTheDocument();
   });
 
   test('clears filters when Clear Filters button clicked', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 5, role: 'admin' } });
-    taskService.getAllTasks.mockResolvedValue([
+    taskService.getAllTasks.mockImplementation(applyServerTasks([
       { id: 1, title: 'High Task', status: 'todo', priority: 'high', progress: 0, assigned_to: 5, deadline: null },
       { id: 2, title: 'Low Task', status: 'todo', priority: 'low', progress: 0, assigned_to: 5, deadline: null },
-    ]);
+    ]));
 
     render(<TaskList />);
     expect(await screen.findByText('High Task')).toBeInTheDocument();
@@ -372,13 +402,25 @@ describe('TaskList page', () => {
     // Apply filter
     const prioritySelect = screen.getByLabelText('Priority');
     fireEvent.change(prioritySelect, { target: { value: 'high' } });
+    await waitFor(() => {
+      expect(taskService.getTasksPaginated).toHaveBeenLastCalledWith(
+        expect.objectContaining({ priority: 'high' })
+      );
+    });
+    expect(await screen.findByText('High Task')).toBeInTheDocument();
     expect(screen.queryByText('Low Task')).not.toBeInTheDocument();
 
-    // Clear filter
+    // Clear filter — request goes back to the unfiltered page 1
     const clearButton = screen.getByRole('button', { name: /Clear Filters/i });
     fireEvent.click(clearButton);
-    
-    expect(screen.getByText('High Task')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(taskService.getTasksPaginated).toHaveBeenLastCalledWith({
+        page: 1,
+        per_page: 100,
+      });
+    });
+    expect(await screen.findByText('High Task')).toBeInTheDocument();
     expect(screen.getByText('Low Task')).toBeInTheDocument();
   });
 
@@ -403,9 +445,9 @@ describe('TaskList page', () => {
 
   test('handles empty search results', async () => {
     useAuth.mockReturnValue({ currentUser: { id: 5, role: 'admin' } });
-    taskService.getAllTasks.mockResolvedValue([
+    taskService.getAllTasks.mockImplementation(applyServerTasks([
       { id: 1, title: 'Alpha', status: 'todo', priority: 'high', progress: 0, assigned_to: 5, deadline: null },
-    ]);
+    ]));
 
     render(<TaskList />);
     expect(await screen.findByText('Alpha')).toBeInTheDocument();
@@ -414,7 +456,7 @@ describe('TaskList page', () => {
       target: { value: 'xyz-no-match' },
     });
 
-    expect(screen.getByText(/No tasks found/i)).toBeInTheDocument();
+    expect(await screen.findByText(/No tasks found/i)).toBeInTheDocument();
   });
 
   test('applies multiple filters (priority AND status)', async () => {
@@ -463,5 +505,83 @@ describe('TaskList page', () => {
     expect(await screen.findByText('Todo Item')).toBeInTheDocument();
     expect(screen.getByText('Inprogress Item')).toBeInTheDocument();
     expect(screen.getByText('Review Item')).toBeInTheDocument();
+  });
+
+  test('sends active filters to the server and resets to page 1 on filter change', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'admin' } });
+    taskService.getAllTasks.mockImplementation(applyServerTasks([
+      { id: 1, title: 'Page One Task', status: 'todo', priority: 'low', progress: 0, assigned_to: 5, deadline: null },
+      { id: 2, title: 'Completed Task', status: 'completed', priority: 'low', progress: 100, assigned_to: 5, deadline: null },
+    ]));
+    taskService.getTasksPaginated.mockImplementation(async (params) => ({
+      items: await taskService.getAllTasks(params),
+      pagination: { page: params.page, per_page: 100, total: 250, pages: 3 },
+    }));
+
+    render(<TaskList />);
+    expect(await screen.findByText('Page One Task')).toBeInTheDocument();
+
+    // Move to page 2, then change a filter — the request must go back to page 1
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => {
+      expect(taskService.getTasksPaginated).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 2 })
+      );
+    });
+    // Loading replaces the whole page (filters included) until page 2 renders
+    expect(await screen.findByText('Page One Task')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'completed' } });
+    await waitFor(() => {
+      expect(taskService.getTasksPaginated).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, status: 'completed' })
+      );
+    });
+    expect(await screen.findByText('Completed Task')).toBeInTheDocument();
+    expect(screen.queryByText('Page One Task')).not.toBeInTheDocument();
+  });
+
+  test('maps My Tasks scope to the assigned_to server param', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'admin' } });
+    taskService.getAllTasks.mockImplementation(applyServerTasks([
+      { id: 1, title: 'Mine', status: 'todo', priority: 'low', progress: 0, assigned_to: 5, deadline: null },
+      { id: 2, title: 'Theirs', status: 'todo', priority: 'low', progress: 0, assigned_to: 9, deadline: null },
+    ]));
+
+    render(<TaskList />);
+    expect(await screen.findByText('Mine')).toBeInTheDocument();
+    expect(screen.getByText('Theirs')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'My Tasks' }));
+
+    await waitFor(() => {
+      expect(taskService.getTasksPaginated).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, assigned_to: 5 })
+      );
+    });
+    expect(await screen.findByText('Mine')).toBeInTheDocument();
+    expect(screen.queryByText('Theirs')).not.toBeInTheDocument();
+  });
+
+  test('debounces search input into a single server request', async () => {
+    useAuth.mockReturnValue({ currentUser: { id: 5, role: 'admin' } });
+    taskService.getAllTasks.mockImplementation(applyServerTasks([
+      { id: 1, title: 'Alpha Task', status: 'todo', priority: 'high', progress: 0, assigned_to: 5, deadline: null },
+    ]));
+
+    render(<TaskList />);
+    expect(await screen.findByText('Alpha Task')).toBeInTheDocument();
+    const callsAfterLoad = taskService.getTasksPaginated.mock.calls.length;
+
+    fireEvent.change(screen.getByLabelText(/search/i), { target: { value: 'Alpha' } });
+    // Debounce: no request fires while the user is still typing
+    expect(taskService.getTasksPaginated.mock.calls.length).toBe(callsAfterLoad);
+
+    await waitFor(() => {
+      expect(taskService.getTasksPaginated).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: 'Alpha' })
+      );
+    });
+    expect(taskService.getTasksPaginated.mock.calls.length).toBe(callsAfterLoad + 1);
   });
 });
