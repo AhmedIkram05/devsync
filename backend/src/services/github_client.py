@@ -328,13 +328,13 @@ class GitHubClient:
         retry = True
         retry_count = 0
         max_retries = 2
+        method_upper = method.upper()
 
         while retry and retry_count <= max_retries:
             retry = False
             retry_count += 1
 
             try:
-                method_upper = method.upper()
                 assert url.startswith(self.BASE_API_URL)
                 request_kwargs = {
                     "headers": self.get_headers(),
@@ -381,7 +381,10 @@ class GitHubClient:
                 return None
             except Exception as e:
                 logger.error(f"Request error: {str(e)}")
-                if retry_count <= max_retries:
+                # POST is non-idempotent: a network error may have delivered the
+                # request, so auto-retrying can double-post (e.g. issue comments).
+                # Only explicit caller retries may repeat it.
+                if method_upper != "POST" and retry_count <= max_retries:
                     logger.info(f"Retrying... (attempt {retry_count}/{max_retries})")
                     retry = True
                     time.sleep(1)  # Wait before retrying

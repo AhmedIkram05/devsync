@@ -51,6 +51,10 @@ python-engineio==4.14.0
 gunicorn==26.2.0
 gevent==26.9.0
 gevent-websocket==0.10.1
+# psycopg2 blocks the gevent worker's event loop on every DB roundtrip unless
+# its wait callbacks are gevent-cooperative; this tiny pure-python shim wires
+# that up at boot (src/wsgi.py, guarded to gevent-patched processes).
+psycogreen==1.0.2
 supervisor==4.3.0
 
 # API documentation

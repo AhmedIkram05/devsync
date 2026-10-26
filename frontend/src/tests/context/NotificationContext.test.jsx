@@ -321,6 +321,44 @@ describe('NotificationContext', () => {
     });
   });
 
+  test('keeps the notification list when the endpoint returns an error-shaped response', async () => {
+    // fetchWithAuth returns { error, status } for non-critical endpoints
+    // instead of throwing; that must surface as an error, never as empty data.
+    notificationService.getNotifications
+      .mockResolvedValueOnce([{ id: 7, read: false, message: 'First' }])
+      .mockResolvedValueOnce({ error: 'Internal Server Error', status: 500 })
+      .mockResolvedValue([{ id: 7, read: false, message: 'First' }]);
+
+    render(
+      <NotificationProvider>
+        <NotificationHarness />
+      </NotificationProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('total-count')).toHaveTextContent('1');
+    });
+
+    // Non-forced refresh debounces into a forced retry, which now hits the
+    // error-shaped response.
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('server-down')).toHaveTextContent('true');
+    });
+
+    // The stale list survives the transient failure; the error is surfaced.
+    expect(screen.getByTestId('total-count')).toHaveTextContent('1');
+    expect(screen.getByTestId('error-text')).toHaveTextContent('HTTP 500');
+
+    // Recovery: a forced refresh against a healthy endpoint clears the flag.
+    fireEvent.click(screen.getByRole('button', { name: 'Check Status' }));
+    await waitFor(() => {
+      expect(screen.getByTestId('server-down')).toHaveTextContent('false');
+    });
+    expect(screen.getByTestId('total-count')).toHaveTextContent('1');
+  });
+
   test('handles incoming socket notifications and browser notification permission', async () => {
     notificationService.getNotifications.mockResolvedValue([]);
 

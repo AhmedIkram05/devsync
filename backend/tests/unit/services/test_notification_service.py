@@ -20,7 +20,7 @@ def mock_emit():
 
 @pytest.fixture
 def mock_connected_users():
-    with patch("src.services.notification_service.connected_users", {"user1": "socket1"}):
+    with patch("src.services.notification_service.connected_users", {"user1": {"socket1", "socket1b"}}):
         yield
 
 
@@ -71,8 +71,7 @@ def test_send_to_user(mock_db_session, mock_emit, mock_connected_users, notifica
     mock_db_session.add.assert_called_once()
     mock_db_session.commit.assert_called_once()
 
-    # Verify the emit was called with right parameters
-    mock_emit.assert_called_once()
+    # Verify the emit was called with right parameters (one emit per open tab)
     event_name, payload = mock_emit.call_args.args
     assert event_name == "notification"
     assert payload["id"] == 1
@@ -82,7 +81,9 @@ def test_send_to_user(mock_db_session, mock_emit, mock_connected_users, notifica
     assert payload["content"] == notification_data["message"]
     assert payload["reference_id"] == notification_data["reference_id"]
     assert payload["timestamp"] == mock_notification.created_at.isoformat()
-    assert mock_emit.call_args.kwargs == {"to": "socket1"}
+    # Multi-tab users have one sid per tab; every tab gets the notification.
+    assert mock_emit.call_count == 2
+    assert {c.kwargs["to"] for c in mock_emit.call_args_list} == {"socket1", "socket1b"}
 
 
 def test_send_to_user_not_connected(mock_db_session, mock_emit, mock_connected_users, notification_data):
@@ -123,7 +124,8 @@ def test_send_to_user_websocket_failure_logs_and_commits(
         notification.created_at = mock_notification.created_at
 
     mock_db_session.add.side_effect = mock_add
-    mock_emit.side_effect = Exception("WebSocket emit timeout")
+    # Two tabs are connected; the first tab's emit fails, the second succeeds.
+    mock_emit.side_effect = [Exception("WebSocket emit timeout"), None]
 
     with patch("src.services.notification_service.logger.exception") as mock_logger_exception:
         from src.services.notification_service import NotificationService

@@ -170,6 +170,10 @@ class Notification(db.Model):
         Index("idx_notifications_is_read", "is_read"),  # Changed from 'read' to 'is_read'
         Index("idx_notifications_task_id", "task_id"),
         Index("idx_notifications_user_id", "user_id"),
+        # Hottest per-user queries: unread counts (user_id, is_read) and the
+        # per-overdue-task dedup SELECT (user_id, task_id, notification_type).
+        Index("idx_notifications_user_read", "user_id", "is_read"),
+        Index("idx_notifications_user_task", "user_id", "task_id"),
     )
 
     def __repr__(self):

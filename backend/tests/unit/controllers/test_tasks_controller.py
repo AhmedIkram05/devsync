@@ -412,3 +412,57 @@ def test_delete_task_permission_denied_for_non_owner(app, mock_jwt_identity, moc
 
         assert status_code == 403
         assert "You can only delete tasks assigned to you" in response.get_json()["message"]
+
+
+def test_get_all_tasks_overdue_fanout_runs_in_one_transaction(app, mock_jwt_identity, mock_jwt, mock_db):
+    """The overdue notification fan-out commits once for the whole GET, not
+    once per overdue task."""
+    from backend.src.services import settings_service
+
+    # A status filter keeps the query-chain wiring below on the exercised path.
+    with app.test_request_context("?status=todo"):
+        with (
+            patch("backend.src.api.controllers.tasks_controller.Task.query") as mock_query,
+            patch("backend.src.api.controllers.tasks_controller.is_task_overdue", return_value=True),
+            patch("backend.src.api.controllers.tasks_controller.get_project_scope_ids", return_value=set()),
+            patch.object(settings_service, "get_bool_setting", return_value=True),
+            patch(
+                "backend.src.api.controllers.tasks_controller.NotificationService.task_overdue_notification"
+            ) as mock_overdue,
+        ):
+            overdue_task = MagicMock()
+            overdue_task.id = 5
+            overdue_task.title = "Overdue"
+            overdue_task.description = ""
+            overdue_task.status = "todo"
+            overdue_task.priority = "high"
+            overdue_task.progress = 0
+            overdue_task.assigned_to = 2
+            overdue_task.created_by = 1
+            overdue_task.deadline = None
+            overdue_task.created_at = MagicMock()
+            overdue_task.created_at.isoformat.return_value = "2023-01-01T00:00:00"
+            overdue_task.updated_at = MagicMock()
+            overdue_task.updated_at.isoformat.return_value = "2023-01-02T00:00:00"
+
+            mock_filtered_query = MagicMock()
+            mock_query.filter.return_value = mock_filtered_query
+            ordered = MagicMock()
+            mock_filtered_query.order_by.return_value = ordered
+            paginated = MagicMock()
+            paginated.items = [overdue_task, overdue_task]
+            paginated.total = 2
+            paginated.pages = 1
+            ordered.paginate.return_value = paginated
+
+            from backend.src.api.controllers.tasks_controller import get_all_tasks
+
+            response = get_all_tasks()
+
+            data = response.get_json()
+            assert len(data["tasks"]) == 2
+
+            # One transaction: a single commit for the whole request, and one
+            # dedup'd notification per overdue task.
+            assert mock_overdue.call_count == 2
+            assert mock_db.session.commit.call_count == 1

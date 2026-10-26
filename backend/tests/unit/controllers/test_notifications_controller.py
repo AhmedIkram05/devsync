@@ -167,6 +167,7 @@ def test_create_notification_team_lead_may_target_other_user(mock_db_session, ap
         patch("src.api.controllers.notifications_controller.NotificationService.send_to_user") as mock_send_to_user,
         patch("src.api.controllers.notifications_controller.get_jwt_identity") as mock_identity,
         patch("src.api.controllers.notifications_controller.get_jwt") as mock_claims,
+        patch("src.api.controllers.notifications_controller.get_user_project_ids", return_value={5}) as mock_scope,
     ):
         mock_validate.return_value = None
         mock_identity.return_value = {"user_id": 1}
@@ -182,6 +183,34 @@ def test_create_notification_team_lead_may_target_other_user(mock_db_session, ap
 
         assert status_code == 201
         assert mock_send_to_user.call_args.kwargs["user_id"] == 99
+        # Targeting another user is allowed only via a shared project.
+        assert mock_scope.call_count == 2
+
+
+def test_create_notification_team_lead_cannot_target_unshared_user(mock_db_session, app_context):
+    from flask import request
+
+    request.get_json = lambda: {"content": "Test notification", "user_id": 99}
+    with (
+        patch("src.api.controllers.notifications_controller.validate_notification_data") as mock_validate,
+        patch("src.api.controllers.notifications_controller.NotificationService.send_to_user") as mock_send_to_user,
+        patch("src.api.controllers.notifications_controller.get_jwt_identity") as mock_identity,
+        patch("src.api.controllers.notifications_controller.get_jwt") as mock_claims,
+        patch(
+            "src.api.controllers.notifications_controller.get_user_project_ids",
+            side_effect=[{5}, {6}],
+        ),
+    ):
+        mock_validate.return_value = None
+        mock_identity.return_value = {"user_id": 1}
+        mock_claims.return_value = {"role": "team_lead"}
+
+        from src.api.controllers.notifications_controller import create_notification
+
+        response, status_code = create_notification()
+
+        assert status_code == 403
+        mock_send_to_user.assert_not_called()
 
 
 def test_mark_notification_read(mock_get_jwt_identity, mock_db_session, mock_notification, app_context):

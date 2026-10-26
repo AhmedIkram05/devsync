@@ -22,7 +22,17 @@ def _task(**kwargs):
     return SimpleNamespace(**defaults)
 
 
-def _route_db_query(mock_db, mock_task, mock_user, *, task_status_rows=(), user_role_rows=(), project_task_rows=()):
+def _route_db_query(
+    mock_db,
+    mock_task,
+    mock_user,
+    *,
+    task_status_rows=(),
+    user_role_rows=(),
+    project_task_rows=(),
+    team_lead_project_rows=(),
+    mock_project=None,
+):
     """Route db.session.query(col, ...) aggregate calls by their first column."""
     task_status_q = MagicMock()
     task_status_q.group_by.return_value.all.return_value = list(task_status_rows)
@@ -33,6 +43,9 @@ def _route_db_query(mock_db, mock_task, mock_user, *, task_status_rows=(), user_
     project_task_q = MagicMock()
     project_task_q.filter.return_value.group_by.return_value.all.return_value = list(project_task_rows)
 
+    team_lead_q = MagicMock()
+    team_lead_q.outerjoin.return_value.filter.return_value.all.return_value = list(team_lead_project_rows)
+
     def router(*args):
         first = args[0]
         if first is mock_task.status:
@@ -41,6 +54,8 @@ def _route_db_query(mock_db, mock_task, mock_user, *, task_status_rows=(), user_
             return user_role_q
         if first is mock_task.project_id:
             return project_task_q
+        if mock_project is not None and first is mock_project.id:
+            return team_lead_q
         return MagicMock()
 
     mock_db.session.query.side_effect = router
@@ -355,6 +370,103 @@ def test_get_project_dashboard_not_found(mock_project, app):
     assert status == 404
 
 
+@patch("backend.src.api.controllers.dashboard_controller.get_jwt", return_value={"role": "admin"})
+@patch("backend.src.api.controllers.dashboard_controller.get_jwt_identity", return_value={"user_id": 1})
+@patch("backend.src.api.controllers.dashboard_controller.get_tasks_due_soon", return_value=[])
+@patch("backend.src.api.controllers.dashboard_controller.get_recent_completed_tasks", return_value=[])
+@patch("backend.src.api.controllers.dashboard_controller.User")
+@patch("backend.src.api.controllers.dashboard_controller.db")
+def test_get_user_dashboard_counts_from_group_by(
+    mock_db, mock_user, mock_identity, mock_jwt, mock_completed, mock_due, app
+):
+    """The user dashboard's task counts come from GROUP BY queries, one per scope."""
+    from backend.src.api.controllers.dashboard_controller import get_user_dashboard
+
+    mock_user.query.get.return_value = SimpleNamespace(
+        id=1, name="Admin", role="admin", projects=SimpleNamespace(all=lambda: [])
+    )
+
+    assigned_q = MagicMock()
+    assigned_q.filter.return_value.group_by.return_value.all.return_value = [("todo", 1), ("done", 2)]
+    team_q = MagicMock()
+    team_q.join.return_value.filter.return_value.group_by.return_value.all.return_value = [
+        ("todo", 1),
+        ("in_progress", 2),
+        ("done", 1),
+    ]
+    # Called in order: assigned counts, then the admin-created team counts.
+    mock_db.session.query.side_effect = [assigned_q, team_q]
+
+    with app.app_context():
+        data = get_user_dashboard().get_json()
+
+    assert data["tasks"]["assigned_count"] == 3
+    assert data["tasks"]["pending_count"] == 1
+    assert data["tasks"]["completed_count"] == 2
+    assert data["team"]["total_tasks"] == 4
+    assert data["team"]["completed_tasks"] == 1
+    assert data["team"]["in_progress_tasks"] == 2
+    assert data["team"]["pending_tasks"] == 1
+
+
+@patch("backend.src.api.controllers.dashboard_controller.db")
+def test_team_lead_project_ids_single_membership_join(mock_db, app):
+    """TL scoping is one membership join — the Project.query.all() N+1 is gone."""
+    from backend.src.api.controllers import dashboard_controller as dc
+
+    join_q = MagicMock()
+    join_q.outerjoin.return_value.filter.return_value.all.return_value = [(10,), (11,)]
+    mock_db.session.query.return_value = join_q
+
+    assert dc._team_lead_project_ids(2) == [10, 11]
+    # Exactly one aggregate query serves the whole scoping decision.
+    mock_db.session.query.assert_called_once()
+
+
+@patch("backend.src.api.controllers.dashboard_controller.joinedload", side_effect=lambda rel: rel)
+@patch("backend.src.api.controllers.dashboard_controller.TaskGitHubLink")
+@patch("backend.src.api.controllers.dashboard_controller.get_tasks_due_soon", return_value=[_task(id=5)])
+@patch("backend.src.api.controllers.dashboard_controller.get_jwt", return_value={"role": "developer"})
+@patch("backend.src.api.controllers.dashboard_controller.get_jwt_identity", return_value={"user_id": 3})
+@patch("backend.src.api.controllers.dashboard_controller.User")
+@patch("backend.src.api.controllers.dashboard_controller.Task")
+@patch("backend.src.api.controllers.dashboard_controller.db")
+def test_client_dashboard_has_single_due_soon_payload(
+    mock_db, mock_task, mock_user, mock_identity, mock_jwt, mock_due, mock_links, mock_joinedload, app
+):
+    """The client dashboard serializes due-soon tasks once (upcomingDeadlines)."""
+    from backend.src.api.controllers.dashboard_controller import get_client_dashboard
+
+    mock_user.query.get.return_value = SimpleNamespace(
+        id=3, name="Dev", role="developer", projects=SimpleNamespace(all=lambda: [])
+    )
+    mock_db.session.query.return_value.filter.return_value.group_by.return_value.all.return_value = [("todo", 1)]
+    # Wire Task.query.options().filter().order_by().limit().all() for the recent list.
+    options_q = MagicMock()
+    filter_q = MagicMock()
+    order_q = MagicMock()
+    limit_q = MagicMock()
+    mock_task.query.options.return_value = options_q
+    options_q.filter.return_value = filter_q
+    filter_q.order_by.return_value = order_q
+    order_q.limit.return_value = limit_q
+    limit_q.all.return_value = []
+    link_q = MagicMock()
+    mock_links.query.join.return_value = link_q
+    link_q.outerjoin.return_value = link_q
+    link_q.filter.return_value = link_q
+    link_q.options.return_value = link_q
+    link_q.order_by.return_value = link_q
+    link_q.limit.return_value = link_q
+    link_q.all.return_value = []
+
+    with app.app_context():
+        data = get_client_dashboard().get_json()
+
+    assert "tasks_due_soon" not in data
+    assert [item["id"] for item in data["upcomingDeadlines"]] == [5]
+
+
 @patch("backend.src.api.controllers.dashboard_controller.get_recent_updated_project_tasks", return_value=[])
 @patch("backend.src.api.controllers.dashboard_controller.get_project_tasks_due_soon", return_value=[])
 @patch("backend.src.api.controllers.dashboard_controller.get_project_tasks")
@@ -517,24 +629,14 @@ def test_get_admin_dashboard_team_lead_kpis(
         task_status_rows=[("todo", 4)],
         user_role_rows=[("team_lead", 1)],
         project_task_rows=[(10, 2)],
+        # One membership join returns the scoped TL project ids directly.
+        team_lead_project_rows=[(10,), (11,)],
+        mock_project=mock_project,
     )
 
-    # Only active/on-hold projects the TL created or is a member of are scoped.
     scoped_project_created = SimpleNamespace(
-        id=10, status="active", created_by=2, team_members=[], name="Created Project", created_at=now
+        id=10, status="active", created_by=2, name="Created Project", created_at=now
     )
-    scoped_project_member = SimpleNamespace(
-        id=11,
-        status="on_hold",
-        created_by=99,
-        team_members=[SimpleNamespace(id=2)],
-        name="Member Project",
-        created_at=now,
-    )
-    ignored_project = SimpleNamespace(
-        id=12, status="completed", created_by=2, team_members=[], name="Closed Project", created_at=now
-    )
-    mock_project.query.all.return_value = [scoped_project_created, scoped_project_member, ignored_project]
     mock_project.query.count.return_value = 3
     mock_project.query.order_by.return_value.limit.return_value.all.return_value = [scoped_project_created]
 

@@ -49,8 +49,12 @@ def auth_headers(app, role="developer", user_id=1):
 
 
 def _seed_project_89(app):
-    """Project 89: members 1 and 2; users 3 (non-member) and 4 (admin) exist."""
-    from src.db.models import Project, User, db, project_members
+    """Project 89: members 1 and 2; users 3 (non-member) and 4 (admin) exist.
+
+    Task 9 belongs to project 89 so the emit-path task-project validation
+    passes for the broadcasts these smoke tests exercise.
+    """
+    from src.db.models import Project, Task, User, db, project_members
 
     with app.app_context():
         db.create_all()
@@ -61,6 +65,7 @@ def _seed_project_89(app):
                 User(id=3, name="Outsider", email="smoke3@example.com", password="x", role="developer"),
                 User(id=4, name="Admin", email="smoke4@example.com", password="x", role="admin"),
                 Project(id=89, name="Project 89", created_by=1),
+                Task(id=9, title="Smoke Task", status="in_progress", project_id=89, created_by=1),
             ]
         )
         db.session.flush()

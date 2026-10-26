@@ -92,7 +92,38 @@ def test_get_default_role(mock_get_settings):
 
 @patch("backend.src.services.settings_service.get_settings", return_value={"allow_self_registration": "false"})
 def test_get_bool_setting_uses_default_and_normalization(mock_get_settings):
-    assert settings_service.get_bool_setting("allow_self_registration", default=True) is False
+    settings_service._bool_cache.clear()
+    try:
+        assert settings_service.get_bool_setting("allow_self_registration", default=True) is False
+    finally:
+        settings_service._bool_cache.clear()
+
+
+@patch("backend.src.services.settings_service.get_settings", return_value={"notify_on_overdue_tasks": "false"})
+def test_get_bool_setting_caches_briefly(mock_get_settings):
+    """The hot GET /tasks setting read hits the DB once per TTL window, not per request."""
+    settings_service._bool_cache.clear()
+    try:
+        assert settings_service.get_bool_setting("notify_on_overdue_tasks", True) is False
+        assert settings_service.get_bool_setting("notify_on_overdue_tasks", True) is False
+        assert mock_get_settings.call_count == 1
+
+        # A different key is a separate cache entry.
+        assert settings_service.get_bool_setting("allow_self_registration", True) is True
+        assert mock_get_settings.call_count == 2
+    finally:
+        settings_service._bool_cache.clear()
+
+
+@patch("backend.src.services.settings_service.db")
+@patch("backend.src.services.settings_service.SystemSetting")
+def test_update_settings_clears_bool_cache(mock_system_setting, mock_db):
+    settings_service._bool_cache["notify_on_overdue_tasks"] = (float("inf"), True)
+    try:
+        settings_service.update_settings({"notify_on_overdue_tasks": False}, actor_id=1)
+        assert "notify_on_overdue_tasks" not in settings_service._bool_cache
+    finally:
+        settings_service._bool_cache.clear()
 
 
 @patch("backend.src.services.settings_service.get_settings", return_value={"audit_log_retention_days": "15"})

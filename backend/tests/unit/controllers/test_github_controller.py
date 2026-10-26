@@ -377,6 +377,59 @@ class TestGitHubController(unittest.TestCase):
             metadata={"repo_id": 1, "issue_number": 42, "pull_request_number": None},
         )
 
+    @patch("backend.src.api.controllers.github_controller.validate_task_github_link")
+    @patch("backend.src.api.controllers.github_controller.Task")
+    @patch("backend.src.api.controllers.github_controller.GitHubRepository")
+    @patch("backend.src.api.controllers.github_controller.TaskGitHubLink")
+    @patch("backend.src.api.controllers.github_controller.GitHubToken")
+    @patch("backend.src.api.controllers.github_controller.GitHubClient")
+    @patch("backend.src.api.controllers.github_controller.db")
+    @patch("backend.src.api.controllers.github_controller.audit_service.record")
+    def test_link_task_with_github_commits_link_before_comment(
+        self,
+        mock_audit_record,
+        mock_db,
+        mock_github_client,
+        mock_token_class,
+        mock_link_class,
+        mock_repo_class,
+        mock_task_class,
+        mock_validate,
+    ):
+        """The GitHub comment is posted AFTER the link commits, so a GitHub
+        outage cannot roll back the persisted link."""
+        mock_validate.return_value = None
+
+        mock_request.get_json.return_value = {"repo_id": 1, "issue_number": 42}
+
+        mock_task = MagicMock()
+        mock_task.id = 10
+        mock_task.title = "Test Task"
+        mock_task_class.query.get_or_404.return_value = mock_task
+
+        mock_repo = MagicMock()
+        mock_repo.repo_name = "owner/repo"
+        mock_repo_class.query.get_or_404.return_value = mock_repo
+
+        mock_link_class.query.filter_by.return_value.first.return_value = None
+
+        mock_token = MagicMock()
+        mock_token.access_token = encrypt_token("test-access-token")
+        mock_token_class.query.filter_by.return_value.first.return_value = mock_token
+
+        order = []
+        mock_db.session.commit.side_effect = lambda *a, **k: order.append("commit")
+        mock_client_instance = MagicMock()
+        mock_github_client.return_value = mock_client_instance
+        mock_client_instance.create_issue_comment.side_effect = lambda *a, **k: order.append("comment")
+
+        result = link_task_with_github(10)
+
+        self.assertEqual(result["message"], "Task linked with GitHub successfully")
+        self.assertIn("commit", order)
+        self.assertIn("comment", order)
+        self.assertLess(order.index("commit"), order.index("comment"))
+
     @patch("backend.src.api.controllers.github_controller.GitHubClient")
     @patch("backend.src.api.controllers.github_controller.consume_oauth_state")
     @patch("backend.src.api.controllers.github_controller.db")

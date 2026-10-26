@@ -117,11 +117,45 @@ def test_github_callback_missing_user_id_in_decoded_state(app):
     assert status == 400
 
 
+def test_github_callback_rejects_state_not_bound_to_session(app):
+    """A signed state is not enough: the callback must run in the browser
+    session that started the OAuth flow (login-CSRF binding)."""
+    signed_state = RealGitHubClient.create_state_param(7)
+
+    with app.test_request_context(f"/github/callback?code=abc&state={signed_state}"):
+        from backend.src.api.controllers.github_controller import github_callback
+
+        response, status = github_callback()
+
+    assert status == 400
+    assert "not initiated from this session" in response.get_json()["message"]
+
+
+@patch("backend.src.api.controllers.github_controller.GitHubClient")
+@patch("backend.src.api.controllers.github_controller.get_jwt_identity", return_value={"user_id": 1})
+def test_initiate_github_auth_binds_state_to_session(mock_identity, mock_client, app):
+    app.config.update({"GITHUB_CLIENT_ID": "id", "GITHUB_CLIENT_SECRET": "secret"})
+    mock_client.get_auth_url.return_value = "https://github.com/oauth"
+
+    with app.test_request_context("/github/auth"):
+        from flask import session
+
+        from backend.src.api.controllers.github_controller import initiate_github_auth
+
+        initiate_github_auth()
+
+        assert isinstance(session.get("github_oauth_state"), str)
+
+
 @patch("backend.src.api.controllers.github_controller.GitHubClient")
 def test_github_callback_exchange_token_failure(mock_client, app):
     with patch("base64.b64decode", return_value=b'{"userId": 7}'):
         mock_client.exchange_code_for_token.return_value = None
         with app.test_request_context("/github/callback?code=abc&state=Zm9v"):
+            from flask import session
+
+            session["github_oauth_state"] = "Zm9v"
+
             from backend.src.api.controllers.github_controller import github_callback
 
             response, status = github_callback()
@@ -157,6 +191,10 @@ def test_github_callback_success_existing_token(
         signed_state = RealGitHubClient.create_state_param(7)
 
     with app.test_request_context(f"/github/callback?code=abc&state={signed_state}"):
+        from flask import session
+
+        session["github_oauth_state"] = signed_state
+
         from backend.src.api.controllers.github_controller import github_callback
 
         result = github_callback()
@@ -564,6 +602,10 @@ def test_github_callback_success_new_token(mock_client, mock_token, mock_user, m
         signed_state = RealGitHubClient.create_state_param(7)
 
     with app.test_request_context(f"/github/callback?code=abc&state={signed_state}"):
+        from flask import session
+
+        session["github_oauth_state"] = signed_state
+
         from backend.src.api.controllers.github_controller import github_callback
 
         result = github_callback()
@@ -580,6 +622,10 @@ def test_github_callback_state_processing_error(app):
 
     with patch("backend.src.api.controllers.github_controller.oauth_states", BrokenStates()):
         with app.test_request_context("/github/callback?code=abc&state=Zm9v"):
+            from flask import session
+
+            session["github_oauth_state"] = "Zm9v"
+
             from backend.src.api.controllers.github_controller import github_callback
 
             response, status = github_callback()

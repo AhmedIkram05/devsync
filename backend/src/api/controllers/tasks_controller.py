@@ -87,8 +87,14 @@ def _serialize_task(task):
     }
 
 
+@transactional
 def get_all_tasks():
-    """Controller function to get all tasks based on user role and filters"""
+    """Controller function to get all tasks based on user role and filters.
+
+    The overdue fan-out below writes notifications; @transactional keeps those
+    writes in one commit for the whole GET instead of one standalone commit
+    per overdue task (polling dashboards multiplied the commit churn).
+    """
     user_id = get_jwt_identity()["user_id"]
     claims = get_jwt()
     user_role = claims.get("role")

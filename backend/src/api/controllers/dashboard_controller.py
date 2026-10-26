@@ -4,12 +4,19 @@ from datetime import datetime, timedelta
 
 from flask import jsonify
 from flask_jwt_extended import get_jwt, get_jwt_identity
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import joinedload
 
 from ...auth.rbac import Role  # Changed to relative import
 from ...db.db_connection import db
-from ...db.models import GitHubRepository, Project, Task, TaskGitHubLink, User  # Changed to relative import
+from ...db.models import (  # Changed to relative import
+    GitHubRepository,
+    Project,
+    Task,
+    TaskGitHubLink,
+    User,
+    project_members,
+)
 from ...services.task_rules import OVERDUE_EXCLUDED_STATUSES, get_project_scope_ids
 from .helpers import safe_query_all as _safe_query_all  # noqa: F401 (back-compat re-export)
 
@@ -180,8 +187,9 @@ def get_user_dashboard():
             logger.error(f"User not found: {user_id}")
             return jsonify({"message": "User not found"}), 404
 
-        # Get assigned tasks
-        assigned_tasks = get_user_tasks(user_id)
+        # Counts come from one GROUP BY — loading every row into Python just
+        # to count it is what made this endpoint degrade (see get_client_dashboard).
+        assigned_count, pending_count, completed_count = _assigned_task_counts(user_id)
 
         # Get tasks due soon (within 7 days)
         tasks_due_soon = get_tasks_due_soon(user_id)
@@ -196,9 +204,9 @@ def get_user_dashboard():
         dashboard_data = {
             "user": {"id": user.id, "name": user.name, "role": user.role},
             "tasks": {
-                "assigned_count": len(assigned_tasks),
-                "pending_count": len([t for t in assigned_tasks if not _is_completed_task(t)]),
-                "completed_count": len([t for t in assigned_tasks if _is_completed_task(t)]),
+                "assigned_count": assigned_count,
+                "pending_count": pending_count,
+                "completed_count": completed_count,
                 "due_soon": [
                     {
                         "id": task.id,
@@ -227,16 +235,7 @@ def get_user_dashboard():
         # Add admin-specific data
         if user_role == Role.ADMIN.value:
             # Get team stats if they're an admin (project manager)
-            team_tasks = (
-                Task.query.join(Project, Task.project_id == Project.id).filter(Project.created_by == user_id).all()
-            )
-
-            dashboard_data["team"] = {
-                "total_tasks": len(team_tasks),
-                "completed_tasks": len([t for t in team_tasks if _is_completed_task(t)]),
-                "in_progress_tasks": len([t for t in team_tasks if t.status == "in_progress"]),
-                "pending_tasks": len([t for t in team_tasks if t.status == "todo"]),
-            }
+            dashboard_data["team"] = _admin_created_team_counts(user_id)
 
         return jsonify(dashboard_data)
     except Exception:
@@ -338,19 +337,9 @@ def get_client_dashboard():
             "taskCounts": task_stats,
             "tasks": task_stats,
             "recentTasks": [_task_to_dashboard_item(task) for task in recent_tasks],
+            # upcomingDeadlines is the single due-soon payload; the old
+            # tasks_due_soon key duplicated the same rows in a thinner shape.
             "upcomingDeadlines": [_task_to_dashboard_item(task) for task in tasks_due_soon],
-            "tasks_due_soon": [
-                {
-                    "id": task.id,
-                    "title": task.title,
-                    "deadline": task.deadline.isoformat()
-                    if task.deadline and hasattr(task.deadline, "isoformat")
-                    else None,
-                    "status": task.status,
-                    "project_id": task.project_id,
-                }
-                for task in tasks_due_soon
-            ],
             "githubActivity": github_activity,
             "projects": [
                 {"id": project.id, "name": project.name, "status": project.status} for project in user_projects
@@ -366,6 +355,64 @@ def get_client_dashboard():
 def _grouped_counts(rows):
     """Turn (key, count) GROUP BY rows into a {key: count} mapping."""
     return {(key or "unknown"): count for key, count in rows}
+
+
+def _assigned_task_counts(user_id):
+    """(assigned, pending, completed) for a user, from one GROUP BY.
+
+    Rows are only loaded when the aggregate query itself fails (e.g.
+    lightweight unit-test apps with no database bound), matching the
+    degraded-mode style of the other helpers here.
+    """
+    try:
+        rows = (
+            db.session.query(Task.status, func.count(Task.id))
+            .filter(Task.assigned_to == user_id)
+            .group_by(Task.status)
+            .all()
+        )
+    except Exception as e:
+        logger.error(f"Error counting assigned tasks: {str(e)}")
+        tasks = get_user_tasks(user_id)
+        completed = len([t for t in tasks if _is_completed_task(t)])
+        return len(tasks), len(tasks) - completed, completed
+    counts = _grouped_counts(rows)
+    total = sum(counts.values())
+    completed = counts.get("done", 0) + counts.get("completed", 0)
+    return total, total - completed, completed
+
+
+def _admin_created_team_counts(user_id):
+    """Task status counts across the projects *user_id* created, from one GROUP BY."""
+    try:
+        rows = (
+            db.session.query(Task.status, func.count(Task.id))
+            .join(Project, Task.project_id == Project.id)
+            .filter(Project.created_by == user_id)
+            .group_by(Task.status)
+            .all()
+        )
+    except Exception as e:
+        logger.error(f"Error counting team tasks: {str(e)}")
+        try:
+            team_tasks = (
+                Task.query.join(Project, Task.project_id == Project.id).filter(Project.created_by == user_id).all()
+            )
+        except Exception:
+            team_tasks = []
+        return {
+            "total_tasks": len(team_tasks),
+            "completed_tasks": len([t for t in team_tasks if _is_completed_task(t)]),
+            "in_progress_tasks": len([t for t in team_tasks if t.status == "in_progress"]),
+            "pending_tasks": len([t for t in team_tasks if t.status == "todo"]),
+        }
+    counts = _grouped_counts(rows)
+    return {
+        "total_tasks": sum(counts.values()),
+        "completed_tasks": counts.get("done", 0) + counts.get("completed", 0),
+        "in_progress_tasks": counts.get("in_progress", 0),
+        "pending_tasks": counts.get("todo", 0),
+    }
 
 
 def _task_status_counts():
@@ -472,28 +519,26 @@ def _recent_projects():
 
 
 def _team_lead_project_ids(user_id):
-    """IDs of active/on-hold projects the team lead owns or is a member of."""
+    """IDs of active/on-hold projects the team lead owns or is a member of.
+
+    One membership join replaces the old Project.query.all() + lazy
+    team_members-per-project N+1 that ran on every TL admin-dashboard poll.
+    """
+    normalized_status = func.lower(func.replace(Project.status, "-", "_"))
     try:
-        projects = Project.query.all()
+        rows = (
+            db.session.query(Project.id)
+            .outerjoin(project_members, project_members.c.project_id == Project.id)
+            .filter(
+                normalized_status.in_(TEAM_LEAD_ACTIVE_PROJECT_STATUSES),
+                or_(Project.created_by == user_id, project_members.c.user_id == user_id),
+            )
+            .all()
+        )
     except Exception as e:
         logger.error(f"Error fetching projects for TL dashboard: {str(e)}")
         return []
-    scoped_ids = []
-    for project in projects:
-        status = (getattr(project, "status", None) or "").lower().replace("-", "_")
-        if status not in TEAM_LEAD_ACTIVE_PROJECT_STATUSES:
-            continue
-        members = getattr(project, "team_members", []) or []
-        if hasattr(members, "all"):
-            members = members.all()
-        is_member = any(
-            (getattr(m, "id", None) == user_id or getattr(m, "user_id", None) == user_id)
-            for m in members
-            if m is not None
-        )
-        if is_member or getattr(project, "created_by", None) == user_id:
-            scoped_ids.append(project.id)
-    return scoped_ids
+    return [row[0] for row in rows]
 
 
 def _count_scoped_tasks(project_ids, *criteria):
@@ -571,6 +616,35 @@ def get_admin_dashboard():
         return jsonify({"message": "An error occurred while loading the dashboard"}), 500
 
 
+def _project_task_stats(project_id):
+    """Project task counts from one GROUP BY, falling back to row counting."""
+    try:
+        rows = (
+            db.session.query(Task.status, func.count(Task.id))
+            .filter(Task.project_id == project_id)
+            .group_by(Task.status)
+            .all()
+        )
+    except Exception as e:
+        logger.error(f"Error counting project tasks: {str(e)}")
+        tasks = get_project_tasks(project_id)
+        return {
+            "total": len(tasks),
+            "todo": len([t for t in tasks if t.status == "todo"]),
+            "in_progress": len([t for t in tasks if t.status == "in_progress"]),
+            "review": len([t for t in tasks if t.status == "review"]),
+            "done": len([t for t in tasks if _is_completed_task(t)]),
+        }
+    counts = _grouped_counts(rows)
+    return {
+        "total": sum(counts.values()),
+        "todo": counts.get("todo", 0),
+        "in_progress": counts.get("in_progress", 0),
+        "review": counts.get("review", 0),
+        "done": counts.get("done", 0) + counts.get("completed", 0),
+    }
+
+
 def get_project_dashboard(project_id):
     """Controller function to get dashboard data for a specific project"""
     try:
@@ -579,17 +653,8 @@ def get_project_dashboard(project_id):
         if not project:
             return jsonify({"message": "Project not found"}), 404
 
-        # Get all tasks for this project
-        tasks = get_project_tasks(project_id)
-
-        # Calculate task statistics
-        task_stats = {
-            "total": len(tasks),
-            "todo": len([t for t in tasks if t.status == "todo"]),
-            "in_progress": len([t for t in tasks if t.status == "in_progress"]),
-            "review": len([t for t in tasks if t.status == "review"]),
-            "done": len([t for t in tasks if _is_completed_task(t)]),
-        }
+        # Task statistics come from one GROUP BY (see get_client_dashboard)
+        task_stats = _project_task_stats(project_id)
 
         # Calculate completion percentage
         completion_percentage = 0

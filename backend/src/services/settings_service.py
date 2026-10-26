@@ -1,5 +1,6 @@
 """System Settings Service"""
 
+import time
 from datetime import UTC, datetime, timedelta
 
 from ..db.models import AuditLog, Comment, Notification, Project, SystemSetting, Task, TaskGitHubLink, db
@@ -15,6 +16,12 @@ DEFAULT_SETTINGS = {
 }
 
 SUPPORTED_SETTINGS = set(DEFAULT_SETTINGS.keys())
+
+# Hot paths (GET /tasks polls notify_on_overdue_tasks every request) pay one
+# SystemSetting query per call. A short in-process TTL keeps that at one query
+# per minute per key; a cached value may lag an admin update by up to the TTL.
+BOOL_CACHE_TTL_SECONDS = 60
+_bool_cache = {}  # key -> (expires_at_monotonic, value)
 
 # Retention cleanups run in bounded batches so one pass never issues a single
 # unbounded DELETE that locks the whole table for a long transaction. A backlog
@@ -93,6 +100,7 @@ def update_settings(data, actor_id):
             db.session.add(new_setting)
 
     commit_or_flush(db)
+    _bool_cache.clear()
 
 
 def get_default_role():
@@ -101,7 +109,14 @@ def get_default_role():
 
 
 def get_bool_setting(key, default=False):
-    return _to_bool(get_settings().get(key, default), default)
+    """Bool read with a short in-process TTL cache (see BOOL_CACHE_TTL_SECONDS)."""
+    now = time.monotonic()
+    cached = _bool_cache.get(key)
+    if cached is not None and cached[0] > now:
+        return cached[1]
+    value = _to_bool(get_settings().get(key, default), default)
+    _bool_cache[key] = (now + BOOL_CACHE_TTL_SECONDS, value)
+    return value
 
 
 def get_int_setting(key, default=0):

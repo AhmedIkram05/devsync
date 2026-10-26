@@ -11,6 +11,7 @@ from ...db.models import GitHubToken, User, db
 from ...db.transaction import transactional
 from ...services.github_client import GitHubClient
 from ..controllers.github_controller import (
+    _bind_oauth_state_to_session,
     add_github_repository,
     check_github_config,
     consume_oauth_state,
@@ -307,6 +308,10 @@ def register_routes(bp):
         # A client-supplied state may be forged; only server-signed states are
         # accepted on the callback, so always issue a fresh signed one.
         state = GitHubClient.create_state_param(user_id)
+
+        # Bind the state to this browser session: the unauthenticated GET
+        # callback only completes for the browser that started the flow.
+        _bind_oauth_state_to_session(state)
 
         # Directly redirect to GitHub OAuth
         client_id = current_app.config.get("GITHUB_CLIENT_ID")
