@@ -222,8 +222,10 @@ def test_socket_room_flow_and_broadcast_events(app_and_socket, app):
     socket_module.project_rooms.clear()
 
     # Seed project 88 with two members and one non-member so the room join is
-    # server-side membership-gated.
-    from src.db.models import Project, User, db, project_members
+    # server-side membership-gated. Task 9 belongs to project 88 (the happy
+    # path); task 10 belongs to project 99 so the emit-path task-project
+    # validation can be exercised against a genuine mismatch.
+    from src.db.models import Project, Task, User, db, project_members
 
     with app.app_context():
         db.create_all()
@@ -233,6 +235,9 @@ def test_socket_room_flow_and_broadcast_events(app_and_socket, app):
                 User(id=2, name="Member Two", email="member2@example.com", password="x", role="developer"),
                 User(id=3, name="Outsider", email="outsider@example.com", password="x", role="developer"),
                 Project(id=88, name="Project 88", created_by=1),
+                Project(id=99, name="Project 99", created_by=1),
+                Task(id=9, title="Room Flow Task", status="in_progress", project_id=88, created_by=1),
+                Task(id=10, title="Foreign Task", status="todo", project_id=99, created_by=1),
             ]
         )
         db.session.flush()
@@ -278,6 +283,16 @@ def test_socket_room_flow_and_broadcast_events(app_and_socket, app):
         callback=True,
     )
     assert task_update_ack["status"] == "success"
+
+    # A task that does not belong to the broadcast project is rejected before
+    # fan-out (task 10 lives in project 99, not 88).
+    mismatch_ack = client_one.emit(
+        "task_update",
+        {"project_id": 88, "task_id": 10, "update_type": "completed", "timestamp": "2026-04-20T10:00:30Z"},
+        callback=True,
+    )
+    assert mismatch_ack["status"] == "error"
+    assert mismatch_ack["message"] == "Task does not belong to this project"
 
     comment_ack = client_one.emit(
         "comment_added",
