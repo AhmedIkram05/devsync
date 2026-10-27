@@ -180,3 +180,48 @@ def test_reset_for_tests_clears_state(monkeypatch):
         "memory_denylist_size": 0,
         "memory_user_revokes": 0,
     }
+
+
+class CountingRedis(FakeRedis):
+    def __init__(self):
+        super().__init__()
+        self.get_calls = 0
+
+    def get(self, key):
+        self.get_calls += 1
+        return super().get(key)
+
+
+def test_memory_user_revoke_purged_after_refresh_ttl(monkeypatch):
+    monkeypatch.setattr(tb, "_redis", lambda: None)
+    monkeypatch.setattr(tb, "refresh_ttl_seconds", lambda: 100)
+    tb.revoke_all_user_tokens(5)
+    tb._memory_user_revoke["5"] = time.time() - 200  # simulate a revoke older than the TTL
+    assert tb.is_token_revoked({"identity": {"user_id": 5}, "iat": time.time() - 300}) is False
+    assert "5" not in tb._memory_user_revoke
+
+
+def test_negative_epoch_lookup_cached_briefly(monkeypatch):
+    fake = CountingRedis()
+    monkeypatch.setattr(tb, "_redis", lambda: fake)
+    payload = {"identity": {"user_id": 7}, "iat": time.time() - 10}
+
+    assert tb.is_token_revoked(payload) is False
+    assert tb.is_token_revoked(payload) is False
+    assert fake.get_calls == 1  # second request served by the negative cache
+
+    # A revoke drops the cached negative verdict and the memory epoch wins.
+    tb.revoke_all_user_tokens(7)
+    assert "7" not in tb._memory_user_epoch_missing
+    assert tb.is_token_revoked(payload) is True
+
+
+def test_negative_epoch_cache_expires(monkeypatch):
+    fake = CountingRedis()
+    monkeypatch.setattr(tb, "_redis", lambda: fake)
+    payload = {"identity": {"user_id": 8}, "iat": 1}
+
+    assert tb.is_token_revoked(payload) is False
+    tb._memory_user_epoch_missing["8"] = time.time() - 1  # force expiry
+    assert tb.is_token_revoked(payload) is False
+    assert fake.get_calls == 2

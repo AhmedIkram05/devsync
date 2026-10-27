@@ -19,8 +19,16 @@ Storage:
   expired anyway.
 - Per-user epoch for "log out everywhere" (logout, password change, role
   change, refresh reuse): key ``jwt_user_revoked:<user_id>`` = revoke epoch
-  (unix seconds) with TTL = refresh lifetime (REFRESH_TOKEN_EXPIRE_DAYS,
-  default 7d). Any token with iat < epoch is treated as revoked.
+   (unix seconds) with TTL = refresh lifetime (REFRESH_TOKEN_EXPIRE_DAYS,
+   default 7d). Any token with iat < epoch is treated as revoked.
+
+In-process memory mirrors both keys with the same TTLs, purges expired
+entries on each check, and additionally caches *negative* user-epoch
+lookups (Redis GET returned nothing) for
+``_NEGATIVE_EPOCH_TTL_SECONDS`` to avoid one Redis round-trip per
+request. Same-process revocations always win because the memory epoch
+is consulted first; cross-process revocations propagate within that
+negative-cache window.
 """
 
 import logging
@@ -48,6 +56,9 @@ def refresh_ttl_seconds() -> int:
 
 _memory_denylist: dict = {}
 _memory_user_revoke: dict = {}
+# user_id -> expiry timestamp of a cached "no epoch revoke in Redis" verdict.
+_memory_user_epoch_missing: dict = {}
+_NEGATIVE_EPOCH_TTL_SECONDS = 60
 _backend_errors = 0
 
 
@@ -68,6 +79,11 @@ def _purge_expired_memory() -> None:
     now = _now()
     for jti in [k for k, exp in _memory_denylist.items() if exp <= now]:
         _memory_denylist.pop(jti, None)
+    refresh_ttl = refresh_ttl_seconds()
+    for user_id in [k for k, epoch in _memory_user_revoke.items() if epoch + refresh_ttl <= now]:
+        _memory_user_revoke.pop(user_id, None)
+    for user_id in [k for k, exp in _memory_user_epoch_missing.items() if exp <= now]:
+        _memory_user_epoch_missing.pop(user_id, None)
 
 
 def _extract_user_id(jwt_payload: dict):
@@ -123,6 +139,7 @@ def revoke_all_user_tokens(user_id, ttl_seconds: int | None = None) -> None:
     key = str(user_id)
     epoch = _now()
     _memory_user_revoke[key] = epoch
+    _memory_user_epoch_missing.pop(key, None)
     client = _redis()
     if client is None:
         return
@@ -165,6 +182,8 @@ def is_token_revoked(jwt_payload: dict) -> bool:
             _memory_denylist[str(jti)] = _now() + access_ttl_seconds()
             return True
         if user_id is not None:
+            if _now() < _memory_user_epoch_missing.get(str(user_id), 0):
+                return False
             raw = client.get(f"{USER_REVOKE_PREFIX}{user_id}")
             if raw is not None:
                 try:
@@ -179,6 +198,8 @@ def is_token_revoked(jwt_payload: dict) -> bool:
                         iat = 0
                     if iat and iat < epoch:
                         return True
+            else:
+                _memory_user_epoch_missing[str(user_id)] = _now() + _NEGATIVE_EPOCH_TTL_SECONDS
         return False
     except Exception as exc:
         global _backend_errors
@@ -201,6 +222,7 @@ def reset_for_tests() -> None:
     """Clear in-memory state (and drop cached Redis client) for tests."""
     _memory_denylist.clear()
     _memory_user_revoke.clear()
+    _memory_user_epoch_missing.clear()
     global _backend_errors
     _backend_errors = 0
     try:
