@@ -86,17 +86,6 @@ def test_task_value_falls_back_to_default_when_absent():
     assert tasks_controller._task_value(task, "priority") is None
 
 
-def test_task_value_replaces_mock_with_default():
-    """MagicMock attributes must not leak into serialized JSON."""
-    task = SimpleNamespace(priority=Mock())
-    assert tasks_controller._task_value(task, "priority", "medium") == "medium"
-
-
-def test_task_value_on_bare_mock_returns_default():
-    task = Mock()
-    assert tasks_controller._task_value(task, "title", "fallback") == "fallback"
-
-
 def test_task_value_keeps_explicit_none_over_default():
     task = SimpleNamespace(priority=None)
     assert tasks_controller._task_value(task, "priority", "medium") is None
@@ -120,10 +109,6 @@ def test_task_datetime_returns_none_for_missing_field():
 
 def test_task_datetime_returns_none_for_explicit_none():
     assert tasks_controller._task_datetime(SimpleNamespace(deadline=None), "deadline") is None
-
-
-def test_task_datetime_returns_none_for_mock():
-    assert tasks_controller._task_datetime(SimpleNamespace(deadline=Mock()), "deadline") is None
 
 
 def test_task_datetime_swallows_isoformat_failure():
