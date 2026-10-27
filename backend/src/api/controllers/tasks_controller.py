@@ -1,7 +1,6 @@
 # Task controller - business logic
 
 import logging
-from unittest.mock import Mock
 
 from flask import jsonify, request
 from flask_jwt_extended import get_jwt, get_jwt_identity
@@ -52,15 +51,12 @@ def _coerce_int(value):
 
 
 def _task_value(task, field, default=None):
-    value = vars(task).get(field, getattr(task, field, default))
-    if isinstance(value, Mock):
-        return default
-    return value
+    return vars(task).get(field, getattr(task, field, default))
 
 
 def _task_datetime(task, field):
     value = _task_value(task, field)
-    if value is None or isinstance(value, Mock):
+    if value is None:
         return None
     if hasattr(value, "isoformat"):
         try:

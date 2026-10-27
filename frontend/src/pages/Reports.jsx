@@ -109,6 +109,70 @@ const buildPdfLines = (report) => {
   return lines.map(sanitizePdfText);
 };
 
+// Max text lines per PDF page (16pt leading from a 720pt top margin on a
+// 792pt-tall page). Longer reports continue on extra pages instead of
+// silently clipping below the MediaBox.
+const PDF_LINES_PER_PAGE = 45;
+
+const createPdfBlob = (lines) => {
+  // Sanitize at the write site: unescaped ()/\ corrupts PDF strings and any
+  // non-ASCII char desyncs /Length + xref offsets (chars vs UTF-8 bytes).
+  const safeLines = lines.map(sanitizePdfText);
+  const pages = [];
+  for (let start = 0; start < safeLines.length; start += PDF_LINES_PER_PAGE) {
+    pages.push(safeLines.slice(start, start + PDF_LINES_PER_PAGE));
+  }
+  if (pages.length === 0) {
+    pages.push(['DevSync Report']);
+  }
+
+  // Object ids: 1 Catalog, 2 Pages, then per page a (content, page) pair,
+  // then a single shared Font as the last object.
+  const contentIds = pages.map((_, index) => 3 + index * 2);
+  const pageIds = pages.map((_, index) => 4 + index * 2);
+  const fontId = 3 + pages.length * 2;
+
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pages.length} >>`
+  ];
+
+  pages.forEach((pageLines, index) => {
+    const textStream = [
+      'BT', '/F1 12 Tf', '72 720 Td',
+      ...pageLines.flatMap((line, lineIndex) =>
+        lineIndex === 0 ? [`(${line}) Tj`] : ['0 -16 Td', `(${line}) Tj`]
+      ),
+      'ET'
+    ].join('\n');
+
+    objects.push(`<< /Length ${textStream.length} >>\nstream\n${textStream}\nendstream`);
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contentIds[index]} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> >> >>`
+    );
+  });
+
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+
+  const xrefStart = pdf.length;
+  pdf += 'xref\n';
+  pdf += `0 ${objects.length + 1}\n`;
+  pdf += '0000000000 65535 f \n';
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
+
+  return new Blob([pdf], { type: 'application/pdf' });
+};
+
 const buildTimeBuckets = (range) => {
   const now = new Date();
   const buckets = [];
@@ -175,68 +239,6 @@ const Reports = () => {
   const [pdfError, setPdfError] = useState(null);
   const reportCacheRef = useRef({});
   const latestRequestRef = useRef(0);
-
-
-  // Max text lines per PDF page (16pt leading from a 720pt top margin on a
-  // 792pt-tall page). Longer reports continue on extra pages instead of
-  // silently clipping below the MediaBox.
-  const PDF_LINES_PER_PAGE = 45;
-
-  const createPdfBlob = (lines) => {
-    const pages = [];
-    for (let start = 0; start < lines.length; start += PDF_LINES_PER_PAGE) {
-      pages.push(lines.slice(start, start + PDF_LINES_PER_PAGE));
-    }
-    if (pages.length === 0) {
-      pages.push(['DevSync Report']);
-    }
-
-    // Object ids: 1 Catalog, 2 Pages, then per page a (content, page) pair,
-    // then a single shared Font as the last object.
-    const contentIds = pages.map((_, index) => 3 + index * 2);
-    const pageIds = pages.map((_, index) => 4 + index * 2);
-    const fontId = 3 + pages.length * 2;
-
-    const objects = [
-      '<< /Type /Catalog /Pages 2 0 R >>',
-      `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pages.length} >>`
-    ];
-
-    pages.forEach((pageLines, index) => {
-      const textStream = [
-        'BT', '/F1 12 Tf', '72 720 Td',
-        ...pageLines.flatMap((line, lineIndex) =>
-          lineIndex === 0 ? [`(${line}) Tj`] : ['0 -16 Td', `(${line}) Tj`]
-        ),
-        'ET'
-      ].join('\n');
-
-      objects.push(`<< /Length ${textStream.length} >>\nstream\n${textStream}\nendstream`);
-      objects.push(
-        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contentIds[index]} 0 R /Resources << /Font << /F1 ${fontId} 0 R >> >> >>`
-      );
-    });
-
-    objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
-
-    let pdf = '%PDF-1.4\n';
-    const offsets = [0];
-    objects.forEach((object, index) => {
-      offsets.push(pdf.length);
-      pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
-    });
-
-    const xrefStart = pdf.length;
-    pdf += 'xref\n';
-    pdf += `0 ${objects.length + 1}\n`;
-    pdf += '0000000000 65535 f \n';
-    offsets.slice(1).forEach((offset) => {
-      pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
-    });
-    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
-
-    return new Blob([pdf], { type: 'application/pdf' });
-  };
 
   const loadReportData = useCallback(async ({ forceRefresh = false } = {}) => {
     const cacheKey = `${reportType}:${dateRange}`;
@@ -964,6 +966,7 @@ export {
   getDateRangeLabel,
   formatGeneratedAt,
   sanitizePdfText,
+  createPdfBlob,
   buildPdfLines,
   buildTimeBuckets,
 };

@@ -55,6 +55,8 @@ def mock_task():
     task.progress = 50
     task.assigned_to = 2
     task.created_by = 1
+    task.priority = "medium"
+    task.project_id = None
     task.deadline = MagicMock()
     task.deadline.isoformat.return_value = "2023-01-15T00:00:00"
     task.created_at = MagicMock()
@@ -76,6 +78,8 @@ def test_get_all_tasks_admin(app, mock_jwt_identity, mock_jwt):
             task1.progress = 50
             task1.assigned_to = 2
             task1.created_by = 1
+            task1.priority = "medium"
+            task1.project_id = None
             task1.deadline = None
             task1.created_at = MagicMock()
             task1.created_at.isoformat.return_value = "2023-01-01T00:00:00"
@@ -160,6 +164,8 @@ def test_get_all_tasks_applies_filters_sort_and_pagination(app, mock_jwt_identit
             task1.progress = 0
             task1.assigned_to = 2
             task1.created_by = 1
+            task1.priority = "medium"
+            task1.project_id = None
             task1.deadline = None
             task1.created_at = MagicMock()
             task1.created_at.isoformat.return_value = "2023-01-01T00:00:00"
@@ -439,6 +445,7 @@ def test_get_all_tasks_overdue_fanout_runs_in_one_transaction(app, mock_jwt_iden
             overdue_task.progress = 0
             overdue_task.assigned_to = 2
             overdue_task.created_by = 1
+            overdue_task.project_id = None
             overdue_task.deadline = None
             overdue_task.created_at = MagicMock()
             overdue_task.created_at.isoformat.return_value = "2023-01-01T00:00:00"
