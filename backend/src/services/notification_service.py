@@ -199,66 +199,6 @@ class NotificationService:
         return query.order_by(Notification.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
 
     @staticmethod
-    def task_created_notification(task_id, task_name, project_id, created_by_user_id, assignee_id=None):
-        """Send notification for task creation"""
-        excluded_project_user_ids = [created_by_user_id]
-
-        if assignee_id:
-            # Notify the assigned user
-            if not _ids_match(assignee_id, created_by_user_id):
-                NotificationService.send_to_user(
-                    user_id=assignee_id,
-                    notification_type="task_assigned",
-                    title="New Task Assigned",
-                    message=f"You were assigned to task: {task_name}",
-                    reference_id=task_id,
-                    task_id=task_id,
-                )
-            excluded_project_user_ids.append(assignee_id)
-
-        # Notify project members about the new task
-        NotificationService.send_to_project(
-            project_id=project_id,
-            notification_type="task_created",
-            title="New Task Created",
-            message=f"A new task was created: {task_name}",
-            reference_id=task_id,
-            exclude_user_ids=excluded_project_user_ids,
-            task_id=task_id,
-        )
-
-    @staticmethod
-    def task_updated_notification(
-        task_id, task_name, project_id, updated_by_user_id, old_assignee_id=None, new_assignee_id=None
-    ):
-        """Send notification for task updates"""
-        excluded_project_user_ids = [updated_by_user_id]
-
-        # Notify about assignment change
-        if new_assignee_id and new_assignee_id != old_assignee_id:
-            if not _ids_match(new_assignee_id, updated_by_user_id):
-                NotificationService.send_to_user(
-                    user_id=new_assignee_id,
-                    notification_type="task_assigned",
-                    title="Task Assigned to You",
-                    message=f"You were assigned to task: {task_name}",
-                    reference_id=task_id,
-                    task_id=task_id,
-                )
-            excluded_project_user_ids.append(new_assignee_id)
-
-        # Notify project members about the task update
-        NotificationService.send_to_project(
-            project_id=project_id,
-            notification_type="task_updated",
-            title="Task Updated",
-            message=f"Task was updated: {task_name}",
-            reference_id=task_id,
-            exclude_user_ids=excluded_project_user_ids,
-            task_id=task_id,
-        )
-
-    @staticmethod
     def comment_added_notification(
         task_id, task_name, project_id, comment_id, commenter_user_id, mentioned_user_ids=None, recipient_user_ids=None
     ):
