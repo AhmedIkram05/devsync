@@ -54,4 +54,21 @@ describe('taskListService branch coverage', () => {
 
     await expect(fetchTaskListLookups()).resolves.toEqual({ userMap: {}, projectMap: {} });
   });
+
+  test('fetchTaskListLookups pages past the backend 100-item per_page cap', async () => {
+    const fullPage = Array.from({ length: 100 }, (_, i) => ({ id: i + 1, name: `U${i + 1}` }));
+    userService.getAllUsers
+      .mockResolvedValueOnce(fullPage)
+      .mockResolvedValueOnce([{ id: 101, name: 'U101' }]);
+    projectService.getAllProjects.mockResolvedValueOnce([{ id: 7, name: 'P7' }]);
+
+    const { userMap, projectMap } = await fetchTaskListLookups();
+
+    expect(userMap[1]).toBe('U1');
+    expect(userMap[101]).toBe('U101');
+    expect(projectMap[7]).toBe('P7');
+    expect(userService.getAllUsers).toHaveBeenNthCalledWith(1, '?page=1&per_page=100');
+    expect(userService.getAllUsers).toHaveBeenNthCalledWith(2, '?page=2&per_page=100');
+    expect(projectService.getAllProjects).toHaveBeenCalledWith({ page: 1, per_page: 100 });
+  });
 });

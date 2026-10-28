@@ -33,16 +33,40 @@ const getServices = () => {
   };
 };
 
+// Backend list endpoints cap per_page at 100 (query_params.MAX_PER_PAGE), so a
+// single unpaginated call silently drops everything past the first page —
+// assignee/project filters were incomplete beyond 100. Page until short.
+const LOOKUP_PAGE_SIZE = 100;
+const MAX_LOOKUP_PAGES = 50; // 50 * 100 entries; guards against a looping backend
+
+const fetchAllLookupPages = async (fetchPage, key) => {
+  const all = [];
+  for (let page = 1; page <= MAX_LOOKUP_PAGES; page += 1) {
+    const items = normalizeList(await fetchPage(page), key);
+    all.push(...items);
+    if (items.length < LOOKUP_PAGE_SIZE) {
+      break;
+    }
+  }
+  return all;
+};
+
 // Data-fetch extracted from TaskList.jsx; render stays in the page.
 const fetchTaskListLookups = async () => {
   const { userService, projectService } = getServices();
-  const [usersData, projectsData] = await Promise.all([
-    userService.getAllUsers().catch(() => []),
-    projectService.getAllProjects().catch(() => []),
+  const [users, projects] = await Promise.all([
+    fetchAllLookupPages(
+      (page) => userService.getAllUsers(`?page=${page}&per_page=${LOOKUP_PAGE_SIZE}`).catch(() => []),
+      'users'
+    ),
+    fetchAllLookupPages(
+      (page) => projectService.getAllProjects({ page, per_page: LOOKUP_PAGE_SIZE }).catch(() => []),
+      'projects'
+    ),
   ]);
   return {
-    userMap: buildUserMap(usersData),
-    projectMap: buildProjectMap(projectsData),
+    userMap: buildUserMap(users),
+    projectMap: buildProjectMap(projects),
   };
 };
 

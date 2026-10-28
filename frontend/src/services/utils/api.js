@@ -216,9 +216,11 @@ const githubService = {
 
 // User-related API calls
 const userService = {
-  getAllUsers: async () => {
+  // Accepts an optional query string (e.g. '?page=2&per_page=100') so callers
+  // can page past the backend's 100-item per_page cap.
+  getAllUsers: async (queryString = '') => {
     try {
-      const response = await fetchWithAuth('users');
+      const response = await fetchWithAuth(`users${queryString}`);
       const users = response?.users ?? response;
       return Array.isArray(users) ? users : [];
     } catch (error) {
