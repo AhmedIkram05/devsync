@@ -162,13 +162,8 @@ def get_all_tasks():
 
 def get_task_by_id(task_id):
     """Controller function to get a single task"""
-    get_jwt_identity()["user_id"]
-    claims = get_jwt()
-    claims.get("role")
-
     task = Task.query.get_or_404(task_id)
 
-    # Authenticated users can view any task
     # Format task data
     task_data = _serialize_task(task)
 
