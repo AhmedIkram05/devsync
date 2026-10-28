@@ -143,24 +143,24 @@ export const AuthProvider = ({ children }) => {
             } finally {
               setPermissionsLoading(false);
             }
-            }
-            // Set GitHub connection status if available
-            if ("github_connected" in user) {
-              setGithubConnected(user.github_connected);
-              // Prompt at most once per session — a reload/revalidation must
-              // not re-open the modal over an already-dismissed prompt.
-              if (!user.github_connected && !githubPromptSeen()) {
-                markGithubPromptSeen();
-                setShowGithubPrompt(true);
-              }
-            }
-          } else {
-            // If verification fails, clear the user and redirect to login
-            localStorage.removeItem("user");
-            setPermissions([]);
-            setPermissionsLoading(false);
-            navigate("/login", { replace: true });
           }
+          // Set GitHub connection status if available
+          if ("github_connected" in user) {
+            setGithubConnected(user.github_connected);
+            // Prompt at most once per session — a reload/revalidation must
+            // not re-open the modal over an already-dismissed prompt.
+            if (!user.github_connected && !githubPromptSeen()) {
+              markGithubPromptSeen();
+              setShowGithubPrompt(true);
+            }
+          }
+        } else {
+          // If verification fails, clear the user and redirect to login
+          localStorage.removeItem("user");
+          setPermissions([]);
+          setPermissionsLoading(false);
+          navigate("/login", { replace: true });
+        }
       } catch (err) {
         // No valid cookie session — fall back to cached profile if present,
         // otherwise clear and stay on public routes. Fail-closed on
@@ -343,6 +343,21 @@ export const AuthProvider = ({ children }) => {
   const updateUser = useCallback((userData) => {
     if (!userData) {
       console.warn("Attempted to update user with null/undefined data");
+      return;
+    }
+
+    // Functional updates (prev => next) are valid state-updater calls; run the
+    // result through the same sanitize + persist path as object merges.
+    if (typeof userData === 'function') {
+      setCurrentUser((prevUser) => {
+        const next = userData(prevUser);
+        if (!next || typeof next !== 'object') {
+          return next;
+        }
+        const updated = sanitizeProfile(next);
+        localStorage.setItem("user", JSON.stringify(updated));
+        return updated;
+      });
       return;
     }
 
