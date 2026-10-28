@@ -27,9 +27,10 @@ const projectService = {
     }
   },
 
-  // Back-compat array-returning wrapper.
-  getAllProjects: async () => {
-    const { items } = await projectService.getAllProjectsPaginated();
+  // Back-compat array-returning wrapper; forwards the same params as the
+  // paginated variant (e.g. page/per_page for dropdown lookups).
+  getAllProjects: async (params = {}) => {
+    const { items } = await projectService.getAllProjectsPaginated(params);
     return items;
   },
 

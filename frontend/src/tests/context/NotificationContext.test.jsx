@@ -230,6 +230,76 @@ describe('NotificationContext', () => {
     });
   });
 
+  test('honors a large Retry-After on 429 capped at the 120s ceiling', async () => {
+    notificationService.getNotifications.mockRejectedValue({ status: 429, retryAfter: 300, message: '429' });
+
+    jest.useFakeTimers();
+    try {
+      render(
+        <NotificationProvider>
+          <NotificationHarness />
+        </NotificationProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('rate-limited')).toHaveTextContent('true');
+      });
+
+      const callsBeforeWait = notificationService.getNotifications.mock.calls.length;
+
+      // Retry-After: 300s caps at the 120s ceiling — no retry just before it...
+      await act(async () => {
+        jest.advanceTimersByTime(119999);
+      });
+      expect(notificationService.getNotifications.mock.calls.length).toBe(callsBeforeWait);
+
+      // ...and the retry fires exactly at the capped mark.
+      await act(async () => {
+        jest.advanceTimersByTime(1);
+      });
+      expect(notificationService.getNotifications.mock.calls.length).toBeGreaterThan(callsBeforeWait);
+    } finally {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  });
+
+  test('waits out a short Retry-After on 429 instead of the fixed delay', async () => {
+    // Infinite 429s: every retry re-schedules the next one, so a fresh retry
+    // timer is always pending and the assertion is order-independent.
+    notificationService.getNotifications.mockRejectedValue({ status: 429, retryAfter: 1, message: '429' });
+
+    jest.useFakeTimers();
+    try {
+      render(
+        <NotificationProvider>
+          <NotificationHarness />
+        </NotificationProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('rate-limited')).toHaveTextContent('true');
+      });
+
+      const callsBeforeRetry = notificationService.getNotifications.mock.calls.length;
+
+      // Retry-After: 1s → 1000ms. The old fixed 50ms test delay would have
+      // fired by now; the honored Retry-After must not.
+      await act(async () => {
+        jest.advanceTimersByTime(50);
+      });
+      expect(notificationService.getNotifications.mock.calls.length).toBe(callsBeforeRetry);
+
+      await act(async () => {
+        jest.advanceTimersByTime(950);
+      });
+      expect(notificationService.getNotifications.mock.calls.length).toBeGreaterThan(callsBeforeRetry);
+    } finally {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  });
+
   test('marks server down after repeated socket connection failures', async () => {
     notificationService.getNotifications.mockResolvedValue([]);
 

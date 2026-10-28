@@ -95,6 +95,9 @@ function AuthHarness() {
       </button>
       <button onClick={() => handleGithubPromptResponse(false)}>Skip Prompt</button>
       <button onClick={() => setCurrentUser({ name: 'Updated User' })}>Update User</button>
+      <button onClick={() => setCurrentUser((prev) => ({ ...prev, id: 9, name: 'Functional User' }))}>
+        Functional Update
+      </button>
       <button onClick={() => { verifyToken().catch(() => {}); }}>Verify Session</button>
     </div>
   );
@@ -439,6 +442,19 @@ describe('AuthContext', () => {
     expect(screen.getByTestId('user-id')).toHaveTextContent('7');
     const stored = JSON.parse(localStorage.getItem('user'));
     expect(stored.name).toBe('Updated User');
+    expect(stored.token).toBeUndefined();
+  });
+
+  test('setCurrentUser accepts functional updates and persists the merged profile', async () => {
+    localStorage.setItem('user', JSON.stringify(storedProfile(7)));
+
+    renderWithProvider();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Functional Update' }));
+    expect(screen.getByTestId('user-id')).toHaveTextContent('9');
+    const stored = JSON.parse(localStorage.getItem('user'));
+    expect(stored.name).toBe('Functional User');
+    expect(stored.id).toBe(9);
     expect(stored.token).toBeUndefined();
   });
 

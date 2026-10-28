@@ -43,12 +43,14 @@ describe('Client Task Flows', () => {
       }
     }).as('permissionsReq');
 
-    // TaskList fires user + project lookups alongside the tasks fetch
-    cy.intercept('GET', '**/api/v1/users', {
+    // TaskList fires user + project lookups alongside the tasks fetch.
+    // fetchTaskListLookups paginates them (?page=&per_page=), so both globs
+    // need a trailing `*` for the query string (same idiom as the tasks stub).
+    cy.intercept('GET', '**/api/v1/users*', {
       statusCode: 200,
       body: [{ id: 2, name: 'Client User', role: 'developer' }]
     });
-    cy.intercept('GET', '**/api/v1/projects', { statusCode: 200, body: [] });
+    cy.intercept('GET', '**/api/v1/projects*', { statusCode: 200, body: [] });
 
     // Stub the tasks list. TaskList now requests `tasks?page=&per_page=`
     // (server pagination), so the glob needs a trailing `*` for the query
@@ -97,11 +99,11 @@ describe('Client Task Flows', () => {
     // Re-register the lookups TaskList fires alongside the tasks fetch so the
     // spec can wait for all three — each lookup setState re-renders the
     // filter row, which is what detaches the select mid-action.
-    cy.intercept('GET', '**/api/v1/users', {
+    cy.intercept('GET', '**/api/v1/users*', {
       statusCode: 200,
       body: [{ id: 2, name: 'Client User', role: 'developer' }]
     }).as('getUsers');
-    cy.intercept('GET', '**/api/v1/projects', { statusCode: 200, body: [] }).as('getProjectsLookup');
+    cy.intercept('GET', '**/api/v1/projects*', { statusCode: 200, body: [] }).as('getProjectsLookup');
 
     cy.visit('/tasks');
     cy.wait(['@getTasks', '@getUsers', '@getProjectsLookup'], { timeout: 10000 });
@@ -164,11 +166,11 @@ describe('Client Task Flows', () => {
 
     // Same lookup shadowing as the filter test: TaskList re-renders when the
     // user/project lookups resolve, which detaches the row mid-click.
-    cy.intercept('GET', '**/api/v1/users', {
+    cy.intercept('GET', '**/api/v1/users*', {
       statusCode: 200,
       body: [{ id: 2, name: 'Client User', role: 'developer' }]
     }).as('getUsers');
-    cy.intercept('GET', '**/api/v1/projects', { statusCode: 200, body: [] }).as('getProjectsLookup');
+    cy.intercept('GET', '**/api/v1/projects*', { statusCode: 200, body: [] }).as('getProjectsLookup');
 
     cy.intercept('PUT', '**/api/v1/tasks/10', (req) => {
       req.reply({ statusCode: 200, body: Object.assign({}, req.body, { id: 10, title: 'Learn Cypress' }) });

@@ -2,7 +2,6 @@
 GitHub API client utilities for DevSync with rate limit handling
 """
 
-import json
 import logging
 import os
 import re
@@ -86,13 +85,10 @@ class GitHubClient:
         self.access_token = access_token
         self.remaining_rate_limit = None
         self.rate_limit_reset = None
-        # Keep cache scoped to a client instance so tests/requests do not cross-contaminate.
-        self._cache = {}
-        self._cache_expiry = {}
 
     @classmethod
     def clear_shared_cache(cls):
-        """Compatibility hook for tests; cache is instance-scoped."""
+        """Compatibility hook for tests; there is no cache to clear."""
         return None
 
     @staticmethod
@@ -309,21 +305,7 @@ class GitHubClient:
         return False
 
     def _make_request(self, method, url, **kwargs):
-        """Make a request with rate limit handling and caching"""
-        # Generate cache key if caching is enabled
-        cache_enabled = kwargs.pop("use_cache", True)
-        cache_ttl = kwargs.pop("cache_ttl", 300)  # Default 5 minutes cache
-
-        if cache_enabled:
-            # Create a cache key based on method, URL and params
-            params = kwargs.get("params", {})
-            cache_key = f"{method}:{url}:{json.dumps(params, sort_keys=True)}"
-
-            # Check if we have a cached response
-            if cache_key in self._cache and datetime.now() < self._cache_expiry.get(cache_key, datetime.min):
-                logger.debug("Using cached response for %s", sanitize_for_log(cache_key))
-                return self._cache[cache_key]
-
+        """Make a request with rate limit handling"""
         # Make the actual request
         retry = True
         retry_count = 0
@@ -353,16 +335,6 @@ class GitHubClient:
                 if self._handle_rate_limit(response):
                     retry = True
                     continue
-
-                # For successful responses, cache the result if caching is enabled
-                if cache_enabled and response.status_code == 200:
-                    try:
-                        result = response.json()
-                        self._cache[cache_key] = result
-                        self._cache_expiry[cache_key] = datetime.now() + timedelta(seconds=cache_ttl)
-                        return result
-                    except Exception:
-                        pass  # If parsing fails, just return the response normally
 
                 # Return appropriate data based on status code
                 if 200 <= response.status_code < 300:
@@ -395,7 +367,7 @@ class GitHubClient:
 
     def get_user_profile(self):
         """Get authenticated user's GitHub profile"""
-        return self._make_request("GET", f"{self.BASE_API_URL}/user", use_cache=True, cache_ttl=300)
+        return self._make_request("GET", f"{self.BASE_API_URL}/user")
 
     def get_user_repositories(self, page=1, per_page=30):
         """Get repositories for the authenticated user.
@@ -415,8 +387,6 @@ class GitHubClient:
                     "sort": "updated",
                     "affiliation": "owner,collaborator,organization_member",
                 },
-                use_cache=True,
-                cache_ttl=300,
             )
             or []
         )
@@ -427,8 +397,6 @@ class GitHubClient:
         return self._make_request(
             "GET",
             f"{self.BASE_API_URL}/repos/{owner}/{repo}",
-            use_cache=True,
-            cache_ttl=600,  # Cache for 10 minutes
         )
 
     def get_repository_issues(self, owner, repo, state="open", page=1, per_page=30):
@@ -439,8 +407,6 @@ class GitHubClient:
                 "GET",
                 f"{self.BASE_API_URL}/repos/{owner}/{repo}/issues",
                 params={"state": state, "page": page, "per_page": per_page},
-                use_cache=True,
-                cache_ttl=300,
             )
             or []
         )
@@ -453,8 +419,6 @@ class GitHubClient:
                 "GET",
                 f"{self.BASE_API_URL}/repos/{owner}/{repo}/pulls",
                 params={"state": state, "page": page, "per_page": per_page},
-                use_cache=True,
-                cache_ttl=300,
             )
             or []
         )
@@ -466,7 +430,6 @@ class GitHubClient:
             "POST",
             f"{self.BASE_API_URL}/repos/{owner}/{repo}/issues/{issue_number}/comments",
             json={"body": body},
-            use_cache=False,  # Don't cache POST requests
         )
 
     def _count_paginated_results(self, url, params=None, item_filter=None):
@@ -486,8 +449,6 @@ class GitHubClient:
                         "page": page,
                         "per_page": per_page,
                     },
-                    use_cache=True,
-                    cache_ttl=300,
                 )
 
                 if page_items is None or not isinstance(page_items, list):
@@ -562,11 +523,6 @@ class GitHubClient:
                     "page": 1,
                     "per_page": 1,
                 }
-                cache_key = f"COUNT:GET:{url}:{json.dumps(params, sort_keys=True)}"
-
-                if cache_key in self._cache and datetime.now() < self._cache_expiry.get(cache_key, datetime.min):
-                    return self._cache[cache_key]
-
                 response = requests.get(
                     url,
                     params=params,
@@ -596,8 +552,6 @@ class GitHubClient:
                 if pull_count is None:
                     pull_count = len(pulls)
 
-                self._cache[cache_key] = pull_count
-                self._cache_expiry[cache_key] = datetime.now() + timedelta(seconds=300)
                 return pull_count
 
             # Windowed path: count PRs created within the window by filtering pages
@@ -649,8 +603,6 @@ class GitHubClient:
                         "page": page,
                         "per_page": per_page,
                     },
-                    use_cache=True,
-                    cache_ttl=300,
                 )
 
                 if commits is None or not isinstance(commits, list):
