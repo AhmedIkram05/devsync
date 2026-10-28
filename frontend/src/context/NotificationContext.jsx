@@ -10,6 +10,20 @@ const _isTestEnv = process.env.NODE_ENV === 'test';
 const MIN_FETCH_INTERVAL = _isTestEnv ? 50 : 3000; // ms between fetches
 const SERVER_RETRY_DELAY = _isTestEnv ? 50 : 30000; // ms
 const RATE_LIMIT_RETRY_DELAY = _isTestEnv ? 50 : 30000; // ms
+// Ceiling for a server-mandated Retry-After wait so a huge header value can
+// never stall notification recovery indefinitely.
+const RATE_LIMIT_MAX_RETRY_DELAY = 120000; // ms
+
+// client.js parses the Retry-After header onto thrown 429 errors. Clamp it:
+// invalid/absent values fall back to the default delay, valid ones are
+// honored in ms up to the cap.
+const clampRetryDelayMs = (retryAfterSeconds) => {
+  const seconds = Number(retryAfterSeconds);
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return RATE_LIMIT_RETRY_DELAY;
+  }
+  return Math.min(seconds * 1000, RATE_LIMIT_MAX_RETRY_DELAY);
+};
 const RECONNECT_RETRY_DELAY = _isTestEnv ? 50 : 60000; // ms
 
 // Deterministic Cypress guard: background activity (heartbeat interval, socket
@@ -216,7 +230,7 @@ export const NotificationProvider = ({ children }) => {
           }
           logger.log('Attempting to fetch notifications again after rate limit cooling period');
           refreshNotifications(true);
-        }, RATE_LIMIT_RETRY_DELAY);
+        }, clampRetryDelayMs(error.retryAfter));
       } else {
         setError('Failed to load notifications');
       }
