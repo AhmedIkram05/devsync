@@ -20,8 +20,7 @@ from ...db.models import (  # Changed to relative import
 from ...services.task_rules import OVERDUE_EXCLUDED_STATUSES, get_project_scope_ids
 from .helpers import safe_query_all as _safe_query_all  # noqa: F401 (back-compat re-export)
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Root logging is owned by app config; library modules only get a namespaced logger.
 logger = logging.getLogger(__name__)
 
 COMPLETED_TASK_STATUSES = {"done", "completed"}
