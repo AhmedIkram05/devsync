@@ -37,8 +37,7 @@ def _validate_repo_segments(owner, repo):
     return owner, repo
 
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Root logging is owned by app config; library modules only get a namespaced logger.
 logger = logging.getLogger(__name__)
 
 try:
