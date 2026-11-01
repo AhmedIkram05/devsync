@@ -45,10 +45,12 @@ def validate_profile_update(data):
     if "name" in data and (len(data["name"]) < 2 or len(data["name"]) > 100):
         return jsonify({"message": "Name must be between 2 and 100 characters"}), 400
 
-    # Validate password change if provided
-    if ("current_password" in data and "new_password" not in data) or (
-        "new_password" in data and "current_password" not in data
-    ):
+    # current_password accompanies new_password (password change) or email
+    # (re-confirmation of an email change); on its own it is meaningless.
+    if "current_password" in data and "email" not in data and "new_password" not in data:
+        return jsonify({"message": "Both current password and new password are required for password change"}), 400
+
+    if "new_password" in data and "current_password" not in data:
         return jsonify({"message": "Both current password and new password are required for password change"}), 400
 
     if "new_password" in data and len(data["new_password"]) < 8:
