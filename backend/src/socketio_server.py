@@ -340,6 +340,24 @@ def _membership_denied(project_id, user_id):
     return not (user is not None and user.role == Role.ADMIN.value)
 
 
+def _project_member_ids(project_id):
+    """Integer member ids for *project_id*; mention fan-out is bounded to these.
+
+    One lookup for the whole mention list (not per mention); an empty set on
+    failure drops the fan-out rather than leaking to non-members.
+    """
+    try:
+        project_id = int(project_id)
+    except (TypeError, ValueError):
+        return set()
+    try:
+        rows = db.session.query(project_members.c.user_id).filter(project_members.c.project_id == project_id).all()
+    except Exception:
+        logger.warning("mention fan-out: member lookup failed; dropping mention notifications", exc_info=True)
+        return set()
+    return {int(row[0]) for row in rows if row[0] is not None}
+
+
 # Room management handlers
 @socketio.on("join_project")
 @authenticated_only
@@ -410,17 +428,20 @@ def handle_task_update(data, user_id):
 
     # A task_id must actually belong to the claimed project before fan-out:
     # room membership alone would let a member broadcast task ids from any
-    # other project into this room. When the lookup itself fails (DB down) we
-    # keep the pre-existing degraded behaviour — membership was re-verified
-    # above — but a known task with a different project_id is never broadcast.
-    task_id_is_numeric = str(task_id).isdigit()
-    task = None
-    if task_id_is_numeric:
-        try:
-            task = db.session.get(Task, int(task_id))
-        except Exception:
-            logger.warning("task_update: task lookup failed; skipping task-project check", exc_info=True)
-    if task_id_is_numeric and (task is None or str(getattr(task, "project_id", None)) != str(project_id)):
+    # other project into this room. Fail closed on anything we cannot verify —
+    # a non-numeric id or a failed lookup must not reach the room.
+    try:
+        task_id_int = int(task_id)
+    except (TypeError, ValueError):
+        return {"status": "error", "message": "Invalid task ID"}
+
+    try:
+        task = db.session.get(Task, task_id_int)
+    except Exception:
+        logger.warning("task_update: task lookup failed; denying broadcast", exc_info=True)
+        return {"status": "error", "message": "Task lookup failed"}
+
+    if task is None or str(getattr(task, "project_id", None)) != str(project_id):
         return {"status": "error", "message": "Task does not belong to this project"}
 
     # Broadcast to project room
@@ -456,9 +477,21 @@ def handle_comment_added(data, user_id):
         to=f"project_{project_id}",
     )
 
-    # Additionally notify specifically mentioned users (all of their tabs).
+    # Notify mentioned users (all their tabs) — but only those who are members
+    # of this project. Without the intersection any project member could fan
+    # user_mentioned payloads (task/comment ids) out to arbitrary user ids,
+    # including users with no access to the project.
+    if not isinstance(mentioned_users, list):
+        mentioned_users = []
+    member_ids = _project_member_ids(project_id)
     for mentioned_user in mentioned_users:
-        for mentioned_sid in connected_users.get(mentioned_user, set()):
+        try:
+            mentioned_id = int(mentioned_user)
+        except (TypeError, ValueError):
+            continue
+        if mentioned_id not in member_ids:
+            continue
+        for mentioned_sid in connected_users.get(mentioned_id, set()):
             _safe_emit(
                 "user_mentioned",
                 {

@@ -207,6 +207,31 @@ def test_admin_can_broadcast(app_and_socket, app, fake_redis):
     assert "task_updated" in [e["name"] for e in events]
 
 
+def test_mention_fanout_is_bounded_to_project_members(app_and_socket, app, fake_redis):
+    """Fix 1: a member cannot fan user_mentioned out to non-members."""
+    _, socketio = app_and_socket
+
+    socket_module.connected_users.clear()
+    socket_module.project_rooms.clear()
+    _seed_project_89(app)
+
+    member = _connect(app_and_socket, app, 1)
+    two = socketio.test_client(app, headers=auth_headers(app, user_id=2))
+    assert two.emit("register", {}, callback=True)["status"] == "success"
+    outsider = socketio.test_client(app, headers=auth_headers(app, user_id=3))
+    assert outsider.emit("register", {}, callback=True)["status"] == "success"
+
+    member.emit(
+        "comment_added",
+        {"project_id": 89, "task_id": 9, "comment_id": 55, "mentioned_users": [2, 3], "timestamp": "t"},
+        callback=True,
+    )
+
+    assert "user_mentioned" in [e["name"] for e in two.get_received()]
+    # User 3 is connected but not a member: the mention must not reach them.
+    assert "user_mentioned" not in [e["name"] for e in outsider.get_received()]
+
+
 def test_heartbeat_and_room_actions_refresh_presence(app_and_socket, app, fake_redis):
     """D5: 10s heartbeat refreshes the 30s key; register/join also refresh."""
     _, socketio = app_and_socket

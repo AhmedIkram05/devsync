@@ -279,34 +279,20 @@ def create_app(config_class=None):
 
     @jwt.revoked_token_loader
     def revoked_token_callback(jwt_header, jwt_payload):
-        # Refresh reuse detection (fail-closed): a revoked refresh jti
-        # presented again revokes every user token + audits, then 401s.
-        if jwt_payload.get("type") == "refresh":
-            try:
-                from src.auth.token_blocklist import revoke_all_user_tokens
-
-                identity = jwt_payload.get("identity", jwt_payload.get("sub"))
-                user_id = identity.get("user_id") if isinstance(identity, dict) else identity
-                if user_id is not None:
-                    revoke_all_user_tokens(user_id)
-                try:
-                    from src.services import audit_service
-
-                    audit_service.record(
-                        action="refresh_reuse_detected",
-                        actor={"user_id": user_id, "role": jwt_payload.get("role")},
-                        resource_type="user",
-                        resource_id=user_id,
-                    )
-                except Exception:
-                    app.logger.warning("refresh reuse audit failed", exc_info=True)
-            except Exception as exc:
-                app.logger.warning("refresh reuse revocation failed: %s", exc)
+        # Access-token revocation only. The refresh-token reuse verdict lives in
+        # refresh_token(): the loader runs before the view, so revoking here
+        # would skip the multi-tab rotation grace window and mass-revoke on an
+        # ordinary two-tab refresh (the blocklist loader defers refresh jtis).
         return error_response("The authentication token has been revoked", "token_revoked", 401)
 
     # Modified exempt function to correctly bypass JWT and auth checks for public routes
     @jwt.token_in_blocklist_loader
     def check_if_token_is_revoked(jwt_header, jwt_payload):
+        # Refresh tokens defer to refresh_token()'s authoritative check, which
+        # alone can see the rotation grace window. Declaring reuse from the
+        # loader would 401 the losing tab before the view ever runs.
+        if jwt_payload.get("type") == "refresh":
+            return False
         # Fail-open for availability: backend errors log + metric and allow
         # the request; refresh rotation itself is fail-closed on reuse.
         try:

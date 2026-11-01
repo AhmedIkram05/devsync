@@ -46,3 +46,10 @@ def test_github_connect_uses_token_identity_not_body(monkeypatch):
 
     assert looked_up == [7]
     assert response.status_code == 404
+
+
+def test_github_config_check_requires_auth():
+    """The config probe reveals client_id/redirect config; require a JWT."""
+    client = _build_app().test_client()
+
+    assert client.get("/github/config-check").status_code == 401

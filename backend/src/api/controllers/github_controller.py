@@ -49,6 +49,8 @@ oauth_states = {}
 
 OAUTH_STATE_PREFIX = "github_oauth_state:"
 OAUTH_STATE_TTL_SECONDS = 600
+# Cap the fallback dict so a Redis outage cannot grow it without bound.
+OAUTH_STATE_MAX_ENTRIES = 1000
 
 # The OAuth flow must also be bound to the browser session that started it:
 # state alone proves the callback came through this server, but not that it
@@ -92,6 +94,20 @@ def store_oauth_state(state, user_id):
         except Exception:
             logger.warning("OAuth state Redis write failed; using in-memory fallback", exc_info=True)
     oauth_states[state] = {"user_id": user_id, "created_at": datetime.now()}
+    _prune_oauth_states()
+
+
+def _prune_oauth_states():
+    """Apply the Redis TTL and a size cap to the in-memory fallback."""
+    now = datetime.now()
+    for key in [
+        k for k, rec in oauth_states.items() if (now - rec["created_at"]).total_seconds() > OAUTH_STATE_TTL_SECONDS
+    ]:
+        oauth_states.pop(key, None)
+    overflow = len(oauth_states) - OAUTH_STATE_MAX_ENTRIES
+    if overflow > 0:
+        for key in sorted(oauth_states, key=lambda k: oauth_states[k]["created_at"])[:overflow]:
+            oauth_states.pop(key, None)
 
 
 def consume_oauth_state(state):
@@ -115,6 +131,8 @@ def consume_oauth_state(state):
         logger.warning("OAuth state lookup failed", exc_info=True)
         raise
     if record is None:
+        return None
+    if (datetime.now() - record["created_at"]).total_seconds() > OAUTH_STATE_TTL_SECONDS:
         return None
     return record.get("user_id")
 

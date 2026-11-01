@@ -2,6 +2,7 @@
 
 import os
 import sys
+from datetime import datetime, timedelta
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
 
@@ -50,3 +51,25 @@ def test_redis_backend_uses_setex_600_and_deletes_on_consume(monkeypatch):
     assert calls["setex"] == ("github_oauth_state:state-9", 600, "11")
     assert consume_oauth_state("state-9") == 11
     assert calls["delete"] == "github_oauth_state:state-9"
+
+
+def test_memory_fallback_state_expires_after_ttl(monkeypatch):
+    """The memory fallback must honour the same TTL as the Redis path."""
+    _no_redis(monkeypatch)
+    store_oauth_state("stale", 5)
+    github_controller.oauth_states["stale"]["created_at"] = datetime.now() - timedelta(
+        seconds=github_controller.OAUTH_STATE_TTL_SECONDS + 1
+    )
+
+    assert consume_oauth_state("stale") is None
+
+
+def test_memory_fallback_is_bounded(monkeypatch):
+    """A Redis outage must not let the fallback dict grow without bound."""
+    _no_redis(monkeypatch)
+    monkeypatch.setattr(github_controller, "OAUTH_STATE_MAX_ENTRIES", 3)
+
+    for i in range(10):
+        store_oauth_state(f"state-{i}", i)
+
+    assert len(github_controller.oauth_states) <= 3

@@ -118,11 +118,15 @@ class TestAdminControllerIntegration:
             result = update_user_role(user_id=2)
             assert result is not None
 
+    @patch("src.api.controllers.users_controller.User")
     @patch("src.api.controllers.admin_controller.jsonify")
     @patch("src.api.controllers.admin_controller.User")
     @patch("src.api.controllers.admin_controller.get_jwt_identity")
-    def test_admin_update_role_all_roles(self, mock_jwt_id, mock_user, mock_jsonify, client, app):
+    def test_admin_update_role_all_roles(self, mock_jwt_id, mock_user, mock_jsonify, mock_uc_user, client, app):
         """Test updating to each valid role"""
+        # The last-admin guard queries users_controller.User; keep it off the
+        # real DB here (this file's app fixture has no db.init_app).
+        mock_uc_user.query.filter_by.return_value.count.return_value = 2
         for role in ["admin", "team_lead", "developer", "client"]:
             mock_jwt_id.return_value = 1
             mock_jsonify.return_value = ({"success": True}, 200)

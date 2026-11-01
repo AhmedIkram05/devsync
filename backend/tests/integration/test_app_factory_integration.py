@@ -285,3 +285,31 @@ def test_readyz_reports_503_when_db_unreachable(client, monkeypatch):
 
     assert response.status_code == 503
     assert response.get_json()["status"] == "not_ready"
+
+
+def test_refresh_jti_revocation_defers_to_view_grace(app_and_socket):
+    """Fix 2: jwt_required(refresh=True) must not short-circuit a revoked refresh
+    jti — the loader defers so refresh_token()'s grace window can serve a two-tab
+    race, while access tokens still fail closed on a revoked jti."""
+    from flask_jwt_extended import create_refresh_token, decode_token, verify_jwt_in_request
+    from flask_jwt_extended.exceptions import RevokedTokenError
+    from src.auth import token_blocklist
+
+    app, _ = app_and_socket
+    app.config["JWT_TOKEN_LOCATION"] = ["headers"]
+    token_blocklist.reset_for_tests()
+
+    with app.app_context():
+        refresh = create_refresh_token(identity={"user_id": 1}, additional_claims={"role": "developer"})
+        token_blocklist.revoke_token(decode_token(refresh)["jti"], 300)
+
+    # Revoked refresh jti passes the decorator (deferred), so the view can decide.
+    with app.test_request_context(headers={"Authorization": f"Bearer {refresh}"}):
+        verify_jwt_in_request(refresh=True)
+
+    with app.app_context():
+        access = create_access_token(identity={"user_id": 1})
+        token_blocklist.revoke_token(decode_token(access)["jti"], 300)
+    with app.test_request_context(headers={"Authorization": f"Bearer {access}"}):
+        with pytest.raises(RevokedTokenError):
+            verify_jwt_in_request()
