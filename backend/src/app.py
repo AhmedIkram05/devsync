@@ -41,26 +41,6 @@ from flask_migrate import Migrate
 from sqlalchemy import text
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-PUBLIC_ROUTES = [
-    "/api/v1/auth/register",
-    "/api/v1/auth/login",
-    "/api/v1/github/callback",
-    "/api/v1/github/exchange",
-    "/api/v1/github/connect",
-    "/health",
-    "/healthz",
-    "/readyz",
-    "/api/docs",
-    "/api/swagger.yaml",
-]
-
-
-def is_public_route(path):
-    """Exact match or sub-path (route + '/'); naive startswith would leak."""
-    if not path:
-        return False
-    return any(path == route or path.startswith(route + "/") for route in PUBLIC_ROUTES)
-
 
 def _proxy_x_for():
     try:
