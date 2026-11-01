@@ -406,3 +406,41 @@ def test_update_user_tracks_all_changed_fields_and_role_notification(app, mock_d
     assert "password" in notify_kwargs["changed_fields"]
     assert "github_username" in notify_kwargs["changed_fields"]
     assert "avatar" in notify_kwargs["changed_fields"]
+
+
+def test_update_user_refuses_demoting_last_admin(app, mock_db, mock_jwt_identity):
+    """Losing the only admin would permanently lock the admin plane."""
+    mock_jwt_identity.return_value = {"user_id": 99}
+    with app.test_request_context(json={"role": "developer"}):
+        with (
+            patch("backend.src.api.controllers.users_controller.User") as mock_user_class,
+            patch("backend.src.api.controllers.users_controller.validate_user_data", return_value=None),
+        ):
+            last_admin = MagicMock(id=1, role="admin", name="A", email="a@test.com")
+            mock_user_class.query.get_or_404.return_value = last_admin
+            mock_user_class.query.filter_by.return_value.count.return_value = 1
+
+            from backend.src.api.controllers.users_controller import update_user
+
+            response, status = update_user(1)
+
+    assert status == 400
+    assert "last remaining admin" in response.get_json()["message"]
+    assert last_admin.role == "admin"
+
+
+def test_delete_user_refuses_removing_last_admin(app, mock_db, mock_jwt_identity):
+    mock_jwt_identity.return_value = {"user_id": 99}
+    with app.test_request_context():
+        with patch("backend.src.api.controllers.users_controller.User") as mock_user_class:
+            last_admin = MagicMock(id=1, role="admin", name="A")
+            mock_user_class.query.filter_by.return_value.count.return_value = 1
+            mock_db.session.get.return_value = last_admin
+
+            from backend.src.api.controllers.users_controller import delete_user
+
+            response, status = delete_user(1)
+
+    assert status == 400
+    assert "last remaining admin" in response.get_json()["message"]
+    assert not mock_db.session.delete.called

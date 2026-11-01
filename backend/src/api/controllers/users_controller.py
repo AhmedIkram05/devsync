@@ -6,7 +6,7 @@ from flask_jwt_extended import get_jwt, get_jwt_identity
 from src.socketio_server import emit_dashboard_refresh
 
 from ...auth.helpers import hash_password, verify_password
-from ...auth.rbac import has_permission
+from ...auth.rbac import Role, has_permission
 from ...db.models import (
     AuditLog,
     Comment,
@@ -31,6 +31,13 @@ USER_SORT_FIELDS = {
     "role": User.role,
     "created_at": User.created_at,
 }
+
+
+def _is_last_admin(user):
+    """True when *user* is the only admin; losing them would lock the admin plane."""
+    if getattr(user, "role", None) != Role.ADMIN.value:
+        return False
+    return User.query.filter_by(role=Role.ADMIN.value).count() <= 1
 
 
 def _cleanup_user_dependencies(user_id, replacement_user_id):
@@ -199,6 +206,8 @@ def update_user(user_id):
         changed_fields["email"] = (user.email, data["email"])
         user.email = data["email"]
     if "role" in data and user.role != data["role"]:
+        if data["role"] != Role.ADMIN.value and _is_last_admin(user):
+            return jsonify({"message": "Cannot demote the last remaining admin"}), 400
         changed_fields["role"] = (user.role, data["role"])
         user.role = data["role"]
     if "password" in data and data["password"]:
@@ -259,6 +268,9 @@ def delete_user(user_id):
 
     if user.id == admin_user_id:
         return jsonify({"message": "You cannot delete your own account"}), 400
+
+    if _is_last_admin(user):
+        return jsonify({"message": "Cannot delete the last remaining admin"}), 400
 
     user_name = user.name
 

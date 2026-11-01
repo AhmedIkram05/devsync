@@ -182,3 +182,29 @@ def test_update_user_role_success(mock_validate, mock_user, mock_db, mock_audit_
     mock_db.session.commit.assert_called_once()
     mock_audit_record.assert_called_once()
     mock_emit.assert_called_once()
+
+
+@patch("backend.src.api.controllers.users_controller.User")
+@patch("backend.src.api.controllers.admin_controller.emit_dashboard_refresh")
+@patch("backend.src.api.controllers.admin_controller.audit_service.record")
+@patch("backend.src.api.controllers.admin_controller.db")
+@patch("backend.src.api.controllers.admin_controller.User")
+@patch("backend.src.api.controllers.admin_controller.validate_user_role_update", return_value=None)
+def test_update_user_role_refuses_last_admin_demotion(
+    mock_validate, mock_admin_user, mock_db, mock_audit, mock_emit, mock_uc_user, app
+):
+    """Demoting the final admin would permanently lock the admin plane."""
+    user = SimpleNamespace(id=8, role="admin", name="A", email="a@test.com")
+    mock_admin_user.query.get.return_value = user
+    mock_uc_user.query.filter_by.return_value.count.return_value = 1
+
+    with app.test_request_context("/admin/users/8/role", method="PUT", json={"role": "developer"}):
+        from backend.src.api.controllers.admin_controller import update_user_role
+
+        response, status = update_user_role(8)
+
+    assert status == 400
+    assert "last remaining admin" in response.get_json()["message"]
+    assert user.role == "admin"
+    mock_db.session.commit.assert_not_called()
+    mock_emit.assert_not_called()

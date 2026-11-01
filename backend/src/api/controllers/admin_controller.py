@@ -100,6 +100,12 @@ def update_user_role(user_id):
     if validation_result:
         return validation_result
 
+    if data["role"] != Role.ADMIN.value:
+        from .users_controller import _is_last_admin
+
+        if _is_last_admin(user):
+            return jsonify({"message": "Cannot demote the last remaining admin"}), 400
+
     # Update user role
     old_role = user.role
     user.role = data["role"]
