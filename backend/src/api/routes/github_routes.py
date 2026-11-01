@@ -38,8 +38,9 @@ def register_routes(bp):
         return identity["user_id"] if isinstance(identity, dict) else identity
 
     @bp.route("/github/config-check", methods=["GET"])
+    @jwt_required()
     def github_config_check():
-        """Route to check GitHub OAuth configuration"""
+        """Route to check GitHub OAuth configuration (reveals client_id/redirect config)."""
         return check_github_config()
 
     @bp.route("/github/auth", methods=["GET"])
