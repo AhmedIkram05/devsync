@@ -139,3 +139,65 @@ def test_task_update_rejects_unknown_task_id(monkeypatch, app):
 
     assert result["status"] == "error"
     assert emits == []
+
+
+def test_task_update_fails_closed_when_lookup_raises(monkeypatch, app):
+    import src.socketio_server as socket_module
+
+    _authed_socket(monkeypatch, socket_module)
+    monkeypatch.setattr(socket_module, "_membership_denied", lambda project_id, user_id: False)
+
+    mock_db = MagicMock()
+    mock_db.session.get.side_effect = RuntimeError("db down")
+    monkeypatch.setattr(socket_module, "db", mock_db)
+
+    emits = []
+    monkeypatch.setattr(socket_module, "_safe_emit", lambda *a, **k: emits.append(k) or True)
+
+    result = socket_module.handle_task_update({"project_id": 5, "task_id": 42}, user_id=1)
+
+    assert result["status"] == "error"
+    assert emits == []
+
+
+def _mention_emits(monkeypatch, socket_module, mentioned_users):
+    emits = []
+    monkeypatch.setattr(socket_module, "_safe_emit", lambda *a, **k: emits.append(k) or True)
+    result = socket_module.handle_comment_added(
+        {"project_id": 5, "task_id": 9, "comment_id": 1, "mentioned_users": mentioned_users}, user_id=1
+    )
+    targets = [k.get("to") for k in emits if str(k.get("to", "")).startswith("sid-")]
+    return result, targets
+
+
+def test_comment_mention_is_bounded_to_project_members(monkeypatch, app):
+    import src.socketio_server as socket_module
+
+    _authed_socket(monkeypatch, socket_module)
+    monkeypatch.setattr(socket_module, "_membership_denied", lambda project_id, user_id: False)
+    monkeypatch.setattr(socket_module, "_project_member_ids", lambda project_id: {2})
+
+    socket_module.connected_users.clear()
+    socket_module.connected_users[2] = {"sid-member"}
+    socket_module.connected_users[99] = {"sid-outsider"}
+
+    result, targets = _mention_emits(monkeypatch, socket_module, ["2", 99])
+
+    assert result["status"] == "success"
+    # "2" is normalised and delivered; non-member 99 never receives the payload.
+    assert targets == ["sid-member"]
+
+
+def test_comment_mention_ignores_non_list_payload(monkeypatch, app):
+    import src.socketio_server as socket_module
+
+    _authed_socket(monkeypatch, socket_module)
+    monkeypatch.setattr(socket_module, "_membership_denied", lambda project_id, user_id: False)
+    monkeypatch.setattr(socket_module, "_project_member_ids", lambda project_id: {2})
+    socket_module.connected_users.clear()
+    socket_module.connected_users[2] = {"sid-member"}
+
+    result, targets = _mention_emits(monkeypatch, socket_module, 2)
+
+    assert result["status"] == "success"
+    assert targets == []
