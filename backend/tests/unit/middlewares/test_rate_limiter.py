@@ -200,8 +200,10 @@ def test_setup_middlewares_env_disables_rate_limit(monkeypatch, reset_rate_limit
 
 
 def test_global_rate_limit_is_per_endpoint(reset_rate_limit_data):
-    """A chatty page must not starve other endpoints: buckets are per-endpoint."""
+    """A chatty page must not starve other endpoints: real routes bucket per endpoint."""
     test_app = Flask(__name__)
+    test_app.add_url_rule("/api/a", "route_a", lambda: "a")
+    test_app.add_url_rule("/api/b", "route_b", lambda: "b")
     apply_global_rate_limit(test_app, requests_per_window=2, window_seconds=60)
     before_funcs = test_app.before_request_funcs.get(None, [])
     assert len(before_funcs) == 1
@@ -218,6 +220,23 @@ def test_global_rate_limit_is_per_endpoint(reset_rate_limit_data):
         # /api/b is untouched by /api/a's budget
         with test_app.test_request_context(path="/api/b"):
             assert before_funcs[0]() is None
+
+
+def test_global_rate_limit_shares_one_bucket_for_unmatched_paths(reset_rate_limit_data):
+    """Random 404 paths must not each get a fresh bucket (evasion via path cardinality)."""
+    test_app = Flask(__name__)
+    apply_global_rate_limit(test_app, requests_per_window=2, window_seconds=60)
+    before_funcs = test_app.before_request_funcs.get(None, [])
+    assert len(before_funcs) == 1
+
+    with patch("backend.src.api.middlewares.rate_limiter.get_client_identifier", return_value="scanner"):
+        with test_app.test_request_context(path="/nope-1"):
+            assert before_funcs[0]() is None
+        with test_app.test_request_context(path="/nope-2"):
+            assert before_funcs[0]() is None
+        # Third distinct path is denied: all unmatched paths share one bucket.
+        with test_app.test_request_context(path="/nope-3"):
+            assert before_funcs[0]() is not None
 
 
 def test_global_rate_limit_skips_health(reset_rate_limit_data):

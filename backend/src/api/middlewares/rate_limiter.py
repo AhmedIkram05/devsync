@@ -194,7 +194,10 @@ def apply_global_rate_limit(app, requests_per_window=300, window_seconds=60):
             return None
 
         client_id = get_client_identifier()
-        endpoint = request.endpoint or request.path
+        # Unmatched routes report endpoint None: bucket every 404 path under one
+        # key so random-path floods share a single limit instead of each getting
+        # a fresh bucket (and growing the in-memory fallback without bound).
+        endpoint = request.endpoint or "__unmatched__"
 
         if _record_hit(client_id, endpoint, requests_per_window, window_seconds):
             return error_response(
