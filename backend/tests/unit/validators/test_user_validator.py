@@ -117,6 +117,10 @@ def test_validate_profile_update_password():
         assert status == 400
         assert "Both current password and new password are required" in response.get_json()["message"]
 
+        # Current password re-confirming an email change is valid on its own
+        result = validate_profile_update({"email": "new@example.com", "current_password": "oldpassword"})
+        assert result is None
+
         # Only new password provided
         result = validate_profile_update({"new_password": "newpassword"})
         response, status = result

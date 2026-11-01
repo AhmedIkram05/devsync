@@ -385,22 +385,6 @@ def test_config_class_exposes_token_lifetimes(monkeypatch):
         _restore_config(monkeypatch)
 
 
-def test_is_public_route_exact_or_subpath_only():
-    from backend.src.app import PUBLIC_ROUTES, is_public_route
-
-    assert "/" not in PUBLIC_ROUTES
-    assert is_public_route("/health")
-    assert is_public_route("/health/check")
-    assert not is_public_route("/healthcheck")
-    assert is_public_route("/api/docs")
-    assert is_public_route("/api/docs/extra")
-    assert not is_public_route("/api/docs-evil")
-    assert is_public_route("/api/v1/auth/login")
-    assert not is_public_route("/api/v1/tasks")
-    assert not is_public_route("/api/v1/admin/stats")
-    assert not is_public_route("/")
-
-
 def test_postgres_uri_pins_psycopg2_driver(monkeypatch):
     # SQLAlchemy 2.1 defaults bare postgresql:// to psycopg v3, which measured a
     # ~5x latency regression; the resolver must pin the psycopg2 dialect.

@@ -341,7 +341,11 @@ def update_current_user_profile():
     # Update allowed fields
     if "name" in data:
         user.name = data["name"]
-    if "email" in data:
+    if "email" in data and data["email"] != user.email:
+        # A hijacked session must not redirect account recovery, so an email
+        # change re-confirms the current password (same bcrypt check as login).
+        if not user.password or not verify_password(data.get("current_password") or "", user.password):
+            return jsonify({"message": "Current password is required to change email"}), 403
         # Check if email is already taken by another user
         existing_user = User.query.filter_by(email=data["email"]).first()
         if existing_user and existing_user.id != user_id:

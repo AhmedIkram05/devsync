@@ -311,6 +311,59 @@ def test_update_current_user_wrong_password(app, mock_jwt_identity, mock_db, moc
         assert mock_verify.called
 
 
+def test_update_current_user_email_requires_current_password(app, mock_jwt_identity, mock_db, mock_user):
+    """A hijacked session must not redirect recovery without the current password."""
+    mock_user.email = "test@example.com"
+    with (
+        app.test_request_context(json={"email": "attacker@example.com"}),
+        patch("backend.src.api.controllers.users_controller.User.query") as mock_query,
+        patch("backend.src.api.controllers.users_controller.verify_password", return_value=False) as mock_verify,
+    ):
+        mock_query.get_or_404.return_value = mock_user
+
+        from backend.src.api.controllers.users_controller import update_current_user_profile
+
+        response, status = update_current_user_profile()
+
+    assert status == 403
+    assert "Current password is required to change email" in response.get_json()["message"]
+    assert mock_user.email == "test@example.com"
+    assert mock_verify.called
+
+
+def test_update_current_user_email_with_valid_password(app, mock_jwt_identity, mock_db, mock_user):
+    mock_user.email = "test@example.com"
+    with (
+        app.test_request_context(json={"email": "new@example.com", "current_password": "password123"}),
+        patch("backend.src.api.controllers.users_controller.User.query") as mock_query,
+        patch("backend.src.api.controllers.users_controller.verify_password", return_value=True),
+    ):
+        mock_query.get_or_404.return_value = mock_user
+        mock_query.filter_by.return_value.first.return_value = None
+
+        from backend.src.api.controllers.users_controller import update_current_user_profile
+
+        response = update_current_user_profile()
+
+    assert "Profile updated successfully" in response.get_json()["message"]
+    assert mock_user.email == "new@example.com"
+
+
+def test_update_current_user_same_email_needs_no_password(app, mock_jwt_identity, mock_db, mock_user):
+    """Re-sending the current email is a no-op and must not demand the password."""
+    with (
+        app.test_request_context(json={"email": "test@example.com"}),
+        patch("backend.src.api.controllers.users_controller.User.query") as mock_query,
+    ):
+        mock_query.get_or_404.return_value = mock_user
+
+        from backend.src.api.controllers.users_controller import update_current_user_profile
+
+        response = update_current_user_profile()
+
+    assert "Profile updated successfully" in response.get_json()["message"]
+
+
 def test_create_user_success_with_default_role(app, mock_db):
     payload = {
         "name": "New User",
