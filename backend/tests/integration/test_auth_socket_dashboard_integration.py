@@ -647,7 +647,11 @@ def test_refresh_rotates_and_old_refresh_rejected(app):
     assert any("access_token_cookie" in c for c in set_cookies)
     assert any("refresh_token_cookie" in c for c in set_cookies)
 
-    # Old refresh jti is single-use: reuse is rejected (fresh client: cookie-only).
+    # Reuse OUTSIDE the rotation grace window is a genuine replay: mark the
+    # window closed, then the old jti must be rejected (fresh client: cookie-only).
+    from src.auth.auth import _recent_rotations
+
+    _recent_rotations.clear()
     reuser = app.test_client()
     reuser.set_cookie("refresh_token_cookie", old_refresh)
     reuse = reuser.post("/api/v1/auth/refresh", headers={"X-CSRF-TOKEN": old_csrf})
@@ -664,7 +668,11 @@ def test_refresh_reuse_revokes_user_tokens(app):
     assert rotated.status_code == 200
     rotated_access = client.get_cookie("access_token_cookie").value
 
-    # Reusing the old refresh triggers user-wide revocation (fresh client).
+    # Reusing the old refresh outside the grace window triggers user-wide
+    # revocation (fresh client).
+    from src.auth.auth import _recent_rotations
+
+    _recent_rotations.clear()
     reuser = app.test_client()
     reuser.set_cookie("refresh_token_cookie", old_refresh)
     reuse = reuser.post("/api/v1/auth/refresh", headers={"X-CSRF-TOKEN": old_csrf})
@@ -675,6 +683,28 @@ def test_refresh_reuse_revokes_user_tokens(app):
     verifier.set_cookie("access_token_cookie", rotated_access)
     stale_response = verifier.get("/api/v1/auth/me")
     assert stale_response.status_code == 401
+
+
+def test_refresh_reuse_within_grace_window_granted_once(app):
+    """The losing tab of a two-tab refresh race gets a fresh pair — exactly once."""
+    from src.auth.token_blocklist import reset_for_tests
+
+    reset_for_tests()
+    client = app.test_client()
+    old_refresh, old_csrf = set_refresh_cookie(client, app, user_id=504)
+    first = client.post("/api/v1/auth/refresh", headers={"X-CSRF-TOKEN": old_csrf})
+    assert first.status_code == 200
+
+    racer = app.test_client()
+    racer.set_cookie("refresh_token_cookie", old_refresh)
+    granted = racer.post("/api/v1/auth/refresh", headers={"X-CSRF-TOKEN": old_csrf})
+    assert granted.status_code == 200
+
+    # The grace is consumed by that one reuse, so a further attempt is a replay.
+    replay = app.test_client()
+    replay.set_cookie("refresh_token_cookie", old_refresh)
+    denied = replay.post("/api/v1/auth/refresh", headers={"X-CSRF-TOKEN": old_csrf})
+    assert denied.status_code == 401
 
 
 def test_dashboard_project_route_returns_404_for_missing_project(client, app, monkeypatch):
