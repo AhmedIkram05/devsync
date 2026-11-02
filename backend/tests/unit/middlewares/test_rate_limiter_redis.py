@@ -19,21 +19,22 @@ from src.api.middlewares.rate_limiter import (
 
 
 class FakeRedis:
-    """Counts per bucket key; optionally explodes like a dead Redis."""
+    """Counts per bucket key; models the atomic INCR + first-hit EXPIRE script."""
 
     def __init__(self, counts=None, fail=False):
         self.counts = counts if counts is not None else {}
         self.fail = fail
         self.expire_calls = []
+        self.eval_calls = 0
 
-    def incr(self, key):
+    def eval(self, script, numkeys, key, ttl):
         if self.fail:
             raise ConnectionError("redis down")
+        self.eval_calls += 1
         self.counts[key] = self.counts.get(key, 0) + 1
+        if self.counts[key] == 1:
+            self.expire_calls.append((key, int(ttl)))
         return self.counts[key]
-
-    def expire(self, key, seconds):
-        self.expire_calls.append((key, seconds))
 
 
 @pytest.fixture
@@ -63,6 +64,23 @@ def test_redis_bucket_shared_counts_and_first_hit_expiry(shared_counter_setup):
 
     # The memory dicts stay untouched while Redis answers.
     assert rate_limiter.request_counts["u1"]["e1"] == 0
+
+
+def test_first_request_sets_ttl_in_one_atomic_call(shared_counter_setup):
+    """INCR + first-hit EXPIRE happen in a single script call, so a crash between
+    them can no longer leave an immortal bucket (no separate incr/expire)."""
+    fake = FakeRedis()
+    redis_client_module._client = fake
+
+    assert _record_hit("u9", "e1", requests_per_window=5, window_seconds=90) is False
+    assert fake.eval_calls == 1
+    assert len(fake.expire_calls) == 1
+    assert fake.expire_calls[0][1] == 90
+
+    # Later hits reuse the bucket TTL: still one call each, no re-expire.
+    assert _record_hit("u9", "e1", requests_per_window=5, window_seconds=90) is False
+    assert fake.eval_calls == 2
+    assert len(fake.expire_calls) == 1
 
 
 def test_fail_open_falls_back_to_memory(shared_counter_setup):
