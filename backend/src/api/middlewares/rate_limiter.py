@@ -71,6 +71,18 @@ def _window_bucket(client_id, endpoint, window_seconds):
     return f"rl:{client_id}:{endpoint}:{epoch}"
 
 
+# Atomic INCR + first-hit EXPIRE. A separate INCR then EXPIRE leaves an
+# immortal bucket if the worker dies between the two; one script closes that
+# window. The expires-at-first-hit shape pins the window to the bucket epoch.
+_INCR_EXPIRE_SCRIPT = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count
+"""
+
+
 def _redis_hit(client_id, endpoint, requests_per_window, window_seconds):
     """Count a hit against the shared Redis bucket.
 
@@ -84,11 +96,7 @@ def _redis_hit(client_id, endpoint, requests_per_window, window_seconds):
         return None
     bucket = _window_bucket(client_id, endpoint, window_seconds)
     try:
-        # INCR + EXPIRE on first hit (D1 contract); the expires-at first-hit
-        # shape keeps the window pinned to the bucket epoch.
-        count = client.incr(bucket)
-        if count == 1:
-            client.expire(bucket, window_seconds)
+        count = client.eval(_INCR_EXPIRE_SCRIPT, 1, bucket, int(window_seconds))
         return count > requests_per_window
     except Exception:
         return None
