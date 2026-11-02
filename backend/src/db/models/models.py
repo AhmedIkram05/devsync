@@ -61,6 +61,10 @@ class Task(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
     project_id = db.Column(db.Integer, db.ForeignKey("projects.id"))
+    # Optimistic-concurrency token. Bumped by the conditional update in
+    # update_task_by_id when the client sends the version it last read, so a
+    # stale write is rejected instead of silently overwriting a concurrent one.
+    version = db.Column(db.Integer, nullable=False, default=1, server_default="1")
 
     # Fix __table_args__ format
     __table_args__ = (
