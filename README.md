@@ -209,6 +209,7 @@ End-to-end: Browser hits the GCE Ingress over managed TLS → nginx serves the S
 | **In-cluster Redis, single replica** | Managed memory store | Pub/sub transit plus TTLs rebuild on restart; standing managed cost for zero users was indefensible |
 | **Cloud SQL private IP, no proxy** | Public IP or proxy sidecar | Private IP with sslmode require is simplest; proxy only if private IP or IAM auth ever needs it |
 | **Fail-open limiter on Redis outage** | Fail-closed | A cache outage must not become a self-outage; throttle-disabled CI already proves the open shape |
+| **Fail-open JWT blocklist on Redis outage** | Fail-closed | A denylist read error must not become a self-outage: it logs `metric=jwt_blocklist_check_failed` and allows the request, while refresh-token reuse detection stays fail-closed, so a replayed token is still revoked |
 | **Stored-key cosign over keyless** | Keyless OIDC | Keyless hung with no local token and the SPDX bundle path failed; stored key with custom attest is green |
 | **Host pinned to `gcp.devsyncapp.me` (was catch-all)** | Per-host routing | Prod overlay pins the rule host — other domains pointed at the LB no longer route; apex/www cert entries remain in the ManagedCertificate |
 
