@@ -30,9 +30,10 @@ export const useAuthSession = () => {
         const userData = sanitizeProfile(JSON.parse(userJson));
         if (userData && userData.id && userData.email && hasValidRole(userData)) {
           if (JSON.stringify(userData) !== userJson) {
-            // codeql[js/clear-text-storage-of-sensitive-data] only the sanitized profile (id, email,
-            // role, username) is cached here for anti-flicker; session tokens are never stored — they
-            // live in HttpOnly cookies, and the client has no XSS sinks that could read this back.
+            // Only the sanitized profile (id, email, role, username) is cached here for anti-flicker.
+            // Session tokens are never stored — they live in HttpOnly cookies — and the client has no
+            // XSS sink that could read this back, so the clear-text-storage alert is not applicable.
+            // codeql[js/clear-text-storage-of-sensitive-data]
             localStorage.setItem('user', JSON.stringify(userData));
           }
           return userData;
@@ -358,8 +359,9 @@ export const useAuthSession = () => {
             : (userData.github_username ?? prevUser.github_username ?? ''),
       });
 
-      // codeql[js/clear-text-storage-of-sensitive-data] sanitized profile only; no tokens are
-      // persisted anywhere in the client — the session lives in HttpOnly cookies.
+      // Sanitized profile only; no tokens are persisted anywhere in the client — the session lives
+      // in HttpOnly cookies, so the clear-text-storage alert is not applicable here.
+      // codeql[js/clear-text-storage-of-sensitive-data]
       localStorage.setItem("user", JSON.stringify(updated));
       return updated;
     });
