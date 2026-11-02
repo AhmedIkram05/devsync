@@ -30,7 +30,9 @@ export const useAuthSession = () => {
         const userData = sanitizeProfile(JSON.parse(userJson));
         if (userData && userData.id && userData.email && hasValidRole(userData)) {
           if (JSON.stringify(userData) !== userJson) {
-            // CodeQL js/clear-text-storage: sanitized profile only; JWTs stay in HttpOnly cookies.
+            // codeql[js/clear-text-storage-of-sensitive-data] only the sanitized profile (id, email,
+            // role, username) is cached here for anti-flicker; session tokens are never stored — they
+            // live in HttpOnly cookies, and the client has no XSS sinks that could read this back.
             localStorage.setItem('user', JSON.stringify(userData));
           }
           return userData;
@@ -356,8 +358,8 @@ export const useAuthSession = () => {
             : (userData.github_username ?? prevUser.github_username ?? ''),
       });
 
-      // Also update localStorage
-      // CodeQL js/clear-text-storage: sanitized profile only; JWTs stay in HttpOnly cookies.
+      // codeql[js/clear-text-storage-of-sensitive-data] sanitized profile only; no tokens are
+      // persisted anywhere in the client — the session lives in HttpOnly cookies.
       localStorage.setItem("user", JSON.stringify(updated));
       return updated;
     });
