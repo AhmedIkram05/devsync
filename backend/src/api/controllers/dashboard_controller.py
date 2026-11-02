@@ -567,11 +567,7 @@ def _project_member_user_ids(project_ids):
     if not project_ids:
         return []
     try:
-        rows = (
-            db.session.query(project_members.c.user_id)
-            .filter(project_members.c.project_id.in_(project_ids))
-            .all()
-        )
+        rows = db.session.query(project_members.c.user_id).filter(project_members.c.project_id.in_(project_ids)).all()
     except Exception as e:
         logger.error(f"Error fetching project member ids: {str(e)}")
         return []

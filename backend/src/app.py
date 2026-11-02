@@ -251,9 +251,7 @@ def _emit_blocklist_fail_open(app, exc):
         backend_errors = get_blocklist_metrics().get("backend_errors", 0)
     except Exception:
         pass
-    app.logger.error(
-        "metric=jwt_blocklist_check_failed total=1 backend_errors=%s error=%s", backend_errors, exc
-    )
+    app.logger.error("metric=jwt_blocklist_check_failed total=1 backend_errors=%s error=%s", backend_errors, exc)
 
 
 def _configure_jwt_callbacks(jwt, app):
