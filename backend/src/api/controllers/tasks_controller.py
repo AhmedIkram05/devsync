@@ -15,6 +15,7 @@ from ...services import audit_service, settings_service
 from ...services.notification_service import NotificationService
 from ...services.notification_service import run_notification as _run_notification
 from ...services.task_rules import get_project_scope_ids, is_task_overdue
+from ..middlewares.error_handler import error_response
 from ..query_params import apply_sort, clean_search, get_pagination_args, paginate
 from ..validators.task_validator import validate_task_data  # Changed to relative import
 
@@ -54,6 +55,18 @@ def _task_value(task, field, default=None):
     return vars(task).get(field, getattr(task, field, default))
 
 
+def _task_version(task, default=1):
+    """Read the concurrency token from the instance dict.
+
+    Unlike ``_task_value`` this never falls back to ``getattr``: a partially
+    stubbed task would auto-create an attribute that is not JSON serializable.
+    SQLAlchemy and plain objects store the loaded column in ``__dict__``, so a
+    missing/None entry safely means "pre-versioning row".
+    """
+    value = vars(task).get("version")
+    return default if value is None else value
+
+
 def _task_datetime(task, field):
     value = _task_value(task, field)
     if value is None:
@@ -80,6 +93,7 @@ def _serialize_task(task):
         "deadline": _task_datetime(task, "deadline"),
         "created_at": _task_datetime(task, "created_at"),
         "updated_at": _task_datetime(task, "updated_at"),
+        "version": _task_version(task),
     }
 
 
@@ -378,6 +392,31 @@ def update_task_by_id(task_id):
 
     db.session.flush()
 
+    # Optimistic concurrency: only enforced when the client sends the version it
+    # last read. The conditional UPDATE ... WHERE id = :id AND version = :expected
+    # is the atomic claim — if a concurrent update already bumped the row, zero
+    # rows match and the request is rejected (409) without committing the field
+    # mutations flushed above. Clients that omit `version` keep the old
+    # last-write-wins behaviour unchanged.
+    if "version" in data:
+        try:
+            expected_version = int(data["version"])
+        except (TypeError, ValueError):
+            return error_response("Invalid version supplied", "bad_request", 400)
+
+        claimed = (
+            db.session.query(Task)
+            .filter(Task.id == task_id, Task.version == expected_version)
+            .update({Task.version: expected_version + 1}, synchronize_session=False)
+        )
+        if not claimed:
+            return error_response(
+                "Task was modified by another user. Reload and try again.",
+                "version_conflict",
+                409,
+            )
+        task.version = expected_version + 1
+
     audit_service.record(
         action="task_updated",
         resource_type="task",
@@ -417,6 +456,7 @@ def update_task_by_id(task_id):
                 "deadline": _task_datetime(task, "deadline"),
                 "assigned_to": _task_value(task, "assigned_to"),
                 "description": _task_value(task, "description"),
+                "version": _task_version(task),
             },
         }
     )
