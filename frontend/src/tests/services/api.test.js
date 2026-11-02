@@ -298,22 +298,13 @@ describe('api utilities', () => {
     expect(noRateLimit).toBeNull();
   });
 
-  test('dashboardService.getDeveloperProgressStats computes role-scoped aggregates', async () => {
+  test('dashboardService.getDeveloperProgressStats returns the server aggregate', async () => {
     global.fetch.mockResolvedValueOnce(
       buildResponse({
-        users: [
-          { id: 1, name: 'Client One', role: 'developer' },
-          { id: 2, name: 'Admin One', role: 'admin' },
-          { id: 3, name: 'Developer One', role: 'developer' },
-        ],
-      })
-    );
-    global.fetch.mockResolvedValueOnce(
-      buildResponse({
-        tasks: [
-          { id: 10, assigned_to: 1, status: 'completed', updated_at: '2099-01-02T00:00:00.000Z' },
-          { id: 11, assigned_to: 1, status: 'todo', updated_at: '2099-01-03T00:00:00.000Z' },
-          { id: 12, assigned_to: 3, status: 'done', updated_at: '2099-01-04T00:00:00.000Z' },
+        developers: [
+          { id: 1, name: 'Client One', role: 'developer', total_tasks: 2, completed_tasks: 1, active_tasks: 1, recent_tasks: [] },
+          { id: 2, name: 'Admin One', role: 'admin', total_tasks: 0, completed_tasks: 0, active_tasks: 0, recent_tasks: [] },
+          { id: 3, name: 'Developer One', role: 'developer', total_tasks: 1, completed_tasks: 1, active_tasks: 0, recent_tasks: [] },
         ],
       })
     );
@@ -508,22 +499,12 @@ describe('api utilities', () => {
     expect(global.fetch.mock.calls[1][0]).toContain('per_page=100');
   });
 
-  test('buildDeveloperProgress: task with no assigned_to is skipped', async () => {
-    global.fetch.mockResolvedValueOnce(
-      buildResponse({ users: [{ id: 1, name: 'Dev', role: 'developer' }] })
-    );
-    global.fetch.mockResolvedValueOnce(
-      buildResponse({ tasks: [
-        { id: 10, assigned_to: undefined, status: 'done' },
-        { id: 11, assigned_to: null, status: 'done' },
-        { id: 12, assigned_to: 1, status: 'done', updated_at: '2099-01-01T00:00:00.000Z' },
-      ] })
-    );
+  test('dashboardService.getDeveloperProgressStats handles a payload without developers', async () => {
+    global.fetch.mockResolvedValueOnce(buildResponse({}));
 
     const progress = await dashboardService.getDeveloperProgressStats();
-    const dev = progress.find((p) => p.id === 1);
-    expect(dev.completed_tasks).toBe(1);
-    expect(dev.total_tasks).toBe(1);
+
+    expect(progress).toEqual([]);
   });
 
   test('getReportData github: aggregates total_prs across multiple repositories', async () => {
@@ -605,17 +586,17 @@ describe('api utilities', () => {
     expect(cachedReport.meta.cache_hit).toBe(true);
   });
 
-  test('buildDeveloperProgress: admin role is included along with team_lead', async () => {
+  test('dashboardService.getDeveloperProgressStats passes recent_tasks through', async () => {
     global.fetch.mockResolvedValueOnce(
-      buildResponse({ users: [
-        { id: 1, name: 'Admin', role: 'admin' },
-        { id: 2, name: 'Lead', role: 'team_lead' },
+      buildResponse({ developers: [
+        { id: 1, name: 'Admin', role: 'admin', total_tasks: 3, completed_tasks: 1, active_tasks: 2, recent_tasks: [{ id: 99, title: 'T', status: 'todo' }] },
+        { id: 2, name: 'Lead', role: 'team_lead', total_tasks: 0, completed_tasks: 0, active_tasks: 0, recent_tasks: [] },
       ] })
     );
-    global.fetch.mockResolvedValueOnce(buildResponse({ tasks: [] }));
 
     const progress = await dashboardService.getDeveloperProgressStats();
-    expect(progress.find((p) => p.id === 1)).toBeDefined();
+
+    expect(progress.find((p) => p.id === 1).recent_tasks).toHaveLength(1);
     expect(progress.find((p) => p.id === 2)).toBeDefined();
   });
 

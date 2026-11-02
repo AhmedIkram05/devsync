@@ -1,4 +1,4 @@
-import { dashboardService, taskService, projectService, githubService } from '../../../services/utils/api';
+import { dashboardService, taskService, githubService } from '../../../services/utils/api';
 
 const jsonResponse = (payload, status = 200) => ({
   ok: status >= 200 && status < 300,
@@ -62,13 +62,14 @@ describe('dashboardService paginated aggregates', () => {
     expect(report.details.length).toBeGreaterThanOrEqual(1);
   });
 
-  test('getDeveloperProgressStats pages tasks and users', async () => {
-    jest.spyOn(taskService, 'getTasksPaginated').mockResolvedValue({
-      items: [{ id: 5, assigned_to: 1, status: 'done', updated_at: new Date().toISOString() }],
-      pagination: { page: 1, pages: 1, total: 1 },
+  test('getDeveloperProgressStats uses the server aggregate instead of paging', async () => {
+    const pageSpy = jest.spyOn(taskService, 'getTasksPaginated').mockResolvedValue({
+      items: [],
+      pagination: null,
     });
-    jest.spyOn(projectService, 'getAllProjects').mockResolvedValue([]);
-    global.fetch.mockResolvedValue(jsonResponse({ users: [{ id: 1, name: 'Dev', role: 'developer' }] }));
+    global.fetch.mockResolvedValue(jsonResponse({ developers: [
+      { id: 1, name: 'Dev', role: 'developer', total_tasks: 1, completed_tasks: 1, active_tasks: 0, recent_tasks: [] },
+    ] }));
 
     const progress = await dashboardService.getDeveloperProgressStats({
       currentUser: { id: 1, role: 'developer' },
@@ -76,6 +77,9 @@ describe('dashboardService paginated aggregates', () => {
 
     expect(progress[0].total_tasks).toBe(1);
     expect(progress[0].completed_tasks).toBe(1);
+    // One aggregate call, no task-list paging.
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(pageSpy).not.toHaveBeenCalled();
   });
 
   test('getReportData builds the github report from connected repositories', async () => {
@@ -104,45 +108,24 @@ describe('dashboardService paginated aggregates', () => {
     expect(report.details).toEqual([]);
   });
 
-  test('getDeveloperProgressStats scopes a team lead to their projects', async () => {
-    jest.spyOn(taskService, 'getTasksPaginated').mockResolvedValue({
-      items: [
-        { id: 10, project_id: 100, assigned_to: 2, status: 'done', updated_at: new Date().toISOString() },
-        { id: 11, project_id: 999, assigned_to: 3, status: 'todo', updated_at: new Date().toISOString() },
-      ],
-      pagination: { page: 1, pages: 1, total: 2 },
-    });
-    jest.spyOn(projectService, 'getAllProjects').mockResolvedValue([
-      { id: 100, created_by: 9, team_members: [{ id: 2, role: 'developer' }, { id: 9, role: 'team_lead' }] },
-    ]);
-    global.fetch.mockResolvedValue(jsonResponse({
-      users: [
-        { id: 2, name: 'Dev', role: 'developer' },
-        { id: 3, name: 'Outsider', role: 'developer' },
-        { id: 9, name: 'Lead', role: 'team_lead' },
-      ],
-    }));
+  test('getDeveloperProgressStats passes the scoped server aggregate through', async () => {
+    // Scoping (team lead -> their projects) now lives in the backend
+    // aggregate; the client is a thin pass-through.
+    global.fetch.mockResolvedValue(jsonResponse({ developers: [
+      { id: 2, name: 'Dev', role: 'developer', total_tasks: 1, completed_tasks: 1, active_tasks: 0, recent_tasks: [] },
+      { id: 9, name: 'Lead', role: 'team_lead', total_tasks: 0, completed_tasks: 0, active_tasks: 0, recent_tasks: [] },
+    ] }));
 
     const progress = await dashboardService.getDeveloperProgressStats({
       currentUser: { id: 9, role: 'team_lead' },
     });
 
     const names = progress.map((entry) => entry.name);
-    expect(names).toContain('Dev');
-    expect(names).toContain('Lead');
-    expect(names).not.toContain('Outsider');
-    expect(progress.find((entry) => entry.name === 'Dev').total_tasks).toBe(1);
+    expect(names).toEqual(['Dev', 'Lead']);
   });
 
-  test('getDeveloperProgressStats returns nothing for a team lead without projects', async () => {
-    jest.spyOn(taskService, 'getTasksPaginated').mockResolvedValue({
-      items: [],
-      pagination: { page: 1, pages: 1, total: 0 },
-    });
-    jest.spyOn(projectService, 'getAllProjects').mockResolvedValue([
-      { id: 100, created_by: 77, team_members: [] },
-    ]);
-    global.fetch.mockResolvedValue(jsonResponse({ users: [{ id: 2, name: 'Dev', role: 'developer' }] }));
+  test('getDeveloperProgressStats returns [] when the aggregate has none', async () => {
+    global.fetch.mockResolvedValue(jsonResponse({ developers: [] }));
 
     const progress = await dashboardService.getDeveloperProgressStats({
       currentUser: { id: 9, role: 'team_lead' },
