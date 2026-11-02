@@ -113,7 +113,9 @@ def test_register_success_sets_cookies_and_returns_contract(monkeypatch):
     set_refresh_cookies.assert_called_once_with(response, "refresh-1")
 
 
-def test_register_handles_integrity_error(monkeypatch):
+def test_register_duplicate_email_race_returns_409(monkeypatch):
+    """A concurrent duplicate passes the pre-check (first() -> None) then loses
+    the unique constraint on flush; that must surface as the same 409, not a 500."""
     app = build_test_app()
 
     StubUser.query = MagicMock()
@@ -122,6 +124,38 @@ def test_register_handles_integrity_error(monkeypatch):
 
     session = MagicMock()
     session.flush.side_effect = IntegrityError("insert", {}, Exception("duplicate"))
+
+    monkeypatch.setattr(auth_module, "User", StubUser)
+    monkeypatch.setattr(auth_module, "hash_password", MagicMock(return_value="hashed-password"))
+    monkeypatch.setattr(auth_module.db, "session", session, raising=False)
+    monkeypatch.setattr(auth_module.settings_service, "get_default_role", MagicMock(return_value="developer"))
+    monkeypatch.setattr(auth_module.audit_service, "record", MagicMock())
+
+    with app.test_request_context(
+        json={
+            "name": "New User",
+            "email": "new@example.com",
+            "password": "password123",
+            "role": "developer",
+        }
+    ):
+        response, status = auth_module.register_user()
+
+    assert status == 409
+    assert response.get_json()["message"] == "Email already registered"
+    session.rollback.assert_called_once_with()
+
+
+def test_register_unexpected_error_still_returns_500(monkeypatch):
+    """Non-integrity failures keep the generic 500 contract."""
+    app = build_test_app()
+
+    StubUser.query = MagicMock()
+    StubUser.query.filter_by.return_value.first.return_value = None
+    StubUser.query.count.return_value = 1
+
+    session = MagicMock()
+    session.flush.side_effect = RuntimeError("db exploded")
 
     monkeypatch.setattr(auth_module, "User", StubUser)
     monkeypatch.setattr(auth_module, "hash_password", MagicMock(return_value="hashed-password"))

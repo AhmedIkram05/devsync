@@ -13,6 +13,7 @@ from flask_jwt_extended import (
     set_refresh_cookies,
     unset_jwt_cookies,
 )
+from sqlalchemy.exc import IntegrityError
 
 from ..db.models import User, db  # Fix import path
 from ..db.transaction import transactional
@@ -106,6 +107,13 @@ def register_user():
 
         return resp, 201
 
+    except IntegrityError:
+        # A concurrent request passed the check-then-insert pre-check above and
+        # won the unique constraint on email. The constraint is authoritative,
+        # so return the same 409 the pre-check does instead of a generic 500.
+        db.session.rollback()
+        logger.info("Duplicate email registration rejected by unique constraint")
+        return jsonify({"message": "Email already registered"}), 409
     except Exception:
         db.session.rollback()
         logger.error("Registration failed", exc_info=True)
