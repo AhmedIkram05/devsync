@@ -2,6 +2,7 @@
 
 from flask import jsonify, request
 from flask_jwt_extended import get_jwt_identity
+from sqlalchemy import func
 
 from src.socketio_server import emit_dashboard_refresh
 
@@ -10,40 +11,48 @@ from ...db.models import Project, Task, User, db
 from ...db.transaction import transactional
 from ...services import audit_service, settings_service
 from ..validators.admin_validator import validate_system_settings, validate_user_role_update
-from .helpers import safe_query_all as _safe_query_all
 
 
-def _count(items, predicate):
-    return sum(1 for item in items if predicate(item))
+def _grouped_counts(model, column):
+    """{value: count} for *column* from one SQL GROUP BY; {} when it fails.
+
+    Counting in SQL replaces loading every row just to ``len()`` it — the same
+    aggregate shape the dashboard controller uses.
+    """
+    try:
+        rows = db.session.query(column, func.count(model.id)).group_by(column).all()
+    except Exception:
+        return {}
+    return {(value or "unknown"): count for value, count in rows}
 
 
 def get_system_stats():
     """Controller function to get system statistics for admin dashboard"""
 
-    users = _safe_query_all(User)
-    projects = _safe_query_all(Project)
-    tasks = _safe_query_all(Task)
+    user_counts = _grouped_counts(User, User.role)
+    project_counts = _grouped_counts(Project, Project.status)
+    task_counts = _grouped_counts(Task, Task.status)
 
     user_stats = {
-        "total": len(users),
-        "admins": _count(users, lambda user: getattr(user, "role", None) == Role.ADMIN.value),
-        "team_leads": _count(users, lambda user: getattr(user, "role", None) == Role.TEAM_LEAD.value),
-        "developers": _count(users, lambda user: getattr(user, "role", None) == Role.DEVELOPER.value),
+        "total": sum(user_counts.values()),
+        "admins": user_counts.get(Role.ADMIN.value, 0),
+        "team_leads": user_counts.get(Role.TEAM_LEAD.value, 0),
+        "developers": user_counts.get(Role.DEVELOPER.value, 0),
     }
 
     project_stats = {
-        "total": len(projects),
-        "active": _count(projects, lambda project: getattr(project, "status", None) == "active"),
-        "completed": _count(projects, lambda project: getattr(project, "status", None) == "completed"),
-        "on_hold": _count(projects, lambda project: getattr(project, "status", None) == "on_hold"),
+        "total": sum(project_counts.values()),
+        "active": project_counts.get("active", 0),
+        "completed": project_counts.get("completed", 0),
+        "on_hold": project_counts.get("on_hold", 0),
     }
 
     task_stats = {
-        "total": len(tasks),
-        "todo": _count(tasks, lambda task: getattr(task, "status", None) == "todo"),
-        "in_progress": _count(tasks, lambda task: getattr(task, "status", None) == "in_progress"),
-        "review": _count(tasks, lambda task: getattr(task, "status", None) == "review"),
-        "done": _count(tasks, lambda task: getattr(task, "status", None) in {"done", "completed"}),
+        "total": sum(task_counts.values()),
+        "todo": task_counts.get("todo", 0),
+        "in_progress": task_counts.get("in_progress", 0),
+        "review": task_counts.get("review", 0),
+        "done": task_counts.get("done", 0) + task_counts.get("completed", 0),
     }
 
     return jsonify(

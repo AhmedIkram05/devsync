@@ -2,27 +2,13 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 
-@patch("backend.src.api.controllers.admin_controller.Task")
-@patch("backend.src.api.controllers.admin_controller.Project")
-@patch("backend.src.api.controllers.admin_controller.User")
-def test_get_system_stats_counts_roles_statuses(mock_user, mock_project, mock_task, app):
-    mock_user.query.all.return_value = [
-        SimpleNamespace(role="admin"),
-        SimpleNamespace(role="team_lead"),
-        SimpleNamespace(role="developer"),
-        SimpleNamespace(role="developer"),
-    ]
-    mock_project.query.all.return_value = [
-        SimpleNamespace(status="active"),
-        SimpleNamespace(status="completed"),
-        SimpleNamespace(status="on_hold"),
-    ]
-    mock_task.query.all.return_value = [
-        SimpleNamespace(status="todo"),
-        SimpleNamespace(status="in_progress"),
-        SimpleNamespace(status="review"),
-        SimpleNamespace(status="done"),
-        SimpleNamespace(status="completed"),
+@patch("backend.src.api.controllers.admin_controller.db")
+def test_get_system_stats_counts_roles_statuses_from_one_group_by(mock_db, app):
+    # One grouped count query per model, in call order: users, projects, tasks.
+    mock_db.session.query.return_value.group_by.return_value.all.side_effect = [
+        [("admin", 1), ("team_lead", 1), ("developer", 2)],
+        [("active", 1), ("completed", 1), ("on_hold", 1)],
+        [("todo", 1), ("in_progress", 1), ("review", 1), ("done", 1), ("completed", 1)],
     ]
 
     with app.app_context():
@@ -43,14 +29,14 @@ def test_get_system_stats_counts_roles_statuses(mock_user, mock_project, mock_ta
     assert data["tasks"]["review"] == 1
     assert data["tasks"]["done"] == 2
 
+    # The count is aggregated in SQL (GROUP BY), never by loading rows.
+    assert mock_db.session.query.call_count == 3
+    assert mock_db.session.query.return_value.group_by.call_count == 3
 
-@patch("backend.src.api.controllers.admin_controller.Task")
-@patch("backend.src.api.controllers.admin_controller.Project")
-@patch("backend.src.api.controllers.admin_controller.User")
-def test_get_system_stats_handles_query_errors(mock_user, mock_project, mock_task, app):
-    mock_user.query.all.side_effect = Exception("users failed")
-    mock_project.query.all.side_effect = Exception("projects failed")
-    mock_task.query.all.side_effect = Exception("tasks failed")
+
+@patch("backend.src.api.controllers.admin_controller.db")
+def test_get_system_stats_handles_query_errors(mock_db, app):
+    mock_db.session.query.return_value.group_by.return_value.all.side_effect = Exception("db failed")
 
     with app.app_context():
         from backend.src.api.controllers.admin_controller import get_system_stats
