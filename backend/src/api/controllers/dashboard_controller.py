@@ -1,6 +1,6 @@
 # Dashboard controller - business logic for user dashboards
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from flask import jsonify
 from flask_jwt_extended import get_jwt, get_jwt_identity
@@ -90,7 +90,7 @@ def get_user_tasks(user_id):
 def get_tasks_due_soon(user_id=None, project_ids=None):
     """Helper function to get tasks due soon for a user or a set of projects"""
     try:
-        today = datetime.now().date()
+        today = datetime.now(UTC).date()
         week_later = today + timedelta(days=7)
         query = (
             Task.query.filter(Task.deadline.isnot(None))
@@ -112,7 +112,7 @@ def get_tasks_due_soon(user_id=None, project_ids=None):
 def get_recent_completed_tasks(user_id, timeframe="month"):
     """Helper function to get recent completed tasks for a user, bounding extreme date filters."""
     try:
-        today = datetime.now().date()
+        today = datetime.now(UTC).date()
         days_map = {"week": 7, "month": 30, "quarter": 90, "year": 365, "century": 36500}
         days = days_map.get(timeframe, 30)
 
@@ -147,7 +147,7 @@ def get_project_tasks(project_id):
 def get_project_tasks_due_soon(project_id):
     """Helper function to get tasks due soon for a project"""
     try:
-        today = datetime.now().date()
+        today = datetime.now(UTC).date()
         week_later = today + timedelta(days=7)
         return (
             Task.query.filter_by(project_id=project_id)
@@ -440,7 +440,7 @@ def _user_role_counts():
 
 def _count_overdue_tasks(project_ids):
     """Count overdue tasks (past deadline, not completed/review) within scope."""
-    today = datetime.now().date()
+    today = datetime.now(UTC).date()
     try:
         query = Task.query.filter(
             Task.deadline.isnot(None),
@@ -540,6 +540,116 @@ def _team_lead_project_ids(user_id):
     return [row[0] for row in rows]
 
 
+DEVELOPER_PROGRESS_ROLES = (Role.ADMIN.value, Role.DEVELOPER.value, Role.TEAM_LEAD.value)
+RECENT_TASKS_PER_DEVELOPER = 5
+
+
+def _team_lead_owned_project_ids(user_id):
+    """Every project the user created or is a member of (any status).
+
+    Developer-progress scoping (unlike the admin KPI tiles) is not limited to
+    active projects, so it does not reuse ``_team_lead_project_ids``.
+    """
+    try:
+        rows = (
+            db.session.query(Project.id)
+            .outerjoin(project_members, project_members.c.project_id == Project.id)
+            .filter(or_(Project.created_by == user_id, project_members.c.user_id == user_id))
+            .all()
+        )
+    except Exception as e:
+        logger.error(f"Error fetching owned project ids: {str(e)}")
+        return []
+    return [row[0] for row in rows]
+
+
+def _project_member_user_ids(project_ids):
+    if not project_ids:
+        return []
+    try:
+        rows = db.session.query(project_members.c.user_id).filter(project_members.c.project_id.in_(project_ids)).all()
+    except Exception as e:
+        logger.error(f"Error fetching project member ids: {str(e)}")
+        return []
+    return [row[0] for row in rows]
+
+
+def get_developer_progress():
+    """Per-developer task aggregates, computed in SQL.
+
+    Replaces the client-side loop that paged every task and user to count them
+    (the Developer Progress dashboard). Mirrors the previous client scoping:
+    team leads see only developers on their projects (empty when they own
+    none); everyone else sees all progress-tracking roles.
+    """
+    try:
+        user_id = get_jwt_identity()["user_id"]
+        user_role = get_jwt().get("role")
+
+        scoped_project_ids = None
+        if user_role == Role.TEAM_LEAD.value:
+            scoped_project_ids = _team_lead_owned_project_ids(user_id)
+            if not scoped_project_ids:
+                return jsonify({"developers": []})
+
+        users_query = User.query.filter(User.role.in_(DEVELOPER_PROGRESS_ROLES))
+        if scoped_project_ids is not None:
+            member_ids = _project_member_user_ids(scoped_project_ids)
+            if not member_ids:
+                return jsonify({"developers": []})
+            users_query = users_query.filter(User.id.in_(member_ids))
+        users = users_query.all()
+
+        scoped_user_ids = [user.id for user in users]
+
+        # One GROUP BY (assignee, status) replaces loading every task.
+        counts_query = db.session.query(Task.assigned_to, Task.status, func.count(Task.id))
+        if scoped_project_ids is not None:
+            counts_query = counts_query.filter(
+                or_(
+                    Task.project_id.in_(scoped_project_ids),
+                    Task.assigned_to.in_(scoped_user_ids),
+                )
+            )
+        counts_rows = counts_query.group_by(Task.assigned_to, Task.status).all()
+
+        tally = {}
+        for assigned_to, status, count in counts_rows:
+            if assigned_to is None:
+                continue
+            entry = tally.setdefault(assigned_to, {"total": 0, "completed": 0})
+            entry["total"] += count
+            if status in COMPLETED_TASK_STATUSES:
+                entry["completed"] += count
+
+        developers = []
+        for user in users:
+            counts = tally.get(user.id, {"total": 0, "completed": 0})
+            recent_tasks = (
+                Task.query.options(joinedload(Task.project))
+                .filter_by(assigned_to=user.id)
+                .order_by(Task.updated_at.desc())
+                .limit(RECENT_TASKS_PER_DEVELOPER)
+                .all()
+            )
+            developers.append(
+                {
+                    "id": user.id,
+                    "name": user.name,
+                    "role": user.role,
+                    "total_tasks": counts["total"],
+                    "completed_tasks": counts["completed"],
+                    "active_tasks": counts["total"] - counts["completed"],
+                    "recent_tasks": [_task_to_dashboard_item(task) for task in recent_tasks],
+                }
+            )
+
+        return jsonify({"developers": developers})
+    except Exception:
+        logger.error("Error in get_developer_progress", exc_info=True)
+        return jsonify({"message": "An error occurred while loading developer progress"}), 500
+
+
 def _count_scoped_tasks(project_ids, *criteria):
     if not project_ids:
         return 0
@@ -552,7 +662,7 @@ def _count_scoped_tasks(project_ids, *criteria):
 
 def _compute_team_lead_kpis(user_id):
     project_ids = _team_lead_project_ids(user_id)
-    today = datetime.now().date()
+    today = datetime.now(UTC).date()
     week_later = today + timedelta(days=7)
     normalized_status = func.lower(func.replace(Task.status, "-", "_"))
     not_completed = ~normalized_status.in_(OVERDUE_EXCLUDED_STATUSES)

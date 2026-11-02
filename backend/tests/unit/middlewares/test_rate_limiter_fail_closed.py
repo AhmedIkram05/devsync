@@ -16,20 +16,17 @@ from src.api.routes import auth_routes
 
 
 class FakeRedis:
-    """Counts per bucket key; optionally explodes like a dead Redis."""
+    """Counts per bucket key; models the atomic INCR + first-hit EXPIRE script."""
 
     def __init__(self, fail=False):
         self.counts = {}
         self.fail = fail
 
-    def incr(self, key):
+    def eval(self, script, numkeys, key, ttl):
         if self.fail:
             raise ConnectionError("redis down")
         self.counts[key] = self.counts.get(key, 0) + 1
         return self.counts[key]
-
-    def expire(self, key, seconds):
-        return True
 
 
 def passthrough_decorator(*_args, **_kwargs):

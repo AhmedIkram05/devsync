@@ -19,6 +19,7 @@ Read alongside [rbac.md](rbac.md) (who may call what) and
 | `401` | Missing, malformed or expired JWT | `ErrorEnvelope` |
 | `403` | Authenticated, but the role or permission gate rejected the caller | `ErrorEnvelope` |
 | `404` | Resource does not exist, or the global 404 handler fired | `ErrorEnvelope` |
+| `409` | Optimistic-concurrency conflict: `PUT /tasks/{task_id}` with a stale `version` | `ErrorEnvelope` |
 | `429` | Per-route or global rate limit tripped | `ErrorEnvelope` |
 | `500` | Unhandled exception reached `handle_generic_error` | `ErrorEnvelope` |
 
@@ -39,8 +40,8 @@ and are not part of the contract.
 
 Common `code` values: `bad_request`, `validation_error`, `unauthorized`,
 `token_expired`, `token_invalid`, `authorization_required`, `token_revoked`,
-`forbidden`, `not_found`, `rate_limited`, `internal_error`,
-`service_unavailable`, `api_error`.
+`forbidden`, `not_found`, `version_conflict`, `rate_limited`,
+`internal_error`, `service_unavailable`, `api_error`.
 
 ### Error bodies by origin
 

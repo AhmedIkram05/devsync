@@ -59,26 +59,14 @@ def _apply_jwt_expiry(app):
     )
 
 
-def create_app(config_class=None):
-    setup_json_logging()
-    app = Flask(__name__)
-    # Trust exactly the GKE/GCE LB hop so request.remote_addr is the real client
-    # IP (rate limiting + audit hashing depend on it). Overridable when the
-    # proxy chain changes; a wrong depth makes the header spoofable.
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_proxy_x_for())
-    app.config.from_object(config_class or get_config())
-    app_env = os.getenv("FLASK_ENV", "development").lower()
-
-    # Set up Swagger UI with the correct file path
+def _register_swagger(app):
+    """Mount the Swagger UI blueprint and serve the YAML spec file."""
     swagger_url = "/api/docs"  # URL for exposing Swagger UI
     api_url = "/api/swagger.yaml"  # Our API url where the Swagger file is served
 
-    # Create Swagger UI blueprint
     swaggerui_blueprint = get_swaggerui_blueprint(
         swagger_url, api_url, config={"app_name": "DevSync API Documentation"}
     )
-
-    # Register blueprint at URL
     app.register_blueprint(swaggerui_blueprint, url_prefix=swagger_url)
 
     # Serve the canonical Swagger file from the docs tree, falling back to
@@ -102,32 +90,9 @@ def create_app(config_class=None):
         app.logger.error("Could not load Swagger file", exc_info=True)
         return jsonify({"error": "Could not load Swagger file"}), 500
 
-    # Configure database using the selected config class/environment.
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-    # Configure JWT + sessions — fail-closed, distinct keys, no silent fallback.
-    if isinstance(config_class, dict):
-        explicit_flask = config_class.get("SECRET_KEY")
-        explicit_jwt = config_class.get("JWT_SECRET_KEY")
-        explicit_fernet = config_class.get("FERNET_KEYS") or config_class.get("FERNET_KEY")
-        explicit_oauth = config_class.get("OAUTH_STATE_SECRET")
-    else:
-        explicit_flask = app.config.get("SECRET_KEY")
-        explicit_jwt = app.config.get("JWT_SECRET_KEY")
-        explicit_fernet = app.config.get("FERNET_KEYS") or app.config.get("FERNET_KEY")
-        explicit_oauth = app.config.get("OAUTH_STATE_SECRET")
-    jwt_secret = resolve_jwt_secret(explicit_value=explicit_jwt)
-    flask_secret = resolve_flask_secret(explicit_value=explicit_flask, jwt_secret=jwt_secret)
-    app.config["SECRET_KEY"] = flask_secret
-    app.config["JWT_SECRET_KEY"] = jwt_secret
-    # Fail fast in prod when FERNET_KEY is missing/invalid; testing derives.
-    fernet_keys = resolve_fernet_keys(explicit_value=explicit_fernet, jwt_secret=jwt_secret)
-    app.config["FERNET_KEYS"] = fernet_keys
-    app.config["FERNET_KEY"] = fernet_keys[0]
-    app.config["OAUTH_STATE_SECRET"] = resolve_oauth_state_secret(explicit_value=explicit_oauth, jwt_secret=jwt_secret)
-    _apply_jwt_expiry(app)
-    app.config["JWT_TOKEN_LOCATION"] = ["cookies"]
-    app.config["JWT_IDENTITY_CLAIM"] = "identity"
+def _apply_jwt_cookie_policy(app, app_env):
+    """Resolve cookie Secure/SameSite from config-derived values, then enforce the pair."""
     configured_secure = app.config.get("JWT_COOKIE_SECURE")
     if configured_secure is None:
         configured_secure = os.getenv("JWT_COOKIE_SECURE")
@@ -163,6 +128,33 @@ def create_app(config_class=None):
 
     app.config["JWT_COOKIE_CSRF_PROTECT"] = True
 
+
+def _resolve_and_apply_secrets(app, config_class, app_env):
+    """Configure JWT + sessions — fail-closed, distinct keys, no silent fallback."""
+    if isinstance(config_class, dict):
+        explicit_flask = config_class.get("SECRET_KEY")
+        explicit_jwt = config_class.get("JWT_SECRET_KEY")
+        explicit_fernet = config_class.get("FERNET_KEYS") or config_class.get("FERNET_KEY")
+        explicit_oauth = config_class.get("OAUTH_STATE_SECRET")
+    else:
+        explicit_flask = app.config.get("SECRET_KEY")
+        explicit_jwt = app.config.get("JWT_SECRET_KEY")
+        explicit_fernet = app.config.get("FERNET_KEYS") or app.config.get("FERNET_KEY")
+        explicit_oauth = app.config.get("OAUTH_STATE_SECRET")
+    jwt_secret = resolve_jwt_secret(explicit_value=explicit_jwt)
+    flask_secret = resolve_flask_secret(explicit_value=explicit_flask, jwt_secret=jwt_secret)
+    app.config["SECRET_KEY"] = flask_secret
+    app.config["JWT_SECRET_KEY"] = jwt_secret
+    # Fail fast in prod when FERNET_KEY is missing/invalid; testing derives.
+    fernet_keys = resolve_fernet_keys(explicit_value=explicit_fernet, jwt_secret=jwt_secret)
+    app.config["FERNET_KEYS"] = fernet_keys
+    app.config["FERNET_KEY"] = fernet_keys[0]
+    app.config["OAUTH_STATE_SECRET"] = resolve_oauth_state_secret(explicit_value=explicit_oauth, jwt_secret=jwt_secret)
+    _apply_jwt_expiry(app)
+    app.config["JWT_TOKEN_LOCATION"] = ["cookies"]
+    app.config["JWT_IDENTITY_CLAIM"] = "identity"
+    _apply_jwt_cookie_policy(app, app_env)
+
     # Apply any override configurations
     if config_class:
         app.config.update(config_class)
@@ -184,11 +176,9 @@ def create_app(config_class=None):
     # Re-derive expiries after dict overrides so minutes/days stay single-sourced.
     _apply_jwt_expiry(app)
 
-    # Initialize extensions
-    db.init_app(app)
-    Migrate(app, db)
-    jwt = JWTManager(app)
 
+def _configure_cors(app, app_env):
+    """Build the credentialed-CORS origin allowlist and register Flask-CORS."""
     explicit_allowed_origins = {
         "http://localhost:3000",
         "http://127.0.0.1:3000",
@@ -227,6 +217,8 @@ def create_app(config_class=None):
         max_age=600,
     )
 
+
+def _register_security_headers(app):
     @app.after_request
     def ensure_vary_origin(response):
         if request.headers.get("Origin"):
@@ -244,7 +236,25 @@ def create_app(config_class=None):
     # catch-all OPTIONS rule would turn GETs to unknown paths into 405 (then
     # 500), so it is deliberately omitted here.
 
-    # JWT error handlers
+
+def _emit_blocklist_fail_open(app, exc):
+    """Surface the fail-open blocklist read (README "Trade-offs That Mattered").
+
+    ``get_blocklist_metrics()`` counts backend errors in-process but was never
+    read; log it at ERROR in the same ``metric=<name> total=`` shape as
+    ``auth.encryption._emit_decrypt_failure_metric`` so an outage is visible.
+    """
+    backend_errors = 0
+    try:
+        from src.auth.token_blocklist import get_blocklist_metrics
+
+        backend_errors = get_blocklist_metrics().get("backend_errors", 0)
+    except Exception:
+        pass
+    app.logger.error("metric=jwt_blocklist_check_failed total=1 backend_errors=%s error=%s", backend_errors, exc)
+
+
+def _configure_jwt_callbacks(jwt, app):
     @jwt.expired_token_loader
     def expired_token_callback(jwt_header, jwt_payload):
         return error_response("The authentication token has expired", "token_expired", 401)
@@ -280,18 +290,11 @@ def create_app(config_class=None):
 
             return is_token_revoked(jwt_payload)
         except Exception as exc:
-            app.logger.warning("blocklist check failed (fail-open): %s", exc)
+            _emit_blocklist_fail_open(app, exc)
             return False
 
-    # Initialize API routes (including auth routes)
-    init_api(app)
 
-    # Setup middlewares (error handlers, logging, rate limiting)
-    setup_middlewares(app)
-
-    # Initialize Socket.IO
-    socketio = init_socketio(app)
-
+def _register_health_routes(app):
     @app.route("/")
     def index():
         return "DevSync API is running"
@@ -314,6 +317,45 @@ def create_app(config_class=None):
         except Exception:
             db.session.rollback()
             return jsonify({"status": "not_ready"}), 503
+
+
+def create_app(config_class=None):
+    setup_json_logging()
+    app = Flask(__name__)
+    # Trust exactly the GKE/GCE LB hop so request.remote_addr is the real client
+    # IP (rate limiting + audit hashing depend on it). Overridable when the
+    # proxy chain changes; a wrong depth makes the header spoofable.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=_proxy_x_for())
+    app.config.from_object(config_class or get_config())
+    app_env = os.getenv("FLASK_ENV", "development").lower()
+
+    _register_swagger(app)
+
+    # Configure database using the selected config class/environment.
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+    # Configure JWT + sessions — fail-closed, distinct keys, no silent fallback.
+    _resolve_and_apply_secrets(app, config_class, app_env)
+
+    # Initialize extensions
+    db.init_app(app)
+    Migrate(app, db)
+    jwt = JWTManager(app)
+
+    _configure_cors(app, app_env)
+    _register_security_headers(app)
+    _configure_jwt_callbacks(jwt, app)
+
+    # Initialize API routes (including auth routes)
+    init_api(app)
+
+    # Setup middlewares (error handlers, logging, rate limiting)
+    setup_middlewares(app)
+
+    # Initialize Socket.IO
+    socketio = init_socketio(app)
+
+    _register_health_routes(app)
 
     return app, socketio
 

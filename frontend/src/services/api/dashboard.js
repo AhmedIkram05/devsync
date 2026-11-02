@@ -1,6 +1,5 @@
 import { fetchWithAuth } from './client';
 import { taskService } from './tasks';
-import { projectService } from './projects';
 
 const getDateRangeStart = (dateRange) => {
   const now = new Date();
@@ -400,87 +399,13 @@ const dashboardService = {
     }
   },
 
-  getDeveloperProgressStats: async (options = {}) => {
+  // Server-side aggregate: one GROUP BY replaces paging every task and user
+  // (the old client-side loop that grew with the dataset). The paginated
+  // helpers stay for getReportData, which still needs the task rows themselves.
+  getDeveloperProgressStats: async () => {
     try {
-      const [usersResponse, tasks, projects] = await Promise.all([
-        fetchAllUsers(),
-        fetchAllTaskPages(),
-        projectService.getAllProjects()
-      ]);
-
-      const users = Array.isArray(usersResponse?.users) ? usersResponse.users : [];
-      const allTasks = Array.isArray(tasks) ? tasks : [];
-      const allProjects = Array.isArray(projects) ? projects : [];
-      const currentUser = options.currentUser || null;
-
-      const scopedProjectIds = new Set();
-      if (currentUser?.role === 'team_lead' && currentUser?.id) {
-        allProjects.forEach((project) => {
-          const teamMembers = Array.isArray(project?.team_members) ? project.team_members : [];
-          const teamMemberIds = teamMembers.map((member) => Number(member?.id)).filter(Number.isFinite);
-          const isProjectCreator = Number(project?.created_by) === Number(currentUser.id);
-          const isOnProjectTeam = teamMemberIds.includes(Number(currentUser.id));
-
-          if (isProjectCreator || isOnProjectTeam) {
-            scopedProjectIds.add(Number(project.id));
-          }
-        });
-      }
-
-      const isTeamLead = currentUser?.role === 'team_lead';
-
-      if (isTeamLead && scopedProjectIds.size === 0) {
-        return [];
-      }
-
-      const scopedUsers = isTeamLead && scopedProjectIds.size > 0
-        ? users.filter((user) => {
-          if (!['admin', 'developer', 'team_lead'].includes(user.role)) {
-            return false;
-          }
-
-          return allProjects.some((project) => {
-            if (!scopedProjectIds.has(Number(project.id))) {
-              return false;
-            }
-
-            return Array.isArray(project?.team_members)
-              ? project.team_members.some((member) => Number(member?.id) === Number(user.id) && ['admin', 'developer', 'team_lead'].includes(member?.role))
-              : false;
-          });
-        })
-        : users;
-
-      const getTaskProjectId = (task) => {
-        if (!task) return null;
-        if (task.project_id !== undefined && task.project_id !== null) return task.project_id;
-        if (task.projectId !== undefined && task.projectId !== null) return task.projectId;
-        if (task.project && task.project.id !== undefined && task.project.id !== null) return task.project.id;
-        return null;
-      };
-
-      const scopedUserIds = new Set((isTeamLead ? scopedUsers.map(u => Number(u.id)).filter(Number.isFinite) : []));
-
-      const getTaskAssigneeId = (task) => {
-        if (!task) return null;
-        if (task.assigned_to !== undefined && task.assigned_to !== null) return task.assigned_to;
-        if (task.assignedTo !== undefined && task.assignedTo !== null) return task.assignedTo;
-        if (task.assignee !== undefined && task.assignee !== null) return task.assignee;
-        return null;
-      };
-
-      const scopedTasks = isTeamLead && scopedProjectIds.size > 0
-        ? allTasks.filter((task) => {
-          const pid = getTaskProjectId(task);
-          const aid = getTaskAssigneeId(task);
-          const inProject = pid !== null && scopedProjectIds.has(Number(pid));
-          const assignedToTeam = aid !== null && scopedUserIds.has(Number(aid));
-          return inProject || assignedToTeam;
-        })
-        : allTasks;
-
-      const result = buildDeveloperProgress(scopedUsers, scopedTasks);
-      return result;
+      const response = await fetchWithAuth('dashboard/developer-progress');
+      return Array.isArray(response?.developers) ? response.developers : [];
     } catch (error) {
       console.error('Failed to fetch developer progress stats:', error);
       return [];

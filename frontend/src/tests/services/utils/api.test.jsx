@@ -233,29 +233,17 @@ describe('api service branches', () => {
     });
   });
 
-  test('dashboardService returns developer progress for the full trackable role set', async () => {
-    const usersResponse = { users: [
-      { id: 1, name: 'Admin', role: 'admin' },
-      { id: 2, name: 'Dev', role: 'developer' },
-      { id: 3, name: 'TL', role: 'team_lead' },
-      { id: 4, name: 'Guest', role: 'viewer' },
-    ] };
-
-    jest.spyOn(taskService, 'getTasksPaginated').mockResolvedValue({ items: [
-      { id: 10, assigned_to: 1, status: 'done', updated_at: '2026-01-01T00:00:00.000Z' },
-      { id: 11, assigned_to: 2, status: 'in_progress', updated_at: '2026-01-02T00:00:00.000Z' },
-      { id: 12, assigned_to: 3, status: 'completed', updated_at: '2026-01-03T00:00:00.000Z' },
-      { id: 13, assigned_to: 4, status: 'todo', updated_at: '2026-01-04T00:00:00.000Z' },
-    ], pagination: null });
-    jest.spyOn(projectService, 'getAllProjects').mockResolvedValue([]);
-    global.fetch.mockResolvedValue(makeResponse({ body: usersResponse }));
+  test('dashboardService returns developer progress from the server aggregate', async () => {
+    global.fetch.mockResolvedValue(makeResponse({ body: { developers: [
+      { id: 1, name: 'Admin', role: 'admin', total_tasks: 1, completed_tasks: 1, active_tasks: 0, recent_tasks: [] },
+      { id: 2, name: 'Dev', role: 'developer', total_tasks: 3, completed_tasks: 2, active_tasks: 1, recent_tasks: [] },
+    ] } }));
 
     const progress = await dashboardService.getDeveloperProgressStats({ currentUser: { id: 2, role: 'developer' } });
 
     expect(progress).toEqual([
       expect.objectContaining({ id: 1, role: 'admin', total_tasks: 1, completed_tasks: 1 }),
-      expect.objectContaining({ id: 2, role: 'developer', total_tasks: 1, completed_tasks: 0 }),
-      expect.objectContaining({ id: 3, role: 'team_lead', total_tasks: 1, completed_tasks: 1 }),
+      expect.objectContaining({ id: 2, role: 'developer', total_tasks: 3, completed_tasks: 2 }),
     ]);
   });
 

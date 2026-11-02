@@ -1,0 +1,499 @@
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { authApi } from '../services/utils/auth';
+import { fetchWithAuth } from '../services/api/client';
+import { githubService } from '../services/github';
+import { dashboardService } from '../services/utils/api';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { hasRole, hasPermission } from '../utils/rbac';
+import {
+  DEFAULT_ROLE,
+  REPORT_WARMUP_ROLES,
+  GITHUB_REPORT_DATE_RANGES,
+  hasValidRole,
+  sanitizeProfile,
+  githubPromptSeen,
+  markGithubPromptSeen,
+  clearGithubPromptSeen,
+} from '../utils/authSession';
+
+// Session state, auth flows and effects for AuthContext. Extracted verbatim so
+// the provider is a thin context shell; the returned value shape and every
+// function identity (and effect dependency list) are unchanged — ~48 modules
+// consume useAuth() and the context branch tests pin the call/re-render shape.
+export const useAuthSession = () => {
+  // Try to load cached profile immediately to prevent flicker.
+  // No tokens are stored — HttpOnly cookies carry the session.
+  const initialUser = (() => {
+    try {
+      const userJson = localStorage.getItem('user');
+      if (userJson) {
+        const userData = sanitizeProfile(JSON.parse(userJson));
+        if (userData && userData.id && userData.email && hasValidRole(userData)) {
+          if (JSON.stringify(userData) !== userJson) {
+            // Only the sanitized profile (id, email, role, username) is cached here for anti-flicker.
+            // Session tokens are never stored — they live in HttpOnly cookies. CodeQL's
+            // js/clear-text-storage-of-sensitive-data flags this line; that is a deliberate false
+            // positive and is dismissed in the Security tab (inline suppression is not honoured).
+            localStorage.setItem('user', JSON.stringify(userData));
+          }
+          return userData;
+        }
+        localStorage.removeItem('user');
+      }
+    } catch (e) {
+      console.error("Error initializing user from localStorage:", e);
+      localStorage.removeItem('user');
+    }
+    return null;
+  })();
+
+  // State management
+  const [currentUser, setCurrentUser] = useState(initialUser);
+  const [loading, setLoading] = useState(!initialUser);
+  const [error, setError] = useState(null);
+  const [githubConnected, setGithubConnected] = useState(initialUser?.github_connected || false);
+  const [showGithubPrompt, setShowGithubPrompt] = useState(false);
+  const [authInProgress, setAuthInProgress] = useState(false);
+  const [permissions, setPermissions] = useState(initialUser?.permissions || []);
+  // True while the async GET /auth/permissions fetch is in flight. Route
+  // guards must wait for it — otherwise an authenticated user with
+  // permissions=[] (not yet loaded, or fetch failed) bounces to /forbidden.
+  const [permissionsLoading, setPermissionsLoading] = useState(
+    () => Boolean(initialUser && !(initialUser.permissions || []).length)
+  );
+
+  // Keep a ref to track initialization
+  const isInitialized = useRef(false);
+  const reportWarmupKeyRef = useRef(null);
+  // Whether the mount-time cached profile already carried permissions — used to
+  // avoid re-gating the UI (spinner swap) on every reload when we already have them.
+  const hadCachedPermissionsRef = useRef(
+    Boolean(initialUser && (initialUser.permissions || []).length)
+  );
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Verify the cookie session against the server — never trust localStorage alone.
+  const verifyToken = useCallback(async () => {
+    try {
+      const session = await authApi.verifySession();
+      return Boolean(session && session.user && session.user.id);
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // Load the user from the server session on component mount
+  useEffect(() => {
+    if (isInitialized.current) {
+      return;
+    }
+    isInitialized.current = true;
+
+    const loadUser = async () => {
+      try {
+        // Validate the cookie session with the backend
+        const session = await authApi.verifySession();
+        const user = sanitizeProfile(session.user);
+        if (user && hasValidRole(user)) {
+          // Update the state with the server-validated user
+          setCurrentUser(user);
+          if (user.permissions) {
+            setPermissions(user.permissions);
+            setPermissionsLoading(false);
+          } else {
+            // Fetch permissions via cookie session (awaited so loading covers
+            // the window where permissions would otherwise read as []).
+            // Only gate the UI when we don't already have permissions from the
+            // cached profile — re-flipping the gate on every reload swapped the
+            // mounted page for a spinner and remounted it, causing render churn.
+            if (!hadCachedPermissionsRef.current) {
+              setPermissionsLoading(true);
+            }
+            try {
+              // fetchWithAuth resolves the endpoint against the normalized
+              // API base (/api/v1). A hand-rolled `${REACT_APP_API_URL}/auth/permissions`
+              // URL misses the /api/v1 prefix in prod, falls through to the SPA
+              // fallback, and nginx 200s with index.html — json() then throws
+              // and every user without a cached profile bounced to /forbidden
+              // (fresh signups, new devices, cleared storage).
+              const data = await fetchWithAuth('/auth/permissions');
+              setPermissions(data?.permissions || []);
+              const updatedUser = sanitizeProfile({ ...user, permissions: data?.permissions || [] });
+              localStorage.setItem('user', JSON.stringify(updatedUser));
+              setCurrentUser(updatedUser);
+            } catch (err) {
+              console.error("Failed to fetch permissions:", err);
+              setPermissions([]);
+            } finally {
+              setPermissionsLoading(false);
+            }
+          }
+          // Set GitHub connection status if available
+          if ("github_connected" in user) {
+            setGithubConnected(user.github_connected);
+            // Prompt at most once per session — a reload/revalidation must
+            // not re-open the modal over an already-dismissed prompt.
+            if (!user.github_connected && !githubPromptSeen()) {
+              markGithubPromptSeen();
+              setShowGithubPrompt(true);
+            }
+          }
+        } else {
+          // If verification fails, clear the user and redirect to login
+          localStorage.removeItem("user");
+          setPermissions([]);
+          setPermissionsLoading(false);
+          navigate("/login", { replace: true });
+        }
+      } catch (err) {
+        // No valid cookie session — fall back to cached profile if present,
+        // otherwise clear and stay on public routes. Fail-closed on
+        // permissions in both cases so route guards stop waiting.
+        const cached = authApi.getCurrentUser();
+        if (cached && hasValidRole(cached)) {
+          setCurrentUser(sanitizeProfile(cached));
+          setPermissions([]);
+          setPermissionsLoading(false);
+        } else {
+          console.error("Error validating session:", err);
+          localStorage.removeItem("user");
+          setPermissions([]);
+          setPermissionsLoading(false);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadUser();
+  }, [navigate]);
+
+  // Function to connect GitHub account
+  const connectGitHub = useCallback(async () => {
+    try {
+      setError(null); // Clear previous errors
+      setAuthInProgress(true);
+
+      // Get current user directly from localStorage to ensure most up-to-date data
+      const user = authApi.getCurrentUser();
+      if (!user) {
+        setError("Authentication required. Please log in again before connecting GitHub.");
+        navigate("/login");
+        return;
+      }
+
+      // Use the githubService to get the OAuth URL
+      const oauthUrl = await githubService.initiateOAuthFlow(user.id);
+      window.location.href = oauthUrl;
+    } catch (error) {
+      console.error("GitHub connection error:", error);
+      setError("Failed to connect to GitHub. Please try again.");
+    } finally {
+      setAuthInProgress(false);
+    }
+  }, [navigate]);
+
+  const login = useCallback(async (credentials) => {
+    try {
+      setError(null);
+      setLoading(true);
+      setAuthInProgress(true);
+
+      // Call login API — session lands in HttpOnly cookies, profile in body.
+      const data = await authApi.login(credentials);
+
+      if (data.user) {
+        // Store the sanitized profile in state and localStorage (no tokens).
+        const profile = sanitizeProfile({
+          ...data.user,
+          github_connected: data.user.github_connected || false,
+          github_username: data.user.github_username || "",
+          role: data.user.role || (data.user.is_admin ? "admin" : DEFAULT_ROLE),
+        });
+
+        if (!hasValidRole(profile)) {
+          throw new Error("This account role is no longer supported. Please contact an administrator.");
+        }
+
+        // Fetch permissions via cookie session. fetchWithAuth resolves the
+        // endpoint against the normalized API base (/api/v1) — a hand-rolled
+        // URL misses the prefix in prod, 200s from the SPA fallback as
+        // index.html, and json() throws, leaving every fresh login with
+        // permissions=[] → /forbidden (audit finding, CD run 38234691866).
+        setPermissionsLoading(true);
+        try {
+          const permData = await fetchWithAuth('/auth/permissions');
+          profile.permissions = permData?.permissions || [];
+          setPermissions(permData?.permissions || []);
+        } catch (err) {
+          console.error("Failed to fetch permissions during login:", err);
+          profile.permissions = [];
+          setPermissions([]);
+        } finally {
+          setPermissionsLoading(false);
+        }
+
+        // Save to localStorage first to ensure persistence
+        // CodeQL js/clear-text-storage: sanitized profile only; JWTs stay in HttpOnly cookies.
+        localStorage.setItem("user", JSON.stringify(profile));
+
+        // Update state
+        setCurrentUser(profile);
+        // Set GitHub connection status
+        const isGithubConnected = profile.github_connected || false;
+        setGithubConnected(isGithubConnected);
+
+        // If user is not connected to GitHub, show the prompt after redirection.
+        // A fresh login is a new prompt opportunity, so reset the per-session
+        // guard; mark it immediately (not inside the timeout) so a fast reload
+        // can't re-open the modal behind the user.
+        if (!isGithubConnected) {
+          clearGithubPromptSeen();
+          markGithubPromptSeen();
+          setTimeout(() => {
+            setShowGithubPrompt(true);
+          }, 500);
+        }
+
+        // Use setTimeout to ensure state is updated before navigation
+        setTimeout(() => {
+          // Navigate to the appropriate dashboard with state to prevent loops
+          const redirectPath =
+            location.state?.from ||
+            (profile.role === "admin" ? "/admin" : "/BasicDashboard");
+          navigate(redirectPath, { replace: true });
+        }, 100);
+
+        return { ...data, user: profile };
+      } else {
+        // No user data found - this is an error
+        throw new Error("No user data received. Please try again.");
+      }
+    } catch (err) {
+      console.error("Login error:", err);
+      setError(err.message || "Login failed");
+      throw err;
+    } finally {
+      setLoading(false);
+      setAuthInProgress(false);
+    }
+  }, [navigate, location]);
+
+  const handleGithubPromptResponse = useCallback((connect) => {
+    setShowGithubPrompt(false);
+    if (connect) {
+      // User wants to connect GitHub now
+      connectGitHub();
+    }
+  }, [connectGitHub]);
+
+  const register = useCallback(async (userData) => {
+    try {
+      setError(null);
+      setAuthInProgress(true);
+
+      const data = await authApi.register(userData);
+      navigate("/login");
+      return data;
+    } catch (err) {
+      console.error("Registration error:", err);
+      setError(err.message || "Registration failed");
+      throw err;
+    } finally {
+      setAuthInProgress(false);
+    }
+  }, [navigate]);
+
+  const logout = useCallback(async () => {
+    try {
+      setAuthInProgress(true);
+      await authApi.logout();
+    } catch (err) {
+      console.error("Logout error:", err);
+    } finally {
+      dashboardService.clearReportDataCache();
+      localStorage.removeItem("user");
+      setCurrentUser(null);
+      setPermissions([]);
+      setPermissionsLoading(false);
+      setGithubConnected(false);
+      setShowGithubPrompt(false);
+      clearGithubPromptSeen();
+      setAuthInProgress(false);
+      navigate("/login", { replace: true });
+    }
+  }, [navigate]);
+
+  // Function to update current user (used after GitHub connection)
+  const updateUser = useCallback((userData) => {
+    if (!userData) {
+      console.warn("Attempted to update user with null/undefined data");
+      return;
+    }
+
+    // Functional updates (prev => next) are valid state-updater calls; run the
+    // result through the same sanitize + persist path as object merges.
+    if (typeof userData === 'function') {
+      setCurrentUser((prevUser) => {
+        const next = userData(prevUser);
+        if (!next || typeof next !== 'object') {
+          return next;
+        }
+        const updated = sanitizeProfile(next);
+        localStorage.setItem("user", JSON.stringify(updated));
+        return updated;
+      });
+      return;
+    }
+
+    // Update local state — profiles only, tokens never enter state/storage.
+    setCurrentUser((prevUser) => {
+      if (!prevUser) return sanitizeProfile(userData);
+
+      const updated = sanitizeProfile({
+        ...prevUser,
+        ...userData,
+        github_username:
+          userData.github_connected === false
+            ? ''
+            : (userData.github_username ?? prevUser.github_username ?? ''),
+      });
+
+      // Sanitized profile only; no tokens are persisted anywhere in the client — the session lives
+      // in HttpOnly cookies. See the note above about the dismissed clear-text-storage alert.
+      localStorage.setItem("user", JSON.stringify(updated));
+      return updated;
+    });
+
+    // Update GitHub connection status if that information is included
+    if (userData && "github_connected" in userData) {
+      dashboardService.clearReportDataCache();
+      setGithubConnected(userData.github_connected);
+      if (userData.github_connected) {
+        // If GitHub is now connected, make sure to hide the prompt
+        setShowGithubPrompt(false);
+      }
+    }
+  }, []);
+
+  const currentUserId = currentUser?.id;
+  const currentGithubConnected = Boolean(currentUser?.github_connected);
+
+  // Display-only GitHub status: verify the server connection when the user
+  // changes. OAuth code exchange lives solely in GitHubCallback.jsx.
+
+  // Check GitHub connection status when user changes - verify with server to detect stale state
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    // Always verify against the server — don't trust the localStorage snapshot alone
+    const verify = async () => {
+      try {
+        const status = await githubService.checkConnection();
+        const serverConnected = Boolean(status?.connected);
+        if (serverConnected !== currentGithubConnected) {
+          updateUser({
+            github_connected: serverConnected,
+            github_username: serverConnected ? (status?.username || '') : '',
+          });
+          setGithubConnected(serverConnected);
+        }
+      } catch (e) {
+        console.error('Error verifying GitHub connection', e);
+      }
+    };
+    verify();
+  }, [currentUserId, currentGithubConnected, updateUser]);
+
+  useEffect(() => {
+    const canAccessReports = currentUser?.role && REPORT_WARMUP_ROLES.has(currentUser.role);
+    const isGithubReady = Boolean(currentUser?.github_connected || githubConnected);
+
+    if (!currentUserId || !canAccessReports || !isGithubReady) {
+      reportWarmupKeyRef.current = null;
+      return undefined;
+    }
+
+    const warmupKey = `${currentUserId}:github:${GITHUB_REPORT_DATE_RANGES.join(',')}`;
+    if (reportWarmupKeyRef.current === warmupKey) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const runWarmup = () => {
+      if (cancelled) {
+        return;
+      }
+
+      reportWarmupKeyRef.current = warmupKey;
+      Promise.allSettled(
+        GITHUB_REPORT_DATE_RANGES.map((range) => dashboardService.prefetchReportData('github', range))
+      ).catch((error) => {
+        console.error('Error warming GitHub report data', error);
+      });
+    };
+
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      const idleId = window.requestIdleCallback(runWarmup, { timeout: 5000 });
+      return () => {
+        cancelled = true;
+        if (typeof window.cancelIdleCallback === 'function') {
+          window.cancelIdleCallback(idleId);
+        }
+      };
+    }
+
+    const timeoutId = window.setTimeout(runWarmup, 1000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [currentUserId, currentUser?.role, currentUser?.github_connected, githubConnected]);
+
+  // RBAC Helpers
+  const can = useCallback((permission) => hasPermission(permissions, permission), [permissions]);
+  const is = useCallback((role) => hasRole(currentUser?.role, role), [currentUser?.role]);
+
+  // Memoize the context value so a provider re-render does not re-render every
+  // consumer and re-fire their effects — that churn swapped dashboards for
+  // spinners on each auth event (flicker).
+  return useMemo(() => ({
+    currentUser,
+    setCurrentUser: updateUser,
+    permissions,
+    permissionsLoading,
+    can,
+    is,
+    login,
+    register,
+    logout,
+    verifyToken,
+    loading,
+    error,
+    setError,
+    githubConnected,
+    connectGitHub,
+    showGithubPrompt,
+    handleGithubPromptResponse,
+    setShowGithubPrompt,
+    authInProgress
+  }), [
+    currentUser,
+    updateUser,
+    permissions,
+    permissionsLoading,
+    can,
+    is,
+    login,
+    register,
+    logout,
+    verifyToken,
+    loading,
+    error,
+    githubConnected,
+    connectGitHub,
+    showGithubPrompt,
+    handleGithubPromptResponse,
+    authInProgress
+  ]);
+};

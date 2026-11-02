@@ -6,6 +6,7 @@ from ...auth.rbac import Role, require_project_membership
 from ..controllers.dashboard_controller import (
     get_admin_dashboard,
     get_client_dashboard,
+    get_developer_progress,
     get_project_dashboard,
     get_user_dashboard,
 )
@@ -36,6 +37,13 @@ def register_routes(bp):
     def admin_dashboard():
         """Route to get admin-specific dashboard data"""
         return get_admin_dashboard()
+
+    @bp.route("/dashboard/developer-progress", methods=["GET"])
+    @jwt_required()
+    @role_required([Role.DEVELOPER, Role.TEAM_LEAD, Role.ADMIN])
+    def developer_progress():
+        """Route to get server-side per-developer task aggregates"""
+        return get_developer_progress()
 
     @bp.route("/dashboard/projects/<int:project_id>", methods=["GET"])
     @jwt_required()

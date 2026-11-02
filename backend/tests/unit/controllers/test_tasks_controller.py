@@ -335,6 +335,72 @@ def test_update_task_by_id(app, mock_jwt_identity, mock_jwt, mock_db, mock_task)
             mock_db.session.commit.assert_called_once()
 
 
+def test_update_task_with_matching_version_bumps_version(app, mock_jwt_identity, mock_jwt, mock_db, mock_task):
+    """A client-supplied version that still matches is claimed atomically and
+    the row's version is incremented in the response."""
+    mock_task.version = 3
+    test_data = {"title": "Updated Task", "version": 3}
+
+    with app.test_request_context(json=test_data):
+        with patch("backend.src.api.controllers.tasks_controller.Task.query") as mock_query:
+            mock_query.get_or_404.return_value = mock_task
+            # Conditional UPDATE ... WHERE version = 3 matched exactly one row.
+            mock_db.session.query.return_value.filter.return_value.update.return_value = 1
+
+            from backend.src.api.controllers.tasks_controller import update_task_by_id
+
+            response = update_task_by_id(1)
+
+            data = response.get_json()
+            assert data["message"] == "Task updated successfully"
+            assert data["task"]["version"] == 4
+            assert mock_task.version == 4
+            mock_db.session.query.return_value.filter.return_value.update.assert_called_once()
+            mock_db.session.commit.assert_called_once()
+
+
+def test_update_task_with_stale_version_is_rejected(app, mock_jwt_identity, mock_jwt, mock_db, mock_task):
+    """A stale version matches zero rows -> 409 with the shared error envelope,
+    and the row is left untouched (no commit)."""
+    mock_task.version = 5
+    test_data = {"title": "Updated Task", "version": 3}
+
+    with app.test_request_context(json=test_data):
+        with patch("backend.src.api.controllers.tasks_controller.Task.query") as mock_query:
+            mock_query.get_or_404.return_value = mock_task
+            mock_db.session.query.return_value.filter.return_value.update.return_value = 0
+
+            from backend.src.api.controllers.tasks_controller import update_task_by_id
+
+            response, status_code = update_task_by_id(1)
+
+            assert status_code == 409
+            body = response.get_json()
+            assert body["status"] == "error"
+            assert body["code"] == "version_conflict"
+            assert "modified by another user" in body["message"].lower()
+            # The conflict short-circuits before any commit.
+            mock_db.session.commit.assert_not_called()
+
+
+def test_update_task_without_version_skips_concurrency_check(app, mock_jwt_identity, mock_jwt, mock_db, mock_task):
+    """Legacy clients that omit `version` keep last-write-wins: no conditional
+    claim is issued, so the update path is unchanged."""
+    test_data = {"title": "Updated Task"}
+
+    with app.test_request_context(json=test_data):
+        with patch("backend.src.api.controllers.tasks_controller.Task.query") as mock_query:
+            mock_query.get_or_404.return_value = mock_task
+
+            from backend.src.api.controllers.tasks_controller import update_task_by_id
+
+            response = update_task_by_id(1)
+
+            assert response.get_json()["message"] == "Task updated successfully"
+            mock_db.session.query.assert_not_called()
+            mock_db.session.commit.assert_called_once()
+
+
 def test_update_task_permission_denied(app, mock_jwt_identity, mock_jwt, mock_task):
     # Set developer role
     mock_jwt.return_value = {"role": "developer"}

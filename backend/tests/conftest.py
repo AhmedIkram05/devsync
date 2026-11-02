@@ -58,12 +58,10 @@ def rate_limiter_redis(monkeypatch):
         def __init__(self):
             self.counts = {}
 
-        def incr(self, key):
+        def eval(self, script, numkeys, key, ttl):
+            # Models the limiter's atomic INCR + first-hit EXPIRE script.
             self.counts[key] = self.counts.get(key, 0) + 1
             return self.counts[key]
-
-        def expire(self, key, seconds):
-            return True
 
     fake = _FakeRedis()
     monkeypatch.setattr("src.api.middlewares.rate_limiter.get_redis", lambda: fake)
