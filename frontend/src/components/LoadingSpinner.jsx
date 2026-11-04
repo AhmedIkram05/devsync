@@ -9,7 +9,7 @@ const LoadingSpinner = ({ size = 'medium', message = 'Loading...' }) => {
   };
 
   const spinnerSize = sizes[size] || sizes.medium;
-  
+
   return (
     <div className="flex flex-col items-center justify-center">
       <div className={`animate-spin rounded-full border-2 border-slate-700 border-t-rose-400 ${spinnerSize}`}></div>

@@ -98,19 +98,19 @@ const Register = () => {
           <h1 className="text-2xl font-semibold text-slate-100 mt-3">Create an account</h1>
           <p className="text-sm text-slate-400 mt-2">Join the workspace and start syncing.</p>
         </div>
-        
+
         {bannerMessage && (
           <div className="bg-rose-500/10 border border-rose-400/40 text-rose-200 px-4 py-3 rounded mb-4">
             {bannerMessage}
           </div>
         )}
-        
+
         {successMessage && (
           <div className="bg-emerald-500/10 border border-emerald-400/40 text-emerald-200 px-4 py-3 rounded mb-4">
             {successMessage}
           </div>
         )}
-        
+
         <form onSubmit={formik.handleSubmit} noValidate>
           <div className="mb-4">
             <label htmlFor="register-name" className="block text-slate-300 text-sm font-medium mb-2">
@@ -130,7 +130,7 @@ const Register = () => {
               <p className="mt-1 text-xs text-rose-300">{formik.errors.name}</p>
             )}
           </div>
-          
+
           <div className="mb-4">
             <label htmlFor="register-email" className="block text-slate-300 text-sm font-medium mb-2">
               Email Address*
@@ -149,7 +149,7 @@ const Register = () => {
               <p className="mt-1 text-xs text-rose-300">{formik.errors.email}</p>
             )}
           </div>
-          
+
           <div className="mb-4">
             <label htmlFor="register-password" className="block text-slate-300 text-sm font-medium mb-2">
               Password*
@@ -169,7 +169,7 @@ const Register = () => {
             )}
             <p className="text-xs text-slate-400 mt-1">Must be at least 8 characters</p>
           </div>
-          
+
           <div className="mb-4">
             <label htmlFor="register-confirm-password" className="block text-slate-300 text-sm font-medium mb-2">
               Confirm Password*
@@ -188,7 +188,7 @@ const Register = () => {
               <p className="mt-1 text-xs text-rose-300">{formik.errors.confirmPassword}</p>
             )}
           </div>
-          
+
           <div className="flex items-center justify-between">
             <button
               type="submit"
@@ -199,7 +199,7 @@ const Register = () => {
             </button>
           </div>
         </form>
-        
+
         <p className="mt-4 text-center text-slate-400">
           Already have an account?{" "}
           <Link to="/login" className="text-rose-300 hover:text-rose-200">

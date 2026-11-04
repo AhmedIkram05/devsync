@@ -62,7 +62,7 @@ const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [], assig
           <p className="mt-1 text-xs text-rose-300">{errors.title}</p>
         )}
       </div>
-      
+
       <div>
         <label htmlFor="description" className="block text-sm font-medium text-slate-300 mb-1">Description</label>
         <textarea
@@ -79,7 +79,7 @@ const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [], assig
           <p className="mt-1 text-xs text-rose-300">{errors.description}</p>
         )}
       </div>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label htmlFor="assignee" className="block text-sm font-medium text-slate-300 mb-1">Assignee</label>
@@ -103,7 +103,7 @@ const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [], assig
             <p className="mt-1 text-xs text-slate-500">Developers can only create tasks for themselves.</p>
           )}
         </div>
-        
+
         <div>
           <label htmlFor="project" className="block text-sm font-medium text-slate-300 mb-1">Project</label>
           <select
@@ -126,7 +126,7 @@ const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [], assig
           )}
         </div>
       </div>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label htmlFor="status" className="block text-sm font-medium text-slate-300 mb-1">Status</label>
@@ -145,7 +145,7 @@ const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [], assig
             ))}
           </select>
         </div>
-        
+
         <div>
           <label htmlFor="priority" className="block text-sm font-medium text-slate-300 mb-1">Priority</label>
           <select
@@ -163,7 +163,7 @@ const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [], assig
             ))}
           </select>
         </div>
-        
+
         <div>
           <label htmlFor="deadline" className="block text-sm font-medium text-slate-300 mb-1">Deadline</label>
           <input
@@ -177,7 +177,7 @@ const TaskForm = ({ onSubmit, initialData = {}, users = [], projects = [], assig
           />
         </div>
       </div>
-      
+
       <div className="pt-4 flex justify-end">
         <button
           type="submit"

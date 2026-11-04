@@ -43,17 +43,17 @@ const ProgressBar = ({ progress = 0, onChange, disabled = false }) => {
         <div className="relative">
           <div className="flex items-center mb-2">
             <span className="text-sm font-medium mr-2 text-slate-200">Progress:</span>
-            <span 
+            <span
               className={`text-sm font-bold px-2 py-0.5 rounded ${
-                value < 30 ? 'bg-rose-500/20 text-rose-200' : 
-                value < 70 ? 'bg-amber-500/20 text-amber-200' : 
+                value < 30 ? 'bg-rose-500/20 text-rose-200' :
+                value < 70 ? 'bg-amber-500/20 text-amber-200' :
                 'bg-emerald-500/20 text-emerald-200'
               }`}
             >
               {value}%
             </span>
           </div>
-          
+
           <div className="relative">
             <input
               type="range"
@@ -77,9 +77,9 @@ const ProgressBar = ({ progress = 0, onChange, disabled = false }) => {
                 } ${value}%, #1f2937 ${value}%, #1f2937 100%)`
               }}
             />
-            
+
             {showTooltip && isInteractive && !disabled && (
-              <div 
+              <div
                 className="absolute -top-10 px-2 py-1 bg-slate-900 text-slate-200 text-xs rounded border border-slate-700 transform -translate-x-1/2 pointer-events-none"
                 style={{ left: `${value}%` }}
               >
@@ -101,7 +101,7 @@ const ProgressBar = ({ progress = 0, onChange, disabled = false }) => {
           </div>
         </div>
       )}
-      
+
       {isInteractive && !disabled && (
         <div className="flex justify-between mt-1.5 text-xs text-slate-500">
           <span>Not Started</span>

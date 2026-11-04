@@ -42,7 +42,7 @@ const getDashboardPath = (role) => (role === ROLES.ADMIN ? '/admin' : '/BasicDas
 
 const ProtectedRoute = ({ children, allowedRoles = [], requiredPermission = null }) => {
   const { currentUser, loading, permissionsLoading, can } = useAuth();
-  
+
   // Show loading state while authentication or permissions are being checked.
   // permissionsLoading closes the window where an authenticated user has
   // permissions=[] (fetch in flight) and every CAN_* route bounces to
@@ -103,14 +103,14 @@ function AppRoutes() {
       </div>
     );
   }
-  
+
   return (
     <>
       {currentUser && <Navbar />}
-      
+
       {/* Show GitHub connection prompt if needed */}
       {showGithubPrompt && <GitHubConnectPrompt />}
-      
+
       <Routes>
         {/* Public Routes */}
         <Route path="/login" element={
@@ -120,7 +120,7 @@ function AppRoutes() {
             <Login />
           )
         } />
-        
+
         <Route path="/register" element={
           currentUser ? (
             <Navigate to={getDashboardPath(currentUser.role)} replace />
@@ -128,9 +128,9 @@ function AppRoutes() {
             <Register />
           )
         } />
-        
+
         <Route path="/forbidden" element={<Forbidden />} />
-        
+
         {/* Developer and Team Lead Routes */}
         <Route path="/BasicDashboard" element={
           <ProtectedRoute requiredPermission={PERMISSIONS.CAN_VIEW_TASKS}>
@@ -149,68 +149,68 @@ function AppRoutes() {
             <TaskDetailsUser />
           </ProtectedRoute>
         } />
-        
+
         <Route path="/tasks" element={
           <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES}>
             <TaskList />
           </ProtectedRoute>
         } />
-        
+
         <Route path="/tasks/:id" element={
           <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES}>
             <TaskDetailsUser />
           </ProtectedRoute>
         } />
-        
+
         <Route path="/github" element={
           <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES}>
             <GitHubIntegration />
           </ProtectedRoute>
         } />
-        
+
         <Route path="/githubintegrationdetail/:repoId" element={
           <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES}>
             <GitHubIntegrationDetail />
           </ProtectedRoute>
         } />
-        
+
         {/* GitHub OAuth callback handling - single owner (/github/callback);
             legacy backend-style paths redirect with the query string intact */}
         <Route path="/github/callback" element={<GitHubCallback />} />
         <Route path="/api/github/callback" element={<GitHubCallbackAlias />} />
         <Route path="/api/v1/github/callback" element={<GitHubCallbackAlias />} />
-        
+
         <Route path="/github/connected" element={
           <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES}>
             <GitHubIntegration />
           </ProtectedRoute>
         } />
-        
+
         {/* Admin Routes (Project Managers) */}
         <Route path="/admin" element={
           <ProtectedRoute allowedRoles={TEAM_LEAD_OR_ADMIN}>
             <AdminDashboard />
           </ProtectedRoute>
         } />
-        
+
         <Route path="/admin/dashboard" element={
           <ProtectedRoute allowedRoles={TEAM_LEAD_OR_ADMIN}>
             <AdminDashboard />
           </ProtectedRoute>
         } />
-        
+
         <Route path="/admin/create-task" element={
           <ProtectedRoute allowedRoles={AUTHENTICATED_ROLES}>
             <TaskCreation />
           </ProtectedRoute>
         } />
-        
+
         <Route path="/admin/developer-progress" element={
           <ProtectedRoute allowedRoles={TEAM_LEAD_OR_ADMIN}>
             <DeveloperProgress />
           </ProtectedRoute>
         } />
-        
+
         <Route path="/admin/reports" element={
           <ProtectedRoute allowedRoles={TEAM_LEAD_OR_ADMIN}>
             <Reports />
@@ -258,12 +258,12 @@ function AppRoutes() {
             <ProjectDetails />
           </ProtectedRoute>
         } />
-        
+
         {/* Default route */}
         <Route path="/" element={
-          currentUser ? 
+          currentUser ?
             <Navigate to={getDashboardPath(currentUser.role)} replace />
-            : 
+            :
             <Landing />
         } />
       </Routes>

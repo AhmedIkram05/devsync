@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { githubService } from "../services/github"; 
+import { githubService } from "../services/github";
 import { authApi } from "../services/utils/auth";
 import { useAuth } from "../context/AuthContext";
 import GitHubRepoCard from "../components/GitHubRepoCard";
@@ -20,9 +20,9 @@ const GitHubIntegration = () => {
   const [repos, setRepos] = useState([]);
   const [isConnecting, setIsConnecting] = useState(false);
   const [loadingRepos, setLoadingRepos] = useState(false);
-  
+
   const { currentUser, setCurrentUser, setError: setAuthError } = useAuth();
-  
+
   // Define fetchRepositories function earlier so it can be referenced
   const fetchRepositories = async () => {
     try {
@@ -33,7 +33,7 @@ const GitHubIntegration = () => {
         throw new Error(data.error || 'Server connection failed.');
       }
       logger.log("GitHub repositories received:", data);
-      
+
       // Ensure we have an array of repos
       const repos = Array.isArray(data) ? data : (data?.repositories || []);
       setRepos(repos);
@@ -62,27 +62,27 @@ const GitHubIntegration = () => {
   useEffect(() => {
     // Clear any auth errors when mounting this component
     setAuthError && setAuthError(null);
-    
+
     // Log current user info
     if (currentUser) {
-      logger.log("GitHubIntegration - Current user:", 
-        currentUser.email, 
-        "Role:", currentUser.role, 
+      logger.log("GitHubIntegration - Current user:",
+        currentUser.email,
+        "Role:", currentUser.role,
         "GitHub connected:", currentUser.github_connected);
     } else {
       logger.log("GitHubIntegration - No current user found");
     }
   }, [setAuthError, currentUser]);
-  
+
   // Define checkGitHubConnection with useCallback to fix dependency array issue
   const checkGitHubConnection = useCallback(async (justConnected = false) => {
     try {
       setConnectionStatus(prev => ({ ...prev, loading: true, error: null, rateLimitError: false }));
-      
+
       logger.log("Checking GitHub connection status...");
       const data = await githubService.checkConnection();
       logger.log("GitHub connection status:", data);
-      
+
       // If we just connected or the status changed, update local storage
       if (justConnected) {
         const updatedUser = authApi.updateGitHubStatus(data.connected, data.username);
@@ -90,7 +90,7 @@ const GitHubIntegration = () => {
           setCurrentUser(updatedUser);
         }
       }
-      
+
       setConnectionStatus({
         connected: data.connected,
         username: data.username || '',
@@ -98,14 +98,14 @@ const GitHubIntegration = () => {
         error: null,
         rateLimitError: false
       });
-      
+
       // If connected, fetch repositories
       if (data.connected) {
         fetchRepositories();
       }
     } catch (error) {
       console.error("Error checking GitHub connection status:", error);
-      
+
       // Handle 401 errors specially - likely not authenticated
       if (error.status === 401) {
         setConnectionStatus({
@@ -117,7 +117,7 @@ const GitHubIntegration = () => {
         });
         return;
       }
-      
+
       // Check for rate limit error specifically
       const rateLimitInfo = githubService.handleRateLimitError(error);
       if (rateLimitInfo) {
@@ -146,28 +146,28 @@ const GitHubIntegration = () => {
     logger.log("GitHubIntegration component mounted, checking connection status");
     checkGitHubConnection();
   }, [checkGitHubConnection]);
-  
+
   const connectGitHub = async () => {
     try {
       logger.log("Initiating GitHub OAuth flow...");
       setIsConnecting(true);
       setConnectionStatus(prev => ({ ...prev, error: null, rateLimitError: false }));
-      
+
       // Get the OAuth URL from our service
       const oauthUrl = await githubService.initiateOAuthFlow();
       logger.log("Received GitHub OAuth URL:", oauthUrl);
-      
+
       if (!oauthUrl) {
         throw new Error("No GitHub authorization URL received from server");
       }
-      
+
       // Redirect user to GitHub for authorization
       logger.log("Redirecting to GitHub authorization page...");
       window.location.href = oauthUrl;
     } catch (error) {
       console.error("GitHub connection error:", error);
       setIsConnecting(false);
-      
+
       // Check for rate limit error
       const rateLimitInfo = githubService.handleRateLimitError(error);
       if (rateLimitInfo) {
@@ -185,22 +185,22 @@ const GitHubIntegration = () => {
       }
     }
   };
-  
+
   const disconnectGitHub = async () => {
     // CodeQL js/user-controlled-bypass: explicit user confirmation gates disconnect, not URL input.
     const confirmed = window.confirm("Are you sure you want to disconnect your GitHub account? This will remove all repository links.");
-    
+
     if (confirmed) {
       try {
         logger.log("Disconnecting GitHub account...");
         await githubService.disconnectAccount();
-        
+
         // Update local storage
         const updatedUser = authApi.updateGitHubStatus(false, '');
         if (updatedUser && typeof setCurrentUser === 'function') {
           setCurrentUser(updatedUser);
         }
-        
+
         setConnectionStatus({
           connected: false,
           username: '',
@@ -208,7 +208,7 @@ const GitHubIntegration = () => {
           error: null,
           rateLimitError: false
         });
-        
+
         setRepos([]);
         logger.log("GitHub account disconnected successfully");
       } catch (error) {
@@ -231,7 +231,7 @@ const GitHubIntegration = () => {
       }
     }
   };
-  
+
   // Render a special message for rate limit errors
   const renderRateLimitError = () => {
     if (connectionStatus.rateLimitError && connectionStatus.rateLimitInfo) {
@@ -242,9 +242,9 @@ const GitHubIntegration = () => {
           <p className="mt-1">{message}</p>
           {suggestion && <p className="mt-2 text-sm opacity-75">{suggestion}</p>}
           <p className="mt-3 text-sm">
-            <a 
-              href="https://docs.github.com/en/rest/rate-limit" 
-              target="_blank" 
+            <a
+              href="https://docs.github.com/en/rest/rate-limit"
+              target="_blank"
               rel="noopener noreferrer"
               className="text-rose-300 hover:text-rose-200"
             >
@@ -254,10 +254,10 @@ const GitHubIntegration = () => {
         </div>
       );
     }
-    
+
     return null;
   };
-  
+
   if (connectionStatus.loading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -265,24 +265,24 @@ const GitHubIntegration = () => {
       </div>
     );
   }
-  
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
       <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
         <div className="mb-10">
           <h1 className="text-2xl font-bold mb-6 text-slate-100">GitHub Integration</h1>
-        
+
         {connectionStatus.rateLimitError ? renderRateLimitError() : connectionStatus.error && (
           <div className="bg-rose-500/10 border border-rose-400/40 text-rose-200 px-4 py-3 rounded mb-4">
             {connectionStatus.error}
           </div>
         )}
-        
+
         {!connectionStatus.connected ? (
           <div className="bg-slate-900/70 rounded-2xl border border-slate-800/70 p-6 mb-6">
             <h2 className="text-xl font-semibold mb-3 text-slate-100">Connect Your GitHub Account</h2>
             <p className="mb-4 text-slate-400">
-              Connect your GitHub account to link tasks with repositories and issues. 
+              Connect your GitHub account to link tasks with repositories and issues.
               This integration allows you to:
             </p>
             <ul className="list-disc pl-5 mb-6 text-slate-400">
@@ -328,7 +328,7 @@ const GitHubIntegration = () => {
                     <p className="text-slate-400">Connected as: {connectionStatus.username}</p>
                   </div>
                 </div>
-                <button 
+                <button
                   onClick={disconnectGitHub}
                   className="bg-rose-500/90 hover:bg-rose-400 text-white px-4 py-2 rounded-full"
                 >
@@ -336,12 +336,12 @@ const GitHubIntegration = () => {
                 </button>
               </div>
             </div>
-            
+
             {/* GitHub Repositories Section */}
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-medium">Your Repositories</h3>
-                <button 
+                <button
                   onClick={fetchRepositories}
                   className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1 rounded flex items-center"
                 >
@@ -351,7 +351,7 @@ const GitHubIntegration = () => {
                   Refresh
                 </button>
               </div>
-              
+
               {loadingRepos ? (
                 <div className="flex justify-center py-10">
                   <LoadingSpinner />

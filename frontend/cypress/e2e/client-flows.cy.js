@@ -86,7 +86,7 @@ describe('Client Task Flows', () => {
     cy.get('input[name="password"]').type('password123');
     cy.contains('button', 'Sign In').click();
     cy.wait('@loginReq');
-    
+
     // Clear out any modals
     cy.get('body').then(($body) => {
       if ($body.find('button:contains("Skip For Now")').length > 0) {
@@ -193,7 +193,7 @@ describe('Client Task Flows', () => {
     cy.wait(['@getTaskDetail', '@getComments', '@getGithubLinks', '@getRepos']);
 
     cy.contains('h1', 'Learn Cypress').should('be.visible');
-    
+
     // Update progress slider to 30%
     // Use native value setter (Cypress-recommended for React controlled inputs) +
     // wait for React to commit state (UI shows "30%") before firing mouseup
@@ -205,7 +205,7 @@ describe('Client Task Flows', () => {
     cy.contains('span.font-bold', '30%').should('be.visible');
     cy.get('input[type="range"]').trigger('mouseup');
     cy.wait('@updateTask').its('request.body').should('deep.include', { progress: 30 });
-    
+
     // Update progress slider to 80%
     cy.get('input[type="range"]').should('be.visible').and('not.be.disabled').trigger('mousedown');
     cy.get('input[type="range"]').then($el => {

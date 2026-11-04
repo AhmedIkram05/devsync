@@ -57,7 +57,7 @@ describe('Notification Flows', () => {
 
   it('allows marking all as read', () => {
     cy.get('[aria-label^="Notifications"]').click();
-    
+
     // Stub mark all as read
     cy.intercept('PUT', '**/api/v1/notifications/read-all', {
       statusCode: 200,

@@ -43,14 +43,14 @@ describe('GitHubIntegration page', () => {
       setCurrentUser: jest.fn(),
       setError: jest.fn()
     });
-    
+
     githubModule.githubService = {
       checkConnection: jest.fn().mockResolvedValue({ connected: false }),
       getUserRepos: jest.fn().mockResolvedValue(mockRepos),
       connectGitHub: jest.fn().mockResolvedValue({ success: true }),
       handleRateLimitError: jest.fn().mockReturnValue(null)
     };
-    
+
     authModule.authApi = {
       updateUser: jest.fn().mockResolvedValue({ success: true })
     };

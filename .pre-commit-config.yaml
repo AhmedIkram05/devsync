@@ -1,0 +1,36 @@
+# Pre-commit hooks. The basic file-hygiene hooks below run repo-wide; the ruff
+# hooks stay scoped to backend/ to mirror the CI lint job, which only lints that
+# tree (.github/workflows/ci.yml: `uvx ruff@0.16.7 check backend/` and
+# `uvx ruff@0.16.7 format --check backend/`).
+# Install:  pre-commit install
+# Run all:  pre-commit run --all-files
+
+repos:
+  # ── Basic file hygiene (repo-wide) ───────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        # k8s manifests legitimately contain multiple `---` documents.
+        args: [--allow-multiple-documents]
+      - id: check-json
+      - id: check-added-large-files
+        # Tracked documentation/screenshot assets (gif/png/pdf) are legitimately
+        # large; excluding them keeps the 500 KB default meaningful for source.
+        exclude: \.(?:gif|png|pdf)$
+      - id: detect-private-key
+      - id: check-merge-conflict
+
+  # ── Python lint + format (CI scope: backend/) ────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.7
+    hooks:
+      - id: ruff
+        files: ^backend/
+        args: [--fix]
+        types_or: [python, pyi]
+      - id: ruff-format
+        files: ^backend/
+        types_or: [python, pyi]

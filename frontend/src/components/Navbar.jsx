@@ -10,7 +10,7 @@ const Navbar = () => {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  
+
   // Request notification permission when the component mounts
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -40,23 +40,23 @@ const Navbar = () => {
       setIsLoggingOut(false);
     }
   };
-  
+
   const toggleMobileMenu = () => {
     setShowMobileMenu(!showMobileMenu);
   };
-  
+
   const toggleNotifications = () => {
     setShowNotifications(!showNotifications);
-    
+
     // If we're showing notifications and there are unread ones,
     // fetch the latest to ensure we have the newest data
     if (!showNotifications) {
       refreshNotifications();
     }
   };
-  
+
   if (!currentUser) return null;
-  
+
   const isAdmin = is('admin');
   const isTeamLead = is('team_lead');
   const dashboardPath = isAdmin ? '/admin' : '/BasicDashboard';
@@ -102,7 +102,7 @@ const Navbar = () => {
         <Link to="/" className="flex-shrink-0 mr-8 text-lg font-semibold tracking-wide text-white hover:text-slate-300 transition">
           DevSync
         </Link>
-        
+
         {/* Desktop Navigation - Centered */}
         <nav aria-label="Primary" className="hidden lg:flex flex-1 justify-center items-center gap-5 text-[13px] font-medium text-slate-300 px-4">
           {isAdmin ? (
@@ -131,7 +131,7 @@ const Navbar = () => {
             </>
           )}
         </nav>
-        
+
         <div className="flex-shrink-0 flex items-center gap-6">
           {/* Notification Bell */}
           <div className="relative">
@@ -151,12 +151,12 @@ const Navbar = () => {
                 </span>
               )}
             </button>
-            
+
             {showNotifications && (
               <div id="navbar-notifications-popover" className="absolute right-0 mt-3 w-80 max-w-[calc(100vw-2rem)] bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden z-[100]">
                 <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
                   <h3 className="text-sm font-bold text-white tracking-tight">Notifications</h3>
-                  <button 
+                  <button
                     onClick={markAllAsRead}
                     className="text-[10px] font-bold text-rose-400 hover:text-rose-300 uppercase tracking-wider transition"
                   >
@@ -164,8 +164,8 @@ const Navbar = () => {
                   </button>
                 </div>
                 <div className="max-h-64 overflow-y-auto">
-                  <Notifications 
-                    notifications={notifications} 
+                  <Notifications
+                    notifications={notifications}
                     onClose={() => setShowNotifications(false)}
                     onMarkRead={markAsRead}
                     onMarkAllRead={markAllAsRead}

@@ -548,7 +548,7 @@ describe('api utilities', () => {
       );
 
     const report = await dashboardService.getReportData('github', 'month');
-    
+
     expect(report.summary.repos).toBe(3);
     expect(report.summary.open_issues).toBe(17); // 5 + 2 + 10
     expect(report.summary.total_prs).toBe(11); // 3 + 8 + 0

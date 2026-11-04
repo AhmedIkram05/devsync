@@ -83,7 +83,7 @@ const BasicDashboard = () => {
       const data = await dashboardService.getBasicDashboardStats();
       setDashboardData(data);
       hasLoadedRef.current = true;
-      
+
       setError(null);
     } catch (err) {
       console.error("Dashboard fetch error:", err);
@@ -384,7 +384,7 @@ const StatCard = ({ title, value, icon, color }) => {
     purple: 'bg-purple-500/15 text-purple-300 border border-purple-400/20',
   };
 
-  const selectedColor = color === 'primary' ? 'blue' : 
+  const selectedColor = color === 'primary' ? 'blue' :
                        color === 'success' ? 'green' :
                        color === 'warning' ? 'yellow' :
                        color === 'error' ? 'red' : color;

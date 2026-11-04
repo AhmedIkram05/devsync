@@ -16,7 +16,7 @@ function Notifications({ notifications = [], onNotificationUpdate, onMarkRead, o
 
   const handleNotificationClick = async (notificationId) => {
     if (!notificationId) return;
-    
+
     try {
       if (typeof onMarkRead === 'function') {
         await onMarkRead(notificationId);
@@ -67,7 +67,7 @@ function Notifications({ notifications = [], onNotificationUpdate, onMarkRead, o
         <div className="bg-amber-500/10 border border-amber-400/40 text-amber-200 px-4 py-3 rounded mb-4">
           <h3 className="font-semibold">Rate limit exceeded</h3>
           <p className="mt-1">Too many notification requests. Please wait a moment.</p>
-          <button 
+          <button
             onClick={() => refreshNotifications(true)}
             className="mt-2 text-sm font-medium text-rose-300 hover:text-rose-200"
           >
@@ -127,7 +127,7 @@ function Notifications({ notifications = [], onNotificationUpdate, onMarkRead, o
             </svg>
             <p>{error}</p>
           </div>
-          <button 
+          <button
             onClick={() => refreshNotifications(true)}
             className="mt-2 text-sm font-medium text-rose-300 hover:text-rose-200"
           >
@@ -137,7 +137,7 @@ function Notifications({ notifications = [], onNotificationUpdate, onMarkRead, o
       </div>
     );
   }
-  
+
   // Safely handle empty notifications array
   if (!notifications || notifications.length === 0) {
     return (
