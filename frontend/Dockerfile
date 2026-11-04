@@ -36,7 +36,7 @@ RUN apk upgrade --no-cache
 RUN chown -R nginx:nginx /var/cache/nginx /var/run /run /etc/nginx/conf.d /usr/share/nginx/html
 
 # Copy built assets from build stage
-COPY --from=build /app/build /usr/share/nginx/html
+COPY --from=build /app/dist /usr/share/nginx/html
 
 # Nginx config template — processed by nginx entrypoint via envsubst
 # to substitute ${API_UPSTREAM} at container start
