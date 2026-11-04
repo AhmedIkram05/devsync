@@ -176,11 +176,11 @@ Build stage `python:3.11-slim-bookworm` installs `build-essential/gcc/libpq-dev`
 
 ### Frontend Architecture
 
-**Stack:** React 18 - Create React App - Tailwind CSS - Socket.IO client - React Testing Library + MSW.
+**Stack:** React 18 - Vite - Tailwind CSS - Socket.IO client - React Testing Library + MSW.
 
 **Containerization (`frontend/Dockerfile`):**
 
-Build stage `node:20-alpine` (`npm ci` with layer-cached manifests, `REACT_APP_SOCKET_TRANSPORT` build arg defaulting to `polling` at lines 15-16, `npm run build`); serve stage `nginx:1.27-alpine` copies `/app/build` to the html root and the template to `/etc/nginx/templates/` for `envsubst` at container start. `API_UPSTREAM` defaults to the compose backend (`http://backend:8000`); `NGINX_RESOLVER` defaults to Docker DNS (`127.0.0.11`), overridden to GKE node-local DNS in K8s.
+Build stage `node:20-alpine` (`npm ci` with layer-cached manifests, `REACT_APP_SOCKET_TRANSPORT` build arg defaulting to `polling` at lines 15-16, `npm run build`); serve stage `nginx:1.27-alpine` copies `/app/dist` to the html root and the template to `/etc/nginx/templates/` for `envsubst` at container start. `API_UPSTREAM` defaults to the compose backend (`http://backend:8000`); `NGINX_RESOLVER` defaults to Docker DNS (`127.0.0.11`), overridden to GKE node-local DNS in K8s.
 
 **Nginx SPA proxy (`frontend/nginx.conf.template`, FQDN upstream `http://devsync-backend.devsync.svc.cluster.local:8000` + resolver `169.254.20.10` set at `k8s/base/frontend-deployment.yaml:43-51`):**
 

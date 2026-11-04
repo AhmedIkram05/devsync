@@ -9,7 +9,7 @@ describe('index.js entry point', () => {
   });
 
   test('has required DOM root element', () => {
-    // Verify the public/index.html has the root div
+    // Verify the app HTML has the root div
     expect(document.getElementById('root')).toBeDefined();
   });
 });

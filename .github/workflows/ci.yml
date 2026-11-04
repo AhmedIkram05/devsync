@@ -46,6 +46,10 @@ jobs:
               - 'frontend/package.json'
               - 'frontend/package-lock.json'
               - 'frontend/public/**'
+              - 'frontend/index.html'
+              - 'frontend/vite.config.mjs'
+              - 'frontend/jest.config.js'
+              - 'frontend/config/**'
               - 'frontend/Dockerfile'
               - 'frontend/nginx.conf.template'
             e2e:
@@ -416,7 +420,7 @@ jobs:
         uses: cypress-io/github-action@bc982daf1fc26474fa0cf2c355d6c910616ce411 # v7.4.7
         with:
           working-directory: frontend
-          start: npx serve -s build -l 3000 --no-clipboard
+          start: npx serve -s dist -l 3000 --no-clipboard
           wait-on: 'http://localhost:3000'
           wait-on-timeout: 60
           config: baseUrl=http://localhost:3000

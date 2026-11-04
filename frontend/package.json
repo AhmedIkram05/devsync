@@ -15,31 +15,24 @@
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.4",
-    "react-scripts": "^5.0.1",
     "react-toastify": "^11.1.0",
     "socket.io-client": "^4.8.4",
     "yup": "^1.7.1"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "test:ci": "CI=true react-scripts test --watchAll=false",
-    "test:coverage": "CI=true react-scripts test --watchAll=false --coverage --coverageReporters=text-summary --coverageReporters=lcov",
+    "start": "vite",
+    "build": "vite build",
+    "test": "jest",
+    "test:ci": "CI=true jest --watchAll=false",
+    "test:coverage": "CI=true jest --watchAll=false --coverage --coverageReporters=text-summary --coverageReporters=lcov",
     "cypress:open": "cypress open",
-    "cypress:run": "cypress run",
-    "eject": "react-scripts eject"
+    "cypress:run": "cypress run"
   },
   "eslintConfig": {
     "extends": [
       "react-app",
       "react-app/jest"
     ]
-  },
-  "jest": {
-    "moduleNameMapper": {
-      "^react-router/dom$": "<rootDir>/node_modules/react-router/dist/production/dom-export.js"
-    }
   },
   "browserslist": {
     "production": [
@@ -61,14 +54,25 @@
     "@cypress/code-coverage": "^4.0.3",
     "@cypress/instrument-cra": "^1.4.0",
     "@istanbuljs/nyc-config-babel": "^3.0.0",
+    "@vitejs/plugin-react": "^6.2.1",
     "autoprefixer": "^10.6.1",
+    "babel-jest": "^27.5.1",
     "babel-plugin-istanbul": "^8.0.0",
+    "babel-preset-react-app": "^10.1.0",
     "cypress": "^16.2.0",
+    "eslint": "^8.57.1",
+    "eslint-config-react-app": "^7.0.1",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "identity-obj-proxy": "^3.0.0",
     "istanbul-lib-coverage": "^3.2.2",
+    "jest": "^27.5.1",
+    "jest-environment-jsdom": "^27.5.1",
+    "jest-watch-typeahead": "^1.1.0",
     "nyc": "^18.0.0",
     "postcss": "^8.5.31",
+    "react-app-polyfill": "^3.0.0",
     "serve": "^14.2.6",
-    "tailwindcss": "^3.3.0"
+    "tailwindcss": "^3.3.0",
+    "vite": "^8.3.5"
   }
 }
