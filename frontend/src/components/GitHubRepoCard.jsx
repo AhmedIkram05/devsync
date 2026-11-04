@@ -11,11 +11,11 @@ const GitHubRepoCard = ({ repo }) => {
           {repo.private ? 'Private' : 'Public'}
         </span>
       </div>
-      
+
       <p className="text-slate-300 text-sm mb-4 line-clamp-2 h-10">
         {repo.description || 'No description provided'}
       </p>
-      
+
       <div className="flex flex-wrap mb-4 text-sm">
         {repo.language && (
           <span className="mr-4 flex items-center text-slate-300">
@@ -23,17 +23,17 @@ const GitHubRepoCard = ({ repo }) => {
             {repo.language}
           </span>
         )}
-        
+
         <span className="mr-4 text-slate-400">
           Updated: {formatDate(repo.updated_at)}
         </span>
       </div>
-      
+
       <div className="flex justify-between mt-2">
-        <a 
-          href={repo.html_url} 
-          target="_blank" 
-          rel="noopener noreferrer" 
+        <a
+          href={repo.html_url}
+          target="_blank"
+          rel="noopener noreferrer"
           className="text-rose-400 hover:text-rose-300 text-sm flex items-center"
         >
           <svg className="h-4 w-4 mr-1" fill="currentColor" viewBox="0 0 24 24">
@@ -41,9 +41,9 @@ const GitHubRepoCard = ({ repo }) => {
           </svg>
           View on GitHub
         </a>
-        
-        <Link 
-          to={`/githubintegrationdetail/${repo.id}`} 
+
+        <Link
+          to={`/githubintegrationdetail/${repo.id}`}
           className="bg-rose-500/90 hover:bg-rose-600/90 text-white px-3 py-1 rounded-full text-sm"
         >
           View Details

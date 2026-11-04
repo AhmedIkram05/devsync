@@ -570,7 +570,7 @@ describe('NotificationContext', () => {
     // The mark actions fail
     notificationService.markAsRead.mockRejectedValue(new Error('mark failed'));
     notificationService.markAllAsRead.mockRejectedValue(new Error('mark all failed'));
-    
+
     // As part of the fallback, it fetches again
     notificationService.getNotifications.mockResolvedValue([
       { id: 1, read: false, message: 'Unread 1' },
@@ -595,7 +595,7 @@ describe('NotificationContext', () => {
 
     // Mark all fail
     fireEvent.click(screen.getByRole('button', { name: 'Mark All' }));
-    
+
     await waitFor(() => {
       expect(notificationService.getNotifications).toHaveBeenCalledTimes(3);
     });

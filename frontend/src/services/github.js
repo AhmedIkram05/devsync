@@ -87,12 +87,12 @@ export const githubService = {
       inFlightConnectionStatus = null;
     }
   },
-  
+
   // Alias for checkConnectionStatus to fix method name mismatch
   checkConnection: async () => {
     return githubService.checkConnectionStatus();
   },
-  
+
   // Generate a state parameter with userId for GitHub OAuth
   createStateParam: (userId) => {
     // Create a simple state object with the user ID and a timestamp
@@ -100,11 +100,11 @@ export const githubService = {
       userId: userId,
       timestamp: Date.now()
     };
-    
+
     // Convert to base64
     return btoa(JSON.stringify(stateObj));
   },
-  
+
   // Initiate GitHub OAuth flow — strict CSRF: server state + issuance time
   // stored in tab-scoped sessionStorage.
   initiateOAuthFlow: async () => {
@@ -215,7 +215,7 @@ export const githubService = {
       throw error;
     }
   },
-  
+
   // Get user's GitHub repositories
   // NOTE: errors propagate to callers (all wrap in try/catch) so pages can
   // render rate-limit/offline UI instead of a misleading empty state.
@@ -260,7 +260,7 @@ export const githubService = {
         per_page: perPage.toString(),
         include_activity: 'false'
       }).toString();
-      
+
       const data = await fetchWithAuth(`${BASE_URL}/repositories?${queryParams}`);
       return data.repositories || data;
     } catch (error) {
@@ -268,7 +268,7 @@ export const githubService = {
       return [];
     }
   },
-  
+
   // Get repository issues
   getRepositoryIssues: async (repoId, options = {}) => {
     try {
@@ -278,7 +278,7 @@ export const githubService = {
         page: page.toString(),
         per_page: perPage.toString()
       }).toString();
-      
+
       const data = await fetchWithAuth(`${BASE_URL}/repositories/${repoId}/issues?${queryParams}`);
       return data.issues || data;
     } catch (error) {
@@ -286,7 +286,7 @@ export const githubService = {
       return [];
     }
   },
-  
+
   // Get repository pull requests
   getRepositoryPulls: async (repoId, options = {}) => {
     try {
@@ -296,7 +296,7 @@ export const githubService = {
         page: page.toString(),
         per_page: perPage.toString()
       }).toString();
-      
+
       const data = await fetchWithAuth(`${BASE_URL}/repositories/${repoId}/pulls?${queryParams}`);
       return data.pull_requests || data;
     } catch (error) {
@@ -304,7 +304,7 @@ export const githubService = {
       return [];
     }
   },
-  
+
   // Add a repository to track
   addRepository: async (repositoryData) => {
     try {
@@ -318,7 +318,7 @@ export const githubService = {
       throw error;
     }
   },
-  
+
   // Link a task with GitHub issue or PR
   linkTaskWithGitHub: async (taskId, linkData) => {
     try {
@@ -332,7 +332,7 @@ export const githubService = {
       throw error;
     }
   },
-  
+
   // Get task's GitHub links
   getTaskGitHubLinks: async (taskId) => {
     try {
@@ -343,7 +343,7 @@ export const githubService = {
       return [];
     }
   },
-  
+
   // Delete a task's GitHub link
   deleteTaskGitHubLink: async (taskId, linkId) => {
     try {
@@ -367,7 +367,7 @@ export const githubService = {
     }
     return githubService.deleteTaskGitHubLink(taskId, linkId);
   },
-  
+
   // Disconnect GitHub account
   disconnectAccount: async () => {
     try {
@@ -391,15 +391,15 @@ export const githubService = {
         message: 'You have reached the GitHub API rate limit. Please wait before making more requests.',
         suggestion: 'Try again in a few minutes when the rate limit resets.'
       };
-      
+
       // If we have detailed rate limit headers from GitHub, add them
       if (error.data?.documentation_url) {
         rateLimitInfo.documentationUrl = error.data.documentation_url;
       }
-      
+
       return rateLimitInfo;
     }
-    
+
     // Also check for 429 status code (Too Many Requests)
     if (error?.status === 429) {
       return {
@@ -409,7 +409,7 @@ export const githubService = {
         retryAfter: error.retryAfter || error.data?.retryAfter || 60
       };
     }
-    
+
     // If it's not a rate limit error, return null
     return null;
   },

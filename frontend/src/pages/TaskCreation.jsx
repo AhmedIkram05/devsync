@@ -26,7 +26,7 @@ const TaskCreation = () => {
         } else if (currentUser) {
           setUsers([currentUser]);
         }
-        
+
         const projectsData = await taskService.getProjects();
         setProjects(projectsData || []);
       } catch (err) {
@@ -42,7 +42,7 @@ const TaskCreation = () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       // Format the task data for the API
       const taskData = {
         title: task.title,
@@ -53,7 +53,7 @@ const TaskCreation = () => {
         project_id: task.project,
         deadline: task.deadline ? new Date(task.deadline).toISOString() : null
       };
-      
+
       // Call backend API to create task
       const response = await taskService.createTask(taskData);
 
@@ -79,21 +79,21 @@ const TaskCreation = () => {
     <div className="min-h-screen bg-slate-950 text-slate-100 font-['Space_Grotesk']">
       <div className="max-w-6xl mx-auto px-6 py-10 md:px-10">
         <h1 className="text-2xl font-bold mb-10 text-slate-100">Create New Task</h1>
-      
+
         {error && (
           <div className="bg-rose-500/10 border border-rose-400/40 text-rose-200 px-4 py-3 rounded mb-4">
             {error}
           </div>
         )}
-      
+
         {loading ? (
           <div className="flex justify-center my-8">
             <LoadingSpinner />
           </div>
         ) : (
           <div className="bg-slate-900/70 rounded-2xl border border-slate-800/70 p-6">
-            <TaskForm 
-              onSubmit={handleSubmit} 
+            <TaskForm
+              onSubmit={handleSubmit}
               users={users}
               projects={projects}
               assigneeLocked={!canAssignTasks}

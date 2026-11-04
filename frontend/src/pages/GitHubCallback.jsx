@@ -31,16 +31,16 @@ const GitHubCallback = () => {
       try {
         // Clear any existing auth errors when this component mounts
         setAuthError && setAuthError(null);
-        
+
         const urlParams = new URLSearchParams(location.search);
         const code = urlParams.get('code');
         const state = urlParams.get('state');
-        
+
         // Check for explicit GitHub success format first
         const githubSuccess = urlParams.get('github_success');
         const githubUsername = urlParams.get('github_username');
         const userId = urlParams.get('user_id');
-        
+
         // Handle GitHub success parameter format
         // CodeQL js/user-controlled-bypass: ?github_success/user_id alone never
         // marks connected — server GET /github/status must say connected:true.
@@ -65,16 +65,16 @@ const GitHubCallback = () => {
               // Fail closed: forged params without server confirmation change nothing.
             }
           }
-          
+
           // Redirect to GitHub integration page
           setTimeout(() => {
             navigate('/github', { replace: true });
           }, 1000);
-          
+
           setProcessingComplete(true);
           return;
         }
-        
+
         // Check for error case
         const errorMsg = urlParams.get('error');
         if (errorMsg) {
@@ -82,14 +82,14 @@ const GitHubCallback = () => {
           setProcessingComplete(true);
           return;
         }
-        
+
         // Handle standard GitHub authorization code
         if (!code) {
           setError('No authorization code received from GitHub');
           setProcessingComplete(true);
           return;
         }
-        
+
         setStatus('Exchanging code for access token...');
 
         // Sessions are cookie-based (HttpOnly); authentication is proven by a
@@ -107,21 +107,21 @@ const GitHubCallback = () => {
           setProcessingComplete(true);
           return;
         }
-        
+
         // Exchange the code for an access token via our backend
         const response = await githubService.completeOAuthFlow(code, state);
-        
+
         if (response && (response.success || response.connected)) {
           setStatus('GitHub connected successfully!');
-          
+
           // Update the GitHub information in local storage
           const username = response.github_username || response.username || '';
           const updatedUser = authApi.updateGitHubStatus(true, username);
-          
+
           if (updatedUser && typeof setCurrentUser === 'function') {
             setCurrentUser(updatedUser);
           }
-          
+
           // Redirect to GitHub integration page after a short delay
           setTimeout(() => {
             navigate('/github', { replace: true });
@@ -144,7 +144,7 @@ const GitHubCallback = () => {
         setProcessingComplete(true);
       }
     };
-    
+
     handleCallback();
   }, [location.search, navigate, setCurrentUser, setAuthError, currentUser, processingComplete]);
 
@@ -168,19 +168,19 @@ const GitHubCallback = () => {
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
       <div className="w-full max-w-md p-8 bg-white rounded-lg shadow-md">
         <h1 className="text-2xl font-bold text-center text-gray-800 mb-6">GitHub Integration</h1>
-        
+
         {error ? (
           <div className="p-4 bg-red-100 border-l-4 border-red-500 text-red-700 mb-5">
             <p className="font-bold">Error</p>
             <p>{error}</p>
             <div className="mt-4 space-y-2">
-              <button 
+              <button
                 className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
                 onClick={handleRetry}
               >
                 Try Again
               </button>
-              <button 
+              <button
                 className="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
                 onClick={() => navigate('/github')}
               >

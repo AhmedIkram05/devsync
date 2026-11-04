@@ -23,7 +23,7 @@ export const githubApi = {
       throw error;
     }
   },
-  
+
   // Get user's repositories
   getRepositories: async () => {
     try {
@@ -33,7 +33,7 @@ export const githubApi = {
       throw error;
     }
   },
-  
+
   // Get repository issues
   getRepositoryIssues: async (repoId) => {
     try {
@@ -43,7 +43,7 @@ export const githubApi = {
       throw error;
     }
   },
-  
+
   // Link task with GitHub issue
   linkTaskWithGithub: async (taskId, data) => {
     try {
@@ -56,7 +56,7 @@ export const githubApi = {
       throw error;
     }
   },
-  
+
   // Get task's GitHub links
   getTaskGithubLinks: async (taskId) => {
     try {

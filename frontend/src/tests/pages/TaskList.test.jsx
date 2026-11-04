@@ -483,7 +483,7 @@ describe('TaskList page', () => {
 
     render(<TaskList />);
     await screen.findByText('Update Status Test');
-    
+
     const table = screen.getByRole('table');
     const statusSelect = within(table).getByDisplayValue('In Progress');
     fireEvent.change(statusSelect, { target: { value: 'completed' } });

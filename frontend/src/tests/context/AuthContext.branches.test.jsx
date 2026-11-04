@@ -94,7 +94,7 @@ describe('AuthContext branch coverage', () => {
     test('clears localStorage on invalid profile during init', async () => {
       const invalidUser = { id: 1, role: 'developer' }; // no email
       localStorage.setItem('user', JSON.stringify(invalidUser));
-      
+
       authApi.authApi.getCurrentUser.mockReturnValue(null);
 
       render(
@@ -113,7 +113,7 @@ describe('AuthContext branch coverage', () => {
     test('clears localStorage on invalid role during init', async () => {
       const invalidRoleUser = { id: 1, email: 'test@test.com', role: 'superuser' };
       localStorage.setItem('user', JSON.stringify(invalidRoleUser));
-      
+
       authApi.authApi.getCurrentUser.mockReturnValue(null);
 
       render(
@@ -130,15 +130,15 @@ describe('AuthContext branch coverage', () => {
     });
 
     test('initializes github_connected state from user data', async () => {
-      const user = { 
-        id: 1, 
-        email: 'test@test.com', 
-         
+      const user = {
+        id: 1,
+        email: 'test@test.com',
+
         role: 'developer',
         github_connected: true
       };
       localStorage.setItem('user', JSON.stringify(user));
-      
+
       authApi.authApi.getCurrentUser.mockReturnValue(user);
 
       render(
@@ -156,7 +156,7 @@ describe('AuthContext branch coverage', () => {
 
     test('handles corrupted localStorage JSON gracefully', async () => {
       localStorage.setItem('user', 'not valid json');
-      
+
       authApi.authApi.getCurrentUser.mockReturnValue(null);
 
       render(
@@ -174,14 +174,14 @@ describe('AuthContext branch coverage', () => {
     });
 
     test('validates role is in VALID_ROLES set', async () => {
-      const teamLeadUser = { 
-        id: 2, 
-        email: 'lead@test.com', 
-         
+      const teamLeadUser = {
+        id: 2,
+        email: 'lead@test.com',
+
         role: 'team_lead'
       };
       localStorage.setItem('user', JSON.stringify(teamLeadUser));
-      
+
       authApi.authApi.getCurrentUser.mockReturnValue(teamLeadUser);
 
       render(
@@ -198,14 +198,14 @@ describe('AuthContext branch coverage', () => {
     });
 
     test('validates admin role', async () => {
-      const adminUser = { 
-        id: 3, 
-        email: 'admin@test.com', 
-         
+      const adminUser = {
+        id: 3,
+        email: 'admin@test.com',
+
         role: 'admin'
       };
       localStorage.setItem('user', JSON.stringify(adminUser));
-      
+
       authApi.authApi.getCurrentUser.mockReturnValue(adminUser);
 
       render(
@@ -242,7 +242,7 @@ describe('AuthContext branch coverage', () => {
     test('verifyToken falls back to no-user when session is invalid', async () => {
       const userNoSession = { id: 1, role: 'developer' };
       localStorage.setItem('user', JSON.stringify(userNoSession));
-      
+
       authApi.authApi.getCurrentUser.mockReturnValue(null);
 
       render(
@@ -261,7 +261,7 @@ describe('AuthContext branch coverage', () => {
     test('verifyToken validates session via /me for a cached profile', async () => {
       const validUser = { id: 1, email: 'test@test.com',  role: 'developer' };
       localStorage.setItem('user', JSON.stringify(validUser));
-      
+
       authApi.authApi.getCurrentUser.mockReturnValue(validUser);
 
       render(
@@ -280,15 +280,15 @@ describe('AuthContext branch coverage', () => {
 
   describe('GitHub connection status branches', () => {
     test('initializes github_connected state when property present', async () => {
-      const user = { 
-        id: 1, 
-        email: 'test@test.com', 
-         
+      const user = {
+        id: 1,
+        email: 'test@test.com',
+
         role: 'developer',
         github_connected: false
       };
       localStorage.setItem('user', JSON.stringify(user));
-      
+
       authApi.authApi.getCurrentUser.mockReturnValue(user);
 
       render(
@@ -305,15 +305,15 @@ describe('AuthContext branch coverage', () => {
     });
 
     test('initializes github_connected state from user data', async () => {
-      const user = { 
-        id: 1, 
-        email: 'test@test.com', 
-         
+      const user = {
+        id: 1,
+        email: 'test@test.com',
+
         role: 'developer',
         github_connected: true
       };
       localStorage.setItem('user', JSON.stringify(user));
-      
+
       authApi.authApi.getCurrentUser.mockReturnValue(user);
 
       render(
@@ -330,14 +330,14 @@ describe('AuthContext branch coverage', () => {
     });
 
     test('handles missing github_connected property', async () => {
-      const user = { 
-        id: 1, 
-        email: 'test@test.com', 
-         
+      const user = {
+        id: 1,
+        email: 'test@test.com',
+
         role: 'developer'
       };
       localStorage.setItem('user', JSON.stringify(user));
-      
+
       authApi.authApi.getCurrentUser.mockReturnValue(user);
 
       render(
@@ -354,15 +354,15 @@ describe('AuthContext branch coverage', () => {
     });
 
     test('preserves github_connected true status', async () => {
-      const user = { 
-        id: 1, 
-        email: 'test@test.com', 
-         
+      const user = {
+        id: 1,
+        email: 'test@test.com',
+
         role: 'developer',
         github_connected: true
       };
       localStorage.setItem('user', JSON.stringify(user));
-      
+
       authApi.authApi.getCurrentUser.mockReturnValue(user);
 
       render(
@@ -381,15 +381,15 @@ describe('AuthContext branch coverage', () => {
 
   describe('Permissions loading branches', () => {
     test('uses permissions from localStorage if present', async () => {
-      const user = { 
-        id: 1, 
-        email: 'test@test.com', 
-         
+      const user = {
+        id: 1,
+        email: 'test@test.com',
+
         role: 'developer',
         permissions: ['can_create_projects', 'can_view_reports']
       };
       localStorage.setItem('user', JSON.stringify(user));
-      
+
       authApi.authApi.getCurrentUser.mockReturnValue(user);
 
       render(

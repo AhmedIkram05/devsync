@@ -53,7 +53,7 @@ describe('Conditional Rendering and Branching - Extended Coverage', () => {
       const user1 = { profile: { name: 'John' } };
       const user2 = { profile: null };
       const user3 = null;
-      
+
       expect(user1?.profile?.name).toBe('John');
       expect(user2?.profile?.name).toBe(undefined);
       expect(user3?.profile?.name).toBe(undefined);
@@ -63,7 +63,7 @@ describe('Conditional Rendering and Branching - Extended Coverage', () => {
       const value1 = null;
       const value2 = undefined;
       const value3 = 'actual value';
-      
+
       expect(value1 ?? 'default').toBe('default');
       expect(value2 ?? 'default').toBe('default');
       expect(value3 ?? 'default').toBe('actual value');
@@ -72,7 +72,7 @@ describe('Conditional Rendering and Branching - Extended Coverage', () => {
     test('distinguishes between falsy and nullish', () => {
       const falsy = 0;
       const nullish = null;
-      
+
       // || treats 0 as falsy
       expect(falsy || 'default').toBe('default');
       // ?? only treats null/undefined as nullish

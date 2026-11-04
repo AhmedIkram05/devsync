@@ -18,12 +18,12 @@ export const tasksApi = {
   getAllTasks: async () => {
     return await fetchWithAuth(`${BASE_URL}`);
   },
-  
+
   // Get single task
   getTaskById: async (taskId) => {
     return await fetchWithAuth(`${BASE_URL}/${taskId}`);
   },
-  
+
   // Update task
   updateTask: async (taskId, data) => {
     return await fetchWithAuth(`${BASE_URL}/${taskId}`, {
@@ -31,7 +31,7 @@ export const tasksApi = {
       body: JSON.stringify(data)
     });
   },
-  
+
   // Create new task
   createTask: async (data) => {
     return await fetchWithAuth(`${BASE_URL}`, {
@@ -39,14 +39,14 @@ export const tasksApi = {
       body: JSON.stringify(data)
     });
   },
-  
+
   // Delete task
   deleteTask: async (taskId) => {
     return await fetchWithAuth(`${BASE_URL}/${taskId}`, {
       method: 'DELETE'
     });
   },
-  
+
   // Add comment to task
   addComment: async (taskId, comment) => {
     return await fetchWithAuth(`${BASE_URL}/${taskId}/comments`, {

@@ -80,7 +80,7 @@ describe('Admin Flows', () => {
     cy.get('input[name="password"]').type('adminpassword');
     cy.contains('button', 'Sign In').click();
     cy.wait('@loginReq');
-    
+
     cy.get('body').then(($body) => {
       if ($body.find('button:contains("Skip For Now")').length > 0) {
         cy.contains('button', 'Skip For Now').click();
@@ -90,7 +90,7 @@ describe('Admin Flows', () => {
 
   it('loads admin dashboard with correct data', () => {
     cy.wait('@adminDash');
-    
+
     cy.contains('h1', 'Admin Dashboard').should('be.visible');
     cy.contains('Active Projects').parent().contains('5');
     cy.contains('Overdue Tasks').parent().contains('2');

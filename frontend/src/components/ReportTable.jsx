@@ -4,11 +4,11 @@ import { Link } from 'react-router-dom';
 const ReportTable = ({ data = [], type }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
-  
+
   const totalPages = Math.ceil(data.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedData = data.slice(startIndex, startIndex + itemsPerPage);
-  
+
   // Different column configurations based on report type
   const getHeaders = () => {
     switch(type) {
@@ -22,7 +22,7 @@ const ReportTable = ({ data = [], type }) => {
         return [];
     }
   };
-  
+
   // Renders the appropriate cell content based on report type and column
   const renderCell = (item, column) => {
     if (type === 'tasks') {
@@ -42,7 +42,7 @@ const ReportTable = ({ data = [], type }) => {
               taskStatus === 'in_progress' ? 'bg-sky-500/20 text-sky-300' :
               'bg-slate-700/50 text-slate-300'
             }`}>
-              {taskStatus === 'in_progress' ? 'In Progress' : 
+              {taskStatus === 'in_progress' ? 'In Progress' :
               taskStatus === 'todo' ? 'To Do' :
               taskStatus === 'review' ? 'Review' :
               taskStatus === 'backlog' ? 'Backlog' :
@@ -54,11 +54,11 @@ const ReportTable = ({ data = [], type }) => {
         case 'Progress':
           return (
             <div className="w-full bg-slate-800/50 rounded-full h-2">
-              <div 
+              <div
                 className={`h-2 rounded-full ${
-                  item.progress >= 100 ? 'bg-emerald-500' : 
-                  item.progress >= 50 ? 'bg-rose-500' : 
-                  item.progress > 0 ? 'bg-amber-500' : 
+                  item.progress >= 100 ? 'bg-emerald-500' :
+                  item.progress >= 50 ? 'bg-rose-500' :
+                  item.progress > 0 ? 'bg-amber-500' :
                   'bg-slate-700'
                 }`}
                 style={{ width: `${item.progress || 0}%` }}
@@ -69,7 +69,7 @@ const ReportTable = ({ data = [], type }) => {
           return formatDate(item.deadline);
         case 'Actions':
           return (
-            <Link 
+            <Link
               to={`/tasks/${item.id}`}
               className="text-rose-400 hover:text-rose-300"
             >
@@ -98,8 +98,8 @@ const ReportTable = ({ data = [], type }) => {
           return formatDate(item.last_updated || item.pushed_at || item.updated_at);
         case 'Actions':
           return (
-            <a 
-              href={item.html_url} 
+            <a
+              href={item.html_url}
               target="_blank"
               rel="noopener noreferrer"
               className="text-rose-400 hover:text-rose-300"
@@ -129,7 +129,7 @@ const ReportTable = ({ data = [], type }) => {
           return item.due_soon || 0;
         case 'Actions':
           return (
-            <Link 
+            <Link
               to={`/tasks?assignee=${item.id}`}
               className="text-rose-400 hover:text-rose-300"
             >
@@ -140,14 +140,14 @@ const ReportTable = ({ data = [], type }) => {
           return '';
       }
     }
-    
+
     return '';
   };
-  
+
   // Format date for display
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-    
+
     try {
       const date = new Date(dateString);
       return date.toLocaleDateString();
@@ -155,22 +155,22 @@ const ReportTable = ({ data = [], type }) => {
       return 'Invalid date';
     }
   };
-  
+
   // Handle pagination
   const handlePreviousPage = () => {
     if (currentPage > 1) {
       setCurrentPage(currentPage - 1);
     }
   };
-  
+
   const handleNextPage = () => {
     if (currentPage < totalPages) {
       setCurrentPage(currentPage + 1);
     }
   };
-  
+
   const headers = getHeaders();
-  
+
   if (!data || data.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-center py-6 text-slate-400">
@@ -178,7 +178,7 @@ const ReportTable = ({ data = [], type }) => {
       </div>
     );
   }
-  
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex-1 min-h-0 overflow-auto">
@@ -186,8 +186,8 @@ const ReportTable = ({ data = [], type }) => {
           <thead className="bg-slate-800/60">
             <tr>
               {headers.map((header, index) => (
-                <th 
-                  key={index} 
+                <th
+                  key={index}
                   className="px-6 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider"
                 >
                   {header}
@@ -208,7 +208,7 @@ const ReportTable = ({ data = [], type }) => {
           </tbody>
         </table>
       </div>
-      
+
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="py-3 flex items-center justify-between border-t border-slate-800/70 px-4">
@@ -262,12 +262,12 @@ const ReportTable = ({ data = [], type }) => {
                     <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
                 </button>
-                
+
                 {/* Page Numbers */}
                 {[...Array(totalPages)].map((_, i) => {
                   const pageNumber = i + 1;
                   const isCurrentPage = pageNumber === currentPage;
-                  
+
                   // Only show a subset of pages if there are many
                   if (totalPages > 7) {
                     if (
@@ -303,7 +303,7 @@ const ReportTable = ({ data = [], type }) => {
                     }
                     return null;
                   }
-                  
+
                   // Show all pages if there are few
                   return (
                     <button
@@ -319,7 +319,7 @@ const ReportTable = ({ data = [], type }) => {
                     </button>
                   );
                 })}
-                
+
                 <button
                   onClick={handleNextPage}
                   disabled={currentPage === totalPages}

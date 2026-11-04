@@ -64,13 +64,13 @@ const Login = () => {
           <h1 className="text-3xl font-semibold text-slate-100 mt-3">Welcome back</h1>
           <h2 className="text-sm text-slate-400 mt-2">Sign in to continue</h2>
         </div>
-        
+
         {bannerMessage && (
           <div className="bg-rose-500/10 border border-rose-400/40 text-rose-200 px-4 py-3 rounded mb-4">
             {bannerMessage}
           </div>
         )}
-        
+
         <form onSubmit={formik.handleSubmit} noValidate>
           <div className="mb-4">
             <label htmlFor="login-email" className="block text-slate-300 text-sm font-medium mb-2">
@@ -90,7 +90,7 @@ const Login = () => {
               <p className="mt-1 text-xs text-rose-300">{formik.errors.email}</p>
             )}
           </div>
-          
+
           <div className="mb-6">
             <label htmlFor="login-password" className="block text-slate-300 text-sm font-medium mb-2">
               Password
@@ -109,7 +109,7 @@ const Login = () => {
               <p className="mt-1 text-xs text-rose-300">{formik.errors.password}</p>
             )}
           </div>
-          
+
           <div className="flex items-center justify-between mb-6">
             <button
               type="submit"
@@ -119,7 +119,7 @@ const Login = () => {
               {formik.isSubmitting || loading ? "Signing In..." : "Sign In"}
             </button>
           </div>
-          
+
           <div className="text-center">
             <p className="text-slate-400">
               Don't have an account?{" "}

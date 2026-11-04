@@ -125,10 +125,10 @@ const TaskList = () => {
     try {
       setUpdating(true);
       await taskService.updateTask(taskId, { status: newStatus });
-      
+
       // Update the task in the local state instead of refetching all tasks
-      setTasks(prevTasks => 
-        prevTasks.map(task => 
+      setTasks(prevTasks =>
+        prevTasks.map(task =>
           task.id === taskId ? { ...task, status: newStatus } : task
         )
       );
@@ -182,7 +182,7 @@ const TaskList = () => {
 
     return statusMap[status] || { class: 'bg-gray-100 text-gray-800', text: status, icon: '○' };
   };
-  
+
   // Get priority badge
   const getPriorityBadge = (priority) => {
     const priorityMap = {
@@ -190,7 +190,7 @@ const TaskList = () => {
       'medium': { class: 'bg-amber-500/15 text-amber-200', text: 'Medium' },
       'low': { class: 'bg-sky-500/15 text-sky-200', text: 'Low' }
     };
-    
+
     return priorityMap[priority] || { class: 'bg-gray-100 text-gray-800', text: priority };
   };
 
@@ -233,7 +233,7 @@ const TaskList = () => {
           <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-6">
             <h1 className="text-2xl font-bold mb-4 md:mb-0 text-slate-100">Tasks</h1>
             <div className="flex flex-col md:flex-row gap-4">
-              <button 
+              <button
                 onClick={() => fetchTasks(serverParams)}
                 disabled={updating}
                 className={`inline-flex items-center px-4 py-2 rounded ${
@@ -247,9 +247,9 @@ const TaskList = () => {
                 </svg>
                 Refresh
               </button>
-              
+
               {canCreateTasks && (
-                <button 
+                <button
                   onClick={() => navigate('/admin/create-task')}
                   className="inline-flex items-center px-4 py-2 rounded-full bg-rose-500/90 hover:bg-rose-400 text-white"
                 >
@@ -261,19 +261,19 @@ const TaskList = () => {
               )}
             </div>
           </div>
-          
+
           {error && (
             <div className="bg-rose-500/10 border border-rose-400/40 text-rose-200 px-4 py-3 rounded mb-4">
               {error}
-              <button 
-                onClick={() => setError(null)} 
+              <button
+                onClick={() => setError(null)}
                 className="float-right font-bold text-rose-200"
               >
                 &times;
               </button>
             </div>
           )}
-          
+
           {/* Filters */}
           <div className="mb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
             <div>
@@ -294,7 +294,7 @@ const TaskList = () => {
                 <option value="completed">Completed</option>
               </select>
             </div>
-            
+
             <div>
               <label htmlFor="priorityFilter" className="block text-sm font-medium text-slate-300 mb-1">
                 Priority
@@ -362,7 +362,7 @@ const TaskList = () => {
                 <option value="progress">Progress (High First)</option>
               </select>
             </div>
-            
+
             <div>
               <label htmlFor="searchFilter" className="block text-sm font-medium text-slate-300 mb-1">
                 Search
@@ -396,8 +396,8 @@ const TaskList = () => {
               <button
                 onClick={() => setFilters({...filters, scope: 'my'})}
                 className={`px-6 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-all ${
-                  filters.scope === 'my' 
-                    ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20' 
+                  filters.scope === 'my'
+                    ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20'
                     : 'text-slate-400 hover:text-slate-300'
                 }`}
               >
@@ -406,8 +406,8 @@ const TaskList = () => {
               <button
                 onClick={() => setFilters({...filters, scope: 'all'})}
                 className={`px-6 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-all ${
-                  filters.scope === 'all' 
-                    ? 'bg-slate-900 text-white border border-slate-800' 
+                  filters.scope === 'all'
+                    ? 'bg-slate-900 text-white border border-slate-800'
                     : 'text-slate-400 hover:text-slate-300'
                 }`}
               >
@@ -415,7 +415,7 @@ const TaskList = () => {
               </button>
             </div>
           </div>
-          
+
           {/* Task List */}
           {sortedTasks.length === 0 ? (
             <div className="text-center py-10 text-slate-400 border border-slate-800/70 rounded-lg bg-slate-900/60">
@@ -470,7 +470,7 @@ const TaskList = () => {
                     const statusInfo = getStatusInfo(task.status);
                     const priorityInfo = getPriorityBadge(task.priority);
                     const isTaskOverdue = isOverdue(task.deadline) && task.status !== 'completed';
-                    
+
                     return (
                       <tr key={task.id} className="hover:bg-slate-900/80 cursor-pointer" onClick={() => handleViewDetails(task.id)}>
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -512,11 +512,11 @@ const TaskList = () => {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             <div className="w-full bg-slate-800/70 rounded-full h-2.5 mr-2 max-w-[100px]">
-                              <div 
+                              <div
                                 className={`h-2.5 rounded-full ${
-                                  task.progress >= 100 ? 'bg-emerald-400' : 
-                                  task.progress >= 50 ? 'bg-sky-400' : 
-                                  task.progress > 0 ? 'bg-amber-400' : 
+                                  task.progress >= 100 ? 'bg-emerald-400' :
+                                  task.progress >= 50 ? 'bg-sky-400' :
+                                  task.progress > 0 ? 'bg-amber-400' :
                                   'bg-slate-600'
                                 }`}
                                 style={{ width: `${task.progress || 0}%` }}

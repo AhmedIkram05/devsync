@@ -10,30 +10,30 @@ const { useAuth } = require('../../context/AuthContext');
 
 jest.mock('../../services/utils/api', () => ({
   dashboardService: {
-    getAdminDashboardStats: jest.fn(() => Promise.resolve({ 
-      tasks: { review: 1, done: 2, todo: 3 }, 
+    getAdminDashboardStats: jest.fn(() => Promise.resolve({
+      tasks: { review: 1, done: 2, todo: 3 },
       projects: { total: 5, active: 3 },
       kpis: { in_review_tasks: 1, due_soon_tasks: 0 }
     })),
   },
-  userService: { 
-    getAllUsers: jest.fn(() => Promise.resolve([{ id: 7, name: 'Admin', role: 'admin', email: 'admin@test.com' }])) 
+  userService: {
+    getAllUsers: jest.fn(() => Promise.resolve([{ id: 7, name: 'Admin', role: 'admin', email: 'admin@test.com' }]))
   },
-  auditLogService: { 
-    getLogs: jest.fn(() => Promise.resolve({ logs: [], total: 0 })) 
+  auditLogService: {
+    getLogs: jest.fn(() => Promise.resolve({ logs: [], total: 0 }))
   },
-  projectService: { 
+  projectService: {
     getAllProjects: jest.fn(() => Promise.resolve([
       { id: 10, name: 'P', status: 'active', team_members: [{ id: 7 }], created_by: 7 }
-    ])) 
+    ]))
   },
-  taskService: { 
+  taskService: {
     getAllTasks: jest.fn(() => Promise.resolve([
       { id: 100, project_id: 10, status: 'todo', deadline: '2000-01-01T00:00:00Z', assigned_to: 7 }
-    ])) 
+    ]))
   },
-  reportService: { 
-    getSavedReports: jest.fn(() => Promise.resolve({ reports: [] })) 
+  reportService: {
+    getSavedReports: jest.fn(() => Promise.resolve({ reports: [] }))
   },
 }));
 

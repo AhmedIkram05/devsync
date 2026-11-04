@@ -25,12 +25,12 @@ describe('API Response Transformations and Edge Cases', () => {
         created_at: '2026-05-09',
         updated_at: '2026-05-09'
       };
-      
+
       const normalizeTask = (task) => ({
         ...task,
         displayDate: task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'
       });
-      
+
       const normalized = normalizeTask(response);
       expect(normalized.title).toBe('Task 1');
       expect(normalized.displayDate).not.toBe('No date');
@@ -315,7 +315,7 @@ describe('API Response Transformations and Edge Cases', () => {
         { id: 2, title: 'Add feature', description: 'New feature' }
       ];
       const search = 'bug';
-      const searched = tasks.filter(t => 
+      const searched = tasks.filter(t =>
         t.title.toLowerCase().includes(search.toLowerCase()) ||
         t.description.toLowerCase().includes(search.toLowerCase())
       );

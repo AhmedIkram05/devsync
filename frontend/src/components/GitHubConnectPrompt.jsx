@@ -24,16 +24,16 @@ function GitHubConnectPrompt() {
           </svg>
           <h2 id="github-connect-title" className="text-2xl font-bold mt-4 text-slate-100">Connect GitHub Account</h2>
         </div>
-        
+
         <p className="text-slate-300 mb-6">
           Connecting your GitHub account enables you to:
         </p>
-        
+
         <ul className="list-disc pl-5 mb-6 text-slate-300">
           <li className="mb-1">Link DevSync tasks to GitHub issues & PRs</li>
           <li className="mb-1">Track progress of repositories and pull requests</li>
         </ul>
-        
+
         <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
           <button
             onClick={() => handleGithubPromptResponse(true)}
@@ -48,7 +48,7 @@ function GitHubConnectPrompt() {
             Skip For Now
           </button>
         </div>
-        
+
         <p className="text-xs text-slate-500 mt-4 text-center">
           You can always connect your GitHub account later from the GitHub integration page.
         </p>

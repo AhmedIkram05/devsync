@@ -74,7 +74,7 @@ describe('GitHub Connect Flows', () => {
   it('handles github callback redirect and linking', () => {
     // Setup initial state as if prompt was skipped previously
     cy.contains('button', 'Skip For Now').click();
-    
+
     // Mock the callback exchange
     cy.intercept('POST', '**/api/v1/github/callback', {
       statusCode: 200,

@@ -115,7 +115,7 @@ describe('fetchWithAuth additional branches', () => {
       headers: { get: () => 'application/json' }
     };
     global.fetch = jest.fn(() => Promise.resolve(resp));
-    
+
     // Mock window.location.href setter
     delete window.location;
     window.location = { href: '' };
@@ -138,7 +138,7 @@ describe('fetchWithAuth additional branches', () => {
     const resp = {
       status: 429,
       ok: false,
-      headers: { 
+      headers: {
         get: (name) => name === 'Retry-After' ? '60' : 'application/json'
       }
     };

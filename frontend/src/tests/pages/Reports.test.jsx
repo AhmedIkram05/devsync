@@ -516,7 +516,7 @@ describe('Reports page', () => {
 
     render(<Reports />);
     expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
-    
+
     expect(screen.getByText(/No generated reports yet/i)).toBeInTheDocument();
   });
 
@@ -531,7 +531,7 @@ describe('Reports page', () => {
 
     render(<Reports />);
     expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
-    
+
     // Both report types should be shown
     expect(screen.getAllByText('Task Report').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('GitHub Activity').length).toBeGreaterThanOrEqual(1);
@@ -565,7 +565,7 @@ describe('Reports page', () => {
 
     render(<Reports />);
     expect(await screen.findByText('Reports & Analytics')).toBeInTheDocument();
-    
+
     fireEvent.click(screen.getByRole('button', { name: /Generate Report/i }));
 
     await waitFor(() => {

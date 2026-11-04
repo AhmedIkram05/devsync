@@ -234,7 +234,7 @@ describe('NotificationContext branch coverage', () => {
 
       // Clear mocks to verify it doesn't call again
       api.notificationService.getNotifications.mockClear();
-      
+
       // Force a re-render but shouldn't call API due to rate limit
       rerender(
         <NotificationProvider>

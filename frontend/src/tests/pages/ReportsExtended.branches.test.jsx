@@ -17,11 +17,11 @@ describe('Reports Coverage - Additional Branches', () => {
       const reportCache = new Map();
       const reportKey = 'task_2026-05-01_2026-05-31';
       const mockData = { tasks: [{ id: 1, title: 'Task 1' }] };
-      
+
       if (!reportCache.has(reportKey)) {
         reportCache.set(reportKey, mockData);
       }
-      
+
       const cachedData = reportCache.get(reportKey);
       expect(cachedData).toEqual(mockData);
     });
