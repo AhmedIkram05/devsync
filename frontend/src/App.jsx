@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
+import { logger } from "./utils/logger";
 import TaskList from "./pages/TaskList";
 import GitHubIntegration from "./pages/GitHubIntegration";
 import AdminDashboard from "./pages/AdminDashboard";
@@ -60,13 +61,13 @@ const ProtectedRoute = ({ children, allowedRoles = [], requiredPermission = null
   // a populated profile (from login or /auth/me) is the authentication proof,
   // there is no client-held token.
   if (!currentUser) {
-    console.log("Protected route: No user found, redirecting to login");
+    logger.info("Protected route: No user found, redirecting to login");
     return <Navigate to="/login" replace />;
   }
 
   // If allowedRoles is specified, check if the user has the required role
   if (allowedRoles.length > 0 && !allowedRoles.includes(currentUser.role)) {
-    console.log(`User role ${currentUser.role} not allowed for this route`);
+    logger.info(`User role ${currentUser.role} not allowed for this route`);
     return <Navigate to="/forbidden" replace />;
   }
 
@@ -74,7 +75,7 @@ const ProtectedRoute = ({ children, allowedRoles = [], requiredPermission = null
   // (permissions come from GET /auth/permissions -> {"role", "permissions"}).
   const canFn = typeof can === 'function' ? can : () => false;
   if (requiredPermission && !canFn(requiredPermission)) {
-    console.log(`User lacks permission ${requiredPermission} for this route`);
+    logger.info(`User lacks permission ${requiredPermission} for this route`);
     return <Navigate to="/forbidden" replace />;
   }
 
