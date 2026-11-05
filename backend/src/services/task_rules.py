@@ -11,10 +11,12 @@ PROJECT_SCOPE_ROLES = {"admin", "team_lead"}
 
 
 def normalize_task_status(status):
+    """Normalize a task status string to lowercase snake_case."""
     return (status or "").lower().replace("-", "_").replace(" ", "_")
 
 
 def parse_task_deadline(deadline):
+    """Parse a deadline value into a date, or None if empty."""
     if deadline in (None, ""):
         return None
 
@@ -87,6 +89,7 @@ def get_project_scope_ids(user_id, user_role):
 
 
 def is_task_overdue(task, *, project_ids=None, assigned_to=None, now=None):
+    """Return True if task is past its deadline and not in an excluded status."""
     status = normalize_task_status(getattr(task, "status", None))
     if status in OVERDUE_EXCLUDED_STATUSES:
         return False
@@ -126,4 +129,5 @@ def is_task_overdue(task, *, project_ids=None, assigned_to=None, now=None):
 
 
 def count_overdue_tasks(tasks, **scope):
+    """Count overdue tasks within the given scope filters."""
     return sum(1 for task in tasks if is_task_overdue(task, **scope))
