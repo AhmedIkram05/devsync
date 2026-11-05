@@ -244,6 +244,12 @@ Open **<http://localhost:3000>** - the frontend nginx proxies `/api/*` and `/soc
 
 > **Port conflict?** Docker Desktop binds port 3000 on some setups. Use `DEVSYNC_FRONTEND_PORT=3001 make up`.
 
+### Troubleshooting
+
+- **Port 3000 in use:** set `DEVSYNC_FRONTEND_PORT=3001` before `make up`.
+- **Backend logs:** `docker compose logs -f backend`.
+- **JWT secret:** generate a strong `SECRET_KEY`/`JWT_SECRET_KEY` for non-local deploys.
+
 ### Configuration
 
 | Variable | Purpose | Default |
