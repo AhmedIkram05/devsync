@@ -91,8 +91,8 @@ CD.
 
 ## Images
 
-- Backend: _TODO — `REGION-docker.pkg.dev/PROJECT/devsync-repo/devsync-backend@sha256:<digest>`_
-- Frontend: _TODO — `REGION-docker.pkg.dev/PROJECT/devsync-repo/devsync-frontend@sha256:<digest>`_
+- Backend: manual step — fill `REGION-docker.pkg.dev/PROJECT/devsync-repo/devsync-backend@sha256:<digest>` once the standing env is up
+- Frontend: manual step — fill `REGION-docker.pkg.dev/PROJECT/devsync-repo/devsync-frontend@sha256:<digest>` once the standing env is up
 
 Digest-pinned two ways to the same result: CD (`k8s-cd.yml`) uses `kustomize edit set image`; local deploys use the `make k8s-up` render-pipe (its guard refuses `:latest` placeholders without `BACKEND_DIGEST`/`FRONTEND_DIGEST`).
 
@@ -104,5 +104,5 @@ cosign verify --certificate-identity-regexp 'https://github.com/<org>/DevSync.*'
 
 ## Evidence
 
-- Live gif: `docs/demo/k8s-live.gif` — _TODO, captured anytime the standing env is up (login → task update → realtime broadcast)_
-- Dashboard: `docs/demo/k8s-dashboard.png` — _TODO, GMP screenshot anytime the standing env is up_
+- Live gif: `docs/demo/k8s-live.gif` — manual step, captured anytime the standing env is up (login → task update → realtime broadcast)
+- Dashboard: `docs/demo/k8s-dashboard.png` — manual step, GMP screenshot anytime the standing env is up
