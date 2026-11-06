@@ -44,7 +44,7 @@ db-reset: ## Destroy PostgreSQL data volume & restart
 	-$(DC) volume rm devsync-postgres-data
 	$(DC) up -d --wait devsync-postgres
 
-k8s-up: ## Render + deploy managed-db overlay (Cloud SQL; requires GCP_PROJECT_ID + BACKEND_DIGEST + FRONTEND_DIGEST; GCP_REGION/AR_REPOSITORY optional) (requires GCP_PROJECT_ID + BACKEND_DIGEST + FRONTEND_DIGEST; GCP_REGION/AR_REPOSITORY optional)
+k8s-up: ## Render + deploy managed-db overlay (Cloud SQL; requires GCP_PROJECT_ID + BACKEND_DIGEST + FRONTEND_DIGEST; GCP_REGION/AR_REPOSITORY optional)
 	@if [ -z "$(GCP_PROJECT_ID)" ] || [ -z "$(BACKEND_DIGEST)" ] || [ -z "$(FRONTEND_DIGEST)" ]; then \
 		echo "error: refusing to apply unresolved/placeholder images or tokens."; \
 		echo "usage: make k8s-up GCP_PROJECT_ID=<project-id> BACKEND_DIGEST=sha256:<hex> FRONTEND_DIGEST=sha256:<hex>"; \

@@ -68,3 +68,8 @@ graphify-out
 *.tfstate
 *.tfstate.*
 .terraform.tfstate.lock.info
+
+.ruff_cache/
+frontend/coverage/
+frontend/coverage.lcov
+.mypy_cache/
