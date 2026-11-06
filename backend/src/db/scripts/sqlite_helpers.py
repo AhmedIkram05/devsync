@@ -6,6 +6,7 @@ _VALID_SQLITE_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def assert_valid_sqlite_identifier(identifier):
+    """Raise ValueError unless identifier is a valid SQLite identifier."""
     if not isinstance(identifier, str) or not _VALID_SQLITE_IDENTIFIER.match(identifier):
         raise ValueError(f"Invalid SQLite identifier: {identifier!r}")
     return identifier
