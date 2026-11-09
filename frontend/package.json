@@ -54,7 +54,7 @@
     "babel-plugin-istanbul": "^8.0.0",
     "babel-preset-react-app": "^10.1.0",
     "cypress": "^16.2.1",
-    "eslint": "^8.57.1",
+    "eslint": "^10.14.0",
     "eslint-config-react-app": "^7.0.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "identity-obj-proxy": "^3.0.0",
