@@ -59,7 +59,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "identity-obj-proxy": "^3.0.0",
     "istanbul-lib-coverage": "^3.2.2",
-    "jest": "^27.5.1",
+    "jest": "^30.5.2",
     "jest-environment-jsdom": "^27.5.1",
     "jest-watch-typeahead": "^1.1.0",
     "nyc": "^18.0.0",
