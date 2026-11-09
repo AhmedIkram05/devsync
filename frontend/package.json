@@ -61,7 +61,7 @@
     "istanbul-lib-coverage": "^3.2.2",
     "jest": "^27.5.1",
     "jest-environment-jsdom": "^27.5.1",
-    "jest-watch-typeahead": "^1.1.0",
+    "jest-watch-typeahead": "^3.0.1",
     "nyc": "^18.0.0",
     "postcss": "^8.5.32",
     "react-app-polyfill": "^3.0.0",
