@@ -51,8 +51,7 @@ describe('TaskList page branch coverage', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    delete window.location;
-    window.location = new URL('http://localhost/tasks');
+    window.history.replaceState({}, '', '/tasks');
 
     api.taskService = {
       getAllTasks: jest.fn().mockResolvedValue(mockTasks),
@@ -422,7 +421,7 @@ describe('TaskList page branch coverage', () => {
 
     test('handles deep-link assigned_to parameter', async () => {
       useAuth.mockReturnValue({ currentUser: mockUser });
-      window.location.search = '?assigned_to=1';
+      window.history.replaceState({}, '', '/tasks?assigned_to=1');
 
       render(
         <MemoryRouter initialEntries={['/tasks?assigned_to=1']}>
@@ -439,7 +438,7 @@ describe('TaskList page branch coverage', () => {
 
     test('handles deep-link assignee parameter', async () => {
       useAuth.mockReturnValue({ currentUser: mockUser });
-      window.location.search = '?assignee=1';
+      window.history.replaceState({}, '', '/tasks?assignee=1');
 
       render(
         <MemoryRouter initialEntries={['/tasks?assignee=1']}>
