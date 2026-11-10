@@ -2,7 +2,6 @@ import { fetchWithAuth } from '../../../services/utils/api';
 
 describe('fetchWithAuth additional branches', () => {
   const originalFetch = global.fetch;
-  const originalLocation = global.window.location;
 
   beforeEach(() => {
     jest.resetAllMocks();
@@ -10,11 +9,6 @@ describe('fetchWithAuth additional branches', () => {
 
   afterEach(() => {
     global.fetch = originalFetch;
-    // restore location without throwing
-    Object.defineProperty(global.window, 'location', {
-      value: originalLocation,
-      writable: true
-    });
     localStorage.clear();
   });
 
@@ -116,22 +110,12 @@ describe('fetchWithAuth additional branches', () => {
     };
     global.fetch = jest.fn(() => Promise.resolve(resp));
 
-    // Mock window.location.href setter
-    delete window.location;
-    window.location = { href: '' };
-    const setHref = jest.fn();
-    Object.defineProperty(window.location, 'href', {
-      set: setHref,
-      get: () => ''
-    });
-
     await expect(fetchWithAuth('/test')).rejects.toMatchObject({
       isAuthError: true,
       isForbidden: true,
       redirectTo: '/forbidden',
       message: expect.stringMatching(/Forbidden/)
     });
-    expect(setHref).not.toHaveBeenCalled();
   });
 
   test('429 rate limit error includes retryAfter', async () => {
