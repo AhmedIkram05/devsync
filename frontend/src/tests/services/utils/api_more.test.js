@@ -2,16 +2,9 @@ import { fetchWithAuth } from '../../../services/utils/api';
 
 describe('fetchWithAuth additional branches', () => {
   const originalFetch = global.fetch;
-  const originalLocation = window.location;
-
-  beforeEach(() => {
-    delete window.location;
-    window.location = { href: '' };
-  });
 
   afterEach(() => {
     global.fetch = originalFetch;
-    window.location = originalLocation;
     jest.clearAllMocks();
     localStorage.clear();
   });
