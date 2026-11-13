@@ -200,15 +200,10 @@ export const githubService = {
         })
       });
 
-      // If successful, update the user's GitHub connection status
-      if (data && data.success) {
-        // Update the local user state with GitHub connection info
-        authApi.updateGitHubStatus(
-          true,
-          data.github_username || ''
-        );
-      }
-
+      // Return the server payload only. The caller resolves the canonical
+      // username from GET /github/status before persisting it — the OAuth
+      // callback response must never reach client storage (CodeQL
+      // js/clear-text-storage-of-sensitive-data).
       return data;
     } catch (error) {
       console.error('Error completing GitHub OAuth flow:', error);
