@@ -114,9 +114,11 @@ const GitHubCallback = () => {
         if (response && (response.success || response.connected)) {
           setStatus('GitHub connected successfully!');
 
-          // Update the GitHub information in local storage
-          const username = response.github_username || response.username || '';
-          const updatedUser = authApi.updateGitHubStatus(true, username);
+          // Resolve the username from the server status, never from the OAuth
+          // callback payload: callback responses can carry token material and
+          // must not reach client storage (CodeQL clear-text-storage).
+          const serverStatus = await githubService.checkConnection();
+          const updatedUser = authApi.updateGitHubStatus(true, serverStatus?.username || '');
 
           if (updatedUser && typeof setCurrentUser === 'function') {
             setCurrentUser(updatedUser);

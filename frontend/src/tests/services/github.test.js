@@ -119,7 +119,7 @@ describe('githubService', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  test('completeOAuthFlow updates github status and clears stored state', async () => {
+  test('completeOAuthFlow returns the payload without persisting it', async () => {
     sessionStorage.setItem('github_oauth_state', 'state-123');
     sessionStorage.setItem('github_oauth_state_ts', String(Date.now()));
     global.fetch.mockResolvedValue(
@@ -132,7 +132,9 @@ describe('githubService', () => {
     const result = await githubService.completeOAuthFlow('oauth-code', 'state-123');
 
     expect(result.success).toBe(true);
-    expect(authApi.updateGitHubStatus).toHaveBeenCalledWith(true, 'octocat');
+    // The callback payload stays in memory; callers persist a username only
+    // after GET /github/status confirms it (clear-text-storage guard).
+    expect(authApi.updateGitHubStatus).not.toHaveBeenCalled();
     expect(sessionStorage.getItem('github_oauth_state')).toBeNull();
   });
 

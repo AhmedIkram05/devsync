@@ -59,7 +59,9 @@ describe('GitHubCallback page', () => {
     githubService.completeOAuthFlow.mockReset();
     githubService.completeOAuthFlow.mockResolvedValue({
       success: true,
-      github_username: 'octocat',
+      // Deliberately different from the server status username: the page must
+      // never persist fields straight from the OAuth callback payload.
+      github_username: 'payload-octocat',
     });
 
     githubService.checkConnection.mockReset();
@@ -167,6 +169,7 @@ describe('GitHubCallback page', () => {
     });
 
     await waitFor(() => {
+      expect(githubService.checkConnection).toHaveBeenCalled();
       expect(authApi.updateGitHubStatus).toHaveBeenCalledWith(true, 'octocat');
     });
 
