@@ -31,9 +31,8 @@ export const useAuthSession = () => {
         if (userData && userData.id && userData.email && hasValidRole(userData)) {
           if (JSON.stringify(userData) !== userJson) {
             // Only the sanitized profile (id, email, role, username) is cached here for anti-flicker.
-            // Session tokens are never stored — they live in HttpOnly cookies. CodeQL's
-            // js/clear-text-storage-of-sensitive-data flags this line; that is a deliberate false
-            // positive and is dismissed in the Security tab (inline suppression is not honoured).
+            // Session tokens are never stored — they live in HttpOnly cookies, and OAuth callback
+            // payloads are never persisted (callers resolve them from server status first).
             localStorage.setItem('user', JSON.stringify(userData));
           }
           return userData;
@@ -360,7 +359,7 @@ export const useAuthSession = () => {
       });
 
       // Sanitized profile only; no tokens are persisted anywhere in the client — the session lives
-      // in HttpOnly cookies. See the note above about the dismissed clear-text-storage alert.
+      // in HttpOnly cookies, and OAuth callback payloads never reach this path.
       localStorage.setItem("user", JSON.stringify(updated));
       return updated;
     });

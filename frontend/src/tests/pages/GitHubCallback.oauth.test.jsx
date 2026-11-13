@@ -132,10 +132,12 @@ describe('GitHubCallback OAuth single-owner strict state', () => {
       </React.StrictMode>
     );
 
+    const callbackCalls = () =>
+      global.fetch.mock.calls.filter(([url]) => String(url).includes('/github/callback'));
     await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(callbackCalls()).toHaveLength(1);
     });
-    const [url, options] = global.fetch.mock.calls[0];
+    const [url, options] = callbackCalls()[0];
     expect(url).toContain('/api/v1/github/callback');
     expect(JSON.parse(options.body)).toEqual({ code: 'oauth-code', state: 'oauth-state' });
     expect(await screen.findByText(/GitHub connected successfully!/i)).toBeInTheDocument();
