@@ -132,6 +132,11 @@ Two surfaces are measured separately on purpose:
 | windowed PRs | 11 | 11 | 3,591 | **444** |
 | recent commits | 31 | 31 | 581 | **440** |
 
-Parity tolerance 0 (exact match). The windowed-PR path drops from ~3.6 s of
-page walking to one Search API call; commits were already one page at this
-volume, so their gain is smaller. Re-run before changing the flag.
+Parity tolerance 0 (exact match on this window). The windowed-PR path drops
+from ~3.6 s of page walking to one Search API call; commits were already one
+page at this volume, so their gain is smaller. Re-run before changing the flag.
+
+The PR count uses the Search API's date-granular `created:>=YYYY-MM-DD`
+qualifier, so it can include PRs created earlier on the boundary date than the
+REST path's exact `now - N days` cutoff (at most one day's worth). The commit
+count uses the exact `since` timestamp. Both matched exactly in this run.
