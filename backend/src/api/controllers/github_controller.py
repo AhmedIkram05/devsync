@@ -352,7 +352,7 @@ def get_github_repositories():
     else:
         repositories = github_client.get_user_repositories(page=page, per_page=per_page)
     api_time = time.time() - api_start
-    logger.info(f"[PERF] GitHub API call took {api_time:.2f}s - got {len(repositories)} repos")
+    logger.info("[PERF] GitHub API call took %.2fs - got %s repos", api_time, len(repositories))
 
     # All GitHub network IO happens here, before the database phase: the
     # transaction must not straddle the slow (rate-limit-aware) activity fetch.
@@ -414,7 +414,7 @@ def get_github_repositories():
     formatted_response = _persist_github_repositories(repositories, activity_results, include_activity)
 
     total_time = time.time() - start_time
-    logger.info(f"[PERF] get_github_repositories COMPLETE - total time: {total_time:.2f}s")
+    logger.info("[PERF] get_github_repositories COMPLETE - total time: %.2fs", total_time)
 
     return jsonify({"repositories": formatted_response})
 
@@ -508,7 +508,7 @@ def _persist_github_repositories(repositories, activity_results, include_activit
         flush_start = time.time()
         db.session.flush()
         flush_time = time.time() - flush_start
-        logger.info(f"[PERF] Database flush took {flush_time:.2f}s - added {len(new_repos)} new repos")
+        logger.info("[PERF] Database flush took %.2fs - added %s new repos", flush_time, len(new_repos))
 
     # Now build the final formatted response with IDs
     formatted_response = []
