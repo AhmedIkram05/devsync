@@ -1,5 +1,4 @@
 import { fetchWithAuth } from './client';
-import { taskService } from './tasks';
 
 const getDateRangeStart = (dateRange) => {
   const now = new Date();
@@ -49,47 +48,6 @@ const toSafeMetricValue = (value, fallback = 0) => {
   return Number.isFinite(numericValue) ? numericValue : fallback;
 };
 
-// List endpoints cap at 100 rows per page. Aggregates (report totals, developer
-// stats) must see every row, so page through to the last page instead of
-// silently counting only the first 100.
-const PAGE_SIZE = 100;
-
-const fetchAllTaskPages = async () => {
-  const first = await taskService.getTasksPaginated({ page: 1, per_page: PAGE_SIZE });
-  const items = [...first.items];
-  const pages = first.pagination?.pages || 1;
-
-  if (pages > 1) {
-    const rest = await Promise.all(
-      Array.from({ length: pages - 1 }, (_, index) =>
-        taskService.getTasksPaginated({ page: index + 2, per_page: PAGE_SIZE })
-      )
-    );
-    rest.forEach((page) => items.push(...page.items));
-  }
-
-  return items;
-};
-
-const fetchAllUsers = async () => {
-  const first = await fetchWithAuth('users?page=1&per_page=' + PAGE_SIZE);
-  const users = Array.isArray(first?.users) ? [...first.users] : [];
-  const pages = first?.pagination?.pages || 1;
-
-  if (pages > 1) {
-    const rest = await Promise.all(
-      Array.from({ length: pages - 1 }, (_, index) =>
-        fetchWithAuth(`users?page=${index + 2}&per_page=${PAGE_SIZE}`)
-      )
-    );
-    rest.forEach((page) => {
-      if (Array.isArray(page?.users)) users.push(...page.users);
-    });
-  }
-
-  return { users };
-};
-
 const normalizeGithubRepository = (repository = {}) => {
   const openIssues = toSafeMetricValue(
     repository.open_issues ?? repository.open_issues_count,
@@ -106,14 +64,6 @@ const normalizeGithubRepository = (repository = {}) => {
     recent_commits: recentCommits,
     last_updated: repository.last_updated || repository.pushed_at || repository.updated_at || null,
   };
-};
-
-const normalizeTaskStatus = (status) => {
-  if (status === 'completed') {
-    return 'done';
-  }
-
-  return status;
 };
 
 const normalizeAdminDashboardTasks = (tasks = {}) => {
@@ -136,55 +86,6 @@ const normalizeAdminDashboardTasks = (tasks = {}) => {
   };
 };
 
-const buildDeveloperProgress = (users, tasks) => {
-  const progressTrackingRoles = new Set(['admin', 'developer', 'team_lead']);
-  const tasksByAssignee = new Map();
-
-  const getAssigneeId = (task) => {
-    if (!task) return null;
-    if (task.assigned_to !== undefined && task.assigned_to !== null) return task.assigned_to;
-    if (task.assignedTo !== undefined && task.assignedTo !== null) return task.assignedTo;
-    if (task.assignee !== undefined && task.assignee !== null) return task.assignee;
-    return null;
-  };
-
-  tasks.forEach((task) => {
-    const assignee = getAssigneeId(task);
-    if (assignee === null || assignee === undefined) return;
-    const assigneeKey = String(assignee);
-    if (!tasksByAssignee.has(assigneeKey)) tasksByAssignee.set(assigneeKey, []);
-    tasksByAssignee.get(assigneeKey).push(task);
-  });
-
-  return users
-    .filter((user) => progressTrackingRoles.has(user.role))
-    .map((user) => {
-      const userTasks = tasksByAssignee.get(String(user.id)) || [];
-
-      let completedCount = 0;
-
-      userTasks.forEach((task) => {
-        if (normalizeTaskStatus(task.status) === 'done') {
-          completedCount += 1;
-        }
-      });
-
-      const sortedRecent = [...userTasks]
-        .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))
-        .slice(0, 5);
-
-      return {
-        id: user.id,
-        name: user.name,
-        role: user.role,
-        total_tasks: userTasks.length,
-        completed_tasks: completedCount,
-        active_tasks: userTasks.length - completedCount,
-        recent_tasks: sortedRecent
-      };
-    });
-};
-
 const GITHUB_REPORT_CACHE_TTL_MS = 2 * 60 * 1000;
 const reportDataCache = new Map();
 
@@ -198,29 +99,6 @@ const getReportCacheScope = () => {
 };
 
 const getReportCacheKey = (reportType, dateRange) => `${getReportCacheScope()}:${reportType}:${dateRange}`;
-
-const normalizeTaskReportDetails = (tasks = [], users = []) => {
-  const usersById = new Map(
-    (Array.isArray(users) ? users : []).map((user) => [Number(user?.id), user?.name])
-  );
-
-  return (Array.isArray(tasks) ? tasks : []).map((task) => {
-    const assigneeId = task?.assigned_to ?? task?.assignedTo ?? null;
-    const explicitAssigneeName = typeof task?.assignee === 'object'
-      ? task?.assignee?.name
-      : null;
-
-    return {
-      ...task,
-      assignee_name:
-        task?.assignee_name
-        || task?.assigneeName
-        || explicitAssigneeName
-        || usersById.get(Number(assigneeId))
-        || null,
-    };
-  });
-};
 
 const addReportMeta = (reportData, meta = {}) => ({
   ...reportData,
@@ -312,51 +190,18 @@ const getReportDataFromNetwork = async (reportType = 'tasks', dateRange = 'week'
     };
   }
 
-  const rangeStart = getDateRangeStart(dateRange);
-  const [tasks, usersResponse] = await Promise.all([
-    fetchAllTaskPages(),
-    fetchAllUsers().catch(() => ({ users: [] }))
-  ]);
+  // Aggregation lives server-side: one request instead of page-everything.
+  const params = new URLSearchParams({ type: reportType, date_range: dateRange });
+  const response = await fetchWithAuth(`reports/data?${params.toString()}`);
 
-  const users = Array.isArray(usersResponse?.users) ? usersResponse.users : [];
-  const scopedTasks = tasks.filter((task) => isWithinDateRange(task.created_at, rangeStart));
-
-  if (reportType === 'developers') {
-    const developers = buildDeveloperProgress(users, tasks);
-    const totalTasks = developers.reduce((sum, developer) => sum + (developer.total_tasks || 0), 0);
-    const completedTasks = developers.reduce((sum, developer) => sum + (developer.completed_tasks || 0), 0);
-    const avgCompletion = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-
-    return {
-      summary: {
-        developers: developers.length,
-        avg_tasks: developers.length > 0 ? Math.round(totalTasks / developers.length) : 0,
-        avg_completion: avgCompletion,
-        active_devs: developers.filter((developer) => developer.active_tasks > 0).length
-      },
-      details: developers
-    };
+  if (response?.error) {
+    throw new Error(response.error);
   }
 
-  const completed = scopedTasks.filter((task) => normalizeTaskStatus(task.status) === 'done').length;
-  const inProgress = scopedTasks.filter((task) => normalizeTaskStatus(task.status) === 'in_progress').length;
-  const overdue = scopedTasks.filter((task) => {
-    if (!task.deadline) {
-      return false;
-    }
-
-    return new Date(task.deadline) < new Date() && normalizeTaskStatus(task.status) !== 'done';
-  }).length;
-
   return {
-    summary: {
-      total: scopedTasks.length,
-      completed,
-      in_progress: inProgress,
-      overdue,
-      team_members: users.length
-    },
-    details: normalizeTaskReportDetails(scopedTasks, users)
+    summary: response?.summary || {},
+    details: Array.isArray(response?.details) ? response.details : [],
+    meta: response?.meta || {},
   };
 };
 
@@ -499,7 +344,6 @@ const dashboardService = {
 
 export {
   dashboardService,
-  normalizeTaskReportDetails,
   getDateRangeStart,
   getActivityWindowDays,
   isWithinDateRange,

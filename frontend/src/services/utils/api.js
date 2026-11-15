@@ -5,7 +5,6 @@ import { taskService } from '../api/tasks';
 import { projectService } from '../api/projects';
 import {
   dashboardService,
-  normalizeTaskReportDetails,
   getDateRangeStart,
   getActivityWindowDays,
   isWithinDateRange,
@@ -314,7 +313,6 @@ export {
   adminUserService,
   settingsService,
   auditLogService,
-  normalizeTaskReportDetails,
   getDateRangeStart,
   getActivityWindowDays,
   isWithinDateRange
