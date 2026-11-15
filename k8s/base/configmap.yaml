@@ -20,3 +20,8 @@ data:
   # "1 worker unless message queue" rule, so 2 workers/pod are safe; HPA
   # scales pods beyond that (devsync-backend HPA, min 2).
   GUNICORN_WORKERS: "2"
+  # GitHub activity metrics: "hybrid" counts windowed PRs with one Search API
+  # call and commits with one Link-header request. Live parity verified
+  # 2026-11-15 (11 PRs: 3591ms -> 444ms; 31 commits: 581ms -> 440ms).
+  # Set "rest" to fall back to the original page-walking client.
+  GITHUB_METRICS_BACKEND: "hybrid"
