@@ -47,6 +47,15 @@ gcloud services vpc-peerings connect --service=servicenetworking.googleapis.com 
 #    (Existing-instance projects: import first — see the header of
 #    cloudsql.tf.)
 
+# 3b. pg_trgm (required by migration c3d4e5f6a7b8). Cloud SQL only lets
+#     cloudsqlsuperuser roles create extensions, and the app role is not one.
+#     Run this once as the default postgres user; the migration detects an
+#     installed extension and then only builds the GIN indexes.
+echo "One-time extension step (as the default postgres user):"
+echo "  gcloud sql connect $DB_INSTANCE --user=postgres --project=$PROJECT_ID"
+printf '  %s\n' '\c devsync'
+echo "  CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+
 # 4. App role + password (TF-blind by design: the password is written
 #    straight to Secret Manager and never enters TF state). If the user
 #    already exists, STOP: pushing a fresh DSN here would not match the

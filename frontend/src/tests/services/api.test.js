@@ -320,35 +320,20 @@ describe('api utilities', () => {
   test('dashboardService.getReportData returns structured summaries by report type', async () => {
     global.fetch.mockResolvedValueOnce(
       buildResponse({
-        tasks: [
-          {
-            id: 1,
-            assigned_to: 5,
-            status: 'in_progress',
-            created_at: '2099-01-01T00:00:00.000Z',
-            deadline: '2099-01-30T00:00:00.000Z',
-          },
-          {
-            id: 2,
-            assigned_to: 5,
-            status: 'completed',
-            created_at: '2099-01-01T00:00:00.000Z',
-            deadline: '2099-01-15T00:00:00.000Z',
-          },
+        summary: { developers: 1, avg_tasks: 2, avg_completion: 50, active_devs: 1 },
+        details: [
+          { id: 5, name: 'Dev', role: 'developer', total_tasks: 2, completed_tasks: 1, active_tasks: 1, recent_tasks: [] },
         ],
+        meta: { row_count: 1, truncated: false },
       })
-    );
-    global.fetch.mockResolvedValueOnce(
-      buildResponse({ users: [{ id: 5, name: 'Dev', role: 'developer' }] })
     );
 
     const developersReport = await dashboardService.getReportData('developers', 'year');
 
     expect(developersReport.summary.developers).toBe(1);
     expect(developersReport.details).toHaveLength(1);
+    expect(developersReport.meta.row_count).toBe(1);
 
-    global.fetch.mockResolvedValueOnce(buildResponse({ tasks: [] }));
-    global.fetch.mockResolvedValueOnce(buildResponse({ users: [] }));
     global.fetch.mockResolvedValueOnce(buildResponse({ connected: false }));
 
     const githubReport = await dashboardService.getReportData('github', 'month');
@@ -422,46 +407,23 @@ describe('api utilities', () => {
     expect(log).toBeNull();
   });
 
-  test('getDateRangeStart covers month, quarter, year, and default week arms', async () => {
-    // Exercise via getReportData which calls getDateRangeStart internally
-    const makeTasksResp = (tasks) => buildResponse({ tasks });
-    const makeUsersResp = () => buildResponse({ users: [] });
-    const singleTask = [{ id: 1, assigned_to: null, status: 'todo', created_at: new Date().toISOString() }];
-
+  test('getReportData forwards date_range to the server aggregate', async () => {
     for (const dateRange of ['month', 'quarter', 'year', 'week']) {
-      global.fetch.mockResolvedValueOnce(makeTasksResp(singleTask));
-      global.fetch.mockResolvedValueOnce(makeUsersResp());
+      global.fetch.mockResolvedValueOnce(buildResponse({ summary: {}, details: [], meta: {} }));
       const result = await dashboardService.getReportData('tasks', dateRange);
       expect(result).toHaveProperty('summary');
+      expect(global.fetch.mock.calls.at(-1)[0]).toContain(`date_range=${dateRange}`);
     }
   });
 
-  test('isWithinDateRange returns true for null and invalid dates', async () => {
-    // tasks with null/bad created_at should not be filtered out
+  test('getReportData passes server-computed overdue counts through unchanged', async () => {
     global.fetch.mockResolvedValueOnce(
-      buildResponse({ tasks: [
-        { id: 1, assigned_to: null, status: 'todo', created_at: null },
-        { id: 2, assigned_to: null, status: 'todo', created_at: 'not-a-date' },
-      ] })
+      buildResponse({
+        summary: { total: 4, completed: 1, in_progress: 1, overdue: 1, team_members: 0 },
+        details: [],
+        meta: { row_count: 4, truncated: false },
+      })
     );
-    global.fetch.mockResolvedValueOnce(buildResponse({ users: [] }));
-
-    const result = await dashboardService.getReportData('tasks', 'month');
-    expect(result.summary.total).toBe(2);
-  });
-
-  test('getReportData counts overdue tasks (past deadline and not done)', async () => {
-    const pastDeadline = '2000-01-01T00:00:00.000Z';
-    const futureDeadline = '2099-01-01T00:00:00.000Z';
-    global.fetch.mockResolvedValueOnce(
-      buildResponse({ tasks: [
-        { id: 1, assigned_to: null, status: 'in_progress', created_at: new Date().toISOString(), deadline: pastDeadline },
-        { id: 2, assigned_to: null, status: 'done', created_at: new Date().toISOString(), deadline: pastDeadline },
-        { id: 3, assigned_to: null, status: 'todo', created_at: new Date().toISOString(), deadline: futureDeadline },
-        { id: 4, assigned_to: null, status: 'todo', created_at: new Date().toISOString(), deadline: null },
-      ] })
-    );
-    global.fetch.mockResolvedValueOnce(buildResponse({ users: [] }));
 
     const result = await dashboardService.getReportData('tasks', 'year');
     expect(result.summary.overdue).toBe(1);
@@ -717,16 +679,13 @@ describe('api utilities', () => {
     expect(stats).toEqual([]);
   });
 
-  test('dashboardService.getReportData returns zero-filled summary when services return empty data', async () => {
-    // getAllTasks catches errors internally and returns []; users fetch .catch returns { users: [] }
-    // so the outer catch is never triggered — we get a valid but empty computed summary
+  test('dashboardService.getReportData returns an empty report when the aggregate request fails', async () => {
     global.fetch.mockRejectedValue(new Error('boom'));
 
     const result = await dashboardService.getReportData('tasks', 'week');
-    expect(result.summary.total).toBe(0);
-    expect(result.summary.completed).toBe(0);
-    expect(result.summary.overdue).toBe(0);
+    expect(result.summary).toEqual({});
     expect(result.details).toEqual([]);
+    expect(result.meta.live).toBe(false);
   });
 
   test('githubService.getIssues normalizes response and handles errors', async () => {

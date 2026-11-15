@@ -6,7 +6,6 @@ import {
   projectService,
   reportService,
   taskService,
-  normalizeTaskReportDetails,
 } from '../../../services/utils/api';
 
 const makeResponse = ({
@@ -27,88 +26,6 @@ const makeResponse = ({
     },
   },
   json: jest.fn().mockResolvedValue(body),
-});
-
-describe('normalizeTaskReportDetails', () => {
-  test('hydrates assignee_name from the user list when task rows only expose assigned_to ids', () => {
-    const tasks = [
-      { id: 1, title: 'Task A', assigned_to: 9 },
-      { id: 2, title: 'Task B', assigned_to: 10 },
-      { id: 3, title: 'Task C', assigned_to: null },
-    ];
-
-    const users = [
-      { id: 9, name: 'Developer One' },
-      { id: 10, name: 'Developer Two' },
-    ];
-
-    const normalized = normalizeTaskReportDetails(tasks, users);
-
-    expect(normalized).toEqual([
-      { id: 1, title: 'Task A', assigned_to: 9, assignee_name: 'Developer One' },
-      { id: 2, title: 'Task B', assigned_to: 10, assignee_name: 'Developer Two' },
-      { id: 3, title: 'Task C', assigned_to: null, assignee_name: null },
-    ]);
-  });
-
-  test('handles empty tasks array', () => {
-    const tasks = [];
-    const users = [{ id: 1, name: 'User' }];
-    const normalized = normalizeTaskReportDetails(tasks, users);
-    expect(normalized).toEqual([]);
-  });
-
-  test('handles empty users array', () => {
-    const tasks = [{ id: 1, title: 'Task', assigned_to: 1 }];
-    const users = [];
-    const normalized = normalizeTaskReportDetails(tasks, users);
-    expect(normalized[0].assignee_name).toBeNull();
-  });
-
-  test('handles undefined inputs', () => {
-    expect(normalizeTaskReportDetails(undefined, undefined)).toEqual([]);
-    expect(normalizeTaskReportDetails([], undefined)).toEqual([]);
-  });
-
-  test('matches user by id across multiple tasks', () => {
-    const tasks = [
-      { id: 1, title: 'Task 1', assigned_to: 5 },
-      { id: 2, title: 'Task 2', assigned_to: 5 },
-      { id: 3, title: 'Task 3', assigned_to: 6 },
-    ];
-
-    const users = [
-      { id: 5, name: 'Same Dev' },
-      { id: 6, name: 'Other Dev' },
-    ];
-
-    const normalized = normalizeTaskReportDetails(tasks, users);
-
-    expect(normalized[0].assignee_name).toBe('Same Dev');
-    expect(normalized[1].assignee_name).toBe('Same Dev');
-    expect(normalized[2].assignee_name).toBe('Other Dev');
-  });
-
-  test('preserves other task properties during normalization', () => {
-    const tasks = [
-      {
-        id: 1,
-        title: 'Task A',
-        assigned_to: 1,
-        status: 'done',
-        priority: 'high',
-        customField: 'preserved',
-      },
-    ];
-
-    const users = [{ id: 1, name: 'Dev' }];
-
-    const normalized = normalizeTaskReportDetails(tasks, users);
-
-    expect(normalized[0].status).toBe('done');
-    expect(normalized[0].priority).toBe('high');
-    expect(normalized[0].customField).toBe('preserved');
-  });
 });
 
 describe('api service branches', () => {
@@ -310,16 +227,18 @@ describe('api service branches', () => {
     }));
   });
 
-  test('dashboard report data builds task and developer summaries', async () => {
-    jest.spyOn(taskService, 'getTasksPaginated').mockResolvedValue({ items: [
-      { id: 1, title: 'A', status: 'done', assigned_to: 1, created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() },
-      { id: 2, title: 'B', status: 'in_progress', assigned_to: 2, created_at: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(), deadline: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() },
-      { id: 3, title: 'C', status: 'completed', assigned_to: 2, created_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString() },
-    ], pagination: null });
-    global.fetch.mockResolvedValue(makeResponse({ body: { users: [
-      { id: 1, name: 'Admin', role: 'admin' },
-      { id: 2, name: 'Dev', role: 'developer' },
-    ] } }));
+  test('dashboard report data maps the server aggregate for tasks and developers', async () => {
+    global.fetch
+      .mockResolvedValueOnce(makeResponse({ body: {
+        summary: { total: 3, completed: 2, in_progress: 1, overdue: 0, team_members: 2 },
+        details: [{ id: 1 }, { id: 2 }, { id: 3 }],
+        meta: { row_count: 3, truncated: false },
+      } }))
+      .mockResolvedValueOnce(makeResponse({ body: {
+        summary: { developers: 2, avg_tasks: 2, avg_completion: 50, active_devs: 1 },
+        details: [{ id: 1 }, { id: 2 }],
+        meta: { row_count: 2, truncated: false },
+      } }));
 
     const taskReport = await dashboardService.getReportData('tasks', 'week');
     const developerReport = await dashboardService.getReportData('developers', 'week');
@@ -329,6 +248,7 @@ describe('api service branches', () => {
     expect(taskReport.summary.in_progress).toBe(1);
     expect(developerReport.summary.developers).toBe(2);
     expect(developerReport.details).toHaveLength(2);
+    expect(global.fetch.mock.calls[0][0]).toContain('reports/data?type=tasks&date_range=week');
   });
 
   test('reportService uses distinct fetch responses for save, list, and delete', async () => {

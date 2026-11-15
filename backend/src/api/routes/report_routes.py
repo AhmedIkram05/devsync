@@ -3,7 +3,13 @@
 from flask_jwt_extended import jwt_required
 
 from ...auth.rbac import require_permission
-from ..controllers.report_controller import delete_report, get_report_by_id, get_reports, save_report
+from ..controllers.report_controller import (
+    delete_report,
+    get_report_by_id,
+    get_report_data,
+    get_reports,
+    save_report,
+)
 from ..middlewares.api_usage_logger import log_api_usage
 from ..middlewares.request_logger import log_request
 from ..middlewares.validation_middleware import validate_json
@@ -30,6 +36,15 @@ def register_routes(bp):
     def get_reports_route():
         """Route to get saved reports"""
         return get_reports()
+
+    @bp.route("/reports/data", methods=["GET"])
+    @jwt_required()
+    @require_permission("can_generate_reports")
+    @log_api_usage()
+    @log_request()
+    def get_report_data_route():
+        """Route to aggregate report data server-side"""
+        return get_report_data()
 
     @bp.route("/reports/<int:report_id>", methods=["GET"])
     @jwt_required()

@@ -23,43 +23,46 @@ describe('dashboardService paginated aggregates', () => {
     jest.restoreAllMocks();
   });
 
-  test('getReportData walks every task page for the totals', async () => {
-    jest.spyOn(taskService, 'getTasksPaginated')
-      .mockResolvedValueOnce({
-        items: [{ id: 1, status: 'done', created_at: new Date().toISOString() }],
-        pagination: { page: 1, pages: 2, total: 2 },
+  test('getReportData requests the tasks aggregate once (no client paging)', async () => {
+    const pageSpy = jest.spyOn(taskService, 'getTasksPaginated').mockResolvedValue({
+      items: [],
+      pagination: null,
+    });
+    global.fetch.mockResolvedValue(
+      jsonResponse({
+        summary: { total: 2, completed: 1, in_progress: 1, overdue: 0, team_members: 1 },
+        details: [],
+        meta: { row_count: 2, truncated: false },
       })
-      .mockResolvedValueOnce({
-        items: [{ id: 2, status: 'todo', created_at: new Date().toISOString() }],
-        pagination: { page: 2, pages: 2, total: 2 },
-      });
-    global.fetch.mockResolvedValue(jsonResponse({ users: [{ id: 1, name: 'A', role: 'developer' }] }));
+    );
 
     const report = await dashboardService.getReportData('tasks', 'week');
 
-    expect(taskService.getTasksPaginated).toHaveBeenCalledTimes(2);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch.mock.calls[0][0]).toContain('reports/data?type=tasks&date_range=week');
+    expect(pageSpy).not.toHaveBeenCalled();
     expect(report.summary.total).toBe(2);
   });
 
-  test('getReportData walks every user page', async () => {
-    jest.spyOn(taskService, 'getTasksPaginated').mockResolvedValue({
+  test('getReportData requests the developers aggregate once (no client paging)', async () => {
+    const pageSpy = jest.spyOn(taskService, 'getTasksPaginated').mockResolvedValue({
       items: [],
-      pagination: { page: 1, pages: 1, total: 0 },
+      pagination: null,
     });
-    global.fetch
-      .mockResolvedValueOnce(jsonResponse({
-        users: [{ id: 1, name: 'A', role: 'developer' }],
-        pagination: { page: 1, pages: 2, total: 2 },
-      }))
-      .mockResolvedValueOnce(jsonResponse({
-        users: [{ id: 2, name: 'B', role: 'developer' }],
-        pagination: { page: 2, pages: 2, total: 2 },
-      }));
+    global.fetch.mockResolvedValue(
+      jsonResponse({
+        summary: { developers: 1, avg_tasks: 1, avg_completion: 100, active_devs: 0 },
+        details: [{ id: 1, name: 'A', role: 'developer', total_tasks: 1, completed_tasks: 1, active_tasks: 0, recent_tasks: [] }],
+        meta: { row_count: 1, truncated: false },
+      })
+    );
 
     const report = await dashboardService.getReportData('developers', 'week');
 
-    expect(global.fetch).toHaveBeenCalledTimes(2);
-    expect(report.details.length).toBeGreaterThanOrEqual(1);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch.mock.calls[0][0]).toContain('reports/data?type=developers&date_range=week');
+    expect(pageSpy).not.toHaveBeenCalled();
+    expect(report.details).toHaveLength(1);
   });
 
   test('getDeveloperProgressStats uses the server aggregate instead of paging', async () => {
