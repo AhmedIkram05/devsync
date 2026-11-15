@@ -415,7 +415,7 @@ npx cypress run --config baseUrl=http://localhost:3000   # against the served bu
 
 - Script + thresholds in-script (`backend/tests/perf/api-load.js:20-31`): error rate < 1% (`http_req_failed rate<0.01`), `p(95)<500`, `p(99)<1000`. Thresholds live in the script (not CI YAML) so `k6 run` behaves identically locally and in the pipeline. These are CI execution ceilings (single gevent worker on a shared 2-vCPU runner), not production SLOs.
 - Real user path (`backend/tests/perf/api-load.js:38-88`): register to login to JWT to dashboard reads; seed-user-first trick absorbs the first-registration admin promotion so the load user stays a developer.
-- Committed baseline (`backend/tests/perf/baseline.json:1-7`: p95 9.65ms, 46.58 rps, captured 2026-08-31): `check_baseline.py` trips the build on ~3x p95 / 4x p99 / +5pp error rate / -30% throughput (`.github/workflows/ci.yml:480-484`). First-run (no baseline) passes with a warning.
+- Committed baseline (`backend/tests/perf/baseline.json:1-7`: p95 41.5ms, 43.2 rps, captured 2026-10-26): `check_baseline.py` trips the build on ~3x p95 / 4x p99 / +5pp error rate / -30% throughput (`.github/workflows/ci.yml:480-484`). First-run (no baseline) passes with a warning.
 - CI shape 10VU/30s with the limiter bypassed (`RATE_LIMIT_REQUESTS_PER_WINDOW=0` at `.github/workflows/ci.yml:454`); load iterations are measurements, never counted - results ship as the `load-test-results` artifact, separate from the 1520.
 - Live shape 3VU/30s (`--vus 3 --duration 30s` at `.github/workflows/k8s-cd.yml:612-621`).
 
