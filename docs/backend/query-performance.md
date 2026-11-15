@@ -5,8 +5,10 @@ This file records the measurements behind two changes:
 1. `pg_trgm` GIN indexes for the four leading-wildcard `ILIKE` searches.
 2. Server-side report aggregation (`GET /api/v1/reports/data`).
 
-Numbers are from a local Docker/Postgres stack (not a production SLO). The
-point is direction and payload size, not absolute milliseconds.
+Numbers are from a local PostgreSQL 16 stack (not a production SLO). The
+recorded run used the embedded `pgserver` build (no Docker); the Docker compose
+path in "Reproduce" works too. The point is direction and payload size, not
+absolute milliseconds.
 
 ## Reproduce
 
@@ -103,6 +105,17 @@ The embedded Postgres used for this run has no contrib modules, so
 environment. The migration's Postgres path is covered by
 `backend/tests/integration/test_trigram_indexes.py`, which asserts the `gin_trgm_ops`
 index serves `ILIKE '%…%'` and fails loudly if the extension is unavailable.
+
+## Deployment notes
+
+- The migration runs `CREATE EXTENSION IF NOT EXISTS pg_trgm`. On PG 13+,
+  pg_trgm is a trusted extension, so the database owner can install it; if the
+  migrate role is neither owner nor superuser and the extension is not
+  pre-created, the migrate Job fails before the rollout.
+- The indexes are built with plain `CREATE INDEX` (not `CONCURRENTLY`), so
+  they hold a write lock while building. That is acceptable for the current
+  table sizes and the pre-rollout migrate Job; schedule the deploy around it
+  if `audit_logs` grows large.
 
 ## Notes
 
