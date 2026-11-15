@@ -12,7 +12,6 @@ REMOVED = {
     "pygithub",
     "marshmallow",
     "celery",
-    "kombu",
     "pydantic",
     "pyaml",
     "supervisor",
@@ -40,3 +39,9 @@ def test_removed_dependencies_do_not_return():
 def test_pyyaml_is_pinned_for_manifest_tests():
     # tests/unit/test_k8s_manifests.py imports yaml directly.
     assert "pyyaml" in _declared_names()
+
+
+def test_kombu_is_pinned_for_the_socket_message_queue():
+    # Flask-SocketIO's redis:// message_queue uses socketio.KombuManager,
+    # which imports kombu at runtime; neither socketio package declares it.
+    assert "kombu" in _declared_names()
