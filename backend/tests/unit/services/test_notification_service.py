@@ -138,12 +138,11 @@ def test_send_to_user_websocket_failure_logs_and_commits(
     assert result.id == 3
 
 
-def test_send_to_recipients_collects_truthy_results():
+def test_send_to_recipients_delegates_to_one_bulk_create():
     from src.services.notification_service import NotificationService
 
-    with patch.object(
-        NotificationService, "send_to_user", side_effect=[None, MagicMock(id=2), MagicMock(id=3)]
-    ) as mock_send:
+    sentinel = [MagicMock(id=2), MagicMock(id=3)]
+    with patch.object(NotificationService, "_bulk_create", return_value=sentinel) as mock_bulk:
         notifications = NotificationService.send_to_recipients(
             recipient_user_ids=[1, 2, 3],
             notification_type="task",
@@ -153,8 +152,15 @@ def test_send_to_recipients_collects_truthy_results():
             task_id=7,
         )
 
-    assert len(notifications) == 2
-    assert mock_send.call_count == 3
+    assert notifications == sentinel
+    mock_bulk.assert_called_once_with(
+        [1, 2, 3],
+        "task",
+        "Test",
+        "Message",
+        reference_id=99,
+        task_id=7,
+    )
 
 
 def test_send_to_recipients_empty_list_returns_empty():
@@ -230,10 +236,7 @@ def test_send_to_project(mock_project_rooms, notification_data):
     # Import inside test
     from src.services.notification_service import NotificationService
 
-    with patch.object(NotificationService, "send_to_user") as mock_send_to_user:
-        mock_send_to_user.return_value = object()
-
-        # Call the method
+    with patch.object(NotificationService, "_bulk_create", return_value=[object()]) as mock_bulk:
         NotificationService.send_to_project(
             project_id="project1",
             notification_type=notification_data["notification_type"],
@@ -242,44 +245,22 @@ def test_send_to_project(mock_project_rooms, notification_data):
             reference_id=notification_data["reference_id"],
         )
 
-        # Verify send_to_user was called for each project member
-        assert mock_send_to_user.call_count == 3
-        mock_send_to_user.assert_has_calls(
-            [
-                call(
-                    user_id="user1",
-                    notification_type=notification_data["notification_type"],
-                    title=notification_data["title"],
-                    message=notification_data["message"],
-                    reference_id=notification_data["reference_id"],
-                    task_id=None,
-                ),
-                call(
-                    user_id="user2",
-                    notification_type=notification_data["notification_type"],
-                    title=notification_data["title"],
-                    message=notification_data["message"],
-                    reference_id=notification_data["reference_id"],
-                    task_id=None,
-                ),
-                call(
-                    user_id="user3",
-                    notification_type=notification_data["notification_type"],
-                    title=notification_data["title"],
-                    message=notification_data["message"],
-                    reference_id=notification_data["reference_id"],
-                    task_id=None,
-                ),
-            ],
-            any_order=True,
+        assert mock_bulk.call_count == 1
+        args, kwargs = mock_bulk.call_args
+        assert set(args[0]) == {"user1", "user2", "user3"}
+        assert args[1:] == (
+            notification_data["notification_type"],
+            notification_data["title"],
+            notification_data["message"],
         )
+        assert kwargs == {"reference_id": notification_data["reference_id"], "task_id": None}
 
         # Test exclusion logic
-        mock_send_to_user.reset_mock()
+        mock_bulk.reset_mock()
         NotificationService.send_to_project(
             project_id="project1", notification_type="task", title="Test", message="Test", exclude_user_id="user2"
         )
-        assert mock_send_to_user.call_count == 2  # only called for user1 and user3
+        assert set(mock_bulk.call_args.args[0]) == {"user1", "user3"}
 
 
 def test_mark_as_read(mock_db_session):

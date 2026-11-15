@@ -12,11 +12,11 @@ def test_send_to_project_filters_and_calls(monkeypatch):
 
     calls = []
 
-    def fake_send_to_user(**kwargs):
-        calls.append(kwargs.get("user_id"))
-        return {"id": kwargs.get("user_id")}
+    def fake_bulk_create(recipient_ids, *args, **kwargs):
+        calls.extend(recipient_ids)
+        return [{"id": user_id} for user_id in recipient_ids]
 
-    monkeypatch.setattr(NotificationService, "send_to_user", fake_send_to_user)
+    monkeypatch.setattr(NotificationService, "_bulk_create", fake_bulk_create)
 
     notifications = NotificationService.send_to_project(
         project_id=99, notification_type="task", title="t", message="m", exclude_user_id=2, exclude_user_ids=[3]
