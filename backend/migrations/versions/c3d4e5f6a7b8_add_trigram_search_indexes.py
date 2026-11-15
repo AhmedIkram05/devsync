@@ -13,11 +13,17 @@ Postgres-only: SQLite (unit tests) has no pg_trgm, so the whole upgrade is a
 no-op there. Plain CREATE INDEX (not CONCURRENTLY) matches sibling migrations:
 tables are small and the migrate Job runs pre-rollout.
 
+Cloud SQL only lets `cloudsqlsuperuser` roles create extensions, and the app
+role is not one. When pg_trgm is already installed (the managed-db bootstrap
+creates it once as `postgres`) this migration only builds the indexes; if it
+is missing, the upgrade fails with the exact remediation command instead of a
+bare permission error.
+
 Downgrade drops the indexes and deliberately leaves the extension installed -
 dropping a shared extension is hostile to any other index that may use it.
 """
 
-import sqlalchemy as sa  # noqa: F401  (kept for autogenerate parity with sibling revisions)
+import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -42,7 +48,17 @@ def _is_postgresql():
 def upgrade():
     if not _is_postgresql():
         return
-    op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+    installed = op.get_bind().execute(sa.text("SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm'")).scalar()
+    if not installed:
+        try:
+            op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+        except sa.exc.ProgrammingError as exc:
+            raise RuntimeError(
+                "pg_trgm is not installed and this role cannot create it. "
+                "Cloud SQL only allows cloudsqlsuperuser roles to create extensions. "
+                "Run `CREATE EXTENSION IF NOT EXISTS pg_trgm;` as the default postgres "
+                "user against this database, then re-run the migration."
+            ) from exc
     for name, table, column in TRIGRAM_INDEXES:
         op.create_index(
             name,

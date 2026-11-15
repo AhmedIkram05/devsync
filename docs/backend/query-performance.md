@@ -108,10 +108,13 @@ index serves `ILIKE '%…%'` and fails loudly if the extension is unavailable.
 
 ## Deployment notes
 
-- The migration runs `CREATE EXTENSION IF NOT EXISTS pg_trgm`. On PG 13+,
-  pg_trgm is a trusted extension, so the database owner can install it; if the
-  migrate role is neither owner nor superuser and the extension is not
-  pre-created, the migrate Job fails before the rollout.
+- Cloud SQL only permits `cloudsqlsuperuser` roles (the default `postgres`
+  user) to create extensions, and the app/migrate role (`devsync`) is not one.
+  Create `pg_trgm` once as `postgres` before the first deploy:
+  `CREATE EXTENSION IF NOT EXISTS pg_trgm;` (`provision-cloudsql.sh` prints the
+  exact `gcloud sql connect` command). The migration detects an installed
+  extension and skips that DDL; if it is missing, it fails with that
+  instruction instead of a bare permission error.
 - The indexes are built with plain `CREATE INDEX` (not `CONCURRENTLY`), so
   they hold a write lock while building. That is acceptable for the current
   table sizes and the pre-rollout migrate Job; schedule the deploy around it

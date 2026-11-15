@@ -9,6 +9,9 @@ import importlib.util
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+import sqlalchemy as sa
+
 VERSIONS = Path(__file__).resolve().parents[2] / "migrations" / "versions"
 
 TRIGRAM_INDEXES = {
@@ -54,6 +57,7 @@ def test_report_scope_migration_chains_on_trigram():
 def test_trigram_upgrade_creates_extension_and_gin_indexes_on_postgres():
     migration = _load("c3d4e5f6a7b8_add_trigram_search_indexes.py", "trigram_upgrade")
     migration.op = _mock_op("postgresql")
+    migration.op.get_bind.return_value.execute.return_value.scalar.return_value = None
 
     migration.upgrade()
 
@@ -64,6 +68,31 @@ def test_trigram_upgrade_creates_extension_and_gin_indexes_on_postgres():
         assert call.kwargs["postgresql_using"] == "gin"
         column = call.args[2][0]
         assert call.kwargs["postgresql_ops"] == {column: "gin_trgm_ops"}
+
+
+def test_trigram_upgrade_skips_extension_ddl_when_already_installed():
+    migration = _load("c3d4e5f6a7b8_add_trigram_search_indexes.py", "trigram_installed")
+    migration.op = _mock_op("postgresql")
+    migration.op.get_bind.return_value.execute.return_value.scalar.return_value = 1
+
+    migration.upgrade()
+
+    migration.op.execute.assert_not_called()
+    assert migration.op.create_index.call_count == len(TRIGRAM_INDEXES)
+
+
+def test_trigram_upgrade_explains_the_cloudsql_superuser_requirement():
+    migration = _load("c3d4e5f6a7b8_add_trigram_search_indexes.py", "trigram_denied")
+    migration.op = _mock_op("postgresql")
+    migration.op.get_bind.return_value.execute.return_value.scalar.return_value = None
+    migration.op.execute.side_effect = sa.exc.ProgrammingError(
+        "CREATE EXTENSION", {}, Exception("permission denied to create extension")
+    )
+
+    with pytest.raises(RuntimeError, match="cloudsqlsuperuser"):
+        migration.upgrade()
+
+    migration.op.create_index.assert_not_called()
 
 
 def test_trigram_upgrade_is_a_noop_on_sqlite():
