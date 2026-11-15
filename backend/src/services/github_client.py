@@ -29,6 +29,16 @@ except ImportError:
             return text[:max_len] if len(text) > max_len else text
 
 
+def _metrics_backend():
+    """GitHub activity metrics backend: ``rest`` (default) or ``hybrid``.
+
+    ``hybrid`` counts windowed PRs with one Search API call and commits with
+    one Link-header request; ``rest`` keeps the original page-walking behaviour
+    bit-for-bit so the flag is a runtime no-op until flipped.
+    """
+    return (os.getenv("GITHUB_METRICS_BACKEND") or "rest").strip().lower()
+
+
 def _validate_repo_segments(owner, repo):
     if not isinstance(owner, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", owner):
         raise ValueError("Invalid repository owner")
@@ -192,7 +202,7 @@ class GitHubClient:
             )
 
             status_code = response.status_code
-            logger.info(f"GitHub token exchange response status: {status_code}")
+            logger.info("GitHub token exchange response status: %s", status_code)
 
             if status_code == 200:
                 try:
@@ -356,7 +366,7 @@ class GitHubClient:
                 # request, so auto-retrying can double-post (e.g. issue comments).
                 # Only explicit caller retries may repeat it.
                 if method_upper != "POST" and retry_count <= max_retries:
-                    logger.info(f"Retrying... (attempt {retry_count}/{max_retries})")
+                    logger.info("Retrying... (attempt %s/%s)", retry_count, max_retries)
                     retry = True
                     time.sleep(1)  # Wait before retrying
                 else:
@@ -476,6 +486,68 @@ class GitHubClient:
             item_filter=lambda item: "pull_request" not in item,
         )
 
+    def _search_pull_count(self, owner, repo, since_days):
+        """Count PRs created within the window in one Search API request.
+
+        Returns None on any failure so the caller falls back to page walking.
+        """
+        _validate_repo_segments(owner, repo)
+        window_days = max(int(since_days or 0), 1)
+        since_date = (datetime.now(UTC) - timedelta(days=window_days)).date().isoformat()
+        url = f"{self.BASE_API_URL}/search/issues"
+        params = {"q": f"repo:{owner}/{repo} type:pr created:>={since_date}", "per_page": 1}
+
+        try:
+            response = requests.get(url, params=params, headers=self.get_headers(), timeout=self.REQUEST_TIMEOUT)
+            if self._handle_rate_limit(response):
+                response = requests.get(url, params=params, headers=self.get_headers(), timeout=self.REQUEST_TIMEOUT)
+
+            if not 200 <= response.status_code < 300:
+                logger.warning(
+                    "GitHub search API error for %s/%s: %s", owner, repo, sanitize_for_log(response.status_code)
+                )
+                return None
+
+            payload = response.json()
+            total = payload.get("total_count") if isinstance(payload, dict) else None
+            return int(total) if isinstance(total, int) else None
+        except Exception:
+            logger.warning("GitHub search count failed for %s/%s", owner, repo, exc_info=True)
+            return None
+
+    def _count_commits_via_link(self, owner, repo, since_days):
+        """Count commits in the window with one request (per_page=1 + Link last).
+
+        Returns None when the request fails so the caller falls back to walking.
+        """
+        _validate_repo_segments(owner, repo)
+        window_days = max(int(since_days or 0), 1)
+        since_date = (
+            (datetime.now(UTC) - timedelta(days=window_days)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        )
+        url = f"{self.BASE_API_URL}/repos/{owner}/{repo}/commits"
+        params = {"since": since_date, "page": 1, "per_page": 1}
+
+        try:
+            response = requests.get(url, params=params, headers=self.get_headers(), timeout=self.REQUEST_TIMEOUT)
+            if self._handle_rate_limit(response):
+                response = requests.get(url, params=params, headers=self.get_headers(), timeout=self.REQUEST_TIMEOUT)
+
+            if not 200 <= response.status_code < 300:
+                logger.warning(
+                    "GitHub commits error for %s/%s: %s", owner, repo, sanitize_for_log(response.status_code)
+                )
+                return None
+
+            items = response.json()
+            if not isinstance(items, list):
+                return None
+            last_page = self._extract_last_page_from_link_header(response.headers.get("Link"))
+            return last_page if last_page is not None else len(items)
+        except Exception:
+            logger.warning("GitHub commit count failed for %s/%s", owner, repo, exc_info=True)
+            return None
+
     @staticmethod
     def _extract_last_page_from_link_header(link_header):
         """Return the last page number from GitHub's Link header."""
@@ -553,6 +625,12 @@ class GitHubClient:
 
                 return pull_count
 
+            # Hybrid: one Search API call instead of walking every PR page.
+            if _metrics_backend() == "hybrid":
+                search_count = self._search_pull_count(owner, repo, since_days)
+                if search_count is not None:
+                    return search_count
+
             # Windowed path: count PRs created within the window by filtering pages
             _validate_repo_segments(owner, repo)
             url = f"{self.BASE_API_URL}/repos/{owner}/{repo}/pulls"
@@ -581,6 +659,11 @@ class GitHubClient:
 
         try:
             _validate_repo_segments(owner, repo)
+            if _metrics_backend() == "hybrid":
+                link_count = self._count_commits_via_link(owner, repo, since_days)
+                if link_count is not None:
+                    return link_count
+
             window_days = max(int(since_days or 0), 1)
             # Use timezone-aware UTC datetimes instead of deprecated utcnow()
             since_date = (

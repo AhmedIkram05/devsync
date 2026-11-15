@@ -101,3 +101,42 @@ Against thresholds of p(95) < 500ms · p(99) < 1s · error rate < 1%, the
 measured p95 runs ~6× under the ceiling. Every CI job that runs this also
 stores the full k6 metric export as the `load-test-results` artifact (per-run
 JSON: percentiles, counts, per-endpoint checks) — pull it for exact numbers.
+
+## Not covered by k6
+
+Two surfaces are measured separately on purpose:
+
+- **`GET /reports/data`** (team-lead/admin only). Adding it to this gate would
+  require a second identity and a seeded dataset, which contaminates the
+  developer-read baseline above. Measure it with
+  `scripts/perf-report-compare.py` and record results in
+  `docs/backend/query-performance.md`.
+- **GitHub activity metrics.** CI has no GitHub token, so
+  `GITHUB_METRICS_BACKEND=hybrid` (Search API for windowed PRs, Link header for
+  commits) is proven live, not in the gate:
+
+  ```sh
+  GITHUB_TOKEN=ghp_... python backend/tests/perf/github_metrics_smoke.py \
+      --repo AhmedIkram05/DevSync --since-days 7
+  ```
+
+  The configmap now defaults to `hybrid` (parity verified above); set `rest`
+  to fall back.
+
+### Live parity result — 2026-11-15
+
+`AhmedIkram05/DevSync`, 7-day window, real OAuth token:
+
+| Metric | rest | hybrid | rest ms | hybrid ms |
+|---|---|---|---|---|
+| windowed PRs | 11 | 11 | 3,591 | **444** |
+| recent commits | 31 | 31 | 581 | **440** |
+
+Parity tolerance 0 (exact match on this window). The windowed-PR path drops
+from ~3.6 s of page walking to one Search API call; commits were already one
+page at this volume, so their gain is smaller. Re-run before changing the flag.
+
+The PR count uses the Search API's date-granular `created:>=YYYY-MM-DD`
+qualifier, so it can include PRs created earlier on the boundary date than the
+REST path's exact `now - N days` cutoff (at most one day's worth). The commit
+count uses the exact `since` timestamp. Both matched exactly in this run.

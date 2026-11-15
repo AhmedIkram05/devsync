@@ -1,6 +1,8 @@
 import logging
 from datetime import UTC, datetime
 
+from sqlalchemy import insert
+
 from src.db.db_connection import db
 from src.db.models import Notification, Project
 from src.db.transaction import commit_or_flush
@@ -74,6 +76,75 @@ class NotificationService:
         return notification
 
     @staticmethod
+    def _bulk_create(recipient_user_ids, notification_type, title, message, reference_id=None, task_id=None):
+        """Create one notification per recipient in a single INSERT ... RETURNING.
+
+        Collapses the per-recipient flush loop into one statement while keeping
+        the outward behaviour identical: one ``created_at`` for the batch, the
+        same payload shape, and one socket emit per connected sid after ids
+        exist. The caller's transaction/savepoint still owns the commit.
+        """
+        user_ids = []
+        seen = set()
+        for user_id in recipient_user_ids or []:
+            if user_id in (None, ""):
+                continue
+            if isinstance(user_id, str) and user_id.isdigit():
+                user_id = int(user_id)
+            key = str(user_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            user_ids.append(user_id)
+
+        if not user_ids:
+            return []
+
+        created_at = datetime.now(UTC)
+        rows = [
+            {
+                "user_id": user_id,
+                "notification_type": notification_type,
+                "title": title,
+                "message": message,
+                "reference_id": reference_id,
+                "task_id": task_id,
+                "is_read": False,
+                "created_at": created_at,
+            }
+            for user_id in user_ids
+        ]
+
+        result = db.session.execute(
+            insert(Notification).returning(Notification.id, Notification.user_id),
+            rows,
+        )
+        inserted = result.fetchall()
+        commit_or_flush(db)
+
+        notifications = []
+        for notification_id, user_id in inserted:
+            notification = Notification(
+                user_id=user_id,
+                notification_type=notification_type,
+                title=title,
+                message=message,
+                reference_id=reference_id,
+                task_id=task_id,
+                is_read=False,
+                created_at=created_at,
+            )
+            notification.id = notification_id
+            for sid in connected_users.get(user_id, set()):
+                try:
+                    socketio.emit("notification", notification.to_dict(), to=sid)
+                except Exception:
+                    logger.exception("Failed to emit notification %s to user %s", notification_id, user_id)
+            notifications.append(notification)
+
+        return notifications
+
+    @staticmethod
     def _project_member_ids(project_id):
         if project_id in (None, ""):
             return []
@@ -144,20 +215,14 @@ class NotificationService:
             seen.add(user_key)
             filtered_user_ids.append(user_id)
 
-        notifications = []
-        for user_id in filtered_user_ids:
-            notification = NotificationService.send_to_user(
-                user_id=user_id,
-                notification_type=notification_type,
-                title=title,
-                message=message,
-                reference_id=reference_id,
-                task_id=task_id,
-            )
-            if notification:
-                notifications.append(notification)
-
-        return notifications
+        return NotificationService._bulk_create(
+            filtered_user_ids,
+            notification_type,
+            title,
+            message,
+            reference_id=reference_id,
+            task_id=task_id,
+        )
 
     @staticmethod
     def mark_as_read(notification_id, user_id):
@@ -292,20 +357,14 @@ class NotificationService:
         if not recipient_user_ids:
             return []
 
-        notifications = []
-        for user_id in recipient_user_ids:
-            notification = NotificationService.send_to_user(
-                user_id=user_id,
-                notification_type=notification_type,
-                title=title,
-                message=message,
-                reference_id=reference_id,
-                task_id=task_id,
-            )
-            if notification:
-                notifications.append(notification)
-
-        return notifications
+        return NotificationService._bulk_create(
+            recipient_user_ids,
+            notification_type,
+            title,
+            message,
+            reference_id=reference_id,
+            task_id=task_id,
+        )
 
     @staticmethod
     def task_created_notification_v2(
