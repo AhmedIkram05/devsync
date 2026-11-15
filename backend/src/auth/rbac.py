@@ -4,7 +4,7 @@ import logging
 from enum import Enum
 from functools import wraps
 
-from flask import jsonify
+from flask import g, has_request_context, jsonify
 from flask_jwt_extended import get_jwt, get_jwt_identity
 
 from ..services.coercion import to_int as _to_int
@@ -150,11 +150,32 @@ def role_at_least(min_role):
     return decorator
 
 
+def _request_scope_cache():
+    """Per-request memo for RBAC lookups, or None outside a request context.
+
+    Request-scoped only: no TTL, no cross-request invalidation, so there is no
+    stale-authorization window and no multi-pod consistency problem. The same
+    user is typically checked several times per request (decorator + task
+    scoping + notification fan-out).
+    """
+    if not has_request_context():
+        return None
+    cache = getattr(g, "_rbac_scope_cache", None)
+    if cache is None:
+        cache = {"project_ids": {}, "membership": {}}
+        g._rbac_scope_cache = cache
+    return cache
+
+
 def get_user_project_ids(user_id):
     """Project IDs *user_id* belongs to (team member or creator). Empty set on bad input/DB error."""
     user_id = _to_int(user_id)
     if user_id is None:
         return set()
+
+    cache = _request_scope_cache()
+    if cache is not None and user_id in cache["project_ids"]:
+        return cache["project_ids"][user_id]
 
     from ..db.models import Project, db, project_members
 
@@ -167,28 +188,43 @@ def get_user_project_ids(user_id):
     except Exception:
         logger.debug("get_user_project_ids lookup failed", exc_info=True)
     ids.discard(None)
+    if cache is not None:
+        cache["project_ids"][user_id] = ids
     return ids
 
 
 def _is_project_member_or_creator(user_id, project_id):
     """True when *user_id* is a team member or the creator of *project_id*."""
     project_id = _to_int(project_id)
-    if project_id is None:
+    user_id = _to_int(user_id)
+    if project_id is None or user_id is None:
         return False
+
+    cache = _request_scope_cache()
+    cache_key = (user_id, project_id)
+    if cache is not None and cache_key in cache["membership"]:
+        return cache["membership"][cache_key]
 
     from ..db.models import Project, db, project_members
 
+    result = False
     try:
         if db.session.query(project_members).filter_by(project_id=project_id, user_id=user_id).first() is not None:
-            return True
+            result = True
     except Exception:
         logger.debug("project membership lookup failed", exc_info=True)
-    try:
-        project = db.session.get(Project, project_id)
-    except Exception:
-        logger.debug("project lookup failed", exc_info=True)
-        project = None
-    return project is not None and _to_int(getattr(project, "created_by", None)) == user_id
+
+    if not result:
+        try:
+            project = db.session.get(Project, project_id)
+        except Exception:
+            logger.debug("project lookup failed", exc_info=True)
+            project = None
+        result = project is not None and _to_int(getattr(project, "created_by", None)) == user_id
+
+    if cache is not None:
+        cache["membership"][cache_key] = result
+    return result
 
 
 def _task_visible_to(task, user_id):
