@@ -178,7 +178,7 @@ def get_user_dashboard():
         user_role = claims.get("role")
 
         # Log the request details for debugging
-        logger.info(f"Getting dashboard for user ID: {user_id}, role: {user_role}")
+        logger.debug("Getting dashboard for user ID: %s, role: %s", user_id, user_role)
 
         # Get basic user info
         user = User.query.get(user_id)
@@ -250,7 +250,7 @@ def get_client_dashboard():
         user_role = claims.get("role")
 
         # Log the request details for debugging
-        logger.info(f"Getting member dashboard for user ID: {user_id}, role: {user_role}")
+        logger.debug("Getting member dashboard for user ID: %s, role: %s", user_id, user_role)
 
         # Get basic user info
         user = User.query.get(user_id)
@@ -697,7 +697,7 @@ def get_admin_dashboard():
             return jsonify({"message": "Unauthorized access"}), 403
 
         # Log the request details for debugging
-        logger.info(f"Getting admin dashboard for user ID: {user_id}")
+        logger.debug("Getting admin dashboard for user ID: %s", user_id)
 
         # Get basic user info
         user = User.query.get(user_id)
