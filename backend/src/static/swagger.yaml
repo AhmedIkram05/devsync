@@ -4450,6 +4450,68 @@ paths:
                 error: database is down
                 result: null
 
+  /reports/data:
+    get:
+      summary: Aggregate report data server-side
+      description: |
+        Computes the tasks or developers report for the requested window in SQL.
+        GitHub reports are generated client-side and return 422 here.
+      tags: [Reports]
+      operationId: getReportData
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [tasks, developers, github]
+            default: tasks
+        - name: date_range
+          in: query
+          schema:
+            type: string
+            enum: [week, month, quarter, year]
+            default: week
+      responses:
+        '200':
+          description: Aggregated report
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [summary, details, meta]
+                properties:
+                  summary:
+                    type: object
+                    additionalProperties: true
+                  details:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  meta:
+                    type: object
+                    required: [generated_at, range_start, truncated, row_count]
+                    properties:
+                      generated_at:
+                        type: string
+                        format: date-time
+                      range_start:
+                        type: string
+                        format: date-time
+                      truncated:
+                        type: boolean
+                      row_count:
+                        type: integer
+        '400':
+          description: Invalid type or date_range
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequestError'
+        '403':
+          description: Caller lacks can_generate_reports
+        '422':
+          description: GitHub reports are client-side only
   /reports:
     post:
       summary: Save a generated report
