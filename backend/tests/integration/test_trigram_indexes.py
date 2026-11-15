@@ -20,7 +20,9 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_pg_trgm_gin_index_serves_leading_wildcard_ilike():
-    engine = create_engine(DATABASE_URL)
+    # SQLAlchemy 2.1 defaults bare postgresql:// to psycopg v3; the project
+    # pins psycopg2-binary and uses postgresql+psycopg2:// everywhere else.
+    engine = create_engine(DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1))
     try:
         with engine.connect() as probe:
             probe.execute(text("SELECT 1"))
