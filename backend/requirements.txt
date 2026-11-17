@@ -45,7 +45,7 @@ python-socketio==5.18.1
 python-engineio==4.15.1
 
 # Production deployment
-gunicorn==26.2.0
+gunicorn==27.0.1
 gevent==26.9.0
 gevent-websocket==0.10.1
 # psycopg2 blocks the gevent worker's event loop on every DB roundtrip unless
