@@ -656,7 +656,7 @@ jobs:
 
       - name: Cypress against live URL (baseUrl override)
         if: steps.tls.outputs.ready == 'true'
-        uses: cypress-io/github-action@18016a55674bd02cabf197de5762a1710cb5577c # v7.4.9
+        uses: cypress-io/github-action@0ed14f5d30c4ad6e5e8ffb6f57dbb69150137a3f # v7.4.10
         with:
           working-directory: frontend
           config: baseUrl=https://${{ env.LIVE_HOST }},retries=1
