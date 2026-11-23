@@ -1,7 +1,7 @@
 # ===== Build Stage =====
 # Base images are digest-pinned (patch tag + digest) so a re-push of a tag
 # cannot change what we build. python:3.14-slim-bookworm resolved to 3.14.8.
-FROM python:3.15.0-slim-bookworm@sha256:0e019bbdfb5d9874cb2389f1c2884b64aa2ac97c99960b5bc521cef978c0617d AS build
+FROM python:3.15.2-slim-bookworm@sha256:96599df822d0e1c6bb700014a05c7f3c8cabc6e0f7ff3c4f9f69cee033b4b5d9 AS build
 
 # uv is digest-only pinned: no numbered release tag matches the digest that
 # ":latest" points at (checked 0.5.10-0.9.0), so the digest is the exact ref.
@@ -30,7 +30,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     VIRTUAL_ENV=/opt/venv /uv/bin/uv pip install -r requirements.txt
 
 # ===== Runtime Stage =====
-FROM python:3.15.0-slim-bookworm@sha256:0e019bbdfb5d9874cb2389f1c2884b64aa2ac97c99960b5bc521cef978c0617d
+FROM python:3.15.2-slim-bookworm@sha256:96599df822d0e1c6bb700014a05c7f3c8cabc6e0f7ff3c4f9f69cee033b4b5d9
 
 COPY --from=ghcr.io/astral-sh/uv@sha256:4a1f3666816dafadd20ceb71eac9a7d56d7ef30279f7d64048519ab901ada336 /uv /uv/bin/uv
 
